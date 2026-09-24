@@ -1,6 +1,6 @@
 # PLAN.md — детальный план Exchange Checker
 
-Статус: **на согласование** (код фич не начинать до ОКка заказчика по открытым вопросам в §12).
+Статус: **на согласование**. SQL: софт сам ищет таблицу/поля (§5.3). Остальные вопросы §12 желательны, каркас не блокируют.
 
 Связанные документы: [`POLICY.md`](POLICY.md), позже [`DELIVERY.md`](DELIVERY.md).
 
@@ -148,34 +148,53 @@ ExchangePointStatus {
 
 1. Драйвер: чистый TDS-клиент на Go **без CGO** (кандидат: `github.com/denisenkom/go-mssqldb` или аналог, совместимый с Go 1.20; финальный выбор — на этапе spike check `CHK-SQL-01`).
 2. Подключение: host/port/db + SQL auth (обязательно); Windows auth — опционально после согласования.
-3. Запрос времён — **через настраиваемый SQL-шаблон** в профиле или общий шаблон в `settings`, чтобы не привязаться навсегда к одной версии метаданных 1С.
+3. Запрос времён — **сначала авто-Discovery + сохранённый mapping** (§5.3); ручной SQL-шаблон в профиле — запасной режим для нестандартных баз.
 
-### 5.3. Рабочая гипотеза схемы 1С 8.1 (требует подтверждения)
+### 5.3. Автопоиск таблицы и полей (основной способ)
 
-В типовых РИБ 1С 8.x сведения об обмене часто живут в таблицах плана обмена / регистрации изменений. Точные имена зависят от конфигурации.
+Заказчик **не обязан** знать имена таблиц 1С. Софт сам ищет кандидатов в указанной базе и предлагает выбор в GUI («Найти таблицы» / при первом «Тест»).
 
-**Фаза spike (до основной разработки монитора):**
+**Алгоритм Discovery (служба, `internal/sqlcheck/discover`):**
 
-- check `CHK-SQL-01`: TestConnection + выполнение списка таблиц/вьюх с именами, похожими на обмен (`%Node%`, `%Exchange%`, `%Обмен%` в комментариях — осторожно с кодировками).
-- check `CHK-SQL-02`: на **одной реальной базе заказчика** (или дампе схемы) зафиксировать канонический `SELECT`, возвращающий колонки:
+1. `TestConnection` — логин в MSSQL успешен.
+2. Читаем каталог: `INFORMATION_SCHEMA.TABLES` / `COLUMNS` (при необходимости — системные view SQL Server).
+3. Отбираем **таблицы-кандидаты** эвристиками под РИБ 1С 8.1, например:
+   - в имени таблицы или колонок есть маркеры обмена/узлов/сообщений (типичные латинские имена хранилища 1С: `Node`, `Exchange`, `Msg`, `DataExchange` и сходные);
+   - есть **≥1 колонка** типа `date` / `datetime` / `datetime2`;
+   - есть строковая/кодовая колонка имени или кода точки обмена.
+4. Для кандидата подбираем mapping:
+   - `PointName` — колонка имени/кода узла;
+   - `LastSend` / `LastRecv` — две datetime-колонки (по именам send/recv/out/in или по `MAX()` — две наиболее «свежие» серии).
+5. Считаем score; топ-N отдаём трею:
 
-```sql
--- целевая форма результата (имена колонок фиксируем контрактом)
-PointName NVARCHAR(...),
-LastSend  DATETIME,   -- или DATETIME2
-LastRecv  DATETIME
+`DiscoveryCandidate { Table, PointCol, SendCol, RecvCol, SampleRows, Score, Reason }`
+
+6. Пользователь **подтверждает** кандидата (или правит поля вручную). В профиле сохраняется:
+
+```text
+Profile.Mapping {
+  Mode            "auto" | "manual"
+  Table           string
+  PointNameColumn string
+  LastSendColumn  string
+  LastRecvColumn  string
+}
 ```
 
-До подтверждения схемы код `sqlcheck` развивается за интерфейсом:
+7. Рабочий опрос (`ListPoints`) идёт **только по сохранённому mapping**, без повторного угадывания каждый цикл. Discovery — по кнопке или при настройке профиля.
+8. Запасной путь: ручной SQL-шаблон в профиле для нестандартных баз.
+
+**Checks:** `CHK-SQL-01` TestConnection; `CHK-SQL-02` Discovery на фикстуре схемы; `CHK-SQL-03` ListPoints по mapping; `CHK-SQL-04` ручной override / SQL-шаблон.
 
 ```go
 type ExchangeReader interface {
     Test(ctx) error
+    Discover(ctx) ([]DiscoveryCandidate, error)
     ListPoints(ctx) ([]ExchangePointStatus, error)
 }
 ```
 
-Реализации: `StubReader` (тесты), `QueryReader` (шаблон SQL), позже `V81DefaultReader` после калибровки.
+Реализации: `StubReader`, `DiscoveringReader`, `QueryReader` (ручной SQL).
 
 ### 5.4. Кнопка «Тест» в GUI
 
@@ -302,7 +321,9 @@ Wizard Win32 (страницы):
 | `CHK-POL-01` | Политики репо: go 1.20 в go.mod, нет запрещённых вызовов helper-процессов (static scan) |
 | `CHK-CFG-01` | Чтение/запись settings/profiles, DPAPI roundtrip |
 | `CHK-SQL-01` | TestConnection (mock + optional integration) |
-| `CHK-SQL-02` | ListPoints парсинг контрактных колонок |
+| `CHK-SQL-02` | Discovery: выбор таблицы/полей на фикстуре схемы |
+| `CHK-SQL-03` | ListPoints по сохранённому mapping |
+| `CHK-SQL-04` | Ручной override mapping / SQL-шаблон |
 | `CHK-MON-01` | Пороги warning/error на фикстурах времени |
 | `CHK-IPC-01` | Pipe: connect, heartbeat, ReloadConfig, StatusSnapshot |
 | `CHK-IPC-02` | AlertRaised → AckAlert |
@@ -327,11 +348,13 @@ Wizard Win32 (страницы):
 - `internal/config`, `internal/model`, DPAPI-секреты
 - check: `CHK-CFG-01`
 
-### Фаза 2 — SQL spike
+### Фаза 2 — SQL spike + Discovery
 
-- `internal/sqlcheck` + интерфейс reader; TestConnection; шаблон запроса
-- **нужна схема/дамп или скрин полей от заказчика**
-- checks: `CHK-SQL-01`, `CHK-SQL-02`
+- `internal/sqlcheck` + `ExchangeReader`: TestConnection, **Discover**, ListPoints по mapping
+- GUI: «Найти таблицы» / подтверждение кандидата; ручной SQL — fallback
+- тестовая база желательна для калибровки эвристик, но не блокер каркаса
+- checks: `CHK-SQL-01` … `CHK-SQL-04`
+
 
 ### Фаза 3 — Monitor + alert logic
 
@@ -370,7 +393,7 @@ Wizard Win32 (страницы):
 
 ## 12. Открытые вопросы к заказчику (нужны ответы до/во время фазы 2)
 
-1. **Точная SQL-схема** времён обмена в вашей базе 1С 8.1: имена таблиц/вьюх и полей отправки и приёма по точкам обмена (или тестовый доступ / скрипт `SELECT`).
+1. ~~Точная SQL-схема вручную~~ → **решено:** автопоиск таблицы/полей (`Discover`), подтверждение mapping в GUI; ручной SQL — fallback. Для калибровки желателен доступ к тестовой базе или скрин «Найти таблицы».
 2. Считать простой **по каждому направлению** (send/recv) отдельно или по **более свежей** из двух дат?
 3. Часовой пояс: в SQL лежит локальное время сервера 1С или UTC? С чем сравниваем «сейчас»?
 4. Нужен ли **Windows Authentication** к SQL или только SQL login/password?
@@ -385,7 +408,7 @@ Wizard Win32 (страницы):
 
 | Риск | Митигация |
 |------|-----------|
-| Неизвестная схема таблиц 1С | Интерфейс reader + калибровка на реальной БД; SQL-шаблон в настройках |
+| Неизвестная схема таблиц 1С | Авто-Discovery + подтверждение mapping в GUI; ручной SQL как fallback; калибровка эвристик на тестовой БД |
 | PC speaker на современных ПК без спикера | Beep всё равно зовём; параллельно можно дублировать `MessageBeep` — не вместо, а опция |
 | Трей не запущен во время аварии | Очередь алертов в службе; при старте трея — повторная доставка |
 | Go 1.21+ соблазн | Запрет POLICY; CI/check на версии в go.mod |

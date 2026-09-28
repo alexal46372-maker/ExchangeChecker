@@ -1,0 +1,66 @@
+# CHK-CI-01 — Go 1.20.14, Windows amd64, CGO off. No artifacts are uploaded.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  windows:
+    name: windows / go1.20.14 (CHK-CI-01)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.20.14"
+          check-latest: false
+          cache: false
+      - name: go version (must be go1.20.14)
+        run: |
+          go version
+          go version | grep -q "go1.20.14 windows/amd64"
+      - name: go env
+        run: go env GOVERSION GOOS GOARCH CGO_ENABLED
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./... -count=1 -v
+      - name: go build (windows/amd64)
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build ./...
+
+  linux:
+    name: linux / go1.20.14 vet + pure-Go tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.20.14"
+          check-latest: false
+          cache: false
+      - name: go version (must be go1.20.14)
+        run: |
+          go version
+          go version | grep -q "go1.20.14 linux/amd64"
+      - name: go vet (linux)
+        run: go vet ./...
+      - name: go vet (GOOS=windows)
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go vet ./...
+      - name: go test
+        run: go test ./... -count=1 -v

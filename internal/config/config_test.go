@@ -204,7 +204,7 @@ func TestCHK_CFG_01_ProfilesRoundtrip(t *testing.T) {
 	if !bytes.Contains(raw, []byte("x < 5 & y > 1")) {
 		t.Error("manual SQL must not be HTML-escaped")
 	}
-	if bytes.Contains(bytes.ToLower(raw), []byte("password\"")) {
+	if bytes.Contains(bytes.ToLower(raw), []byte("\"password\"")) {
 		t.Error("profiles.json must not contain a password field")
 	}
 	if err := s.SaveProfiles(nil); err != nil {

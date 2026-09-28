@@ -1,6 +1,6 @@
 # PLAN.md — детальный план Exchange Checker
 
-Статус: решения §12 п.2–8 **приняты** (см. §12). SQL Discovery — §5.3. **Фаза 0 начата.** Язык UI по умолчанию при первом запуске = язык ОС Windows (если не RU/EN — fallback RU).
+Статус: решения §12 п.2–9 **приняты** (см. §12). SQL Discovery — §5.3. **Фаза 0 и Фаза 1 выполнены.** Язык UI по умолчанию при первом запуске = язык ОС Windows (если не RU/EN — fallback RU).
 
 Связанные документы: [`POLICY.md`](POLICY.md), позже [`DELIVERY.md`](DELIVERY.md).
 
@@ -78,7 +78,7 @@ Toolchain (жёстко): **Go 1.20.14**, `GOOS=windows` `GOARCH=amd64` `CGO_ENA
 |------|------------|-----------|
 | `settings.json` | интервал опроса, пороги warning/error (минуты), параметры звука, общие флаги | трей (настройки) |
 | `profiles.json` | список профилей SQL (без паролей в открытом виде) | трей |
-| `secrets.dpapi` | пароли профилей, защищённые `CryptProtectData` (машина/пользователь — уточнить в §12) | трей |
+| `secrets.dpapi` | пароли профилей, защищённые `CryptProtectData` с **`CRYPTPROTECT_LOCAL_MACHINE`** (+ `UI_FORBIDDEN`); см. §12 п.9 | трей |
 | `state.json` | последний снимок статусов (опциональный кэш для трея при старте до ответа службы) | служба |
 
 Служба и трей читают одни и те же файлы; **источник истины по статусу обмена — служба** (живой снимок по IPC). Трей при сохранении настроек уведомляет службу по IPC: `ReloadConfig`.
@@ -360,10 +360,11 @@ Wizard Win32 (страницы):
 - `go.mod` (go 1.20), `internal/version`, пустые `cmd/*`, `DELIVERY.md`, `checks/CHECKS.md`
 - check: `CHK-POL-01`
 
-### Фаза 1 — Config + модель
+### Фаза 1 — Config + модель ✅
 
-- `internal/config`, `internal/model`, DPAPI-секреты
-- check: `CHK-CFG-01`
+- `internal/config`, `internal/model`, DPAPI-секреты (`CRYPTPROTECT_LOCAL_MACHINE`)
+- CI: `.github/workflows/ci.yml` (Go 1.20.14, windows + linux)
+- checks: `CHK-CFG-01`, `CHK-CFG-02`, `CHK-CI-01`
 
 ### Фаза 2 — SQL spike + Discovery
 
@@ -420,6 +421,8 @@ Wizard Win32 (страницы):
 6. **UI:** русский и английский, полностью.
 7. **ЛКМ-список:** только базы; цвет базы жёлтый (warning) / красный (error) по худшему уровню точек; точки обмена — во **выпадающем меню при наведении** на базу.
 8. **Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).
+
+9. **DPAPI LocalMachine (фаза 1):** `CryptProtectData` с флагами `CRYPTPROTECT_LOCAL_MACHINE` (0x4) и `CRYPTPROTECT_UI_FORBIDDEN` (0x1), опциональный entropy `ExchangeChecker/secrets.dpapi/v1`. Трей (пользователь) шифрует, служба под LocalSystem расшифровывает. Граница доступа — ACL каталога `%ProgramData%\ExchangeChecker\` (инсталлятор, фаза 7: Administrators+SYSTEM+Users-read). Tradeoff v1: любой локальный процесс на машине может расшифровать blob — принято как допустимое для v1.
 
 ### Ещё желательно (не блокер каркаса)
 

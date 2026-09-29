@@ -157,6 +157,13 @@ ExchangePointStatus {
 
 1. Драйвер (выбран в фазе 2, `CHK-SQL-01`): **`github.com/microsoft/go-mssqldb v1.8.2`** — чистый Go TDS, без CGO; последняя версия с `go 1.18` в go.mod (v1.9.0+ требует go ≥ 1.23 — несовместимо с Go 1.20). Транзитивно компилируются: `golang-sql/civil v0.0.0-20220223132316-b832511892a9`, `golang-sql/sqlexp v0.1.0`, `google/uuid v1.6.0`, `golang.org/x/crypto v0.24.0` (md4 для NTLM), `golang.org/x/text v0.16.0` — все объявляют go ≤ 1.18. Azure/Kerberos-модули драйвера не импортируются. `os/exec` в графе сборки нет (windows/amd64 и linux/amd64; CI-шаг `go list -deps … | grep -x os/exec`). Windows Auth: `integratedauth/winsspi` (secur32.dll через syscall).
    - TLS: `Encrypt` ""/optional = умолчание драйвера (TLS только для логина, сертификат не проверяется), `disable` — без TLS, `on` (+`TrustServerCert`), `strict` (TDS 8, SQL 2022+). Go 1.20 по умолчанию требует TLS ≥ 1.2: для SQL 2005/2008 без TLS 1.2 — `TLSMinVersion "1.0"` или `Encrypt "disable"`.
+   - **Целевой сервер заказчика — только SQL Server 2008** (возможно R2; считаем уровень совместимости **100**, ничего из 2008 R2 не используем) — §12 п. 21. Все запросы службы (построители `sqlbuild.go`, `select 1;` драйвера при Ping, `sp_executesql` для параметров, транзакции через TDS TransMgrReq) и шаблоны ручного SQL (`sqlcheck.ManualSQLTemplates`) — T-SQL 2005/2008: `TOP (@p)`, `COUNT_BIG`, `CASE`, `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)`, `INFORMATION_SCHEMA`, `sys.partitions`/`sysindexes`, `WITH (NOLOCK)`. Запрещено (2012+): OFFSET/FETCH, TRY_CONVERT/TRY_CAST/TRY_PARSE/PARSE, IIF, CHOOSE, CONCAT(_WS), FORMAT, STRING_AGG/STRING_SPLIT, TRIM, EOMONTH, `*FROMPARTS`, THROW, LAG/LEAD/FIRST_VALUE/LAST_VALUE/PERCENTILE_*, агрегаты с `OVER (… ORDER BY …)` и рамки ROWS/RANGE, `sys.dm_*`, JSON-функции. Проверка — `sqlcheck.Compat2008Violations` (CHK-SQL-05, все построители + Discovery + DiscoverByValue + шаблоны); ручной SQL с такими конструкциями отклоняется (`ErrManualCompat2008`, подсказка: TOP / ROW_NUMBER() / CASE / CONVERT / `+`). Интеграционные базы в CI создаются с `COMPATIBILITY_LEVEL = 100`.
+   - **Пресет «SQL Server 2008»:** `Profile.ServerPreset "mssql2008"` (`omitempty`) и `Profile.ApplyServerPreset("mssql2008")`: `TLSMinVersion "1.0"` (если не задан явно; `EffectiveTLSMinVersion()` даёт "1.0" и без явного поля), `strict` → умолчание драйвера; `strict` + пресет не проходит `Validate`. В go-mssqldb v1.8.2 `tlsmin=1.0` → `tls.Config.MinVersion = tls.VersionTLS10` (выставляется явно: клиент Go 1.20 без этого требует TLS 1.2). Подсказка в UI — ключ `sql.preset_mssql2008_hint` («без обновлений TLS 1.2 нужен TLS 1.0»).
+   - **Ошибка TLS-рукопожатия** классифицируется (`KindConn` + `sqlcheck.Error.Key`, `ProfileStatus.ErrorKey`, `omitempty`): `sql.tls_enable_tls10` — «включите TLS 1.0 в профиле» (пресет или «Минимальная версия TLS: 1.0»); `sql.tls_legacy_failed` — TLS 1.0 уже разрешён, общего протокола/шифра нет (обновление TLS 1.2 на сервере или `encrypt disable`); `sql.tls_certificate` — сертификат отклонён (x509). Тексты RU/EN — `sqlcheck.Message(key, lang)`, `MessageKeys()`. Каталога сообщений в фазе 1 нет; конвенция — язык `ru`/`en` (`model.LangRU/LangEN`, `config.EffectiveLanguage`, fallback RU), поэтому sqlcheck отдаёт стабильные ключи, а трей (фаза 6) показывает текст. Драйвер возвращает `fmt.Errorf("TLS Handshake failed: %v", err)` (причина только текстом), поэтому классификация текстовая + `tls.RecordHeaderError`.
+   - **Что на самом деле значит `encrypt` в go-mssqldb v1.8.2** (код `msdsn/conn_str.go` `parseTLS`, `session.go` `preparePreloginFields`, `tds.go` `connect`; подтверждено тестом `TestCHK_SQL_05_IntegrationEncryptWire` — TCP-прокси записывает байты клиент→сервер):
+     - `disable` → `msdsn.EncryptionDisabled`, `TLSConfig = nil`, в prelogin клиент объявляет `ENCRYPT_NOT_SUP`. Если сервер не форсирует шифрование — **TLS нет ни для данных, ни для логина**: пакет Login7 (логин, имя хоста/приложения, пароль) идёт открытым текстом; пароль SQL лишь «замаскирован» (перестановка полубайтов + XOR 0xA5, тривиально обратимо) — **фактически открытый текст**; при Windows-аутентификации вместо пароля идут SSPI-токены (NTLM/Kerberos). Если сервер форсирует шифрование (`ForceEncryption=Yes`), v1.8.2 не обрывает соединение, а выполняет рукопожатие с настройками Go по умолчанию (TLS ≥ 1.2, проверка сертификата; наш `tlsmin` не применяется) — на SQL 2008 без TLS 1.2 это не соединится, нужен пресет (умолчание + TLS 1.0).
+     - "" / `optional` → `EncryptionOff`, prelogin `ENCRYPT_OFF`: TLS-рукопожатие, **в TLS уходит только Login7** (пароль защищён), затем канал возвращается в открытый режим — запросы и результаты читаемы в сети; сертификат не проверяется; `tlsmin` применяется к этому рукопожатию. Если у сервера нет TLS (`ENCRYPT_NOT_SUP`) — логин открытым текстом.
+     - `on` → вся сессия в TLS (`TrustServerCert` отключает проверку сертификата); `strict` — TDS 8.0, только SQL 2022+.
    - Таймауты: `dial timeout` = ConnectTimeoutSec; остальное — через context (QueryTimeoutSec на запрос); `connection timeout` драйвера (per-IO deadline) не используется.
 2. Подключение: host/port/db; **SQL Authentication и Windows Authentication — оба обязательны** в v1 (выбор AuthMode в профиле).
 3. Запрос времён — **сначала авто-Discovery + сохранённый mapping** (§5.3); ручной SQL-шаблон в профиле — запасной режим для нестандартных баз.
@@ -170,18 +177,18 @@ ExchangePointStatus {
 1. `TestConnection` — логин в MSSQL успешен.
 2. Читаем каталог и отбираем кандидатов эвристиками; для кандидата подбираем `PointName`, `LastSend`/`LastRecv`; считаем score; топ-N отдаём трею; пользователь подтверждает; опрос — только по сохранённому mapping; ручной SQL — запасной путь.
 
-**Реализация (фаза 2, `internal/sqlcheck`).** Discovery **не зависит от `_Node*`**: универсальный путь работает для любой конфигурации 1С (планы обмена, самописные справочники+регистры, даты прямо в справочнике) и для не-1С схем. Все запросы — **только чтение**: `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED` в каталожных батчах + `WITH (NOLOCK)` на каждой пользовательской таблице, `TOP (@p1)` везде, имена — только через `QuoteIdent` (`[...]`, `]`→`]]`, длина ≤128), значения — только параметрами.
+**Реализация (фаза 2, `internal/sqlcheck`; фаза 2b — ниже).** Универсальный путь работает для любой конфигурации 1С (планы обмена, самописные справочники+регистры, даты прямо в справочнике) и для не-1С схем; **с фазы 2b планы обмена `_NodeNNN` — основной источник** (бонус +40, несколько планов в профиле, §12 п. 22–25). Все запросы — **только чтение**: `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED` в каталожных батчах + `WITH (NOLOCK)` на каждой пользовательской таблице, `TOP (@p1)` везде, имена — только через `QuoteIdent` (`[...]`, `]`→`]]`, длина ≤128), значения — только параметрами.
 
 **Алгоритм Discovery (`Discover`):**
 
-1. Каталог: `sys.columns`/`sys.tables`/`sys.schemas`/`sys.types` (одним запросом). Число строк: `sys.partitions` (index_id 0/1), fallback — `sysindexes` (SQL 2005 без прав на DMV); нет ни того ни другого — работаем без row counts (лимиты по TOP).
+1. Каталог: `INFORMATION_SCHEMA.COLUMNS` + `INFORMATION_SCHEMA.TABLES` (`BASE TABLE`, одним запросом). Число строк: `sys.partitions` (index_id 0/1), fallback — `sysindexes` (SQL 2005 без прав на DMV); нет ни того ни другого — работаем без row counts (лимиты по TOP).
 2. **Справочники точек** — таблицы `_Reference*`, `_Node*`, `_InfoRg*`, `_Document*` и не-1С таблицы с ≤ `MaxDirRows` (5000) строк, у которых есть строковая колонка имени (`_Description`, иначе `_Code`, иначе строковая колонка ≤ 4000 символов / маркеры name/node/point/узел).
 3. **Источники кандидатов:**
    - *same_table* — две (или одна) datetime-серии в самом справочнике (`_Reference55._Fld56/_Fld57`, база 35);
    - *linked* — таблица времён (`_InfoRg*`/`_Document*`/любая) с колонкой `binary(16)`, чьи значения совпадают с `_IDRRef` справочника (выборка до 500 ссылок → доля совпадений и покрытие точек; база 35 + ratio·10 + coverage·5, `_InfoRg` +2);
    - *generic* — не-1С таблица с именем точки и datetime-колонками (маркеры exchange/node/sync/send/recv…, база 25);
    - *counters* — **fallback** для конфигураций без хранимых времён: при наличии `_Node*` с `_SentNo`/`_ReceivedNo` кандидат с фиксированным **низким** score 5, hint `counters_fallback`, Reason объясняет, что это запасной режим.
-   - Бонус `_Node*` — только **+10** (hint `node_table`), не условие.
+   - Бонус `_Node*` — ~~только +10~~ **+40** (`nodeBonus`, hint `node_table`, фаза 2b); не условие: без `_Node` универсальный путь работает как раньше. Составные ссылки 1С 8.1 (`_TYPE`/`_RTRef`/`_RRRef`) засчитываются только при `_TYPE = 0x08` и `_RTRef` = номер таблицы-владельца (hint `composite_ref`).
 4. **Серии времени** (`evaluateSeries`): MAX/COUNT по каждой datetime-колонке (до 16 колонок), поиск `YearOffset` (MAX год > now+1000 → 2000), свежесть MAX после сдвига: ≤1ч +30, ≤1д +25, ≤7д +18, ≤30д +10, ≤1г +4, иначе +1; «будущее» −10; две серии +10; send/recv по именам (+5, частично +2), иначе две самые свежие по порядку колонок (hint `send_recv_by_order` — подтвердить в GUI).
 5. **Ранжирование** (`rank`, топ-30): реальный ListPoints по кандидату: +15·(доля точек, обновлённых в пределах 7 дней от freshest), +5·(доля точек с обеими датами), +5 за 2..500 точек (hint `all_points_fresh`).
 6. **Бюджеты:** общий `Timeout` 90 с, `QueryTimeout` 15 с на запрос, `MaxDirTables` 300, `MaxTimesTables` 400, `StatsRowLimit` 200 000, `MaxLinkedRows` 500 000, `MaxLinkTables` 200. Ошибка/таймаут одной таблицы — таблица пропускается; исчерпан общий бюджет — частичный результат + hint `truncated`; отмена родительского ctx — ошибка.
@@ -190,15 +197,26 @@ ExchangePointStatus {
 
 1. `LIKE N'%…%'` (экранирование `[`, `%`, `_` → литералы) по строковым колонкам (≤ 24 на таблицу, ≤ 1024 символов) таблиц с ≤ `MaxValueRows` (100 000) строк, ≤ 300 таблиц, `MatchRows` 20 на таблицу.
 2. Даты берутся из **той же строки** или из **связанных строк** других таблиц по `binary(16)`-ссылке (`WHERE ref = @p2`, ≤ `MaxMatches` 20 совпадений).
-3. Score: база 50; точное совпадение +15 (hint `exact_match`) / подстрока +5; близость ближайшей даты к ApproxTime ≤ 1 ч +30, ≤ tolerance +20 (обе — hint `near_approx_time`), ≤ 7 дн +8; без ApproxTime — свежесть; `_Node` +10, `_InfoRg` +2. Результат — те же `DiscoveryCandidate` + `Matched` (найденная строка).
+3. Score: база 50; точное совпадение +15 (hint `exact_match`) / подстрока +5; близость ближайшей даты к ApproxTime ≤ 1 ч +30, ≤ tolerance +20 (обе — hint `near_approx_time`), ≤ 7 дн +8; без ApproxTime — свежесть; `_Node` ~~+10~~ +40 (фаза 2b), `_InfoRg` +2. Результат — те же `DiscoveryCandidate` + `Matched` (найденная строка).
+4. **Фаза 2b:** при заданном `ApproxTime` сначала работает **поиск по времени** (ниже); поиск по имени — запасной путь, если по времени кандидатов нет.
+
+**Фаза 2b — планы обмена как основной источник (уточнение заказчика):**
+
+- **`_NodeNNN` — основной источник:** `nodeBonus` = **+40** в Discovery и `DiscoverByValue`; на фикстуре с двумя планами, курсами валют и коллизией ссылок кандидаты планов опережают любые не-`_Node` кандидаты с запасом ≥ 30 (тест). Кандидат несёт `planTable`/`planNo` (`_Node124` → 124).
+- **Несколько планов в одном профиле:** `Profile.Mappings []Mapping` — дополнительные mapping к основному `Mapping` (`omitempty`, профили фазы 1/2 читаются без изменений); у каждого `planLabel` (подпись в UI). `ListPoints` обходит `Profile.AllMappings()` (основной + дополнительные; у дополнительных ManualSQL побеждает таблицу), каждая точка получает `planTable`/`planNo`/`planLabel`. Наблюдения счётчиков всех counters-mapping применяются к состоянию профиля одним шагом; ключи дополнительных mapping префиксуются `Table + "/"` (точки разных планов не смешиваются). `model.SuggestPlanMappings(cands)` — лучший не-counters кандидат на каждую таблицу `_Node*` (GUI «добавить все планы»). Дополнительные mapping требуют настроенного основного, каждый проходит `Validate`.
+- **Составные ссылки 1С 8.1** (`_FldNNN_TYPE` binary(1) + `_FldNNN_RTRef` binary(4) + `_FldNNN_RRRef` binary(16)): без фильтра строки, ссылающиеся на объект **другой** таблицы с тем же 16-байтным ключом, дали бы ложные даты. Mapping: `timesLinkTypeColumn`, `timesLinkRTRefColumn`, `timesLinkRTRef` (номер таблицы 1..2³¹−1; 4 байта big-endian); SQL-фильтр — параметры `@p2 = 0x08`, `@p3 = RTRef` внутри подзапроса таблицы времён (ListPoints, LinkStats, поиск по значению — `buildCompositeSearchSQL`). `CheckMapping` проверяет типы binary(1)/binary(4).
+- **`DiscoverByValue` по времени** (`ValueQuery{PointName?, PointRef?, PlanTable?, ApproxTime, ToleranceMin}`): точку задают по `_IDRRef` (`pointRef`, 32 hex, выбор из `ListNodePoints`), либо по имени/коду (опционально только в `planTable`); точные совпадения предпочтительнее. Ищутся datetime-колонки в той же строке `_Node` и в таблицах, ссылающихся на точку (простая ссылка или составная с RTRef = номер плана; ≤ `MaxLinkedRows`, ≤ `MaxLinkTables`); MAX по колонке после YearOffset → колонки в пределах tolerance; близость: ≤ 15 мин +35, ≤ 1 ч +30, ≤ 6 ч +25, иначе +20; база 60 + серии + `nodeBonus`; hints `by_value`, `by_time`, `near_approx_time`. Нет попаданий по времени → поиск по имени (с фильтром составных ссылок). Неверный `pointRef` → `ErrBadPointRef` (KindConfig).
+- **`ListNodePoints` / `PlanPointLister.NodePoints(ctx)`:** строки всех `_Node*` (`planTable`, `planNo`, `ref` hex, `code`, `name`) для выбора точки в трее.
 
 **Типы (IPC-ready JSON, пакет `internal/model`, без драйвера):**
 
 ```go
 DiscoveryCandidate { Mode single|linked|counters, Schema, Table, PointCol, PointIDCol, PointKeyCol,
-    SendCol, RecvCol, TimesSchema, TimesTable, LinkCol, YearOffset, FreshestAt, Points,
+    SendCol, RecvCol, TimesSchema, TimesTable, LinkCol, LinkTypeCol, LinkRTRefCol, LinkRTRef,
+    PlanTable, PlanNo, YearOffset, FreshestAt, Points,
     Matched *SampleRow, SampleRows []SampleRow, Score, Reason, Hints []string }  // .Mapping()
-ValueQuery { PointName, ApproxTime *time.Time, ToleranceMin }                    // default 1440
+ValueQuery { PointName, PointRef, PlanTable, ApproxTime *time.Time, ToleranceMin } // default 1440
+NodePoint { PlanTable, PlanNo, Ref, Code, Name }                                  // ListNodePoints
 ```
 
 6. Пользователь **подтверждает** кандидата (или правит поля вручную). В профиле сохраняется (все новые поля `omitempty` — профили фазы 1 читаются без изменений):
@@ -212,6 +230,8 @@ Profile.Mapping {
   PointIDColumn      string
   PointKeyColumn     string   // _IDRRef: ключ для linked / counters
   TimesSchema, TimesTable, TimesLinkColumn string   // linked: TimesTable.TimesLinkColumn = Table.PointKeyColumn
+  TimesLinkTypeColumn, TimesLinkRTRefColumn string; TimesLinkRTRef int   // 2b: составная ссылка (_TYPE = 0x08, _RTRef = N)
+  PlanLabel          string   // 2b: подпись плана обмена в UI (planTable/planNo выводятся из Table)
   KeepUnlinkedPoints bool     // LEFT JOIN вместо INNER (точки без строки времён → no_timestamps)
   LastSendColumn, LastRecvColumn string
   YearOffset         0 | 2000 // сдвиг лет 1С
@@ -219,7 +239,8 @@ Profile.Mapping {
   ManualSQL          string
 }
 Profile: + Encrypt ""|optional|disable|on|strict, TrustServerCert, TLSMinVersion ""|1.0|1.1|1.2,
-           ConnectTimeoutSec (15), QueryTimeoutSec (30)
+           ConnectTimeoutSec (15), QueryTimeoutSec (30),
+           ServerPreset ""|mssql2008 (2b), Mappings []Mapping (2b: дополнительные планы обмена)
 ```
 
 7. Рабочий опрос (`ListPoints`) идёт **только по сохранённому mapping**, без повторного угадывания (тоже `NOLOCK`). Даты: naive → минус `YearOffset` → `FromDBNaive` (UTC+3); год < 1900 после сдвига (пустая дата 1С `2001-01-01`/`1753-01-01`) → NULL; обе NULL → Error `no_timestamps` (решение фазы 1). Linked: `INNER JOIN` + `MAX()` по точке (точки без строки времён пропускаются; `keepUnlinkedPoints` → `LEFT JOIN`).
@@ -232,7 +253,7 @@ Profile: + Encrypt ""|optional|disable|on|strict, TrustServerCert, TLSMinVersion
    - `CounterState{Version, Points map[key]CounterPoint}` сериализуется в JSON; интерфейс `model.CounterStateStore{Load(profileID), Save(profileID, state)}`; в фазе 2 только `MemCounterStore` (потеря состояния = новый baseline). Файловое хранение и цикл опроса — **фаза 3** (`internal/monitor`).
 10. Подключение: `github.com/microsoft/go-mssqldb`, логин/пароль только в `msdsn.Config` (не в строке DSN/логах/ошибках); `host\instance` без порта → SQL Browser; Windows Auth — `winsspi` (secur32.dll) на Windows, текущая учётка службы или `DOMAIN\user`+пароль. Ошибки — `*sqlcheck.Error{Kind conn|timeout|canceled|query|mapping|config}`; в статусе профиля ошибка соединения → `ProfileStatus.Error` (уровень Error).
 
-**Checks:** `CHK-SQL-01` TestConnection/драйвер/опции подключения; `CHK-SQL-02` Discovery + DiscoverByValue на фикстурах схем; `CHK-SQL-03` ListPoints по mapping + режим counters; `CHK-SQL-04` ручной override / SQL-шаблон / валидация / preview. Интеграционные тесты (реальный SQL Server в linux-job CI, фикстуры `_Node123`+`_InfoRg456` со сдвигом 2000 и 0, `_Reference77`+`_InfoRg88` без `_Node`, `_Reference55` с датами, не-1С схема `exch.[Node]]Exchange]`) — по env `EC_SQL_TEST_*`.
+**Checks:** `CHK-SQL-01` TestConnection/драйвер/опции подключения; `CHK-SQL-02` Discovery + DiscoverByValue на фикстурах схем (2b: приоритет `_Node`, составные ссылки, поиск по времени, ListNodePoints); `CHK-SQL-03` ListPoints по mapping + режим counters (2b: несколько планов, составные ссылки); `CHK-SQL-04` ручной override / SQL-шаблон / валидация / preview; `CHK-SQL-05` совместимость с SQL Server 2008 (compat 100), пресет, TLS 1.0 и ключи ошибок. Интеграционные тесты (реальный SQL Server в linux-job CI, все базы — `COMPATIBILITY_LEVEL = 100`; фикстуры `_Node123`+`_InfoRg456` со сдвигом 2000 и 0, `_Reference77`+`_InfoRg88` без `_Node`, `_Reference55` с датами, не-1С схема `exch.[Node]]Exchange]`, 2b: два плана `_Node123`/`_Node124` + регистр с составной ссылкой `_InfoRg600` и коллизией RTRef) — по env `EC_SQL_TEST_*`.
 
 ```go
 type ExchangeReader interface {
@@ -241,6 +262,7 @@ type ExchangeReader interface {
     DiscoverByValue(ctx, model.ValueQuery) ([]model.DiscoveryCandidate, error)
     ListPoints(ctx) ([]model.ExchangePoint, error)
 }
+type PlanPointLister interface { NodePoints(ctx) ([]model.NodePoint, error) }   // 2b
 ```
 
 Реализации: `StubReader`, `DiscoveringReader` (таблица / linked / counters), `QueryReader` (ручной SQL); `ReaderFor`/`NewReader` выбирают по профилю; `Status(ctx, r, p, now)` → `model.ProfileStatus`.
@@ -381,6 +403,7 @@ Wizard Win32 (страницы):
 | `CHK-SQL-02` | Discovery: выбор таблицы/полей на фикстуре схемы |
 | `CHK-SQL-03` | ListPoints по сохранённому mapping |
 | `CHK-SQL-04` | Ручной override mapping / SQL-шаблон |
+| `CHK-SQL-05` | Совместимость с SQL Server 2008 (compat 100): запрещённые конструкции, пресет, TLS 1.0 |
 | `CHK-MON-01` | Пороги warning/error на фикстурах времени |
 | `CHK-IPC-01` | Pipe: connect, heartbeat, ReloadConfig, StatusSnapshot |
 | `CHK-IPC-02` | AlertRaised → AckAlert |
@@ -414,6 +437,12 @@ Wizard Win32 (страницы):
 - драйвер `github.com/microsoft/go-mssqldb v1.8.2` (§5.2); CI: linux-job поднимает `mcr.microsoft.com/mssql/server:2019-latest` для интеграционных тестов; windows-job проверяет отсутствие `os/exec` в графе зависимостей
 - GUI «Найти таблицы» / подтверждение кандидата — в фазе 6 (трей) через IPC (фаза 4); файловое хранение состояния счётчиков и цикл опроса — фаза 3
 - checks: `CHK-SQL-01` … `CHK-SQL-04`
+
+### Фаза 2b — планы обмена, составные ссылки, SQL Server 2008 ✅
+
+- уточнение заказчика: `_NodeNNN` — основной источник (+40), несколько планов в профиле (`Profile.Mappings`, `planLabel`), составные ссылки 1С 8.1, `DiscoverByValue` по времени (+ `pointRef`, `planTable`), `ListNodePoints`
+- требование заказчика: целевой сервер только SQL Server 2008 (compat 100) — аудит всех запросов, `Compat2008Violations`, шаблоны ручного SQL, пресет `mssql2008` (TLS 1.0), ключи ошибок TLS (RU/EN); интеграционные базы CI с `COMPATIBILITY_LEVEL = 100`
+- checks: `CHK-SQL-02` … `CHK-SQL-05`
 
 
 ### Фаза 3 — Monitor + alert logic
@@ -468,7 +497,7 @@ Wizard Win32 (страницы):
 
 10. **Сеть SQL (фаза 2):** драйвер использует собственный `net.Dialer` (TCP, `dial timeout`); общего сетевого пакета/конвенции в проекте пока нет (`internal/hcwinnet` — заглушка). Логин/пароль задаются только полями `msdsn.Config`, в DSN/логи/ошибки не попадают.
 11. **`Encrypt ""` = умолчание драйвера** (TLS только для логина, без проверки сертификата) — максимальная совместимость с SQL 2005/2008; для старых серверов без TLS 1.2 — `tlsMinVersion "1.0"` или `encrypt "disable"`.
-12. **Discovery не зависит от `_Node*`** (решение архитектора): `_Node*` даёт только +10; универсальный путь по `_Reference*`/`_InfoRg*`/`_Document*`/`_Node*` и не-1С таблицам; `DiscoverByValue` — поиск по имени известной точки (+ примерное время).
+12. ~~**Discovery не зависит от `_Node*`** (решение архитектора): `_Node*` даёт только +10; универсальный путь по `_Reference*`/`_InfoRg*`/`_Document*`/`_Node*` и не-1С таблицам; `DiscoverByValue` — поиск по имени известной точки (+ примерное время).~~ — **заменено п. 22–25** (фаза 2b, уточнение заказчика); универсальный путь сохранён.
 13. **Только чтение:** все запросы Discovery и опроса — `READ UNCOMMITTED`/`WITH (NOLOCK)`, `TOP (@p1)`, параметры, экранированные имена; бюджеты времени и лимиты таблиц/строк (§5.3). Грязное чтение для мониторинга допустимо; блокировать 1С нельзя.
 14. **Linked-опрос — `INNER JOIN`:** точки справочника без строки в таблице времён (например, «этот узел» плана обмена) не показываются; опция `keepUnlinkedPoints` → `LEFT JOIN` (такие точки = Error `no_timestamps`).
 15. **Пустая дата 1С:** год < 1900 после вычета `YearOffset` (`2001-01-01` при сдвиге 2000, `1753-01-01` без сдвига) → NULL. `YearOffset` только 0 или 2000.
@@ -477,6 +506,13 @@ Wizard Win32 (страницы):
 18. **ManualSQL** выполняется в транзакции `READ UNCOMMITTED`, которая всегда откатывается; допускается ровно один `SELECT`/`WITH`, ровно 3 колонки; при заданных и таблице, и ManualSQL побеждает ManualSQL.
 19. **Режим `counters`** (решение архитектора через Вику): fallback для конфигураций без хранимых времён; время = момент, когда служба увидела изменение `_SentNo`/`_ReceivedNo`; первое наблюдение после старта — baseline (`sendBaseline`/`recvBaseline`, UI: «не раньше запуска службы»); **уменьшение/сброс счётчика считается изменением**; одна таблица `_Node*` на mapping; в кандидате Discovery колонки счётчиков передаются в `SendCol`/`RecvCol` (→ `sentNoColumn`/`receivedNoColumn`), score фиксированно низкий (5). Хранилище состояния: интерфейс `model.CounterStateStore`, в фазе 2 — только `MemCounterStore`; файл и цикл опроса — фаза 3 (`internal/monitor`).
 20. **Интеграционные тесты SQL** — в linux-job CI (контейнер `mcr.microsoft.com/mssql/server:2019-latest`, env `EC_SQL_TEST_HOST/PORT/USER/PASSWORD`); без env тесты пропускаются (windows-job).
+21. **Целевая версия MSSQL — SQL Server 2008 (уровень совместимости 100)** (требование заказчика через Вику, фаза 2b): возможно 2008 R2, но ничего из R2 не используем. Все запросы — T-SQL 2005/2008 (§5.2); CHK-SQL-05 проверяет вывод всех построителей, Discovery, DiscoverByValue и шаблонов на список запрещённых конструкций 2012+ (границы слов, без учёта регистра, литералы/комментарии/`[имена]` исключаются; `sys.dm_*` запрещены целиком — DMV не нужны и требуют VIEW SERVER STATE); ручной SQL с ними отклоняется. Интеграционные базы на SQL 2019 создаются с `ALTER DATABASE … SET COMPATIBILITY_LEVEL = 100` (проверяется через `sys.databases` и отказом `STRING_SPLIT`). Переписывать ничего не пришлось — все запросы уже были совместимы с 2005/2008.
+22. **Планы обмена `_NodeNNN` — основной источник** (уточнение заказчика, заменяет п. 12): `nodeBonus` = +40 (Discovery и DiscoverByValue); универсальный путь без `_Node` сохранён для самописных конфигураций.
+23. **Несколько планов в профиле — `Profile.Mappings []Mapping`** (дополнительные к основному `Mapping`). Обратимо: старые профили не меняются, откат = удалить поле; переиспользует всю машинерию одного mapping (linked/composite/counters/manual, CheckMapping, Preview). Альтернатива «список таблиц `_Node*` внутри одного mapping» отклонена: пришлось бы дублировать linked/composite/counters-поля на каждую таблицу и усложнять SQL ListPoints. `planTable`/`planNo` выводятся из `Table` (не хранятся), `planLabel` хранится. Ключи счётчиков дополнительных mapping — с префиксом `Table + "/"`; счётчики всех mapping — одно состояние профиля.
+24. **Составная ссылка 1С 8.1:** фильтр `_TYPE = 0x08 AND _RTRef = N` передаётся параметрами (`@p2`, `@p3`), N = номер таблицы-владельца (`_Node124` → 124) — строки других таблиц с тем же `_RRRef` исключаются в Discovery, ListPoints и поиске по значению.
+25. **`DiscoverByValue`: поиск по времени — основной при заданном `ApproxTime`**, поиск по имени — запасной; точку можно задать `pointRef` (`_IDRRef` из `ListNodePoints`) или именем/кодом (+ `planTable`).
+26. **Пресет `serverPreset "mssql2008"`** — `TLSMinVersion "1.0"` (Go 1.20: `MinVersion = tls.VersionTLS10` явно), `strict` запрещён; ошибки TLS-рукопожатия — ключи `sql.tls_enable_tls10` / `sql.tls_legacy_failed` / `sql.tls_certificate` с текстами RU/EN в `sqlcheck` (`Message`), пока нет общего каталога (трей, фаза 6); `ProfileStatus.ErrorKey` (`omitempty`).
+27. **`encrypt "disable"` = ни TLS для данных, ни TLS для логина** (проверено на проводе): пароль SQL уходит фактически открытым текстом (обратимая маскировка TDS). Рекомендуемый режим для 2008 — пресет (TLS только для логина, TLS 1.0); `disable` — только если сервер не может договориться о TLS вовсе и заказчик принимает риск (§13).
 
 ### Ещё желательно (не блокер каркаса)
 
@@ -494,8 +530,12 @@ Wizard Win32 (страницы):
 | Трей не запущен во время аварии | Очередь алертов в службе; при старте трея — повторная доставка |
 | Go 1.21+ соблазн | Запрет POLICY; CI/check на версии в go.mod |
 | Помощники sc/powershell | Только WinAPI SCM/Registry; static scan `CHK-POL-01` |
-| Ложные кандидаты Discovery (курсы валют, периодические регистры, документы со свежими датами) | Ранжирование по доле обновлённых точек и двум сериям; hints/Reason в GUI; подтверждение пользователем; `DiscoverByValue`; ручной mapping |
-| SQL 2005/2008 и TLS 1.0 | `tlsMinVersion "1.0"` / `encrypt "disable"`; на реальном legacy-сервере не проверено (в CI — SQL 2019) |
+| Ложные кандидаты Discovery (курсы валют, периодические регистры, документы со свежими датами) | Ранжирование по доле обновлённых точек и двум сериям; `_Node*` +40 (2b); фильтр составных ссылок по RTRef; hints/Reason в GUI; подтверждение пользователем; `DiscoverByValue` (по времени); ручной mapping |
+| Строка «этот узел» плана обмена (`_PredefinedID` ≠ 0) | Исключается только тем, что у неё нет строк в регистре времён (`INNER JOIN`); с `keepUnlinkedPoints` она видна как `no_timestamps` |
+| SQL 2008 и TLS 1.0 / шифры | Пресет `mssql2008` (`tlsMinVersion "1.0"`), ключ ошибки `sql.tls_enable_tls10`. Go 1.20 по умолчанию предлагает AES-128/256-CBC-SHA (RSA и ECDHE-RSA), AES-GCM и **3DES** (`TLS_RSA_WITH_3DES_EDE_CBC_SHA`, `TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA` — в списке по умолчанию, в конце по приоритету); **RC4 не предлагается** (выключен по умолчанию), CBC-SHA256 тоже. Windows Server 2008/2008 R2 (Schannel) умеет AES-CBC-SHA → договоримся; Windows Server 2003 без KB948963 — только RC4/3DES → договоримся на 3DES (слабый: Sweet32, 64-битный блок; допустимо лишь для защиты логина); сервер только с RC4 → отказ (`sql.tls_legacy_failed`: обновление TLS 1.2 или `encrypt disable`). TLS 1.0 — CBC с неявным IV (BEAST, клиентская атака, для TDS маловероятна). Проверено тестом Go↔Go (`TestCHK_SQL_05_GoTLS10CipherSuites`); на реальном SQL 2008 **не проверено** (в CI — SQL 2019) |
+| `encrypt "disable"` | Нет TLS ни для данных, ни для Login7: пароль SQL фактически открытым текстом (маскировка XOR 0xA5 обратима), запросы/данные читаемы. Использовать только если TLS невозможен и заказчик принимает риск; предпочтительнее пресет (TLS для логина) или Windows-аутентификация (SSPI-токены вместо пароля) |
+| Уровень совместимости 100 на SQL 2019 ≠ настоящий SQL 2008 | Большинство функций 2012+ (IIF, TRY_CONVERT, CONCAT…) на движке 2019 работают при любом compat level — настоящая защита — статическая проверка CHK-SQL-05 всех запросов; интеграционные тесты подтверждают, что compat 100 действует (`STRING_SPLIT` отклоняется) и запросы выполняются. Отличия поведения движка 2008 (оптимизатор, версии TDS 7.3) в CI не проверяются |
+| Стоимость поиска по времени на больших регистрах | Поиск по ссылке ограничен `MaxLinkedRows`/`MaxLinkTables`/`MatchRows` и бюджетами Discovery; без индекса по ссылке — скан таблицы (NOLOCK, TOP), только по кнопке пользователя |
 | Режим counters: время = момент наблюдения, не реальное событие | Флаги baseline; точность = период опроса; сохранение состояния в фазе 3 |
 
 ---

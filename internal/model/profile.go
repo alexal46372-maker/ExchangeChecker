@@ -137,7 +137,9 @@ type Profile struct {
 	Mappings []Mapping `json:"mappings,omitempty"`
 
 	// Connection options (phase 2, all optional; see sqlprofile.go).
-	// Encrypt "" keeps the driver default (TLS for the login packet only).
+	// Encrypt "" (field omitted) means DefaultEncrypt = "disable" since
+	// phase 2d: no TLS at all, not even for the login packet (PLAN §12
+	// item 31; see EncryptMode.Effective and sqlcheck.Warnings).
 	Encrypt         EncryptMode `json:"encrypt,omitempty"`
 	TrustServerCert bool        `json:"trustServerCert,omitempty"`
 	// TLSMinVersion is "", "1.0", "1.1" or "1.2" ("1.0" for SQL 2005/2008).

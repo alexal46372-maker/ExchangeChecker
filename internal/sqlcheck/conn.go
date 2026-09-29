@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	mssql "github.com/microsoft/go-mssqldb"
 	"github.com/microsoft/go-mssqldb/msdsn"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -106,9 +105,7 @@ func Open(p model.Profile, password string) (*SQLStore, error) {
 	if err != nil {
 		return nil, &Error{Kind: KindConfig, Op: "open", Err: err}
 	}
-	c := mssql.NewConnectorConfig(cfg)
-	c.Dialer = handshakeDialer{nd: net.Dialer{KeepAlive: cfg.KeepAlive}}
-	db := sql.OpenDB(c)
+	db := sql.OpenDB(newGuardedConnector(cfg, p.ConnectTimeout()))
 	db.SetMaxOpenConns(2)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxIdleTime(5 * time.Minute)
@@ -122,32 +119,4 @@ func Open(p model.Profile, password string) (*SQLStore, error) {
 func TestConnection(ctx context.Context, p model.Profile, password string) error {
 	_, err := TestConnectionInfo(ctx, p, password)
 	return err
-}
-
-// handshakeDialer bounds the whole session setup (TCP, prelogin, TLS,
-// login) by the driver's dial context. go-mssqldb v1.8.2 applies the dial
-// timeout (Profile.ConnectTimeout) to the TCP dial only and reads the
-// prelogin / login responses without a deadline, so a host that accepts
-// the connection and never answers hung TestConnection forever. The dial
-// context of go-mssqldb ends when its connect() returns (deferred cancel,
-// context.Canceled) or when the dial timeout / the caller's deadline
-// expires first (context.DeadlineExceeded); only in the latter case the
-// socket gets a past deadline, so blocked reads fail with a timeout
-// (ConnCategory "timeout"). Established sessions are not affected.
-type handshakeDialer struct{ nd net.Dialer }
-
-func (d handshakeDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	conn, err := d.nd.DialContext(ctx, network, addr)
-	if err != nil {
-		return nil, err
-	}
-	if ctx.Done() != nil {
-		go func() {
-			<-ctx.Done()
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				_ = conn.SetDeadline(time.Unix(1, 0))
-			}
-		}()
-	}
-	return conn, nil
 }

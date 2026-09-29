@@ -1,9 +1,9 @@
 package sqlcheck
 
 import (
-	"context"
 	"encoding/hex"
 	"strings"
+	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
@@ -31,23 +31,19 @@ func CounterObservations(raw []RawCounter) []model.CounterObservation {
 	return out
 }
 
-// listCounters is ListPoints in counters mode: read counters (NOLOCK),
-// apply them to the remembered state, save the state, evaluate points.
-func (b *base) listCounters(ctx context.Context, m model.Mapping) ([]model.ExchangePoint, error) {
-	raw, err := b.st.Counters(ctx, m, b.opt.MaxPoints)
-	if err != nil {
-		return nil, err
-	}
+// applyCounters is the counters-mode step of ListPoints: apply the
+// observed counters (read with NOLOCK) to the remembered state, save the
+// state, evaluate points (same order as the returned times).
+func (b *base) applyCounters(obs []model.CounterObservation, now time.Time) ([]model.CounterTimes, []model.ExchangePoint, error) {
 	prev, err := b.opt.Counters.Load(b.profile.ID)
 	if err != nil {
-		return nil, &Error{Kind: KindConfig, Op: "counters state", Err: err}
+		return nil, nil, &Error{Kind: KindConfig, Op: "counters state", Err: err}
 	}
-	now := b.opt.Now()
-	next, times := model.ApplyCounters(prev, CounterObservations(raw), now)
+	next, times := model.ApplyCounters(prev, obs, now)
 	if err := b.opt.Counters.Save(b.profile.ID, next); err != nil {
-		return nil, &Error{Kind: KindConfig, Op: "counters state", Err: err}
+		return nil, nil, &Error{Kind: KindConfig, Op: "counters state", Err: err}
 	}
-	return model.CounterPoints(b.profile.ID, times, b.opt.Settings, now), nil
+	return times, model.CounterPoints(b.profile.ID, times, b.opt.Settings, now), nil
 }
 
 // counterSampleRows: names only (counters carry no timestamps).

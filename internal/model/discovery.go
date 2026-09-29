@@ -1,6 +1,7 @@
 package model
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -41,6 +42,8 @@ const (
 	HintSampleFailed    = "sample_failed"      // SampleRows could not be read
 	HintTruncated       = "truncated"          // the discovery time budget ran out; results are partial
 	HintCounters        = "counters_fallback"  // times will be observed counter changes (baseline = service start)
+	HintCompositeRef    = "composite_ref"      // 1C composite reference _TYPE/_RTRef/_RRRef, filtered on the plan table number
+	HintByTime          = "by_time"            // DiscoverByValue: timestamps of the chosen point near the given time
 )
 
 // SampleRow is one example row of a candidate, already converted with the
@@ -67,6 +70,14 @@ type DiscoveryCandidate struct {
 	TimesSchema string `json:"timesSchema,omitempty"`
 	TimesTable  string `json:"timesTable,omitempty"`
 	LinkCol     string `json:"linkCol,omitempty"`
+	// Composite reference (LinkCol = _FldNNN_RRRef): rows are filtered on
+	// LinkTypeCol = 0x08 and LinkRTRefCol = LinkRTRef (big-endian).
+	LinkTypeCol  string `json:"linkTypeCol,omitempty"`
+	LinkRTRefCol string `json:"linkRTRefCol,omitempty"`
+	LinkRTRef    int    `json:"linkRTRef,omitempty"`
+	// PlanTable / PlanNo: the points table is the 1C exchange plan _NodeNNN.
+	PlanTable string `json:"planTable,omitempty"`
+	PlanNo    int    `json:"planNo,omitempty"`
 	// YearOffset is 0 or YearOffset1C.
 	YearOffset int        `json:"yearOffset"`
 	FreshestAt *time.Time `json:"freshestAt,omitempty"`
@@ -104,6 +115,9 @@ func (c DiscoveryCandidate) Mapping() Mapping {
 		m.TimesSchema = c.TimesSchema
 		m.TimesTable = c.TimesTable
 		m.TimesLinkColumn = c.LinkCol
+		m.TimesLinkTypeColumn = c.LinkTypeCol
+		m.TimesLinkRTRefColumn = c.LinkRTRefCol
+		m.TimesLinkRTRef = c.LinkRTRef
 	}
 	return m
 }
@@ -121,7 +135,7 @@ func (c DiscoveryCandidate) HasHint(h string) bool {
 // Key identifies the candidate's table/column choice (for de-duplication).
 func (c DiscoveryCandidate) Key() string {
 	return strings.Join([]string{string(c.Mode), c.Schema, c.Table, c.PointCol, c.PointKeyCol,
-		c.TimesSchema, c.TimesTable, c.LinkCol, c.SendCol, c.RecvCol}, "\x00")
+		c.TimesSchema, c.TimesTable, c.LinkCol, c.SendCol, c.RecvCol, c.LinkRTRefCol, strconv.Itoa(c.LinkRTRef)}, "\x00")
 }
 
 // DefaultValueToleranceMin is the default ValueQuery tolerance (1 day).
@@ -131,7 +145,13 @@ const DefaultValueToleranceMin = 24 * 60
 // known exchange point and, optionally, the approximate time of its last
 // exchange. JSON-serializable for IPC (tray -> service).
 type ValueQuery struct {
+	// PointName is the point's name or code (_Description / _Code).
 	PointName string `json:"pointName"`
+	// PointRef is the hex _IDRRef of a point picked from NodePoints
+	// (optional; wins over PointName for the time-based search).
+	PointRef string `json:"pointRef,omitempty"`
+	// PlanTable restricts the point lookup to one _NodeNNN table.
+	PlanTable string `json:"planTable,omitempty"`
 	// ApproxTime is an instant (the tray converts the UTC+3 input).
 	ApproxTime *time.Time `json:"approxTime,omitempty"`
 	// ToleranceMin: a timestamp within this distance of ApproxTime counts

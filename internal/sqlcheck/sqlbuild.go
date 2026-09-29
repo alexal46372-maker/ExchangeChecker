@@ -8,8 +8,10 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// All builders return read-only T-SQL that works on SQL Server 2005+
-// (TOP (@p1), COUNT_BIG, INFORMATION_SCHEMA, sys.partitions / sysindexes).
+// All builders return read-only T-SQL that works on SQL Server 2005+ and
+// therefore on the target server SQL Server 2008 / compatibility level 100
+// (TOP (@p1), COUNT_BIG, CASE, INFORMATION_SCHEMA, sys.partitions /
+// sysindexes); CHK-SQL-05 checks every builder with Compat2008Violations.
 // Identifiers are quoted with QuoteIdent; values (row limit, search
 // pattern, reference key) are parameters @p1, @p2. User tables are read
 // WITH (NOLOCK); catalog batches start with readUncommitted.
@@ -113,6 +115,69 @@ func LikeContains(s string) string {
 	return "%" + r.Replace(s) + "%"
 }
 
+// compositeFilter returns " WHERE [type] = @pN AND [rtref] = @pN+1" for a
+// composite reference (the values are parameters: 0x08 and the 4-byte
+// big-endian table number, see compositeArgs).
+func compositeFilter(typeCol, rtrefCol string, first int) (string, error) {
+	tc, err := quoteChecked(typeCol)
+	if err != nil {
+		return "", err
+	}
+	rc, err := quoteChecked(rtrefCol)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(" WHERE %s = @p%d AND %s = @p%d", tc, first, rc, first+1), nil
+}
+
+// compositeArgs are the parameter values of compositeFilter.
+func compositeArgs(rtref int) []interface{} {
+	return []interface{}{[]byte{model.RefTypeReference}, model.RTRefBytes(rtref)}
+}
+
+// buildCompositeSearchSQL: SELECT TOP (@p1) sel FROM t WITH (NOLOCK)
+// WHERE [type] = @p2 AND [rtref] = @p3 AND [rref] = @p4.
+func buildCompositeSearchSQL(t TableRef, selectCols []string, ref CompositeRef) (string, error) {
+	if len(selectCols) == 0 {
+		return "", errors.New("search: no columns")
+	}
+	tbl, err := t.SQL()
+	if err != nil {
+		return "", err
+	}
+	sel, err := quoteCols(selectCols)
+	if err != nil {
+		return "", err
+	}
+	where, err := compositeFilter(ref.TypeCol, ref.RTRefCol, 2)
+	if err != nil {
+		return "", err
+	}
+	rr, err := quoteChecked(ref.RRefCol)
+	if err != nil {
+		return "", err
+	}
+	return "SELECT TOP (@p1) " + strings.Join(sel, ", ") + " FROM " + tbl + noLock + where + " AND " + rr + " = @p4", nil
+}
+
+// linkStatsArgs are the parameters of buildLinkStatsSQL.
+func linkStatsArgs(q LinkQuery) []interface{} {
+	args := []interface{}{q.Limit}
+	if q.TypeCol != "" {
+		args = append(args, compositeArgs(q.RTRef)...)
+	}
+	return args
+}
+
+// pointsArgs are the parameters of buildPointsSQL.
+func pointsArgs(m model.Mapping, limit int) []interface{} {
+	args := []interface{}{limit}
+	if m.Linked() && m.Composite() {
+		args = append(args, compositeArgs(m.TimesLinkRTRef)...)
+	}
+	return args
+}
+
 // buildLinkStatsSQL confirms a link by values on a bounded sample of the
 // times table and reads MAX() of its datetime columns for linked rows.
 func buildLinkStatsSQL(q LinkQuery) (string, error) {
@@ -139,6 +204,12 @@ func buildLinkStatsSQL(q LinkQuery) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	where := ""
+	if q.TypeCol != "" {
+		if where, err = compositeFilter(q.TypeCol, q.RTRefCol, 2); err != nil {
+			return "", err
+		}
+	}
 	inner := []string{link + " AS l"}
 	aggs := []string{"COUNT_BIG(*)", "COUNT_BIG(n.k)", "COUNT_BIG(DISTINCT n.k)"}
 	for i, c := range dc {
@@ -146,7 +217,7 @@ func buildLinkStatsSQL(q LinkQuery) (string, error) {
 		aggs = append(aggs, fmt.Sprintf("MAX(CASE WHEN n.k IS NOT NULL THEN t.c%d END)", i))
 	}
 	return "SELECT " + strings.Join(aggs, ", ") +
-		"\nFROM (SELECT TOP (@p1) " + strings.Join(inner, ", ") + " FROM " + tt + noLock + ") AS t" +
+		"\nFROM (SELECT TOP (@p1) " + strings.Join(inner, ", ") + " FROM " + tt + noLock + where + ") AS t" +
 		"\nLEFT JOIN (SELECT " + key + " AS k FROM " + pt + noLock + ") AS n ON n.k = t.l", nil
 }
 
@@ -248,9 +319,16 @@ func buildPointsSQL(m model.Mapping) (string, error) {
 	if m.KeepUnlinkedPoints {
 		join = "LEFT JOIN"
 	}
+	where := ""
+	if m.Composite() {
+		// 1C composite reference: only rows referencing table TimesLinkRTRef.
+		if where, err = compositeFilter(m.TimesLinkTypeColumn, m.TimesLinkRTRefColumn, 2); err != nil {
+			return "", err
+		}
+	}
 	return "SELECT TOP (@p1) p.n, p.i, MAX(t.s), MAX(t.r)" +
 		"\nFROM (SELECT " + k + " AS k, " + n + ", " + i + " FROM " + pt + noLock + ") AS p" +
-		"\n" + join + " (SELECT " + l + " AS l, " + s + ", " + r + " FROM " + tt + noLock + ") AS t ON t.l = p.k" +
+		"\n" + join + " (SELECT " + l + " AS l, " + s + ", " + r + " FROM " + tt + noLock + where + ") AS t ON t.l = p.k" +
 		"\nGROUP BY p.k, p.n, p.i\nORDER BY p.n, p.i", nil
 }
 

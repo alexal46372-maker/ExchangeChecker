@@ -248,10 +248,15 @@ func (f *fakeStore) LinkStats(ctx context.Context, q LinkQuery) (LinkStats, erro
 	}
 	st.Max = make([]*time.Time, len(di))
 	distinct := map[string]bool{}
-	for i, r := range tt.rows {
-		if i >= q.Limit {
+	scanned := 0
+	for _, r := range tt.rows {
+		if q.TypeCol != "" && !compositeMatch(cell(tt, r, q.TypeCol), cell(tt, r, q.RTRefCol), q.RTRef) {
+			continue // WHERE [type] = 0x08 AND [rtref] = @p3 inside the TOP subquery
+		}
+		if scanned >= q.Limit {
 			break
 		}
+		scanned++
 		st.Sampled++
 		k, ok := keyOf(r[li])
 		if !ok || !keys[k] {
@@ -362,6 +367,9 @@ func (f *fakeStore) Points(ctx context.Context, m model.Mapping, limit int) ([]R
 			g := get(k, cell(pt, r, m.PointNameColumn), cell(pt, r, m.PointIDColumn))
 			g.seen = g.seen || m.KeepUnlinkedPoints
 			for _, tr := range tt.rows {
+				if m.Composite() && !compositeMatch(cell(tt, tr, m.TimesLinkTypeColumn), cell(tt, tr, m.TimesLinkRTRefColumn), m.TimesLinkRTRef) {
+					continue
+				}
 				if lk, ok := keyOf(cell(tt, tr, m.TimesLinkColumn)); ok && lk == k {
 					g.seen = true
 					g.p.Send = maxTime(g.p.Send, cell(tt, tr, m.LastSendColumn))
@@ -393,7 +401,7 @@ func likeUnescape(p string) string {
 	return strings.NewReplacer("[[]", "[", "[%]", "%", "[_]", "_").Replace(p)
 }
 
-func (f *fakeStore) search(ctx context.Context, call string, ref TableRef, sel, where []string, limit int, match func(v interface{}) bool) ([][]interface{}, error) {
+func (f *fakeStore) search(ctx context.Context, call string, ref TableRef, sel, where []string, limit int, match func(v interface{}) bool, rowMatch ...func(r []interface{}) bool) ([][]interface{}, error) {
 	if err := f.enter(ctx, call+":"+ref.Name, ref); err != nil {
 		return nil, err
 	}
@@ -413,6 +421,12 @@ func (f *fakeStore) search(ctx context.Context, call string, ref TableRef, sel, 
 	for _, r := range t.rows {
 		if len(out) >= limit {
 			break
+		}
+		if len(rowMatch) > 0 {
+			if rowMatch[0](r) {
+				out = append(out, project(r, si))
+			}
+			continue
 		}
 		for _, w := range wi {
 			if match(r[w]) {
@@ -436,6 +450,24 @@ func (f *fakeStore) SearchRef(ctx context.Context, ref TableRef, sel, refs []str
 	return f.search(ctx, "ref", ref, sel, refs, limit, func(v interface{}) bool {
 		k, ok := keyOf(v)
 		return ok && k == string(key)
+	})
+}
+
+func (f *fakeStore) SearchComposite(ctx context.Context, ref TableRef, sel []string, cr CompositeRef, key []byte, limit int) ([][]interface{}, error) {
+	if _, err := buildCompositeSearchSQL(ref, sel, cr); err != nil {
+		return nil, err
+	}
+	t, err := f.find(ref)
+	if err != nil {
+		return nil, err
+	}
+	ti, ri, ki := t.idx(cr.TypeCol), t.idx(cr.RTRefCol), t.idx(cr.RRefCol)
+	if ti < 0 || ri < 0 || ki < 0 {
+		return nil, fmt.Errorf("fake: bad composite ref %+v", cr)
+	}
+	return f.search(ctx, "composite", ref, sel, []string{cr.RRefCol}, limit, nil, func(r []interface{}) bool {
+		k, ok := keyOf(r[ki])
+		return ok && k == string(key) && compositeMatch(r[ti], r[ri], cr.RTRef)
 	})
 }
 
@@ -512,9 +544,10 @@ func fxCurrency(off int) []*fxTable {
 // but unlinked register, and the currency distractor.
 func fx1CNode(off int) []*fxTable {
 	node := fxT("dbo", "_Node123", "_IDRRef:binary(16)", "_Version:timestamp", "_Marked:binary(1)",
-		"_Code:nvarchar(9)", "_Description:nvarchar(50)", "_SentNo:numeric", "_ReceivedNo:numeric")
+		"_Code:nvarchar(9)", "_Description:nvarchar(50)", "_SentNo:numeric", "_ReceivedNo:numeric", "_PredefinedID:binary(16)")
 	for i, n := range []string{"ЦБ", "Магазин 1", "Магазин 2", "Магазин 3"} {
-		node.add(ref16(123, byte(i+1)), []byte{0, 0, 0, 0, 0, 0, 0, byte(i)}, []byte{0}, fmt.Sprintf("%03d", i), n, []byte("10"), []byte("9"))
+		node.add(ref16(123, byte(i+1)), []byte{0, 0, 0, 0, 0, 0, 0, byte(i)}, []byte{0}, fmt.Sprintf("%03d", i), n,
+			[]byte("10"), []byte("9"), predefined(i == 0))
 	}
 	times := fxT("dbo", "_InfoRg456", "_Fld457RRef:binary(16)", "_Fld458:datetime", "_Fld459:datetime", "_Fld460:numeric").
 		add(ref16(123, 2), dbAt(20*time.Minute, off), dbAt(10*time.Minute, off), []byte("1")).
@@ -526,6 +559,46 @@ func fx1CNode(off int) []*fxTable {
 	unlinked := fxT("dbo", "_InfoRg900", "_Fld901RRef:binary(16)", "_Fld902:datetime").
 		add(ref16(99, 1), dbAt(time.Minute, off))
 	return append([]*fxTable{node, times, old, unlinked}, fxCurrency(off)...)
+}
+
+// predefined returns a _PredefinedID value: non-zero for the predefined
+// "this node" row of an exchange plan.
+func predefined(this bool) []byte {
+	b := make([]byte, 16)
+	if this {
+		b[0], b[15] = 0x9a, 0x01
+	}
+	return b
+}
+
+// fx1CPlans: two standard exchange plans (customer clarification):
+// _Node123 («Основной») with the simple-ref register _InfoRg456 (from
+// fx1CNode) and _Node124 («Магазин») with the register _InfoRg600 whose
+// point dimension is a 1C 8.1 COMPOSITE reference _Fld601_TYPE /
+// _Fld601_RTRef / _Fld601_RRRef. _InfoRg600 also holds
+//   - a row with RTRef = 123 whose _RRRef equals a _Node124 key (a
+//     type-number collision that must be ignored: it is not a _Node124
+//     reference; its dates are the freshest in the table),
+//   - a row referencing the currency directory _Reference10 (RTRef 10),
+//   - a row with _TYPE = 0x01 (empty value).
+func fx1CPlans(off int) []*fxTable {
+	base := fx1CNode(off)
+	node := fxT("dbo", "_Node124", "_IDRRef:binary(16)", "_Version:timestamp", "_Marked:binary(1)",
+		"_Code:nvarchar(9)", "_Description:nvarchar(50)", "_SentNo:numeric", "_ReceivedNo:numeric", "_PredefinedID:binary(16)")
+	for i, n := range []string{"ЦБ", "Склад А", "Склад Б"} {
+		node.add(ref16(124, byte(i+1)), []byte{0, 0, 0, 0, 0, 0, 1, byte(i)}, []byte{0}, fmt.Sprintf("S%02d", i), n,
+			[]byte("5"), []byte("4"), predefined(i == 0))
+	}
+	rt := func(n int) []byte { return model.RTRefBytes(n) }
+	reg := fxT("dbo", "_InfoRg600", "_Fld601_TYPE:binary(1)", "_Fld601_RTRef:binary(4)", "_Fld601_RRRef:binary(16)",
+		"_Fld602:datetime", "_Fld603:datetime", "_Fld604:numeric").
+		add([]byte{0x08}, rt(124), ref16(124, 2), dbAt(25*time.Minute, off), dbAt(12*time.Minute, off), []byte("1")).
+		add([]byte{0x08}, rt(124), ref16(124, 3), dbAt(40*time.Minute, off), dbAt(35*time.Minute, off), []byte("1")).
+		add([]byte{0x08}, rt(124), ref16(124, 3), dbAt(3*day, off), dbAt(3*day, off), []byte("0")).
+		add([]byte{0x08}, rt(123), ref16(124, 3), dbAt(time.Minute, off), dbAt(time.Minute, off), []byte("9")).
+		add([]byte{0x08}, rt(10), ref16(10, 1), dbAt(2*time.Minute, off), dbAt(2*time.Minute, off), []byte("0")).
+		add([]byte{0x01}, rt(0), make([]byte, 16), dbAt(time.Minute, off), dbAt(time.Minute, off), []byte("0"))
+	return append(base, node, reg)
 }
 
 // fx1CCustom: fully custom configuration without exchange plans:

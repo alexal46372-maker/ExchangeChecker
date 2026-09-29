@@ -25,9 +25,20 @@ type valueMatch struct {
 // ErrEmptyPointName is returned by DiscoverByValue for an empty name.
 var ErrEmptyPointName = errors.New("point name is empty")
 
-// DiscoverByValue is the main Discovery tool for custom 1C databases
-// (CHK-SQL-02): the user types the name of a known exchange point and,
-// optionally, the approximate time of its last exchange.
+// DiscoverByValue finds mappings from a point the user knows (CHK-SQL-02).
+//
+// Primary, time-based (customer clarification): the point is picked from
+// the exchange plans (ValueQuery.PointRef = hex _IDRRef from
+// ListNodePoints, or PointName = its name / code, optionally PlanTable)
+// together with the approximate time of its last exchange (ApproxTime,
+// ToleranceMin). Datetime columns of the plan row itself and of rows in
+// other tables linked to it by a simple _FldNNNRRef or a composite
+// _TYPE/_RTRef/_RRRef reference (RTRef = plan table number) are compared
+// with ApproxTime after the year offset, in UTC+3; columns within the
+// tolerance give candidates ranked by closeness (+ _Node bonus).
+//
+// Secondary, name-based (no ApproxTime, point not in a plan table, or no
+// timestamp near the time):
 //
 //  1. The name is searched (LIKE, parameterized, literal substring) in the
 //     bounded string columns of tables with at most MaxValueRows rows
@@ -45,7 +56,14 @@ var ErrEmptyPointName = errors.New("point name is empty")
 // total time budget (partial result + model.HintTruncated).
 func DiscoverByValue(ctx context.Context, st Store, q model.ValueQuery, opt DiscoverOptions, now time.Time) ([]model.DiscoveryCandidate, error) {
 	name := strings.TrimSpace(q.PointName)
-	if name == "" {
+	var ref []byte
+	if strings.TrimSpace(q.PointRef) != "" {
+		var err error
+		if ref, err = parsePointRef(q.PointRef); err != nil {
+			return nil, &Error{Kind: KindConfig, Op: "discover by value", Err: err}
+		}
+	}
+	if name == "" && ref == nil {
 		return nil, &Error{Kind: KindConfig, Op: "discover by value", Err: ErrEmptyPointName}
 	}
 	d, cancel := newDiscoverer(ctx, st, opt, now)
@@ -54,10 +72,18 @@ func DiscoverByValue(ctx context.Context, st Store, q model.ValueQuery, opt Disc
 	if err != nil {
 		return nil, err
 	}
-	matches, err := d.searchName(tables, name)
 	var cands []model.DiscoveryCandidate
-	if err == nil {
-		err = d.followMatches(tables, matches, q, &cands)
+	// Primary: time-based search around the chosen exchange-plan point.
+	if q.ApproxTime != nil {
+		cands, _, err = d.discoverByTime(tables, q, ref)
+	}
+	// Secondary: name search across string columns of small tables.
+	if err == nil && len(cands) == 0 && name != "" {
+		var matches []valueMatch
+		matches, err = d.searchName(tables, name)
+		if err == nil {
+			err = d.followMatches(tables, matches, q, &cands)
+		}
 	}
 	if err != nil && !errors.Is(err, errBudget) {
 		return nil, err
@@ -243,10 +269,25 @@ func (d *discoverer) followMatches(tables []*tableInfo, matches []valueMatch, q 
 }
 
 // followRef searches the matched row's key in tt's reference columns.
+// A 1C 8.1 composite reference (_RRRef with _TYPE/_RTRef) counts only the
+// rows whose _TYPE = 0x08 and _RTRef = the owner table's number (another
+// table's object can have the same 16-byte key); the candidate carries the
+// composite filter so ListPoints applies it too.
 func (d *discoverer) followRef(m valueMatch, tt *tableInfo, q model.ValueQuery, out *[]model.DiscoveryCandidate) error {
 	refs := tt.refCols()
 	dates := tt.dateCols(d.opt.MaxDateColumns)
+	ownerNo := tableNo(m.t.ref.Name)
+	comps := make([]*compositeCols, len(refs))
 	sel := append(colNames(refs), colNames(dates)...)
+	typePos := make([]int, len(refs))
+	for j, rc := range refs {
+		if cc, ok := tt.compositeOf(rc); ok {
+			c := cc
+			comps[j] = &c
+			typePos[j] = len(sel)
+			sel = append(sel, cc.typeCol, cc.rtrefCol)
+		}
+	}
 	var rows [][]interface{}
 	ok, err := d.run(func(ctx context.Context) error {
 		var e error
@@ -263,6 +304,9 @@ func (d *discoverer) followRef(m valueMatch, tt *tableInfo, q model.ValueQuery, 
 		for _, r := range rows {
 			b, ok := r[j].([]byte)
 			if !ok || string(b) != string(m.key) {
+				continue
+			}
+			if comps[j] != nil && !compositeMatch(r[typePos[j]], r[typePos[j]+1], ownerNo) {
 				continue
 			}
 			hit = true
@@ -286,12 +330,21 @@ func (d *discoverer) followRef(m valueMatch, tt *tableInfo, q model.ValueQuery, 
 			PointCol: pc, PointIDCol: ic, PointKeyCol: m.t.key1C(),
 			TimesSchema: tt.ref.Schema, TimesTable: tt.ref.Name, LinkCol: rc.Name,
 			SendCol: ev.send, RecvCol: ev.recv, YearOffset: ev.offset, FreshestAt: ev.freshest,
+			PlanTable: model.PlanTableOf(m.t.ref.Name), PlanNo: model.PlanNoOf(m.t.ref.Name),
+		}
+		linkDesc := rc.Name
+		if comps[j] != nil {
+			c.LinkTypeCol, c.LinkRTRefCol, c.LinkRTRef = comps[j].typeCol, comps[j].rtrefCol, ownerNo
+			linkDesc = fmt.Sprintf("%s (composite, %s = %d)", rc.Name, comps[j].rtrefCol, ownerNo)
 		}
 		d.scoreByValue(&c, m, ev, q, model.HintLinked)
+		if comps[j] != nil {
+			c.Hints = append(c.Hints, model.HintCompositeRef)
+		}
 		if re1CInfoRg.MatchString(tt.ref.Name) {
 			c.Score += 2
 		}
-		c.Reason = fmt.Sprintf("%q found in %s.%s; linked rows in %s.%s; %s", m.value, m.t.ref, m.textCol, tt.ref, rc.Name, ev.note)
+		c.Reason = fmt.Sprintf("%q found in %s.%s; linked rows in %s.%s; %s", m.value, m.t.ref, m.textCol, tt.ref, linkDesc, ev.note)
 		*out = append(*out, c)
 	}
 	return nil
@@ -299,7 +352,7 @@ func (d *discoverer) followRef(m valueMatch, tt *tableInfo, q model.ValueQuery, 
 
 // scoreByValue: base 50, exact match +15 (substring +5), closeness to
 // ApproxTime (<= 1h +30, <= tolerance +20, <= 7 days +8) or, without a
-// time, freshness against now; series/name points; _Node bonus +10.
+// time, freshness against now; series/name points; _Node bonus +nodeBonus.
 func (d *discoverer) scoreByValue(c *model.DiscoveryCandidate, m valueMatch, ev seriesEval, q model.ValueQuery, modeHint string) {
 	c.Hints = append([]string{model.HintByValue, modeHint}, ev.hints...)
 	c.Score = 50 + ev.score
@@ -341,7 +394,7 @@ func (d *discoverer) scoreByValue(c *model.DiscoveryCandidate, m valueMatch, ev 
 		c.Score += ev.fresh
 	}
 	if re1CNode.MatchString(m.t.ref.Name) {
-		c.Score += 10
+		c.Score += nodeBonus
 		c.Hints = append(c.Hints, model.HintNodeTable)
 	}
 }

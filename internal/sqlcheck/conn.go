@@ -59,8 +59,10 @@ func driverConfig(p model.Profile, password string) (msdsn.Config, error) {
 		q.Set("encrypt", "strict")
 	default: // EncryptDefault / EncryptOptional: driver default (login-only TLS, cert not validated)
 	}
-	if p.TLSMinVersion != "" {
-		q.Set("tlsmin", p.TLSMinVersion)
+	if v := p.EffectiveTLSMinVersion(); v != "" {
+		// go-mssqldb: tlsmin "1.0" -> tls.Config.MinVersion = tls.VersionTLS10
+		// (Go 1.20 clients default to TLS 1.2 minimum).
+		q.Set("tlsmin", v)
 	}
 	var user, pass string
 	switch p.AuthMode {
@@ -120,5 +122,5 @@ func TestConnection(ctx context.Context, p model.Profile, password string) error
 		return err
 	}
 	defer st.Close()
-	return st.Ping(ctx)
+	return refineTLS(st.Ping(ctx), p)
 }

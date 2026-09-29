@@ -132,6 +132,22 @@ func CheckMapping(cols []Column, m model.Mapping) error {
 			return merr(fmt.Errorf("%w: %s.%s is %s(%d), %s.%s is %s(%d)", ErrLinkTypeMismatch,
 				ts.ref, link.Name, link.DataType, link.MaxLength, pt.ref, key.Name, key.DataType, key.MaxLength))
 		}
+		if m.Composite() {
+			// 1C composite reference: _TYPE binary(1), _RTRef binary(4)
+			for _, cc := range []struct {
+				name, role string
+				size       int
+			}{{m.TimesLinkTypeColumn, "link type (_TYPE)", 1}, {m.TimesLinkRTRefColumn, "link table number (_RTRef)", 4}} {
+				c, err := findCol(ts, cc.name, cc.role)
+				if err != nil {
+					return merr(err)
+				}
+				if c.typ() != "binary" || c.MaxLength != cc.size {
+					return merr(fmt.Errorf("%w: %s column %s.%s is %s(%d) (want binary(%d))",
+						ErrColumnType, cc.role, ts.ref, c.Name, c.DataType, c.MaxLength, cc.size))
+				}
+			}
+		}
 	}
 	n := 0
 	for _, tc := range []struct{ name, role string }{{m.LastSendColumn, "last send"}, {m.LastRecvColumn, "last recv"}} {

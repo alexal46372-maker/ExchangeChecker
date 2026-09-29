@@ -47,6 +47,46 @@ const (
 	TLSMin12      = "1.2"
 )
 
+// ServerPresetMSSQL2008 is the target-server preset of the customer: SQL
+// Server 2008 (possibly R2; treated as compatibility level 100, no 2008
+// R2-only features). Every query of the service is T-SQL of SQL 2008
+// (CHK-SQL-05). Legacy servers without the TLS 1.2 update speak TLS 1.0
+// only, while Go 1.20 clients default to TLS 1.2 minimum, so the preset
+// sets TLSMinVersion "1.0" (tls.Config.MinVersion = tls.VersionTLS10).
+const ServerPresetMSSQL2008 = "mssql2008"
+
+// ApplyServerPreset fills the connection defaults of a preset. For
+// ServerPresetMSSQL2008: TLSMinVersion "1.0" (unless set explicitly),
+// Encrypt "strict" (TDS 8.0, SQL 2022+) falls back to the driver default
+// (TLS for the login packet only, certificate not validated). Other
+// fields are kept. preset "" clears ServerPreset only.
+func (p *Profile) ApplyServerPreset(preset string) error {
+	switch preset {
+	case "":
+	case ServerPresetMSSQL2008:
+		if p.TLSMinVersion == TLSMinDefault {
+			p.TLSMinVersion = TLSMin10
+		}
+		if p.Encrypt == EncryptStrict {
+			p.Encrypt = EncryptDefault
+		}
+	default:
+		return fmt.Errorf("unknown server preset %q", preset)
+	}
+	p.ServerPreset = preset
+	return nil
+}
+
+// EffectiveTLSMinVersion is the minimum TLS version used for the
+// connection: TLSMinVersion if set, "1.0" for the SQL 2008 preset, else ""
+// (Go default: TLS 1.2 for clients in Go 1.20).
+func (p Profile) EffectiveTLSMinVersion() string {
+	if p.TLSMinVersion == TLSMinDefault && p.ServerPreset == ServerPresetMSSQL2008 {
+		return TLSMin10
+	}
+	return p.TLSMinVersion
+}
+
 // Connection timeout defaults and limits (seconds).
 const (
 	DefaultConnectTimeoutSec = 15
@@ -86,6 +126,15 @@ func (p Profile) validateConn() error {
 	default:
 		return fmt.Errorf("unsupported tlsMinVersion %q (want \"\", %q, %q or %q)",
 			p.TLSMinVersion, TLSMin10, TLSMin11, TLSMin12)
+	}
+	switch p.ServerPreset {
+	case "":
+	case ServerPresetMSSQL2008:
+		if p.Encrypt == EncryptStrict {
+			return errors.New("encrypt \"strict\" (TDS 8.0) needs SQL Server 2022+, not the \"mssql2008\" preset")
+		}
+	default:
+		return fmt.Errorf("unknown serverPreset %q (want \"\" or %q)", p.ServerPreset, ServerPresetMSSQL2008)
 	}
 	if p.ConnectTimeoutSec < 0 || p.ConnectTimeoutSec > MaxTimeoutSec {
 		return fmt.Errorf("connectTimeoutSec must be in [0..%d], got %d", MaxTimeoutSec, p.ConnectTimeoutSec)

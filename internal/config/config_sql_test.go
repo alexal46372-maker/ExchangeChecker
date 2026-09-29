@@ -47,3 +47,42 @@ func TestCHK_SQL_04_ProfilesPhase2Fields(t *testing.T) {
 		t.Error("invalid encrypt mode saved")
 	}
 }
+
+// TestCHK_SQL_04_ProfilesPhase2bFields: several exchange plans per profile
+// (mappings), composite references, plan labels and the SQL Server 2008
+// preset survive a profiles.json roundtrip; phase-2 documents still load.
+func TestCHK_SQL_04_ProfilesPhase2bFields(t *testing.T) {
+	s := newTestStore(t)
+	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ps := []model.Profile{{ID: "p1", Server: `10.0.0.5\SQL2008`, Database: "buh", AuthMode: model.AuthSQL, Login: "sa", Enabled: true,
+		ServerPreset: model.ServerPresetMSSQL2008, TLSMinVersion: model.TLSMin10,
+		Mapping: model.Mapping{Mode: model.MappingAuto, Table: "_Node123", PointNameColumn: "_Description", PointKeyColumn: "_IDRRef",
+			TimesTable: "_InfoRg456", TimesLinkColumn: "_Fld457RRef", LastSendColumn: "_Fld458", LastRecvColumn: "_Fld459",
+			YearOffset: 2000, PlanLabel: "Основной"},
+		Mappings: []model.Mapping{
+			{Mode: model.MappingAuto, Table: "_Node124", PointNameColumn: "_Description", PointKeyColumn: "_IDRRef",
+				TimesTable: "_InfoRg600", TimesLinkColumn: "_Fld601_RRRef", TimesLinkTypeColumn: "_Fld601_TYPE",
+				TimesLinkRTRefColumn: "_Fld601_RTRef", TimesLinkRTRef: 124, LastSendColumn: "_Fld602", LastRecvColumn: "_Fld603",
+				YearOffset: 2000, PlanLabel: "Магазин"},
+			{Mode: model.MappingCounters, Table: "_Node125", PointNameColumn: "_Description", PointKeyColumn: "_IDRRef"},
+		}}}
+	if err := s.SaveProfiles(ps); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LoadProfiles()
+	if err != nil || !reflect.DeepEqual(got, ps) {
+		t.Errorf("roundtrip: %+v %v", got, err)
+	}
+	bad := []model.Profile{ps[0]}
+	bad[0].Mappings = []model.Mapping{{Mode: model.MappingAuto, Table: "_Node124", PointNameColumn: "_Description",
+		LastSendColumn: "_Fld602", TimesLinkRTRef: 124}}
+	if err := s.SaveProfiles(bad); err == nil {
+		t.Error("invalid additional mapping saved")
+	}
+	bad[0].Mappings, bad[0].ServerPreset = nil, "mssql2000"
+	if err := s.SaveProfiles(bad); err == nil {
+		t.Error("unknown server preset saved")
+	}
+}

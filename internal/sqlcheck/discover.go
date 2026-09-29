@@ -206,26 +206,34 @@ type dirTable struct {
 
 // Discover searches the database for the tables/columns holding exchange
 // timestamps and returns the top-N candidates, best first (CHK-SQL-02).
-// It does not depend on 1C exchange plans (_NodeNNN is only a bonus):
+// The 1C exchange plans _NodeNNN are the PRIMARY source of points
+// (customer clarification: standard platform plans; +nodeBonus); tables
+// without plans are still covered by the lower-score universal path:
 //
 //  1. Catalog: INFORMATION_SCHEMA.COLUMNS of base tables, row counts from
 //     sys.partitions (fallback sysindexes).
-//  2. Points directories: 1C tables _Reference/_Node/_Document/_InfoRg with
-//     few rows (<= MaxDirRows) and _Description / _Code or a string column.
+//  2. Points directories: _Node tables first, then _Reference / _Document /
+//     _InfoRg with few rows (<= MaxDirRows) and _Description / _Code or a
+//     string column.
 //  3. Same-table candidates: a directory with its own datetime columns.
 //  4. Linked candidates: any 1C table with datetime columns and a
 //     binary(16) reference column whose sampled values are keys (_IDRRef)
-//     of a directory; confirmed by a bounded JOIN that also reads MAX() of
-//     the datetime columns of linked rows.
+//     of a directory: a simple _FldNNNRRef, or a 1C 8.1 composite
+//     reference _FldNNN_TYPE (0x08) / _FldNNN_RTRef (= NNN of the
+//     directory table, big-endian) / _FldNNN_RRRef, which is matched only
+//     for rows referencing that table number; confirmed by a bounded JOIN
+//     that also reads MAX() of the datetime columns of linked rows.
 //  5. Generic (non-1C names): single tables with Node/Exchange/Msg markers,
-//     datetime columns and a string point column.
-//  6. Scoring: two datetime series, MAX() close to now (after the 2000-year
+//     datetime columns and a string point column (lower base score).
+//  6. Counters fallback per _Node table (fixed score 5).
+//  7. Scoring: two datetime series, MAX() close to now (after the 2000-year
 //     offset), link quality, _Node bonus; the best RankTop candidates are
 //     then read per point through their mapping: values updated across all
 //     points and a small number of points raise the score.
 //
-// All queries are read-only (NOLOCK / READ UNCOMMITTED), bounded by TOP,
-// per-query timeouts, table caps and the total Timeout.
+// Candidates of _NodeNNN tables carry PlanTable / PlanNo. All queries are
+// read-only (NOLOCK / READ UNCOMMITTED), bounded by TOP, per-query
+// timeouts, table caps and the total Timeout.
 func Discover(ctx context.Context, st Store, opt DiscoverOptions, now time.Time) ([]model.DiscoveryCandidate, error) {
 	d, cancel := newDiscoverer(ctx, st, opt, now)
 	defer cancel()
@@ -252,8 +260,12 @@ func Discover(ctx context.Context, st Store, opt DiscoverOptions, now time.Time)
 	return out, nil
 }
 
-// top sorts by score, removes duplicates and keeps TopN.
+// top sorts by score, removes duplicates and keeps TopN. Candidates of
+// exchange-plan tables are tagged with PlanTable / PlanNo.
 func (d *discoverer) top(cands []model.DiscoveryCandidate) []model.DiscoveryCandidate {
+	for i := range cands {
+		cands[i].PlanTable, cands[i].PlanNo = model.PlanTableOf(cands[i].Table), model.PlanNoOf(cands[i].Table)
+	}
 	sort.SliceStable(cands, func(i, j int) bool {
 		if cands[i].Score != cands[j].Score {
 			return cands[i].Score > cands[j].Score
@@ -312,7 +324,7 @@ func (d *discoverer) discoverDirectories(tables []*tableInfo, out *[]model.Disco
 		}
 		if ok {
 			if dt.node {
-				c.Score += 10
+				c.Score += nodeBonus
 				c.Hints = append(c.Hints, model.HintNodeTable)
 			}
 			*out = append(*out, c)
@@ -359,10 +371,21 @@ func (d *discoverer) discoverDirectories(tables []*tableInfo, out *[]model.Disco
 	}
 	for _, tt := range times {
 		refs := tt.refCols()
+		// composite references: also sample their _TYPE / _RTRef columns
+		sel := colNames(refs)
+		comps := make([]*compositeCols, len(refs))
+		typePos := make([]int, len(refs))
+		for j, rc := range refs {
+			if cc, ok := tt.compositeOf(rc); ok {
+				comps[j] = &cc
+				typePos[j] = len(sel)
+				sel = append(sel, cc.typeCol, cc.rtrefCol)
+			}
+		}
 		var rows [][]interface{}
 		ok, err := d.run(func(ctx context.Context) error {
 			var e error
-			rows, e = d.st.SampleColumns(ctx, tt.ref, colNames(refs), d.opt.RefSampleRows)
+			rows, e = d.st.SampleColumns(ctx, tt.ref, sel, d.opt.RefSampleRows)
 			return e
 		})
 		if err != nil {
@@ -375,16 +398,22 @@ func (d *discoverer) discoverDirectories(tables []*tableInfo, out *[]model.Disco
 			hits := map[int]int{}
 			for _, r := range rows {
 				if b, ok := r[j].([]byte); ok && len(b) == 16 {
-					if owner, ok := keyOwner[string(b)]; ok {
-						hits[owner]++
+					owner, ok := keyOwner[string(b)]
+					if !ok {
+						continue
 					}
+					// composite: the row must reference the owner's table number
+					if comps[j] != nil && !compositeMatch(r[typePos[j]], r[typePos[j]+1], tableNo(dirs[owner].t.ref.Name)) {
+						continue
+					}
+					hits[owner]++
 				}
 			}
 			for di, dt := range dirs {
 				if hits[di] == 0 || dt.t == tt {
 					continue
 				}
-				c, ok, err := d.linkedCandidate(dt, keyCount[di], tt, rc)
+				c, ok, err := d.linkedCandidate(dt, keyCount[di], tt, rc, comps[j])
 				if err != nil {
 					return err
 				}
@@ -397,15 +426,19 @@ func (d *discoverer) discoverDirectories(tables []*tableInfo, out *[]model.Disco
 	return nil
 }
 
-func (d *discoverer) linkedCandidate(dt *dirTable, keys int, tt *tableInfo, link Column) (model.DiscoveryCandidate, bool, error) {
+func (d *discoverer) linkedCandidate(dt *dirTable, keys int, tt *tableInfo, link Column, comp *compositeCols) (model.DiscoveryCandidate, bool, error) {
 	dates := tt.dateCols(d.opt.MaxDateColumns)
+	lq := LinkQuery{
+		Points: dt.t.ref, KeyCol: dt.key, Times: tt.ref, LinkCol: link.Name,
+		DateCols: colNames(dates), Limit: d.opt.StatsRowLimit,
+	}
+	if comp != nil {
+		lq.TypeCol, lq.RTRefCol, lq.RTRef = comp.typeCol, comp.rtrefCol, tableNo(dt.t.ref.Name)
+	}
 	var ls LinkStats
 	ok, err := d.run(func(ctx context.Context) error {
 		var e error
-		ls, e = d.st.LinkStats(ctx, LinkQuery{
-			Points: dt.t.ref, KeyCol: dt.key, Times: tt.ref, LinkCol: link.Name,
-			DateCols: colNames(dates), Limit: d.opt.StatsRowLimit,
-		})
+		ls, e = d.st.LinkStats(ctx, lq)
 		return e
 	})
 	if err != nil || !ok || ls.Matched == 0 || ls.Sampled == 0 {
@@ -417,6 +450,7 @@ func (d *discoverer) linkedCandidate(dt *dirTable, keys int, tt *tableInfo, link
 		PointCol: dt.nameCol, PointIDCol: dt.codeCol, PointKeyCol: dt.key,
 		TimesSchema: tt.ref.Schema, TimesTable: tt.ref.Name, LinkCol: link.Name,
 		SendCol: ev.send, RecvCol: ev.recv, YearOffset: ev.offset, FreshestAt: ev.freshest,
+		LinkTypeCol: lq.TypeCol, LinkRTRefCol: lq.RTRefCol, LinkRTRef: lq.RTRef,
 	}
 	ratio := float64(ls.Matched) / float64(ls.Sampled)
 	dirRows := int64(keys)
@@ -436,12 +470,17 @@ func (d *discoverer) linkedCandidate(dt *dirTable, keys int, tt *tableInfo, link
 	}
 	c.Hints = append([]string{model.HintLinked}, ev.hints...)
 	if dt.node {
-		c.Score += 10
+		c.Score += nodeBonus
 		c.Hints = append(c.Hints, model.HintNodeTable)
+	}
+	linkDesc := link.Name
+	if comp != nil {
+		c.Hints = append(c.Hints, model.HintCompositeRef)
+		linkDesc = fmt.Sprintf("%s (composite: %s = 0x08, %s = %d)", link.Name, comp.typeCol, comp.rtrefCol, lq.RTRef)
 	}
 	c.Hints = append(c.Hints, d.sampledHint(tt.ref)...)
 	c.Reason = fmt.Sprintf("points %s (%s) linked from %s.%s: %d of %d sampled rows match, %d of %d points; %s",
-		dt.t.ref, dt.nameCol, tt.ref, link.Name, ls.Matched, ls.Sampled, ls.Points, dirRows, ev.note)
+		dt.t.ref, dt.nameCol, tt.ref, linkDesc, ls.Matched, ls.Sampled, ls.Points, dirRows, ev.note)
 	return c, true, nil
 }
 

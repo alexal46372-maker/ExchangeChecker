@@ -32,7 +32,15 @@ var itDatabases = map[string]func() []*fxTable{
 	"ec_1c_custom":     func() []*fxTable { return fx1CCustom(2000, "_Reference77") },
 	"ec_1c_dirdates":   func() []*fxTable { return fx1CDirDates(2000) },
 	"ec_generic":       fxGeneric,
+	// phase 2b: two exchange plans, composite reference (customer clarification)
+	"ec_1c_plans_off":   func() []*fxTable { return fx1CPlans(2000) },
+	"ec_1c_plans_plain": func() []*fxTable { return fx1CPlans(0) },
 }
+
+// itCompatLevel: the target server is SQL Server 2008, so every fixture
+// database runs at compatibility level 100 (CHK-SQL-05); the CI container
+// is SQL Server 2019, which still supports level 100.
+const itCompatLevel = 100
 
 var (
 	itOnce sync.Once
@@ -115,10 +123,18 @@ func itSetup(p model.Profile, pw string) error {
 			"IF DB_ID(N'" + name + "') IS NOT NULL BEGIN ALTER DATABASE " + QuoteIdent(name) +
 				" SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE " + QuoteIdent(name) + " END",
 			"CREATE DATABASE " + QuoteIdent(name) + coll,
+			"ALTER DATABASE " + QuoteIdent(name) + " SET COMPATIBILITY_LEVEL = " + strconv.Itoa(itCompatLevel),
 		} {
 			if _, err := st.DB().ExecContext(ctx, q); err != nil {
 				return fmt.Errorf("%s: %w", name, err)
 			}
+		}
+		var level int
+		if err := st.DB().QueryRowContext(ctx, "SELECT compatibility_level FROM sys.databases WHERE name = @p1", name).Scan(&level); err != nil {
+			return fmt.Errorf("%s: compatibility level: %w", name, err)
+		}
+		if level != itCompatLevel {
+			return fmt.Errorf("%s: compatibility level %d, want %d", name, level, itCompatLevel)
 		}
 		dp := p
 		dp.Database = name
@@ -448,5 +464,125 @@ func TestCHK_SQL_04_IntegrationManualMapping(t *testing.T) {
 	m.LastRecvColumn = "_Fld999"
 	if err := ValidateMapping(ctx, st, m); !errors.Is(err, ErrColumnNotFound) {
 		t.Errorf("validate: %v", err)
+	}
+}
+
+// ---- phase 2b / SQL Server 2008 target -------------------------------
+
+func TestCHK_SQL_05_IntegrationCompat100(t *testing.T) {
+	ctx := itCtx(t)
+	for db := range itDatabases {
+		st := itStore(t, db)
+		var level int
+		if err := st.DB().QueryRowContext(ctx, "SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME()").Scan(&level); err != nil || level != itCompatLevel {
+			t.Errorf("%s: compatibility level %d (%v), want %d", db, level, err, itCompatLevel)
+		}
+	}
+	// the SQL Server 2008 preset connects (TLS 1.0 allowed, the 2019 server negotiates 1.2)
+	pp, ppw := itProfile(t, "ec_1c_plans_off")
+	if err := pp.ApplyServerPreset(model.ServerPresetMSSQL2008); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []model.EncryptMode{model.EncryptDefault, model.EncryptDisable} {
+		pp.Encrypt = e
+		if err := TestConnection(ctx, pp, ppw); err != nil {
+			t.Errorf("preset, encrypt %q: %v", e, err)
+		}
+	}
+	// the level is effective: STRING_SPLIT needs level 130
+	st := itStore(t, "ec_1c_plans_off")
+	rows, err := st.DB().QueryContext(ctx, "SELECT value FROM STRING_SPLIT(N'a,b', N',')")
+	if err == nil {
+		rows.Close()
+		t.Error("STRING_SPLIT works: the database is not at compatibility level 100")
+	}
+	// the manual SQL templates run at level 100 and return the fixture data
+	for _, c := range []struct {
+		db   string
+		tpl  int
+		off  int
+		n    int
+		name string
+		recv time.Duration
+	}{
+		{"ec_1c_plans_off", 0, 2000, 3, "Магазин 1", 10 * time.Minute},
+		{"ec_1c_plans_plain", 1, 0, 2, "Склад Б", 35 * time.Minute},
+		{"ec_1c_plans_off", 1, 2000, 2, "Склад Б", 35 * time.Minute},
+		{"ec_1c_plans_off", 2, 2000, 3, "Магазин 1", 10 * time.Minute},
+		{"ec_1c_dirdates", 3, 2000, 3, "Магазин 2", 20 * time.Minute},
+	} {
+		p, pw := itProfile(t, c.db)
+		p.ServerPreset = model.ServerPresetMSSQL2008
+		p.Mapping = model.Mapping{Mode: model.MappingManual, ManualSQL: ManualSQLTemplates[c.tpl].SQL, YearOffset: c.off}
+		r, err := NewReader(p, pw, fixOpt())
+		if err != nil {
+			t.Fatal(err)
+		}
+		pts, err := r.ListPoints(ctx)
+		r.Close()
+		x := pointsByName(pts)[c.name]
+		if err != nil || len(pts) != c.n || x.LastRecv == nil || !x.LastRecv.Equal(fixNow.Add(-c.recv)) {
+			t.Errorf("template %s on %s: %v %+v", ManualSQLTemplates[c.tpl].Name, c.db, err, pts)
+		}
+	}
+}
+
+func TestCHK_SQL_02_IntegrationPlans(t *testing.T) {
+	for db, off := range map[string]int{"ec_1c_plans_off": 2000, "ec_1c_plans_plain": 0} {
+		st := itStore(t, db)
+		cands, err := Discover(itCtx(t), st, DiscoverOptions{TopN: 20}, fixNow)
+		if err != nil || len(cands) < 2 {
+			t.Fatalf("%s: %v%s", db, err, dump(cands))
+		}
+		c1, c2 := cands[0], cands[1]
+		if c1.Table != "_Node124" || c1.TimesTable != "_InfoRg600" || c1.LinkRTRef != 124 || c1.LinkTypeCol != "_Fld601_TYPE" ||
+			!c1.HasHint(model.HintCompositeRef) || c1.YearOffset != off {
+			t.Errorf("%s: composite top %+v", db, c1)
+		}
+		wantLinked(t, c2, "_Node123", "_InfoRg456", "_Fld457RRef", "_Fld458", "_Fld459", off)
+		for _, c := range cands {
+			if model.PlanTableOf(c.Table) == "" && c2.Score-c.Score < 30 {
+				t.Errorf("%s: distractor %s|%s %d vs %d", db, c.Table, c.TimesTable, c.Score, c2.Score)
+			}
+			if c.Table == "_Node123" && c.LinkTypeCol != "" {
+				t.Errorf("%s: collision candidate %+v", db, c)
+			}
+		}
+		// one profile, both plans
+		ms := model.SuggestPlanMappings(cands)
+		if len(ms) != 2 {
+			t.Fatalf("%s: suggested %+v", db, ms)
+		}
+		p, pw := itProfile(t, db)
+		p.ServerPreset = model.ServerPresetMSSQL2008
+		p.Mapping, p.Mappings = ms[1], ms[:1]
+		p.Mapping.PlanLabel, p.Mappings[0].PlanLabel = "Основной", "Магазин"
+		r, err := NewReader(p, pw, fixOpt())
+		if err != nil {
+			t.Fatal(err)
+		}
+		ps := Status(itCtx(t), r, p, fixNow)
+		r.Close()
+		m := pointsByName(ps.Points)
+		if ps.Error != "" || len(ps.Points) != 5 || m["Склад Б"].PlanLabel != "Магазин" || m["Магазин 1"].PlanTable != "_Node123" ||
+			!m["Склад Б"].LastRecv.Equal(fixNow.Add(-35*time.Minute)) || !m["Склад Б"].LastSend.Equal(fixNow.Add(-40*time.Minute)) {
+			t.Errorf("%s: multi-plan status %+v", db, ps)
+		}
+		// time-based DiscoverByValue
+		approx := fixNow.Add(-36 * time.Minute)
+		bt, err := DiscoverByValue(itCtx(t), st, model.ValueQuery{PointName: "Склад Б", ApproxTime: &approx, ToleranceMin: 30}, DiscoverOptions{}, fixNow)
+		if err != nil || len(bt) == 0 || bt[0].Table != "_Node124" || bt[0].LinkRTRef != 124 || !bt[0].HasHint(model.HintByTime) {
+			t.Errorf("%s: by time %v%s", db, err, dump(bt))
+		}
+		approx = fixNow.Add(-12 * time.Minute)
+		bt, err = DiscoverByValue(itCtx(t), st, model.ValueQuery{PointRef: hex.EncodeToString(ref16(123, 2)), ApproxTime: &approx}, DiscoverOptions{}, fixNow)
+		if err != nil || len(bt) == 0 {
+			t.Fatalf("%s: by ref %v", db, err)
+		}
+		wantLinked(t, bt[0], "_Node123", "_InfoRg456", "_Fld457RRef", "_Fld458", "_Fld459", off)
+		np, err := ListNodePoints(itCtx(t), st, DiscoverOptions{}, 0)
+		if err != nil || len(np) != 7 {
+			t.Errorf("%s: node points %v %+v", db, err, np)
+		}
 	}
 }

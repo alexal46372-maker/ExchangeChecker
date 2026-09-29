@@ -140,7 +140,7 @@ func TestCHK_SQL_02_DiscoverGenericSchema(t *testing.T) {
 func TestCHK_SQL_02_ScoringNodeBonusAndFreshness(t *testing.T) {
 	custom := discoverFx(t, newFake(fx1CCustom(2000, "_Reference77")...), DiscoverOptions{})[0]
 	node := discoverFx(t, newFake(fx1CCustom(2000, "_Node77")...), DiscoverOptions{})[0]
-	if node.Table != "_Node77" || node.Score != custom.Score+10 || !node.HasHint(model.HintNodeTable) {
+	if node.Table != "_Node77" || node.Score != custom.Score+nodeBonus || !node.HasHint(model.HintNodeTable) {
 		t.Errorf("node bonus: custom %d, node %d (%v)", custom.Score, node.Score, node.Hints)
 	}
 	// Same data 40 days older: freshness and per-point signals drop.

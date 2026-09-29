@@ -26,6 +26,12 @@ type ExchangePoint struct {
 	// start" instead of an exact time.
 	SendBaseline bool `json:"sendBaseline,omitempty"`
 	RecvBaseline bool `json:"recvBaseline,omitempty"`
+	// PlanTable / PlanNo tag a point read through a 1C exchange-plan table
+	// (_NodeNNN, NNN); PlanLabel is the mapping's user label. Empty for
+	// non-plan mappings.
+	PlanTable string `json:"planTable,omitempty"`
+	PlanNo    int    `json:"planNo,omitempty"`
+	PlanLabel string `json:"planLabel,omitempty"`
 }
 
 // FreshAt returns the later of LastSend / LastRecv in DBZone; NULLs are ignored.
@@ -100,7 +106,10 @@ type ProfileStatus struct {
 	Name      string          `json:"name"`
 	Points    []ExchangePoint `json:"points"`
 	// Error is a connection/query error; a non-empty Error means LevelError.
-	Error     string    `json:"error,omitempty"`
+	Error string `json:"error,omitempty"`
+	// ErrorKey is the localizable message key of Error (e.g.
+	// "sql.tls_enable_tls10"), empty when there is none.
+	ErrorKey  string    `json:"errorKey,omitempty"`
 	CheckedAt time.Time `json:"checkedAt"`
 }
 

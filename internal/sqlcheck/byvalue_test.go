@@ -77,7 +77,7 @@ func TestCHK_SQL_02_DiscoverByValueScoring(t *testing.T) {
 		t.Error("Tolerance")
 	}
 	node := byValue(t, newFake(fx1CCustom(2000, "_Node77")...), model.ValueQuery{PointName: "Магазин 2"}, DiscoverOptions{})[0]
-	if node.Score != exact.Score+10 || !node.HasHint(model.HintNodeTable) {
+	if node.Score != exact.Score+nodeBonus || !node.HasHint(model.HintNodeTable) {
 		t.Errorf("node bonus %d vs %d", node.Score, exact.Score)
 	}
 }

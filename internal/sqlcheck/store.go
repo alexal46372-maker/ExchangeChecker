@@ -60,6 +60,21 @@ type LinkQuery struct {
 	LinkCol  string
 	DateCols []string
 	Limit    int // rows of Times scanned (TOP)
+	// Composite reference: when TypeCol is set, only Times rows with
+	// TypeCol = 0x08 and RTRefCol = RTRef (4-byte big-endian) are scanned.
+	TypeCol  string
+	RTRefCol string
+	RTRef    int
+}
+
+// CompositeRef is a 1C 8.1 composite reference column group:
+// RRefCol (_FldNNN_RRRef) = key AND TypeCol (_FldNNN_TYPE) = 0x08 AND
+// RTRefCol (_FldNNN_RTRef) = RTRef.
+type CompositeRef struct {
+	RRefCol  string
+	TypeCol  string
+	RTRefCol string
+	RTRef    int
 }
 
 // LinkStats is the result of a LinkQuery. Max values are naive database
@@ -129,6 +144,9 @@ type Store interface {
 	// SearchRef returns up to limit rows (selectCols) of t where any of
 	// refCols equals key (DiscoverByValue, linked rows).
 	SearchRef(ctx context.Context, t TableRef, selectCols, refCols []string, key []byte, limit int) ([][]interface{}, error)
+	// SearchComposite returns up to limit rows (selectCols) of t whose
+	// composite reference points to key in table number ref.RTRef.
+	SearchComposite(ctx context.Context, t TableRef, selectCols []string, ref CompositeRef, key []byte, limit int) ([][]interface{}, error)
 	// Counters reads the message counters of a counters-mode mapping.
 	Counters(ctx context.Context, m model.Mapping, limit int) ([]RawCounter, error)
 	// ManualPoints runs a validated manual SQL (point, last send, last recv).

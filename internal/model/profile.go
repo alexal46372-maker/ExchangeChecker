@@ -54,6 +54,13 @@ type Mapping struct {
 	TimesSchema     string `json:"timesSchema,omitempty"` // "" = Schema
 	TimesTable      string `json:"timesTable,omitempty"`
 	TimesLinkColumn string `json:"timesLinkColumn,omitempty"`
+	// Composite 1C reference (8.1): TimesLinkColumn is _FldNNN_RRRef,
+	// TimesLinkTypeColumn _FldNNN_TYPE (binary(1), 0x08 = reference),
+	// TimesLinkRTRefColumn _FldNNN_RTRef (binary(4), big-endian table
+	// number) and TimesLinkRTRef the expected table number (NNN of _NodeNNN).
+	TimesLinkTypeColumn  string `json:"timesLinkTypeColumn,omitempty"`
+	TimesLinkRTRefColumn string `json:"timesLinkRTRefColumn,omitempty"`
+	TimesLinkRTRef       int    `json:"timesLinkRTRef,omitempty"`
 	// KeepUnlinkedPoints lists points without a row in TimesTable (as
 	// no_timestamps errors) instead of skipping them (LEFT vs INNER JOIN).
 	KeepUnlinkedPoints bool   `json:"keepUnlinkedPoints,omitempty"`
@@ -66,6 +73,9 @@ type Mapping struct {
 	// counters mode (default _SentNo / _ReceivedNo).
 	SentNoColumn     string `json:"sentNoColumn,omitempty"`
 	ReceivedNoColumn string `json:"receivedNoColumn,omitempty"`
+	// PlanLabel is an optional user-editable label of the exchange plan
+	// (e.g. «Основной», «Магазин»); empty by default, filled by the tray.
+	PlanLabel string `json:"planLabel,omitempty"`
 	// ManualSQL is the fallback query for non-standard databases. It must
 	// return point name, last send, last recv (validated in phase 2).
 	ManualSQL string `json:"manualSql,omitempty"`
@@ -97,6 +107,9 @@ func (m Mapping) Validate() error {
 	if err := m.validateCounters(); err != nil {
 		return err
 	}
+	if err := m.validateComposite(); err != nil {
+		return err
+	}
 	if m.Mode == MappingManual && !m.Configured() {
 		return errors.New("mapping: manual mode requires a table mapping or manual SQL")
 	}
@@ -118,13 +131,20 @@ type Profile struct {
 	HasPassword bool     `json:"hasPassword,omitempty"`
 	Enabled     bool     `json:"enabled"`
 	Mapping     Mapping  `json:"mapping"`
+	// Mappings are additional mappings of the same database, e.g. one per
+	// exchange-plan table (_Node123, _Node124); points of all mappings are
+	// listed together, tagged with their plan table (see AllMappings).
+	Mappings []Mapping `json:"mappings,omitempty"`
 
 	// Connection options (phase 2, all optional; see sqlprofile.go).
 	// Encrypt "" keeps the driver default (TLS for the login packet only).
 	Encrypt         EncryptMode `json:"encrypt,omitempty"`
 	TrustServerCert bool        `json:"trustServerCert,omitempty"`
 	// TLSMinVersion is "", "1.0", "1.1" or "1.2" ("1.0" for SQL 2005/2008).
-	TLSMinVersion     string `json:"tlsMinVersion,omitempty"`
+	TLSMinVersion string `json:"tlsMinVersion,omitempty"`
+	// ServerPreset is "" or ServerPresetMSSQL2008 (target server SQL
+	// Server 2008 / compatibility level 100, see ApplyServerPreset).
+	ServerPreset      string `json:"serverPreset,omitempty"`
 	ConnectTimeoutSec int    `json:"connectTimeoutSec,omitempty"`
 	QueryTimeoutSec   int    `json:"queryTimeoutSec,omitempty"`
 }
@@ -169,6 +189,9 @@ func (p Profile) Validate() error {
 		return fmt.Errorf("profile %q: %w", p.ID, err)
 	}
 	if err := p.Mapping.Validate(); err != nil {
+		return fmt.Errorf("profile %q: %w", p.ID, err)
+	}
+	if err := p.validateMappings(); err != nil {
 		return fmt.Errorf("profile %q: %w", p.ID, err)
 	}
 	return nil

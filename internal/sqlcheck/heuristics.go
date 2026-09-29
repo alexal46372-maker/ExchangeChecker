@@ -19,7 +19,67 @@ var (
 	re1CDirectory = regexp.MustCompile(`(?i)^_(Reference|Node|Document|InfoRg)[0-9]+$`)
 	re1CNode      = regexp.MustCompile(`(?i)^_Node[0-9]+$`)
 	re1CInfoRg    = regexp.MustCompile(`(?i)^_InfoRg[0-9]+`)
+	// re1CTableNo: object tables whose number is the RTRef type number.
+	re1CTableNo = regexp.MustCompile(`(?i)^_(Node|Reference|Document)([0-9]+)$`)
 )
+
+// nodeBonus is added to every candidate whose points table is a 1C
+// exchange plan _NodeNNN: the plans are the PRIMARY source of points
+// (customer clarification, PLAN.md §12), so their candidates must clearly
+// outrank generic / currency-like distractors.
+const nodeBonus = 40
+
+// tableNo returns the type number NNN of _NodeNNN / _ReferenceNNN /
+// _DocumentNNN (the value stored in composite _RTRef columns), else 0.
+func tableNo(name string) int {
+	m := re1CTableNo.FindStringSubmatch(name)
+	if m == nil {
+		return 0
+	}
+	n := 0
+	for _, r := range m[2] {
+		n = n*10 + int(r-'0')
+		if n > model.MaxRTRef {
+			return 0
+		}
+	}
+	return n
+}
+
+// compositeCols are the sibling columns of a composite _FldNNN_RRRef.
+type compositeCols struct {
+	typeCol  string // _FldNNN_TYPE, binary(1)
+	rtrefCol string // _FldNNN_RTRef, binary(4)
+}
+
+// compositeOf reports whether binary(16) column c is the _RRRef part of a
+// 1C 8.1 composite reference with _TYPE (binary(1)) and _RTRef
+// (binary(4)) siblings.
+func (t *tableInfo) compositeOf(c Column) (compositeCols, bool) {
+	const suffix = "_rrref"
+	if !c.IsRef16() || len(c.Name) <= len(suffix) || strings.ToLower(c.Name[len(c.Name)-len(suffix):]) != suffix {
+		return compositeCols{}, false
+	}
+	prefix := c.Name[:len(c.Name)-len(suffix)]
+	tc, ok1 := t.find(prefix + "_TYPE")
+	rc, ok2 := t.find(prefix + "_RTRef")
+	if !ok1 || !ok2 || tc.typ() != "binary" || tc.MaxLength != 1 || rc.typ() != "binary" || rc.MaxLength != 4 {
+		return compositeCols{}, false
+	}
+	return compositeCols{typeCol: tc.Name, rtrefCol: rc.Name}, true
+}
+
+// compositeMatch reports whether a sampled (_TYPE, _RTRef) pair is a
+// reference to table number no.
+func compositeMatch(typ, rtref interface{}, no int) bool {
+	tb, ok := typ.([]byte)
+	if !ok || len(tb) != 1 || tb[0] != model.RefTypeReference || no <= 0 {
+		return false
+	}
+	rb, _ := rtref.([]byte)
+	n, ok := model.RTRefValue(rb)
+	return ok && n == no
+}
 
 // 1C storage column names.
 const (

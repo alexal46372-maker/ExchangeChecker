@@ -130,6 +130,16 @@ func (s *SQLStore) SearchRef(ctx context.Context, t TableRef, selectCols, refCol
 	return s.valueRows(ctx, "search ref "+t.String(), q, len(selectCols), limit, key)
 }
 
+// SearchComposite implements Store.
+func (s *SQLStore) SearchComposite(ctx context.Context, t TableRef, selectCols []string, ref CompositeRef, key []byte, limit int) ([][]interface{}, error) {
+	q, err := buildCompositeSearchSQL(t, selectCols, ref)
+	if err != nil {
+		return nil, &Error{Kind: KindMapping, Op: "search composite ref", Err: err}
+	}
+	args := append(compositeArgs(ref.RTRef), key)
+	return s.valueRows(ctx, "search composite ref "+t.String(), q, len(selectCols), limit, args...)
+}
+
 // valueRows runs q with @p1 = limit (+ extra parameters) and scans ncols
 // driver values per row.
 func (s *SQLStore) valueRows(ctx context.Context, op, q string, ncols, limit int, extra ...interface{}) ([][]interface{}, error) {
@@ -187,7 +197,7 @@ func (s *SQLStore) LinkStats(ctx context.Context, q LinkQuery) (LinkStats, error
 	defer cancel()
 	nt, ptrs := nullTimes(len(q.DateCols))
 	dest := append([]interface{}{&st.Sampled, &st.Matched, &st.Points}, ptrs...)
-	if err := s.db.QueryRowContext(ctx, query, q.Limit).Scan(dest...); err != nil {
+	if err := s.db.QueryRowContext(ctx, query, linkStatsArgs(q)...).Scan(dest...); err != nil {
 		return st, classify("link stats "+q.Times.String(), err, false)
 	}
 	st.Max = timePtrs(nt)
@@ -220,7 +230,7 @@ func (s *SQLStore) Points(ctx context.Context, m model.Mapping, limit int) ([]Ra
 	}
 	ctx, cancel := s.qctx(ctx)
 	defer cancel()
-	rows, err := s.db.QueryContext(ctx, query, limit)
+	rows, err := s.db.QueryContext(ctx, query, pointsArgs(m, limit)...)
 	if err != nil {
 		return nil, classify("points", err, false)
 	}

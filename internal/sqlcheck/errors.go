@@ -31,10 +31,17 @@ type Error struct {
 	Kind ErrorKind
 	Op   string
 	Err  error
+	// Key is an optional localizable message key (messages.go), e.g.
+	// MsgTLSEnableTLS10 for a TLS handshake failure.
+	Key string
 }
 
 func (e *Error) Error() string {
-	return "sqlcheck: " + e.Op + " (" + string(e.Kind) + "): " + e.Err.Error()
+	s := "sqlcheck: " + e.Op + " (" + string(e.Kind) + "): " + e.Err.Error()
+	if e.Key != "" {
+		s += " [" + e.Key + "]"
+	}
+	return s
 }
 
 func (e *Error) Unwrap() error { return e.Err }
@@ -77,6 +84,10 @@ func classify(op string, err error, connPhase bool) error {
 	var e *Error
 	if errors.As(err, &e) {
 		return err
+	}
+	if key := tlsKey(err); key != "" {
+		// TLS handshake of a new session: always a connection problem.
+		return &Error{Kind: KindConn, Op: op, Err: err, Key: key}
 	}
 	kind := KindQuery
 	var ne net.Error

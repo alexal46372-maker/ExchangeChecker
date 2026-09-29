@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 )
 
 // ErrNotService is returned by Run when the process was not started by
@@ -32,6 +33,10 @@ const (
 	// StartWaitHint / StopWaitHint: SCM wait hints (ms).
 	StartWaitHint = 10000
 	StopWaitHint  = 30000
+	// StopCheckpointEvery: while the service function is still stopping,
+	// STOP_PENDING is re-reported with CheckPoint+1 this often, well
+	// within StopWaitHint, so the SCM sees progress (CHK-MON-14).
+	StopCheckpointEvery = 2 * time.Second
 )
 
 // Status is SERVICE_STATUS.
@@ -52,10 +57,13 @@ type controller struct {
 	st     Status
 	cancel context.CancelFunc
 	set    func(Status) error // SetServiceStatus
+	// every is the STOP_PENDING progress period (tests shorten it).
+	every time.Duration
 }
 
 func newController(set func(Status) error) *controller {
-	return &controller{st: Status{ServiceType: ServiceWin32OwnProcess, CurrentState: StateStopped}, set: set}
+	return &controller{st: Status{ServiceType: ServiceWin32OwnProcess, CurrentState: StateStopped}, set: set,
+		every: StopCheckpointEvery}
 }
 
 func (c *controller) report(state, accepts, waitHint uint32) {
@@ -118,7 +126,18 @@ func (c *controller) serve(fn func(ctx context.Context) error) error {
 		errc <- fn(ctx)
 	}()
 	c.report(StateRunning, AcceptStop|AcceptShutdown, 0)
-	err := <-errc
+	tick := time.NewTicker(c.every)
+	var err error
+wait:
+	for {
+		select {
+		case err = <-errc:
+			break wait
+		case <-tick.C:
+			c.stopProgress()
+		}
+	}
+	tick.Stop()
 	cancel()
 	c.mu.Lock()
 	if err != nil {
@@ -127,6 +146,16 @@ func (c *controller) serve(fn func(ctx context.Context) error) error {
 	c.reportLocked(StateStopped, 0, 0)
 	c.mu.Unlock()
 	return err
+}
+
+// stopProgress re-reports STOP_PENDING with the next CheckPoint while the
+// stop is in progress (no-op in any other state).
+func (c *controller) stopProgress() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.st.CurrentState == StateStopPending {
+		c.reportLocked(StateStopPending, 0, StopWaitHint)
+	}
 }
 
 // state returns the last reported status (tests).

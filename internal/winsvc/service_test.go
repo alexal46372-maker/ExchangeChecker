@@ -138,3 +138,63 @@ func TestCHK_MON_07_RunOutsideSCM(t *testing.T) {
 		t.Error("service function must not run outside the SCM")
 	}
 }
+
+// TestCHK_MON_14_StopPendingCheckpoints — while the service function is
+// still stopping, STOP_PENDING is re-reported with a strictly increasing
+// CheckPoint (and the wait hint) until STOPPED.
+func TestCHK_MON_14_StopPendingCheckpoints(t *testing.T) {
+	if StopCheckpointEvery*3 > StopWaitHint*time.Millisecond {
+		t.Fatalf("checkpoint period %s too long for wait hint %d ms", StopCheckpointEvery, StopWaitHint)
+	}
+	r := &recorder{}
+	c := newController(r.set)
+	c.every = 20 * time.Millisecond
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- c.serve(func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			time.Sleep(250 * time.Millisecond) // slow cleanup
+			return nil
+		})
+	}()
+	<-started
+	deadline := time.Now().Add(5 * time.Second)
+	for c.state().CurrentState != StateRunning {
+		if time.Now().After(deadline) {
+			t.Fatal("not running")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(60 * time.Millisecond) // ticks while RUNNING report nothing
+	nRunning := len(r.states())
+	c.control(ControlStop)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	got := append([]Status(nil), r.got[nRunning:]...)
+	r.mu.Unlock()
+	var cps []uint32
+	for _, s := range got[:len(got)-1] {
+		if s.CurrentState != StateStopPending || s.WaitHint != StopWaitHint {
+			t.Fatalf("during stop: %+v", s)
+		}
+		cps = append(cps, s.CheckPoint)
+	}
+	if len(cps) < 4 {
+		t.Fatalf("only %d STOP_PENDING reports in 250 ms: %v", len(cps), cps)
+	}
+	for i := 1; i < len(cps); i++ {
+		if cps[i] != cps[i-1]+1 {
+			t.Fatalf("checkpoints not increasing: %v", cps)
+		}
+	}
+	if last := got[len(got)-1]; last.CurrentState != StateStopped || last.CheckPoint != 0 {
+		t.Errorf("final %+v", last)
+	}
+	if nRunning != 2 {
+		t.Errorf("reports before stop: %v", r.states()[:nRunning])
+	}
+}

@@ -54,9 +54,7 @@ func (l *EventLog) Report(eventType uint16, eventID uint32, msg string) error {
 	if l.h == 0 {
 		return errors.New("winapi: event log closed")
 	}
-	if len(msg) > 31000 { // ReportEventW: each string <= 31839 chars
-		msg = msg[:31000]
-	}
+	msg = TruncateUTF8(msg, EventLogMaxBytes) // rune boundary (CHK-MON-15)
 	s, err := syscall.UTF16PtrFromString(sanitizeNUL(msg))
 	if err != nil {
 		return err

@@ -55,7 +55,14 @@ type Server struct {
 	IdleTimeout time.Duration // no request at all
 	// Accept failure backoff / log period (defaults AcceptBackoff*,
 	// AcceptLogEvery; tests shorten them).
+	// Zero values mean the defaults, also for a Server built without
+	// NewServer.
 	BackoffMin, BackoffMax, LogEvery time.Duration
+
+	// clock of the accept loop (tests inject fakes; nil = time.Now /
+	// time.After)
+	now   func() time.Time
+	after func(time.Duration) <-chan time.Time
 
 	mu     sync.Mutex
 	l      Listener
@@ -121,9 +128,30 @@ const (
 	AcceptLogEvery   = 10 * time.Minute
 )
 
+// initLocked fills what NewServer would have set, so a Server literal
+// works too (s.mu held).
+func (s *Server) initLocked() {
+	if s.Log == nil {
+		s.Log = nopLogger{}
+	}
+	if s.conns == nil {
+		s.conns = map[*conn]struct{}{}
+	}
+	if s.stop == nil {
+		s.stop = make(chan struct{})
+	}
+	if s.now == nil {
+		s.now = time.Now
+	}
+	if s.after == nil {
+		s.after = time.After
+	}
+}
+
 // Serve accepts clients until Close; it returns nil after Close.
 func (s *Server) Serve(l Listener) error {
 	s.mu.Lock()
+	s.initLocked()
 	if s.closed {
 		s.mu.Unlock()
 		_ = l.Close()
@@ -159,7 +187,7 @@ func (s *Server) Serve(l Listener) error {
 				return nil
 			}
 			select {
-			case <-time.After(fail.next(s, err)):
+			case <-s.after(fail.next(s, err)):
 				continue
 			case <-s.stop:
 				return nil
@@ -187,7 +215,8 @@ type acceptFailures struct {
 	delay      time.Duration
 	lastMsg    string
 	lastLog    time.Time
-	suppressed int
+	suppressed int // repeats not logged since the last log line
+	skipped    int // repeats not logged in the whole failure series
 }
 
 // next records a failure, logs it (rate-limited) and returns the pause
@@ -197,8 +226,14 @@ func (f *acceptFailures) next(s *Server, err error) time.Duration {
 	if min <= 0 {
 		min = AcceptBackoffMin
 	}
+	if max <= 0 {
+		max = AcceptBackoffMax
+	}
 	if max < min {
 		max = min
+	}
+	if every <= 0 {
+		every = AcceptLogEvery
 	}
 	f.n++
 	if f.delay == 0 {
@@ -206,7 +241,7 @@ func (f *acceptFailures) next(s *Server, err error) time.Duration {
 	} else if f.delay *= 2; f.delay > max {
 		f.delay = max
 	}
-	now := time.Now()
+	now := s.now()
 	msg := err.Error()
 	if msg != f.lastMsg || now.Sub(f.lastLog) >= every {
 		if f.suppressed > 0 {
@@ -217,6 +252,7 @@ func (f *acceptFailures) next(s *Server, err error) time.Duration {
 		f.lastMsg, f.lastLog, f.suppressed = msg, now, 0
 	} else {
 		f.suppressed++
+		f.skipped++
 	}
 	return f.delay
 }
@@ -224,7 +260,7 @@ func (f *acceptFailures) next(s *Server, err error) time.Duration {
 // ok resets the state after a successful Accept.
 func (f *acceptFailures) ok(s *Server) {
 	if f.n > 0 {
-		s.Log.Printf("ipc: accept works again after %d failure(s)", f.n)
+		s.Log.Printf("ipc: accept works again after %d failure(s), %d of them not logged", f.n, f.skipped)
 	}
 	*f = acceptFailures{}
 }
@@ -385,6 +421,7 @@ func (s *Server) Close() error {
 		s.mu.Unlock()
 		return nil
 	}
+	s.initLocked()
 	s.closed = true
 	close(s.stop)
 	l := s.l

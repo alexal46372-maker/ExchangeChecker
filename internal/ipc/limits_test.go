@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -290,85 +291,135 @@ func TestCHK_MON_12_CoalescedReply(t *testing.T) {
 	}
 }
 
-// flakyListener fails Accept until healed, recording attempt times.
+// flakyListener fails the first failN Accept calls, then serves.
 type flakyListener struct {
 	*MemListener
 	mu    sync.Mutex
-	times []time.Time
-	heal  bool
+	n     int
+	failN int
 }
 
 func (l *flakyListener) Accept() (io.ReadWriteCloser, error) {
 	l.mu.Lock()
-	l.times = append(l.times, time.Now())
-	heal := l.heal
+	l.n++
+	fail := l.n <= l.failN
 	l.mu.Unlock()
-	if !heal {
+	if fail {
 		return nil, errors.New("CreateNamedPipe: All pipe instances are busy")
 	}
 	return l.MemListener.Accept()
 }
 
-func (l *flakyListener) attempts() []time.Time {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return append([]time.Time(nil), l.times...)
+// fakeTimer is the accept loop's injected clock: after() records the
+// requested pause, advances the fake time by it and fires at once, so
+// the test does not depend on real sleeps.
+type fakeTimer struct {
+	mu     sync.Mutex
+	now    time.Time
+	delays []time.Duration
 }
 
-// TestCHK_MON_11_AcceptBackoff — a persistent Accept failure is retried
-// with exponential backoff (capped) and logged once instead of every
-// attempt; after it heals clients are accepted and the backoff resets.
-func TestCHK_MON_11_AcceptBackoff(t *testing.T) {
-	if AcceptBackoffMin != 200*time.Millisecond || AcceptBackoffMax < 10*time.Second {
-		t.Fatalf("defaults %s / %s", AcceptBackoffMin, AcceptBackoffMax)
-	}
-	lg := &testLog{}
-	l := &flakyListener{MemListener: NewMemListener()}
-	srv := NewServer(&fakeHandler{snap: testSnapshot()}, lg)
-	srv.BackoffMin, srv.BackoffMax = 10*time.Millisecond, 80*time.Millisecond
-	go srv.Serve(l)
-	defer srv.Close()
-	time.Sleep(600 * time.Millisecond)
-	at := l.attempts()
-	// 10+20+40+80+80+... ms: about 9 attempts in 600 ms (fixed 10 ms: 60)
-	if len(at) < 5 || len(at) > 14 {
-		t.Errorf("attempts in 600 ms: %d", len(at))
-	}
-	var gaps []time.Duration
-	for i := 1; i < len(at); i++ {
-		gaps = append(gaps, at[i].Sub(at[i-1]))
-	}
-	if len(gaps) >= 4 && !(gaps[3] > gaps[0]*3) {
-		t.Errorf("backoff not growing: %v", gaps)
-	}
-	if last := gaps[len(gaps)-1]; last > 200*time.Millisecond {
-		t.Errorf("backoff above the cap: %s", last)
-	}
+func (f *fakeTimer) Now() time.Time { f.mu.Lock(); defer f.mu.Unlock(); return f.now }
+func (f *fakeTimer) After(d time.Duration) <-chan time.Time {
+	f.mu.Lock()
+	f.delays = append(f.delays, d)
+	f.now = f.now.Add(d)
+	now := f.now
+	f.mu.Unlock()
+	ch := make(chan time.Time, 1)
+	ch <- now
+	return ch
+}
+
+func (f *fakeTimer) Delays() []time.Duration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]time.Duration(nil), f.delays...)
+}
+
+func acceptLines(lg *testLog) (n int) {
 	lg.mu.Lock()
-	n := 0
+	defer lg.mu.Unlock()
 	for _, s := range lg.lines {
 		if strings.Contains(s, "ipc: accept:") {
 			n++
 		}
 	}
-	lg.mu.Unlock()
-	if n != 1 {
-		t.Errorf("accept failure logged %d times, want 1: %v", n, lg.lines)
+	return n
+}
+
+func waitLog(t *testing.T, lg *testLog, sub string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !lg.has(sub) {
+		if time.Now().After(deadline) {
+			t.Fatalf("log line %q missing: %v", sub, lg.lines)
+		}
+		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 	}
-	l.mu.Lock()
-	l.heal = true
-	l.mu.Unlock()
-	rw, err := l.Dial()
+}
+
+// TestCHK_MON_11_AcceptBackoff — a persistent Accept failure is retried
+// with exponential backoff capped at BackoffMax and logged once (a Server
+// literal without NewServer uses the default LogEvery); after it heals
+// the client is accepted and the recovery line reports the number of
+// failures and of unlogged repeats. With a short LogEvery the failure is
+// logged again periodically. Fake clock: no timing assumptions.
+func TestCHK_MON_11_AcceptBackoff(t *testing.T) {
+	if AcceptBackoffMin != 200*time.Millisecond || AcceptBackoffMax < 10*time.Second || AcceptLogEvery != 10*time.Minute {
+		t.Fatalf("defaults %s / %s / %s", AcceptBackoffMin, AcceptBackoffMax, AcceptLogEvery)
+	}
+	const failN = 12
+	lg := &testLog{}
+	ft := &fakeTimer{now: time.Date(2026, 9, 29, 12, 0, 0, 0, model.DBZone)}
+	l := &flakyListener{MemListener: NewMemListener(), failN: failN}
+	srv := &Server{H: &fakeHandler{snap: testSnapshot()}, Log: lg, // no NewServer: LogEvery etc. zero
+		BackoffMin: 10 * time.Millisecond, BackoffMax: 80 * time.Millisecond, now: ft.Now, after: ft.After}
+	go srv.Serve(l)
+	defer srv.Close()
+	rw, err := l.Dial() // accepted after the failN failures
 	if err != nil {
 		t.Fatal(err)
 	}
 	readHello(t, rw)
 	rw.Close()
-	deadline := time.Now().Add(5 * time.Second)
-	for !lg.has("accept works again") {
-		if time.Now().After(deadline) {
-			t.Fatalf("recovery not logged: %v", lg.lines)
+	waitLog(t, lg, "accept works again")
+	want := []time.Duration{10, 20, 40, 80, 80, 80, 80, 80, 80, 80, 80, 80}
+	got := ft.Delays()
+	if len(got) != len(want) {
+		t.Fatalf("delays %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i]*time.Millisecond {
+			t.Fatalf("delays %v, want %v ms", got, want)
 		}
-		time.Sleep(5 * time.Millisecond)
+	}
+	if n := acceptLines(lg); n != 1 {
+		t.Errorf("failure logged %d times, want 1: %v", n, lg.lines)
+	}
+	if !lg.has(fmt.Sprintf("after %d failure(s), %d of them not logged", failN, failN-1)) {
+		t.Errorf("recovery line: %v", lg.lines)
+	}
+
+	// short LogEvery: repeated periodically with the suppressed count
+	lg2 := &testLog{}
+	ft2 := &fakeTimer{now: ft.Now()}
+	l2 := &flakyListener{MemListener: NewMemListener(), failN: failN}
+	srv2 := &Server{H: &fakeHandler{snap: testSnapshot()}, Log: lg2, BackoffMin: 10 * time.Millisecond,
+		BackoffMax: 80 * time.Millisecond, LogEvery: 200 * time.Millisecond, now: ft2.Now, after: ft2.After}
+	go srv2.Serve(l2)
+	defer srv2.Close()
+	rw2, err := l2.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	readHello(t, rw2)
+	rw2.Close()
+	waitLog(t, lg2, "accept works again")
+	// failures at fake t = 0,10,30,70,150,230,310,390,470,550,630,710 ms:
+	// logged at 0, 230, 470, 710 (>= 200 ms apart)
+	if n := acceptLines(lg2); n != 4 || !lg2.has("repeat(s) not logged") {
+		t.Errorf("periodic log: %d lines %v", n, lg2.lines)
 	}
 }

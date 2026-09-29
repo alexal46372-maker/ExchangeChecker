@@ -67,11 +67,15 @@ type controller struct {
 	every   time.Duration
 	maxStop time.Duration
 	stopAt  time.Time
+	// now / ticks: clock and progress ticker (tests inject both; nil =
+	// time.Now / a time.Ticker with period every).
+	now   func() time.Time
+	ticks <-chan time.Time
 }
 
 func newController(set func(Status) error) *controller {
 	return &controller{st: Status{ServiceType: ServiceWin32OwnProcess, CurrentState: StateStopped}, set: set,
-		every: StopCheckpointEvery, maxStop: StopCheckpointMax}
+		every: StopCheckpointEvery, maxStop: StopCheckpointMax, now: time.Now}
 }
 
 func (c *controller) report(state, accepts, waitHint uint32) {
@@ -100,7 +104,7 @@ func (c *controller) control(code uint32) uint32 {
 	switch code {
 	case ControlStop, ControlShutdown:
 		if c.st.CurrentState == StateRunning || c.st.CurrentState == StateStartPending {
-			c.stopAt = time.Now()
+			c.stopAt = c.now()
 			c.reportLocked(StateStopPending, 0, StopWaitHint)
 		}
 		if c.cancel != nil {
@@ -135,18 +139,22 @@ func (c *controller) serve(fn func(ctx context.Context) error) error {
 		errc <- fn(ctx)
 	}()
 	c.report(StateRunning, AcceptStop|AcceptShutdown, 0)
-	tick := time.NewTicker(c.every)
+	ticks := c.ticks
+	if ticks == nil {
+		tick := time.NewTicker(c.every)
+		defer tick.Stop()
+		ticks = tick.C
+	}
 	var err error
 wait:
 	for {
 		select {
 		case err = <-errc:
 			break wait
-		case <-tick.C:
+		case <-ticks:
 			c.stopProgress()
 		}
 	}
-	tick.Stop()
 	cancel()
 	c.mu.Lock()
 	if err != nil {
@@ -163,7 +171,7 @@ wait:
 func (c *controller) stopProgress() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.st.CurrentState == StateStopPending && time.Since(c.stopAt) < c.maxStop {
+	if c.st.CurrentState == StateStopPending && c.now().Sub(c.stopAt) < c.maxStop {
 		c.reportLocked(StateStopPending, 0, StopWaitHint)
 	}
 }

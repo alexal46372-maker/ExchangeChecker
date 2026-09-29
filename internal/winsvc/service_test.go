@@ -139,107 +139,140 @@ func TestCHK_MON_07_RunOutsideSCM(t *testing.T) {
 	}
 }
 
+// stopHarness drives a controller with an injected clock and ticker:
+// every SetServiceStatus goes to reports, ticks are delivered one by one
+// (unbuffered: a send returns only when the loop took the tick, and the
+// next send only after that tick was fully processed).
+type stopHarness struct {
+	c       *controller
+	reports chan Status
+	ticks   chan time.Time
+	release chan struct{}
+	done    chan error
+	mu      sync.Mutex
+	now     time.Time
+}
+
+func newStopHarness(t *testing.T) *stopHarness {
+	h := &stopHarness{reports: make(chan Status, 100), ticks: make(chan time.Time), release: make(chan struct{}),
+		done: make(chan error, 1), now: time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)}
+	h.c = newController(func(s Status) error { h.reports <- s; return nil })
+	h.c.ticks = h.ticks
+	h.c.now = func() time.Time { h.mu.Lock(); defer h.mu.Unlock(); return h.now }
+	go func() {
+		h.done <- h.c.serve(func(ctx context.Context) error {
+			<-ctx.Done()
+			<-h.release // slow cleanup until the test releases it
+			return nil
+		})
+	}()
+	for _, want := range []uint32{StateStartPending, StateRunning} {
+		if s := h.next(t); s.CurrentState != want {
+			t.Fatalf("start: %+v", s)
+		}
+	}
+	return h
+}
+
+func (h *stopHarness) advance(d time.Duration) { h.mu.Lock(); h.now = h.now.Add(d); h.mu.Unlock() }
+
+func (h *stopHarness) tick(t *testing.T) {
+	t.Helper()
+	select {
+	case h.ticks <- h.now:
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve loop does not take ticks")
+	}
+}
+
+func (h *stopHarness) next(t *testing.T) Status {
+	t.Helper()
+	select {
+	case s := <-h.reports:
+		return s
+	case <-time.After(5 * time.Second):
+		t.Fatal("no status report")
+	}
+	return Status{}
+}
+
+func (h *stopHarness) none(t *testing.T) {
+	t.Helper()
+	h.tick(t) // a taken tick proves the previous one was processed
+	select {
+	case s := <-h.reports:
+		t.Fatalf("unexpected report %+v", s)
+	default:
+	}
+}
+
 // TestCHK_MON_14_StopPendingCheckpoints — while the service function is
-// still stopping, STOP_PENDING is re-reported with a strictly increasing
-// CheckPoint (and the wait hint) until STOPPED.
+// still stopping, every progress tick re-reports STOP_PENDING with
+// CheckPoint+1 and the wait hint; ticks while RUNNING report nothing; the
+// end is STOPPED with CheckPoint 0. Injected ticker: no sleeps.
 func TestCHK_MON_14_StopPendingCheckpoints(t *testing.T) {
 	if StopCheckpointEvery*3 > StopWaitHint*time.Millisecond {
 		t.Fatalf("checkpoint period %s too long for wait hint %d ms", StopCheckpointEvery, StopWaitHint)
 	}
-	r := &recorder{}
-	c := newController(r.set)
-	c.every = 20 * time.Millisecond
-	started := make(chan struct{})
-	done := make(chan error, 1)
-	go func() {
-		done <- c.serve(func(ctx context.Context) error {
-			close(started)
-			<-ctx.Done()
-			time.Sleep(250 * time.Millisecond) // slow cleanup
-			return nil
-		})
-	}()
-	<-started
-	deadline := time.Now().Add(5 * time.Second)
-	for c.state().CurrentState != StateRunning {
-		if time.Now().After(deadline) {
-			t.Fatal("not running")
-		}
-		time.Sleep(time.Millisecond)
+	h := newStopHarness(t)
+	h.tick(t)
+	h.none(t) // RUNNING: no progress reports
+	h.c.control(ControlStop)
+	s := h.next(t)
+	if s.CurrentState != StateStopPending || s.CheckPoint != 1 || s.WaitHint != StopWaitHint {
+		t.Fatalf("stop: %+v", s)
 	}
-	time.Sleep(60 * time.Millisecond) // ticks while RUNNING report nothing
-	nRunning := len(r.states())
-	c.control(ControlStop)
-	if err := <-done; err != nil {
+	for i := uint32(2); i <= 6; i++ {
+		h.advance(StopCheckpointEvery)
+		h.tick(t)
+		if s := h.next(t); s.CurrentState != StateStopPending || s.CheckPoint != i || s.WaitHint != StopWaitHint {
+			t.Fatalf("progress %d: %+v", i, s)
+		}
+	}
+	close(h.release)
+	if err := <-h.done; err != nil {
 		t.Fatal(err)
 	}
-	r.mu.Lock()
-	got := append([]Status(nil), r.got[nRunning:]...)
-	r.mu.Unlock()
-	var cps []uint32
-	for _, s := range got[:len(got)-1] {
-		if s.CurrentState != StateStopPending || s.WaitHint != StopWaitHint {
-			t.Fatalf("during stop: %+v", s)
-		}
-		cps = append(cps, s.CheckPoint)
-	}
-	if len(cps) < 4 {
-		t.Fatalf("only %d STOP_PENDING reports in 250 ms: %v", len(cps), cps)
-	}
-	for i := 1; i < len(cps); i++ {
-		if cps[i] != cps[i-1]+1 {
-			t.Fatalf("checkpoints not increasing: %v", cps)
-		}
-	}
-	if last := got[len(got)-1]; last.CurrentState != StateStopped || last.CheckPoint != 0 {
-		t.Errorf("final %+v", last)
-	}
-	if nRunning != 2 {
-		t.Errorf("reports before stop: %v", r.states()[:nRunning])
+	if s := h.next(t); s.CurrentState != StateStopped || s.CheckPoint != 0 {
+		t.Errorf("final %+v", s)
 	}
 }
 
-// TestCHK_MON_14_StopCheckpointCap — after StopCheckpointMax of
+// TestCHK_MON_14_StopCheckpointCap — after StopCheckpointMax (60 s) of
 // STOP_PENDING the CheckPoint stops growing (no more reports), so the SCM
-// can detect a hung stop via the wait hint.
+// can detect a hung stop via the wait hint. Fake clock + ticker.
 func TestCHK_MON_14_StopCheckpointCap(t *testing.T) {
 	if StopCheckpointMax != 60*time.Second || StopCheckpointMax <= StopCheckpointEvery {
 		t.Fatalf("cap %s", StopCheckpointMax)
 	}
-	r := &recorder{}
-	c := newController(r.set)
-	c.every, c.maxStop = 20*time.Millisecond, 100*time.Millisecond
-	started := make(chan struct{})
-	done := make(chan error, 1)
-	go func() {
-		done <- c.serve(func(ctx context.Context) error {
-			close(started)
-			<-ctx.Done()
-			time.Sleep(400 * time.Millisecond) // hangs well past the cap
-			return nil
-		})
-	}()
-	<-started
-	for c.state().CurrentState != StateRunning {
-		time.Sleep(time.Millisecond)
+	h := newStopHarness(t)
+	h.c.control(ControlStop)
+	last := h.next(t).CheckPoint
+	for el := StopCheckpointEvery; el < StopCheckpointMax; el += StopCheckpointEvery {
+		h.advance(StopCheckpointEvery)
+		h.tick(t)
+		s := h.next(t)
+		if s.CheckPoint != last+1 {
+			t.Fatalf("at %s: checkpoint %d after %d", el, s.CheckPoint, last)
+		}
+		last = s.CheckPoint
 	}
-	c.control(ControlStop)
-	stopAt := time.Now()
-	time.Sleep(250 * time.Millisecond)
-	cpAtCap := c.state().CheckPoint
-	nAtCap := len(r.states())
-	time.Sleep(100 * time.Millisecond)
-	if c.state().CheckPoint != cpAtCap || len(r.states()) != nAtCap || c.state().CurrentState != StateStopPending {
-		t.Errorf("checkpoint still growing after the cap: %d -> %d", cpAtCap, c.state().CheckPoint)
+	if last != uint32(StopCheckpointMax/StopCheckpointEvery) {
+		t.Errorf("checkpoints within the cap: %d", last)
 	}
-	// 100 ms / 20 ms ≈ 5 progress reports + the initial STOP_PENDING
-	if cpAtCap < 3 || cpAtCap > 8 {
-		t.Errorf("checkpoint at cap = %d (elapsed %s)", cpAtCap, time.Since(stopAt))
+	h.advance(StopCheckpointEvery) // 60 s reached: no more progress
+	h.tick(t)
+	h.none(t)
+	h.advance(time.Hour)
+	h.none(t)
+	if st := h.c.state(); st.CurrentState != StateStopPending || st.CheckPoint != last {
+		t.Errorf("after the cap: %+v", st)
 	}
-	if err := <-done; err != nil {
+	close(h.release)
+	if err := <-h.done; err != nil {
 		t.Fatal(err)
 	}
-	if c.state().CurrentState != StateStopped {
-		t.Error("not stopped")
+	if s := h.next(t); s.CurrentState != StateStopped {
+		t.Errorf("final %+v", s)
 	}
 }

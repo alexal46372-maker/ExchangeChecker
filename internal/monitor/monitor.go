@@ -97,13 +97,14 @@ type Options struct {
 	// Connection test of test_profile (CHK-IPC-03): Test (default
 	// SQLTest = sqlcheck.TestConnectionInfo), TestCategory (default
 	// sqlcheck.ConnCategory), TestTimeout (default 15 s), TestMax
-	// concurrent tests (default 2), TestAfter = timer of the hard timeout
-	// (tests).
-	Test         TestFunc
-	TestCategory func(error) string
-	TestTimeout  time.Duration
-	TestMax      int
-	TestAfter    func(time.Duration) <-chan time.Time
+	// concurrent tests (default 2), TestWithTimeout derives the test
+	// context carrying the single test deadline (default
+	// context.WithTimeout; tests inject a fake-clock context).
+	Test            TestFunc
+	TestCategory    func(error) string
+	TestTimeout     time.Duration
+	TestMax         int
+	TestWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
 
 // entry is the per-profile runtime state.
@@ -208,7 +209,7 @@ type genCounters struct {
 	inner model.CounterStateStore
 	e     *entry
 	gen   uint64
-	lock  *sync.Mutex // per-profile lock for stores without Update
+	locks *keyedLocks // per-profile locks for stores without Update
 }
 
 // current: the reader may still write. retired is a one-way flag of the
@@ -240,8 +241,7 @@ func (g genCounters) Update(id string, fn func(model.CounterState) (model.Counte
 	if u, ok := g.inner.(model.CounterStateUpdater); ok {
 		return u.Update(id, guarded)
 	}
-	g.lock.Lock()
-	defer g.lock.Unlock()
+	defer g.locks.lock(id)()
 	return model.UpdateCounterState(g.inner, id, guarded)
 }
 
@@ -284,8 +284,7 @@ type Monitor struct {
 
 	tester *Tester
 
-	clMu   sync.Mutex
-	cLocks map[string]*sync.Mutex // counterLock
+	cLocks keyedLocks // per-profile counters locks (reference counted)
 
 	cmdMu   sync.Mutex
 	cmdLast map[string]time.Time // rate limiter of IPC commands
@@ -338,26 +337,10 @@ func New(opt Options) *Monitor {
 		cmdLast: map[string]time.Time{}, pendIDs: map[string]bool{},
 		started: opt.Now().In(model.DBZone), acks: map[string]AckRecord{},
 		tester: &Tester{Test: opt.Test, Category: opt.TestCategory, Timeout: opt.TestTimeout,
-			Max: opt.TestMax, Now: opt.Now, After: opt.TestAfter},
+			Max: opt.TestMax, Now: opt.Now, WithTimeout: opt.TestWithTimeout},
 	}
 	m.loadAcks()
 	return m
-}
-
-// counterLock returns the monitor's per-profile counters lock (shared by
-// the old and the new entry of a changed profile).
-func (m *Monitor) counterLock(id string) *sync.Mutex {
-	m.clMu.Lock()
-	defer m.clMu.Unlock()
-	if m.cLocks == nil {
-		m.cLocks = map[string]*sync.Mutex{}
-	}
-	l := m.cLocks[id]
-	if l == nil {
-		l = &sync.Mutex{}
-		m.cLocks[id] = l
-	}
-	return l
 }
 
 // Rate-limiter keys of the IPC commands.
@@ -743,15 +726,6 @@ func (m *Monitor) reloadConfig(force bool) bool {
 	if acksChanged {
 		m.saveAcks()
 	}
-	// per-profile counters locks of removed profiles (CHK-MON-13); a
-	// changed profile keeps its lock (shared by the old and new entry)
-	m.clMu.Lock()
-	for id := range m.cLocks {
-		if !ids[id] {
-			delete(m.cLocks, id)
-		}
-	}
-	m.clMu.Unlock()
 	if recovered {
 		m.opt.Log.Printf("config: loaded successfully again")
 	}
@@ -1009,7 +983,8 @@ func ErrorKeyOf(err error) string {
 
 // pollOne polls one profile in its own goroutine with its own deadline;
 // a panic is recovered and a reader that ignores the deadline is
-// abandoned (the entry stays busy until it returns).
+// abandoned (the entry stays busy until it returns). A poll that finished
+// in time has already released the entry when pollOne returns.
 func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings) model.ProfileStatus {
 	p := e.profile
 	now := m.opt.Now()
@@ -1036,12 +1011,19 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 	defer cancel()
 	resc := make(chan model.ProfileStatus, 1)
 	go func() {
-		defer e.release(gen)
+		// The entry is released BEFORE the result is handed over: once
+		// pollOne returns a finished poll, the entry is free and a poll
+		// right after it (next cycle, poll_now) must not see a stale
+		// "previous poll still running" (CHK-MON-13). A retired entry's
+		// reader is closed by release, i.e. also before the result.
+		var ps model.ProfileStatus
 		defer func() {
 			if r := recover(); r != nil {
 				m.opt.Log.Printf("profile %s: panic while polling: %v\n%s", p.ID, r, debug.Stack())
-				resc <- fail(fmt.Sprintf("internal error: %v", r), model.MsgMonitorPanic)
+				ps = fail(fmt.Sprintf("internal error: %v", r), model.MsgMonitorPanic)
 			}
+			e.release(gen)
+			resc <- ps
 		}()
 		e.mu.Lock()
 		r := e.reader
@@ -1050,27 +1032,26 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 			var err error
 			r, err = m.opt.NewReader(p, e.password, sqlcheck.Options{
 				Settings: p.EffectiveSettings(settings), Now: m.opt.Now,
-				Counters: genCounters{inner: m.opt.Counters, e: e, gen: gen, lock: m.counterLock(p.ID)}})
+				Counters: genCounters{inner: m.opt.Counters, e: e, gen: gen, locks: &m.cLocks}})
 			if err != nil {
-				resc <- fail(err.Error(), ErrorKeyOf(err))
+				ps = fail(err.Error(), ErrorKeyOf(err))
 				return
 			}
 			e.mu.Lock()
 			if e.gen != gen { // abandoned as hung while connecting
 				e.mu.Unlock()
 				_ = r.Close()
-				resc <- fail("poll abandoned", model.MsgMonitorHung)
+				ps = fail("poll abandoned", model.MsgMonitorHung)
 				return
 			}
 			e.reader = r
 			e.mu.Unlock()
 		}
 		rec := &errRecorder{ExchangeReader: r}
-		ps := sqlcheck.Status(cctx, rec, p, now)
+		ps = sqlcheck.Status(cctx, rec, p, now)
 		if ps.Error != "" && ps.ErrorKey == "" {
 			ps.ErrorKey = ErrorKeyOf(rec.err)
 		}
-		resc <- ps
 	}()
 	select {
 	case ps := <-resc:

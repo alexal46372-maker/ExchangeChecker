@@ -69,6 +69,8 @@ func TestCategoryKey(cat string) string {
 
 // EncryptStrength orders the effective encryption of a profile: disable 0
 // < optional (login only) 1 < on + TrustServerCert 2 < on 3 < strict 4.
+// It is a display order only; the password reuse rule compares every
+// axis separately (EncryptNotWeaker).
 func EncryptStrength(p Profile) int {
 	switch p.EffectiveEncrypt() {
 	case EncryptOptional:
@@ -95,37 +97,90 @@ func tlsRank(v string) int {
 	return 12
 }
 
-// EncryptNotWeaker reports whether req encrypts at least as strongly as
-// saved: a higher EncryptStrength, or the same one with (when TLS is used)
-// a minimum TLS version not lower than saved.
-func EncryptNotWeaker(req, saved Profile) bool {
-	a, b := EncryptStrength(req), EncryptStrength(saved)
-	if a != b {
-		return a > b
+// encryptMode orders the TLS use of a profile regardless of certificate
+// validation: disable 0 < optional (login only) 1 < on 2 < strict 3.
+func encryptMode(p Profile) int {
+	switch p.EffectiveEncrypt() {
+	case EncryptOptional:
+		return 1
+	case EncryptOn:
+		return 2
+	case EncryptStrict:
+		return 3
 	}
-	if a == 0 {
-		return true
-	}
-	return tlsRank(req.EffectiveTLSMinVersion()) >= tlsRank(saved.EffectiveTLSMinVersion())
+	return 0
 }
 
-// splitHostInstance splits "host\instance" (case-insensitive compare).
+// VerifiesServerCert reports whether the driver validates the server
+// certificate: encrypt on without TrustServerCert, or strict (optional
+// = login-only TLS does not validate, sqlcheck.dsn).
+func VerifiesServerCert(p Profile) bool {
+	switch p.EffectiveEncrypt() {
+	case EncryptOn:
+		return !p.TrustServerCert
+	case EncryptStrict:
+		return true
+	}
+	return false
+}
+
+// EncryptNotWeaker reports whether req protects the connection at least
+// as well as saved on EVERY axis (phase 4b, CHK-IPC-03): TLS used at
+// least as much (encryptMode), the minimum TLS version not lower (when
+// saved uses TLS at all) and the server certificate validated whenever
+// saved validates it. A stronger mode does not compensate a lower TLS
+// floor or a trusted certificate (e.g. saved optional + TLS 1.2 vs
+// on + TrustServerCert + TLS 1.0 is weaker).
+func EncryptNotWeaker(req, saved Profile) bool {
+	if encryptMode(req) < encryptMode(saved) {
+		return false
+	}
+	if encryptMode(saved) > 0 && tlsRank(req.EffectiveTLSMinVersion()) < tlsRank(saved.EffectiveTLSMinVersion()) {
+		return false
+	}
+	return !VerifiesServerCert(saved) || VerifiesServerCert(req)
+}
+
+// asciiLower lowers ASCII letters only: host and instance names compare
+// ASCII case-insensitively; strings.ToLower / EqualFold would also fold
+// non-ASCII look-alikes (U+212A KELVIN SIGN == "k").
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
+
+// splitHostInstance splits "host\instance" (ASCII case-insensitive).
 func splitHostInstance(s string) (string, string) {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\\'); i >= 0 {
-		return strings.ToLower(strings.TrimSpace(s[:i])), strings.ToLower(strings.TrimSpace(s[i+1:]))
+		return asciiLower(strings.TrimSpace(s[:i])), asciiLower(strings.TrimSpace(s[i+1:]))
 	}
-	return strings.ToLower(s), ""
+	return asciiLower(s), ""
+}
+
+// identityPort: without an instance port 0 means DefaultSQLPort (1433);
+// with an instance 0 means "ask SQL Browser" and stays distinct.
+func identityPort(port int, instance string) int {
+	if port == 0 && instance == "" {
+		return DefaultSQLPort
+	}
+	return port
 }
 
 // SameServerIdentity reports whether req targets the same server with the
 // same credentials identity as saved: host, instance, port, auth mode and
-// login are equal (host / instance case-insensitive, login exact).
+// login are equal (host / instance ASCII case-insensitive, port 0 = 1433
+// without an instance, login exact).
 func SameServerIdentity(req, saved Profile) bool {
 	h1, i1 := splitHostInstance(req.Server)
 	h2, i2 := splitHostInstance(saved.Server)
-	return h1 == h2 && i1 == i2 && req.Port == saved.Port && req.AuthMode == saved.AuthMode &&
-		strings.TrimSpace(req.Login) == strings.TrimSpace(saved.Login)
+	return h1 == h2 && i1 == i2 && identityPort(req.Port, i1) == identityPort(saved.Port, i2) &&
+		req.AuthMode == saved.AuthMode && strings.TrimSpace(req.Login) == strings.TrimSpace(saved.Login)
 }
 
 // CanReuseSavedPassword is the rule of test_profile with an empty password

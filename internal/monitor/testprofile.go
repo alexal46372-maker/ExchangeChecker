@@ -21,13 +21,26 @@ import (
 //     (model.CanReuseSavedPassword); otherwise invalid_request with
 //     MsgTestPasswordRequired — the saved password is never sent to
 //     another server or over a weaker channel.
-//   - Every test that would open a connection goes through the command
-//     rate limit (IPCCommandInterval, error rate_limited), so the pipe
-//     cannot be used as a port scanner, and through the Tester (max 2 at
-//     a time, error busy; hard timeout 15 s).
+//   - EVERY request goes through the command rate limit first
+//     (IPCCommandInterval, error rate_limited; phase 4b: before the
+//     profile / password checks), so the pipe can be used neither as a
+//     port scanner nor as an oracle for the saved parameters; a test
+//     then goes through the Tester (max 2 at a time, error busy; single
+//     15 s deadline).
 //
 // The password is never logged, never stored and scrubbed from errors.
 func (m *Monitor) TestProfile(ctx context.Context, req model.IPCRequest) (model.TestProfileResult, error) {
+	// the rate limit comes FIRST (phase 4b): every request — also one
+	// answered without a connection (invalid_request "enter the password",
+	// Windows authentication of an unsaved profile, not_found) — uses the
+	// slot, so the pipe is neither a port scanner nor an unlimited oracle
+	// for guessing which parameters match a saved profile
+	m.cmdMu.Lock()
+	ok := m.allowLocked(cmdKeyTest)
+	m.cmdMu.Unlock()
+	if !ok {
+		return model.TestProfileResult{}, ErrRateLimited
+	}
 	p, pw, res, err := m.resolveTest(req)
 	if err != nil || res != nil {
 		if res != nil {
@@ -35,12 +48,6 @@ func (m *Monitor) TestProfile(ctx context.Context, req model.IPCRequest) (model.
 			return *res, nil
 		}
 		return model.TestProfileResult{}, err
-	}
-	m.cmdMu.Lock()
-	ok := m.allowLocked(cmdKeyTest)
-	m.cmdMu.Unlock()
-	if !ok {
-		return model.TestProfileResult{}, ErrRateLimited
 	}
 	r, err := m.tester.Run(ctx, p, pw)
 	if err != nil {

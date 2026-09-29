@@ -17,7 +17,9 @@ import (
 // Defaults of the connection test.
 const (
 	// DefaultTestTimeout is the hard time budget of one test: the reply is
-	// sent at the latest then, even if the driver ignores its context.
+	// sent at the latest then, even if the driver ignores its context. It
+	// is the ONE deadline of the test: the context handed to the driver
+	// carries it, so the dialer sees context.DeadlineExceeded (phase 4b).
 	DefaultTestTimeout = 15 * time.Second
 	// DefaultTestConcurrent tests may run at the same time; further
 	// requests are answered busy.
@@ -57,8 +59,9 @@ type Tester struct {
 	// MaxAbandoned timed-out tests may still be running in the driver.
 	MaxAbandoned int
 	Now          func() time.Time
-	// After is the timer of the hard timeout (tests inject a fake).
-	After func(time.Duration) <-chan time.Time
+	// WithTimeout derives the test context carrying the single deadline
+	// (default context.WithTimeout; tests inject a fake-clock context).
+	WithTimeout func(parent context.Context, d time.Duration) (context.Context, context.CancelFunc)
 
 	mu        sync.Mutex
 	running   int
@@ -91,8 +94,8 @@ func (t *Tester) defaults() {
 	if t.Now == nil {
 		t.Now = time.Now
 	}
-	if t.After == nil {
-		t.After = time.After
+	if t.WithTimeout == nil {
+		t.WithTimeout = context.WithTimeout
 	}
 }
 
@@ -115,6 +118,13 @@ func scrub(msg, password string) string {
 // Run tests p with password. It returns ErrTestBusy when Max tests (or
 // MaxAbandoned timed-out ones) are running; otherwise the result (a
 // timeout is a result with Category TestTimeout).
+//
+// There is exactly one deadline: the context of the test (phase 4b). When
+// it expires the driver sees context.DeadlineExceeded and the reply is a
+// timeout; when the caller's context ends first (client disconnected) the
+// test context is canceled with it. Either way a test whose goroutine is
+// still in the driver is counted as abandoned (at most MaxAbandoned, then
+// busy) until that goroutine returns, which frees its slot.
 func (t *Tester) Run(ctx context.Context, p model.Profile, password string) (model.TestProfileResult, error) {
 	t.mu.Lock()
 	t.defaults()
@@ -123,13 +133,12 @@ func (t *Tester) Run(ctx context.Context, p model.Profile, password string) (mod
 		return model.TestProfileResult{}, ErrTestBusy
 	}
 	t.running++
-	test, category, timeout, now := t.Test, t.Category, t.Timeout, t.Now
-	timer := t.After(timeout)
+	test, category, timeout, now, withTimeout := t.Test, t.Category, t.Timeout, t.Now, t.WithTimeout
 	t.mu.Unlock()
 
 	start := now()
 	res := model.TestProfileResult{ProfileID: p.ID, Encrypt: string(p.EffectiveEncrypt()), TLSMin: p.EffectiveTLSMinVersion()}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
+	cctx, cancel := withTimeout(ctx, timeout)
 	defer cancel()
 	type out struct {
 		info TestInfo
@@ -181,14 +190,16 @@ func (t *Tester) Run(ctx context.Context, p model.Profile, password string) (mod
 		}
 		res.Error = scrub(o.err.Error(), password)
 		return res, nil
-	case <-timer:
-		cancel()
-		end(true)
-	case <-ctx.Done():
-		cancel()
+	case <-cctx.Done():
 		end(true)
 	}
 	res.DurationMs = now().Sub(start).Milliseconds()
+	if !errors.Is(cctx.Err(), context.DeadlineExceeded) {
+		// the caller went away (client disconnected / service stop)
+		res.Category, res.ErrorKey = model.TestOther, model.TestCategoryKey(model.TestOther)
+		res.Error = "connection test canceled"
+		return res, nil
+	}
 	res.Category, res.ErrorKey = model.TestTimeout, model.MsgTestTimeout
 	res.Error = fmt.Sprintf("connection test timed out after %s", timeout)
 	return res, nil

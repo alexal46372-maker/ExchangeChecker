@@ -36,8 +36,9 @@ type appConfig struct {
 	ConfigCheck  time.Duration
 	// Test overrides the connection test of test_profile (tests).
 	Test monitor.TestFunc
-	// TestAfter overrides the timer of the test timeout (tests).
-	TestAfter func(time.Duration) <-chan time.Time
+	// TestWithTimeout overrides the context carrying the single test
+	// deadline (tests; default context.WithTimeout).
+	TestWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -113,10 +114,10 @@ func runService(ctx context.Context, ac appConfig) error {
 		},
 		// test_profile: sqlcheck.TestConnectionInfo + ConnCategory
 		// (CHK-IPC-03); tests inject a fake
-		Test:         test,
-		TestCategory: sqlcheck.ConnCategory,
-		TestAfter:    ac.TestAfter,
-		Log:          log,
+		Test:            test,
+		TestCategory:    sqlcheck.ConnCategory,
+		TestWithTimeout: ac.TestWithTimeout,
+		Log:             log,
 		Sink: alert.Multi{
 			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),

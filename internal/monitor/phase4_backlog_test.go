@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,11 +51,8 @@ func TestCHK_MON_13_RetainLocksAllKnownIDs(t *testing.T) {
 	if hasID(s.ProfileIDs(), "x") || hasID(OpenFileCounterStore(dir, nil).ProfileIDs(), "x") {
 		t.Error("orphan state of a removed profile")
 	}
-	s.mu.Lock()
-	_, lk := s.locks["x"]
-	s.mu.Unlock()
-	if lk {
-		t.Error("lock of the removed profile kept")
+	if len(s.locks.keys()) != 0 {
+		t.Errorf("locks kept after the last unlock: %v", s.locks.keys())
 	}
 }
 
@@ -105,30 +103,99 @@ func TestCHK_MON_13_RetiredHungReaderClosed(t *testing.T) {
 	}
 }
 
-// TestCHK_MON_13_CounterLocksCleaned — backlog (c): the monitor's
-// per-profile counters lock is dropped when the profile is removed and
-// kept (shared by the old and new entry) when it only changes.
+// TestCHK_MON_13_CounterLocksCleaned — backlog (c), reference counted
+// since phase 4b: the monitor's per-profile counters locks exist only
+// while held or waited for, so nothing is left behind for removed (or
+// any idle) profiles, and nothing is deleted while in use.
 func TestCHK_MON_13_CounterLocksCleaned(t *testing.T) {
 	f := newFactory()
-	f.set("a", behavior{})
-	f.set("b", behavior{})
+	f.set("a", behavior{counter: true})
+	f.set("b", behavior{counter: true})
+	f.counters["a"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 1, ReceivedNo: 1}}
+	f.counters["b"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 1, ReceivedNo: 1}}
 	src := NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("a"), prof("b")}})
-	m := New(baseOpt(f, src, &fakeClock{t: t0}))
+	opt := baseOpt(f, src, &fakeClock{t: t0})
+	opt.Counters = struct{ model.CounterStateStore }{model.NewMemCounterStore()} // no Update: the monitor's locks are used
+	m := New(opt)
 	m.reloadConfig(true)
 	m.pollAll(context.Background())
-	la := m.counterLock("a")
-	if len(m.cLocks) != 2 {
-		t.Fatalf("locks %d", len(m.cLocks))
+	if k := m.cLocks.keys(); len(k) != 0 {
+		t.Fatalf("idle locks kept: %v", k)
 	}
-	pa := prof("a")
-	pa.Database = "changed"
-	src.Set(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{pa}})
+	src.Set(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("a")}})
 	m.reloadConfig(false)
-	m.clMu.Lock()
-	_, hasB := m.cLocks["b"]
-	keptA := m.cLocks["a"] == la
-	m.clMu.Unlock()
-	if hasB || !keptA {
-		t.Errorf("after removing b: b kept %v, a kept %v", hasB, keptA)
+	m.pollAll(context.Background())
+	if k := m.cLocks.keys(); len(k) != 0 {
+		t.Errorf("locks after removing b: %v", k)
+	}
+}
+
+// TestCHK_MON_13_LockSharedAcrossRemoveReadd — phase 4b (review item 6):
+// an Update of profile x waits while x is removed (Retain) and re-added;
+// the waiting old Update, Retain and a new Update of x all use ONE
+// reference-counted mutex, so no two critical sections of x ever run at
+// the same time (before: Retain deleted the lock under the waiter and the
+// new Update got a second mutex). Synchronized by the queue hook, no
+// sleeps.
+func TestCHK_MON_13_LockSharedAcrossRemoveReadd(t *testing.T) {
+	s := OpenFileCounterStore(t.TempDir(), nil)
+	queued := make(chan int, 10)
+	s.locks.queued = func(key string, refs int) { queued <- refs }
+	var mu sync.Mutex
+	inside := 0
+	enter := func(name string, entered chan<- string, release <-chan struct{}) func(model.CounterState) (model.CounterState, error) {
+		return func(prev model.CounterState) (model.CounterState, error) {
+			mu.Lock()
+			inside++
+			n := inside
+			mu.Unlock()
+			if n != 1 {
+				t.Errorf("%s: %d critical sections of x at once", name, n)
+			}
+			entered <- name
+			<-release
+			mu.Lock()
+			inside--
+			mu.Unlock()
+			prev.Points["k"] = model.CounterPoint{SentNo: 1}
+			return prev, nil
+		}
+	}
+	entered := make(chan string, 3)
+	relA, relB, relC := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	done := make(chan error, 4)
+	go func() { done <- s.Update("x", enter("A", entered, relA)) }()
+	if r := <-queued; r != 1 {
+		t.Fatalf("A refs %d", r)
+	}
+	if n := <-entered; n != "A" {
+		t.Fatalf("first in: %s", n)
+	}
+	go func() { done <- s.Update("x", enter("B-old", entered, relB)) }()
+	if r := <-queued; r != 2 {
+		t.Fatalf("B refs %d", r)
+	}
+	go func() { done <- s.Retain(map[string]bool{}) }() // x removed
+	if r := <-queued; r != 3 {
+		t.Fatalf("Retain refs %d", r)
+	}
+	go func() { done <- s.Update("x", enter("C-new", entered, relC)) }() // x re-added
+	if r := <-queued; r != 4 {
+		t.Fatalf("C refs %d: the re-added profile got a new lock", r)
+	}
+	close(relA)
+	rel := map[string]chan struct{}{"B-old": relB, "C-new": relC}
+	for len(rel) > 0 {
+		n := <-entered // results stay buffered in done
+		close(rel[n])
+		delete(rel, n)
+	}
+	for i := 0; i < 4; i++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if k := s.locks.keys(); len(k) != 0 {
+		t.Errorf("locks kept: %v", k)
 	}
 }

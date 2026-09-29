@@ -63,28 +63,70 @@ func (f *fakeTest) last() testCall {
 	return f.calls[len(f.calls)-1]
 }
 
-// fakeAfter is the injectable timer of the hard test timeout.
-type fakeAfter struct {
-	mu    sync.Mutex
-	chans []chan time.Time
-	durs  []time.Duration
+// fakeTimeouts is the injectable single test deadline (phase 4b): the
+// contexts it creates expire (context.DeadlineExceeded) only when the
+// test calls fire, and end with their parent (client disconnect).
+type fakeTimeouts struct {
+	mu   sync.Mutex
+	ctxs []*fakeDeadlineCtx
+	durs []time.Duration
+	base time.Time // Deadline() = base + d (real time for real drivers)
 }
 
-func (f *fakeAfter) After(d time.Duration) <-chan time.Time {
+type fakeDeadlineCtx struct {
+	context.Context
+	deadline time.Time
+	done     chan struct{}
+	once     sync.Once
+	mu       sync.Mutex
+	err      error
+}
+
+func (c *fakeDeadlineCtx) Deadline() (time.Time, bool) { return c.deadline, true }
+func (c *fakeDeadlineCtx) Done() <-chan struct{}       { return c.done }
+func (c *fakeDeadlineCtx) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+func (c *fakeDeadlineCtx) finish(err error) {
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.err = err
+		c.mu.Unlock()
+		close(c.done)
+	})
+}
+
+func (f *fakeTimeouts) WithTimeout(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	base := f.base
+	if base.IsZero() {
+		base = time.Now()
+	}
+	c := &fakeDeadlineCtx{Context: parent, deadline: base.Add(d), done: make(chan struct{})}
+	go func() {
+		select {
+		case <-parent.Done():
+			c.finish(parent.Err())
+		case <-c.done:
+		}
+	}()
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	ch := make(chan time.Time, 1)
-	f.chans = append(f.chans, ch)
+	f.ctxs = append(f.ctxs, c)
 	f.durs = append(f.durs, d)
-	return ch
+	f.mu.Unlock()
+	return c, func() { c.finish(context.Canceled) }
 }
 
-func (f *fakeAfter) fire(i int) {
+// fire expires the i-th test context (its deadline passed).
+func (f *fakeTimeouts) fire(i int) {
 	f.mu.Lock()
-	ch := f.chans[i]
+	c := f.ctxs[i]
 	f.mu.Unlock()
-	ch <- time.Time{}
+	c.finish(context.DeadlineExceeded)
 }
+
+func (f *fakeTimeouts) n() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.ctxs) }
 
 func sqlProf(id string) model.Profile {
 	p := prof(id)
@@ -95,7 +137,7 @@ func sqlProf(id string) model.Profile {
 type testEnv struct {
 	m   *Monitor
 	ft  *fakeTest
-	fa  *fakeAfter
+	fa  *fakeTimeouts
 	clk *fakeClock
 	lg  *memLog
 	f   *fakeFactory
@@ -104,14 +146,14 @@ type testEnv struct {
 func newTestEnv(t *testing.T, saved []model.Profile, interval time.Duration) *testEnv {
 	t.Helper()
 	e := &testEnv{ft: &fakeTest{info: TestInfo{Version: "10.50.1600.1", ProductLevel: "RTM", Edition: "Standard Edition", CompatLevel: 100}},
-		fa: &fakeAfter{}, clk: &fakeClock{t: t0}, lg: &memLog{}, f: newFactory()}
+		fa: &fakeTimeouts{}, clk: &fakeClock{t: t0}, lg: &memLog{}, f: newFactory()}
 	pws := map[string]string{}
 	for _, p := range saved {
 		pws[p.ID] = savedPW
 		e.f.set(p.ID, behavior{points: lagPoints(map[string]int{"P": 1})})
 	}
 	opt := baseOpt(e.f, NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: saved, Passwords: pws}), e.clk)
-	opt.Test, opt.TestAfter, opt.Log, opt.CommandInterval = e.ft.Test, e.fa.After, e.lg, interval
+	opt.Test, opt.TestWithTimeout, opt.Log, opt.CommandInterval = e.ft.Test, e.fa.WithTimeout, e.lg, interval
 	e.m = New(opt)
 	e.m.reloadConfig(true)
 	return e
@@ -368,6 +410,46 @@ func TestCHK_IPC_03_RateLimited(t *testing.T) {
 	e.clk.Add(time.Second)
 	if r, err := e.run(model.IPCRequest{Profile: &other, Password: reqPW}); err != nil || !r.OK {
 		t.Errorf("after 10 s: %+v %v", r, err)
+	}
+}
+
+// TestCHK_IPC_03_RateLimitBeforeChecks — phase 4b: the rate limit is
+// applied before the profile / password checks, so answers that need no
+// connection (invalid_request "enter the password" for a swapped host,
+// config for an unsaved Windows profile, not_found) also use the slot
+// and cannot be used as an unlimited oracle for the saved parameters.
+func TestCHK_IPC_03_RateLimitBeforeChecks(t *testing.T) {
+	e := newTestEnv(t, []model.Profile{sqlProf("s")}, 0) // default 10 s
+	swapped := sqlProf("s")
+	swapped.Server = `other\INST`
+	win := prof("new-win")
+	probes := []model.IPCRequest{
+		{Profile: &swapped},  // empty password, host swapped
+		{Profile: &win},      // Windows auth, unsaved
+		{ProfileID: "ghost"}, // unknown
+	}
+	for i, req := range probes {
+		_, err := e.run(req)
+		if i == 0 {
+			if codeOf(err) != model.ErrCodeInvalidRequest {
+				t.Fatalf("first probe: %v", err)
+			}
+			continue
+		}
+		if codeOf(err) != model.ErrCodeRateLimited {
+			t.Errorf("probe %d within 10 s: %v, want rate_limited", i, err)
+		}
+	}
+	r, err := e.run(model.IPCRequest{Profile: &win})
+	if codeOf(err) != model.ErrCodeRateLimited || r.Category != "" {
+		t.Errorf("windows probe: %+v %v", r, err)
+	}
+	e.clk.Add(10 * time.Second)
+	if r, err := e.run(model.IPCRequest{Profile: &win}); err != nil || r.Category != model.TestConfig {
+		t.Errorf("after 10 s: %+v %v", r, err)
+	}
+	if e.ft.n() != 0 {
+		t.Errorf("probes connected %d times", e.ft.n())
 	}
 }
 

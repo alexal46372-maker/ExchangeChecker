@@ -88,10 +88,11 @@ type StatusSnapshot struct {
 	// Heartbeat fields (protocol version 2, CHK-IPC-04): service start,
 	// end of the last completed full poll cycle (nil before the first
 	// one), PollerHung when no cycle completed for longer than
-	// HungAfterSec (evaluated when the snapshot is read).
+	// HungAfterSec (evaluated when the snapshot is read). pollerHung is
+	// always sent, false explicitly (phase 4b).
 	ServiceStartedAt *time.Time `json:"serviceStartedAt,omitempty"`
 	LastCycleAt      *time.Time `json:"lastCycleAt,omitempty"`
-	PollerHung       bool       `json:"pollerHung,omitempty"`
+	PollerHung       bool       `json:"pollerHung"`
 	HungAfterSec     int        `json:"hungAfterSec,omitempty"`
 }
 

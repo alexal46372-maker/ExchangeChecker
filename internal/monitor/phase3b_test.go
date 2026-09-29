@@ -842,3 +842,52 @@ func TestCHK_MON_10_InvalidWhenSettingsNeverValid(t *testing.T) {
 		t.Errorf("after a valid load: key %q stale %v", s.ConfigErrorKey, s.ConfigStale)
 	}
 }
+
+// TestCHK_MON_13_EntryFreeWhenPollReturns — regression for the linux CI
+// flake of TestCHK_MON_13_RemovedProfileNotResurrected ("monitor.busy"):
+// the poll goroutine used to hand over its result before releasing the
+// entry, so a poll right after a finished one could see "previous poll
+// still running". Now a finished poll (ok, connect error, panic) has
+// released its entry when pollAll returns, and back-to-back polls never
+// report busy. No sleeps: every check runs right after pollAll.
+func TestCHK_MON_13_EntryFreeWhenPollReturns(t *testing.T) {
+	f := newFactory()
+	f.set("ok", behavior{points: lagPoints(map[string]int{"A": 1})})
+	f.set("err", behavior{err: errors.New("connect failed")})
+	f.set("panic", behavior{panic: true})
+	src := NewMemConfig(Config{Settings: model.DefaultSettings(),
+		Profiles: []model.Profile{prof("ok"), prof("err"), prof("panic")}})
+	m := New(baseOpt(f, src, &fakeClock{t: t0}))
+	m.reloadConfig(true)
+	for i := 0; i < 200; i++ {
+		m.pollAll(context.Background())
+		m.mu.Lock()
+		for id, e := range m.entries {
+			if e.busyNow() {
+				m.mu.Unlock()
+				t.Fatalf("iteration %d: entry %s still busy after pollAll returned", i, id)
+			}
+		}
+		m.mu.Unlock()
+		for _, ps := range m.Snapshot().Profiles {
+			if ps.ErrorKey == model.MsgMonitorBusy {
+				t.Fatalf("iteration %d: %s reported busy", i, ps.ProfileID)
+			}
+		}
+	}
+	// a retired entry closes its reader in release: that has happened
+	// when pollOne returns (deterministic, before the fix the close ran
+	// after the result was handed over)
+	m.mu.Lock()
+	e := m.entries["ok"]
+	m.mu.Unlock()
+	e.mu.Lock()
+	e.retired = true // as retire() while a poll runs: close deferred to release
+	e.mu.Unlock()
+	if ps := m.pollOne(context.Background(), e, model.DefaultSettings()); ps.ErrorKey != "" {
+		t.Fatalf("retired poll: %+v", ps)
+	}
+	if f.get(f.closed, "ok") != 1 || e.busyNow() {
+		t.Errorf("after pollOne of a retired entry: closed %d, busy %v", f.get(f.closed, "ok"), e.busyNow())
+	}
+}

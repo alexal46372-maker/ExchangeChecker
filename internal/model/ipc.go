@@ -170,8 +170,9 @@ type Heartbeat struct {
 	// before the first one; a single-profile poll_now does not count).
 	LastCycleAt *time.Time `json:"lastCycleAt,omitempty"`
 	// PollerHung: no full cycle completed for longer than HungAfterSec
-	// (measured from LastCycleAt, or from the service start).
-	PollerHung      bool `json:"pollerHung,omitempty"`
+	// (measured from LastCycleAt, or from the service start); always
+	// sent, false explicitly (phase 4b). ServiceStartedAt is always sent.
+	PollerHung      bool `json:"pollerHung"`
 	HungAfterSec    int  `json:"hungAfterSec"`
 	PollIntervalSec int  `json:"pollIntervalSec"`
 }

@@ -1,16 +1,12 @@
 # CHK-CI-01 — Go 1.20.14, Windows amd64, CGO off. No build artifacts are uploaded.
-# A plain-text test report is committed to the orphan branch `ci-reports`
-# (reports/<sha>/<job>.txt) so results are readable with a contents-only token.
 name: ci
 
 on:
   push:
-    branches-ignore:
-      - ci-reports
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CGO_ENABLED: "0"
@@ -30,31 +26,19 @@ jobs:
           check-latest: false
           cache: false
       - name: go version (must be go1.20.14)
-        id: ver
         run: |
-          mkdir -p ../ci-report
-          go version | tee ../ci-report/version.txt
-          go env GOVERSION GOOS GOARCH CGO_ENABLED | tee -a ../ci-report/version.txt
-          grep -q "go1.20.14 windows/amd64" ../ci-report/version.txt
+          go version
+          go env GOVERSION GOOS GOARCH CGO_ENABLED
+          go version | grep -q "go1.20.14 windows/amd64"
       - name: go vet
-        id: vet
-        run: go vet ./... 2>&1 | tee ../ci-report/vet.txt
+        run: go vet ./...
       - name: go test
-        id: test
-        run: go test ./... -count=1 -v 2>&1 | tee ../ci-report/test.txt
+        run: go test ./... -count=1 -v
       - name: go build (windows/amd64)
-        id: build
         env:
           GOOS: windows
           GOARCH: amd64
-        run: go build ./... 2>&1 | tee ../ci-report/build.txt
-      - name: publish text report to ci-reports branch
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_NAME: windows
-          OUTCOMES: "version=${{ steps.ver.outcome }} vet=${{ steps.vet.outcome }} test=${{ steps.test.outcome }} build=${{ steps.build.outcome }} job=${{ job.status }}"
-        run: bash .github/workflows/publish-report.sh
+        run: go build ./...
 
   linux:
     name: linux / go1.20.14 vet + pure-Go tests
@@ -70,23 +54,12 @@ jobs:
           check-latest: false
           cache: false
       - name: go version (must be go1.20.14)
-        id: ver
         run: |
-          mkdir -p ../ci-report
-          go version | tee ../ci-report/version.txt
-          grep -q "go1.20.14 linux/amd64" ../ci-report/version.txt
+          go version
+          go version | grep -q "go1.20.14 linux/amd64"
       - name: go vet (linux + GOOS=windows)
-        id: vet
         run: |
-          go vet ./... 2>&1 | tee ../ci-report/vet.txt
-          GOOS=windows GOARCH=amd64 go vet ./... 2>&1 | tee -a ../ci-report/vet.txt
+          go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
       - name: go test
-        id: test
-        run: go test ./... -count=1 -v 2>&1 | tee ../ci-report/test.txt
-      - name: publish text report to ci-reports branch
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_NAME: linux
-          OUTCOMES: "version=${{ steps.ver.outcome }} vet=${{ steps.vet.outcome }} test=${{ steps.test.outcome }} job=${{ job.status }}"
-        run: bash .github/workflows/publish-report.sh
+        run: go test ./... -count=1 -v

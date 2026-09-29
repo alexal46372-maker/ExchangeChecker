@@ -40,7 +40,4 @@ CHK-CFG-02 (`TestCHK_CFG_02_*`) выполняется только на Windows
 
 ## CHK-CI-01: где смотреть результаты
 
-Workflow `.github/workflows/ci.yml` (push в любую ветку, кроме `ci-reports`, и pull_request).
-Каждый job коммитит текстовый отчёт (go version, vet, test -v, build) в orphan-ветку
-`ci-reports`: `reports/<sha>/<job>-<ref>-<run_id>-<attempt>.txt` (скрипт
-`.github/workflows/publish-report.sh`). Только текст, без exe/zip и без Actions artifacts.
+Workflow `.github/workflows/ci.yml` запускается при push в любую ветку и при `pull_request`. Результаты обоих job читаются через GitHub Actions API; Actions artifacts и отдельная ветка отчётов не используются.

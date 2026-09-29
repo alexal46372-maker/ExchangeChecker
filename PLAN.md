@@ -365,6 +365,7 @@ Wizard Win32 (страницы):
 - `internal/config`, `internal/model`, DPAPI-секреты (`CRYPTPROTECT_LOCAL_MACHINE`)
 - CI: `.github/workflows/ci.yml` (Go 1.20.14, windows + linux)
 - checks: `CHK-CFG-01`, `CHK-CFG-02`, `CHK-CI-01`
+- Результаты CI читаются через GitHub Actions API; отдельная ветка отчётов и Actions artifacts не используются.
 
 ### Фаза 2 — SQL spike + Discovery
 

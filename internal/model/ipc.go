@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // IPC protocol types between the service (server) and the tray (client),
 // phase 3 (CHK-MON-06). Transport: named pipe PipeName, each message is a
@@ -15,8 +18,13 @@ const (
 	EventSource = "ExchangeChecker"
 	// PipeName is the service's named pipe.
 	PipeName = `\\.\pipe\ExchangeChecker`
-	// IPCVersion is the protocol version (Hello).
-	IPCVersion = 1
+	// IPCVersion is the protocol version (Hello, Pong). Version 2 (phase
+	// 4, CHK-IPC-05) adds test_profile, ack_alert, the heartbeat, error
+	// codes and Hello.Capabilities; every addition is an omitempty field or
+	// a new command, so version-1 clients keep working unchanged (unknown
+	// JSON fields are ignored) and a new client talking to a version-1
+	// service sees Version 1 / no Capabilities and hides the new features.
+	IPCVersion = 2
 	// IPCMaxMessage caps one framed service -> tray message (bytes):
 	// status snapshots of many bases may be large.
 	IPCMaxMessage = 16 << 20
@@ -56,7 +64,55 @@ const (
 	CmdGetStatus    = "get_status"
 	CmdReloadConfig = "reload_config"
 	CmdPollNow      = "poll_now"
+	// CmdTestProfile tests a connection (phase 4, CHK-IPC-03): the saved
+	// profile IPCRequest.ProfileID or the unsaved IPCRequest.Profile (+
+	// Password). Reply MsgTestResult or MsgError (Code).
+	CmdTestProfile = "test_profile"
+	// CmdAckAlert acknowledges the active alerts of IPCRequest.ProfileID
+	// (all of them, or only IPCRequest.PointKey) (phase 4, CHK-IPC-02).
+	// Reply MsgOK with Acked / Result ResultAcknowledged, or MsgError.
+	CmdAckAlert = "ack_alert"
 )
+
+// Capabilities announced in Hello.Capabilities (protocol version 2).
+const (
+	CapTestProfile = "test_profile"
+	CapAckAlert    = "ack_alert"
+	CapHeartbeat   = "heartbeat"
+)
+
+// ResultAcknowledged is IPCMessage.Result of an ack_alert reply.
+const ResultAcknowledged = "acknowledged"
+
+// Machine-readable error codes (IPCMessage.Code of MsgError, protocol
+// version 2). Version-1 replies had only Error; Error stays filled.
+const (
+	// ErrCodeBusy: the maximum number of concurrent connection tests runs.
+	ErrCodeBusy = "busy"
+	// ErrCodeNotFound: unknown profile (or point) ID.
+	ErrCodeNotFound = "not_found"
+	// ErrCodeInvalidRequest: malformed request (bad profile, missing
+	// password, ...); ErrorKey tells what to fix.
+	ErrCodeInvalidRequest = "invalid_request"
+	// ErrCodeNoActiveAlert: ack_alert found nothing to acknowledge.
+	ErrCodeNoActiveAlert = "no_active_alert"
+	// ErrCodeUnknownCommand: the service does not know the command.
+	ErrCodeUnknownCommand = "unknown_command"
+	// ErrCodeRateLimited: the command was refused by the command rate
+	// limit (IPCCommandInterval); test_profile cannot be merged into an
+	// earlier call, so it is refused instead of coalesced.
+	ErrCodeRateLimited = "rate_limited"
+)
+
+// IPCError is an error with a protocol error code and a localizable
+// message key; the IPC server copies both into the MsgError reply.
+type IPCError struct {
+	Code    string
+	Key     string
+	Message string
+}
+
+func (e *IPCError) Error() string { return e.Message }
 
 // IPC message types (IPCMessage.Type), service -> tray. Replies carry the
 // request ID; pushes (status after every poll, alerts) have ID 0.
@@ -67,14 +123,57 @@ const (
 	MsgOK     = "ok"
 	MsgError  = "error"
 	MsgAlert  = "alert"
+	// MsgTestResult is the reply of test_profile (IPCMessage.Test).
+	MsgTestResult = "test_result"
 )
 
 // IPCRequest is a tray -> service command.
 type IPCRequest struct {
 	ID  uint64 `json:"id"`
 	Cmd string `json:"cmd"`
-	// ProfileID optionally restricts poll_now to one profile.
+	// ProfileID optionally restricts poll_now to one profile; the saved
+	// profile of test_profile; the profile of ack_alert.
 	ProfileID string `json:"profileId,omitempty"`
+	// Profile is the unsaved profile of test_profile (version 2).
+	Profile *Profile `json:"profile,omitempty"`
+	// Password of Profile (test_profile). Never logged, never written to
+	// disk; String / GoString mask it.
+	Password string `json:"password,omitempty"`
+	// PointKey restricts ack_alert to one point (PointStatus.Key).
+	PointKey string `json:"pointKey,omitempty"`
+}
+
+// String masks the password (fmt %v / %+v of a request).
+func (r IPCRequest) String() string {
+	pw := ""
+	if r.Password != "" {
+		pw = "***"
+	}
+	prof := ""
+	if r.Profile != nil {
+		prof = r.Profile.ID + "@" + r.Profile.Server + "/" + r.Profile.Database
+	}
+	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s}",
+		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey)
+}
+
+// GoString masks the password (fmt %#v).
+func (r IPCRequest) GoString() string { return "model.IPCRequest" + r.String() }
+
+// Heartbeat is the service liveness block of Hello / Pong (version 2,
+// CHK-IPC-04). Times are UTC+3.
+type Heartbeat struct {
+	Protocol         int       `json:"protocol"`
+	Now              time.Time `json:"now"`
+	ServiceStartedAt time.Time `json:"serviceStartedAt"`
+	// LastCycleAt is the end of the last completed full poll cycle (nil
+	// before the first one; a single-profile poll_now does not count).
+	LastCycleAt *time.Time `json:"lastCycleAt,omitempty"`
+	// PollerHung: no full cycle completed for longer than HungAfterSec
+	// (measured from LastCycleAt, or from the service start).
+	PollerHung      bool `json:"pollerHung,omitempty"`
+	HungAfterSec    int  `json:"hungAfterSec"`
+	PollIntervalSec int  `json:"pollIntervalSec"`
 }
 
 // IPCMessage is a service -> tray reply or push.
@@ -84,9 +183,21 @@ type IPCMessage struct {
 	Type    string `json:"type"`
 	Version int    `json:"version,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Code / ErrorKey of MsgError (version 2): ErrCode* and a localizable
+	// key (monitor.*).
+	Code     string `json:"code,omitempty"`
+	ErrorKey string `json:"errorKey,omitempty"`
 	// Result is ResultAccepted / ResultCoalesced for poll_now and
 	// reload_config replies.
 	Result string          `json:"result,omitempty"`
 	Status *StatusSnapshot `json:"status,omitempty"`
 	Alert  *AlertEvent     `json:"alert,omitempty"`
+	// Capabilities of the service (Hello, version 2).
+	Capabilities []string `json:"capabilities,omitempty"`
+	// Heartbeat (Hello and Pong, version 2).
+	Heartbeat *Heartbeat `json:"heartbeat,omitempty"`
+	// Test is the test_profile result (MsgTestResult).
+	Test *TestProfileResult `json:"test,omitempty"`
+	// Acked is the number of alerts acknowledged by ack_alert.
+	Acked int `json:"acked,omitempty"`
 }

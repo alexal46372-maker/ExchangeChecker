@@ -22,6 +22,12 @@ type PointStatus struct {
 	// observation after the service started ("counting since
 	// observation", the real exchange happened at or before it).
 	Baseline bool `json:"baseline,omitempty"`
+	// Key identifies the point inside the profile (PointKey), e.g. for
+	// ack_alert (protocol version 2).
+	Key string `json:"key,omitempty"`
+	// Acknowledged: the active alert of the point was acknowledged
+	// (ack_alert); the level stays as it is (CHK-IPC-02).
+	Acknowledged bool `json:"acknowledged,omitempty"`
 }
 
 // ProfileSnapshot is one database (profile) in a snapshot.
@@ -50,6 +56,9 @@ type ProfileSnapshot struct {
 	CheckedAt    time.Time `json:"checkedAt"`
 	// Polled is false until the first poll of the profile finished.
 	Polled bool `json:"polled"`
+	// Acknowledged: the profile-level alert (connection / query error)
+	// was acknowledged (CHK-IPC-02).
+	Acknowledged bool `json:"acknowledged,omitempty"`
 }
 
 // StatusSnapshot is the full monitor state sent to the tray.
@@ -76,6 +85,14 @@ type StatusSnapshot struct {
 	// ConfigStale: the last load failed and the previous good
 	// configuration is still in use (profiles, counters, alerts kept).
 	ConfigStale bool `json:"configStale,omitempty"`
+	// Heartbeat fields (protocol version 2, CHK-IPC-04): service start,
+	// end of the last completed full poll cycle (nil before the first
+	// one), PollerHung when no cycle completed for longer than
+	// HungAfterSec (evaluated when the snapshot is read).
+	ServiceStartedAt *time.Time `json:"serviceStartedAt,omitempty"`
+	LastCycleAt      *time.Time `json:"lastCycleAt,omitempty"`
+	PollerHung       bool       `json:"pollerHung,omitempty"`
+	HungAfterSec     int        `json:"hungAfterSec,omitempty"`
 }
 
 // minutesFloor returns whole minutes of d (d >= 0).
@@ -86,7 +103,7 @@ func minutesFloor(d time.Duration) int { return int(d / time.Minute) }
 // converted to UTC+3.
 func NewPointStatus(p ExchangePoint, s Settings, now time.Time) PointStatus {
 	now = now.In(DBZone)
-	ps := PointStatus{ExchangePoint: p, LagMinutes: -1}
+	ps := PointStatus{ExchangePoint: p, LagMinutes: -1, Key: PointKey(p)}
 	if p.LastSend != nil {
 		t := p.LastSend.In(DBZone)
 		ps.LastSend = &t

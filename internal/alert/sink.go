@@ -53,6 +53,7 @@ const (
 	EventIDRecover  uint32 = 101 // level decreased (information)
 	EventIDWarning  uint32 = 102 // level raised to warning
 	EventIDError    uint32 = 103 // level raised to error
+	EventIDAck      uint32 = 104 // alarm acknowledged from the tray (information)
 	EventIDInternal uint32 = 110 // configuration / internal error
 )
 

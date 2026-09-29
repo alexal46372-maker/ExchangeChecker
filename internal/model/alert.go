@@ -28,6 +28,14 @@ type AlertEvent struct {
 	// Error / ErrorKey of a profile-level event.
 	Error    string `json:"error,omitempty"`
 	ErrorKey string `json:"errorKey,omitempty"`
+	// Key is the point key (PointStatus.Key) of a point event, "" for a
+	// profile-level event (ack_alert, protocol version 2).
+	Key string `json:"key,omitempty"`
+	// Acknowledged / AckedAt: the alert was acknowledged (ack_alert); it
+	// stays active and visible, the tray stops repeating notifications
+	// (CHK-IPC-02).
+	Acknowledged bool       `json:"acknowledged,omitempty"`
+	AckedAt      *time.Time `json:"ackedAt,omitempty"`
 }
 
 // Raised reports whether the event is an escalation (to a worse level).

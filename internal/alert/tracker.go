@@ -73,6 +73,10 @@ type keyState struct {
 	pending model.AlertLevel
 	count   int
 	active  model.AlertEvent // last event, refreshed while not OK
+	// confirmed: stable was confirmed by an observation (a transition or
+	// an observation equal to stable); false for a new key whose first
+	// observations are still debounced (e.g. right after a restart).
+	confirmed bool
 }
 
 // Tracker turns per-poll observations into debounced transition events.
@@ -100,7 +104,7 @@ func (t *Tracker) Observe(o Observation, now time.Time) (model.AlertEvent, bool)
 		t.states[o.Key] = st
 	}
 	if o.Level == st.stable {
-		st.pending, st.count = st.stable, 0
+		st.pending, st.count, st.confirmed = st.stable, 0, true
 		if st.stable != model.LevelOK {
 			t.refresh(st, o)
 		}
@@ -125,7 +129,7 @@ func (t *Tracker) Observe(o Observation, now time.Time) (model.AlertEvent, bool)
 	t.nextID++
 	ev := o.Event
 	ev.ID, ev.From, ev.To, ev.At = t.nextID, st.stable, o.Level, now.In(model.DBZone)
-	st.stable, st.pending, st.count = o.Level, o.Level, 0
+	st.stable, st.pending, st.count, st.confirmed = o.Level, o.Level, 0, true
 	st.active = ev
 	return ev, true
 }
@@ -147,6 +151,28 @@ func (t *Tracker) Level(key string) model.AlertLevel {
 		return st.stable
 	}
 	return model.LevelOK
+}
+
+// Confirmed returns the confirmed level of key and whether it is really
+// confirmed: false for an unknown key and for a new key whose first
+// observations are still being debounced (ack_alert keeps its
+// acknowledgement then, CHK-IPC-02).
+func (t *Tracker) Confirmed(key string) (model.AlertLevel, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if st, ok := t.states[key]; ok {
+		return st.stable, st.confirmed
+	}
+	return model.LevelOK, false
+}
+
+// Has reports whether key is tracked (the point or profile was observed
+// and not forgotten).
+func (t *Tracker) Has(key string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, ok := t.states[key]
+	return ok
 }
 
 // Active returns the currently active alerts (confirmed level != OK),

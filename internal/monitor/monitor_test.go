@@ -57,7 +57,9 @@ func (r *fakeReader) ListPoints(ctx context.Context) ([]model.ExchangePoint, err
 	f.mu.Lock()
 	b := f.b[r.id]
 	f.calls[r.id]++
+	obs := f.counters[r.id] // observed now (a hung reader applies it late)
 	f.mu.Unlock()
+	defer func() { f.mu.Lock(); f.finished[r.id]++; f.mu.Unlock() }()
 	if b.panic {
 		panic("boom in reader " + r.id)
 	}
@@ -75,13 +77,16 @@ func (r *fakeReader) ListPoints(ctx context.Context) ([]model.ExchangePoint, err
 		return nil, b.err
 	}
 	now := r.opt.Now()
-	if b.counter {
-		prev, _ := r.opt.Counters.Load(r.id)
-		f.mu.Lock()
-		obs := f.counters[r.id]
-		f.mu.Unlock()
-		next, times := model.ApplyCounters(prev, obs, now)
-		_ = r.opt.Counters.Save(r.id, next)
+	if b.counter { // same step as sqlcheck.applyCounters
+		var times []model.CounterTimes
+		err := model.UpdateCounterState(r.opt.Counters, r.id, func(prev model.CounterState) (model.CounterState, error) {
+			var next model.CounterState
+			next, times = model.ApplyCounters(prev, obs, now)
+			return next, nil
+		})
+		if err != nil {
+			return nil, &sqlcheck.Error{Kind: sqlcheck.KindConfig, Op: "counters state", Err: err}
+		}
 		return model.CounterPoints(r.id, times, r.opt.Settings, now), nil
 	}
 	if b.points == nil {
@@ -103,6 +108,7 @@ type fakeFactory struct {
 	calls     map[string]int
 	created   map[string]int
 	closed    map[string]int
+	finished  map[string]int
 	counters  map[string][]model.CounterObservation
 	lastOpt   map[string]sqlcheck.Options
 	active    int32
@@ -111,7 +117,7 @@ type fakeFactory struct {
 
 func newFactory() *fakeFactory {
 	return &fakeFactory{b: map[string]behavior{}, calls: map[string]int{}, created: map[string]int{},
-		closed: map[string]int{}, counters: map[string][]model.CounterObservation{}, lastOpt: map[string]sqlcheck.Options{}}
+		closed: map[string]int{}, finished: map[string]int{}, counters: map[string][]model.CounterObservation{}, lastOpt: map[string]sqlcheck.Options{}}
 }
 
 func (f *fakeFactory) set(id string, b behavior) { f.mu.Lock(); f.b[id] = b; f.mu.Unlock() }

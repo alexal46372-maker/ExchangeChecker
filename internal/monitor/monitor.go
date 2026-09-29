@@ -95,6 +95,7 @@ type entry struct {
 	gen       uint64 // incremented when a hung reader is abandoned
 	retired   bool
 	reader    sqlcheck.ReadCloser
+	cmu       sync.Mutex // counters step lock for stores without Update
 }
 
 // acquire marks the entry busy and returns its generation; false if a
@@ -160,6 +161,53 @@ func (e *entry) closeLocked() {
 		_ = e.reader.Close()
 		e.reader = nil
 	}
+}
+
+// errAbandoned: the counters write of a reader abandoned as hung is
+// rejected (CHK-MON-13).
+var errAbandoned = errors.New("monitor: reader abandoned as hung, counters state not written")
+
+// genCounters is the counters store handed to one reader: every write is
+// accepted only while the entry is still in the reader's generation, and
+// the Load -> apply -> Save step runs under the profile lock of the
+// underlying store (or the entry's own lock), so an abandoned hung reader
+// that returns late can never overwrite the state of its successor with
+// a stale observation (CHK-MON-13).
+type genCounters struct {
+	inner model.CounterStateStore
+	e     *entry
+	gen   uint64
+}
+
+func (g genCounters) current() bool {
+	g.e.mu.Lock()
+	defer g.e.mu.Unlock()
+	return g.e.gen == g.gen
+}
+
+// Load implements model.CounterStateStore.
+func (g genCounters) Load(id string) (model.CounterState, error) { return g.inner.Load(id) }
+
+// Save implements model.CounterStateStore (generation-checked).
+func (g genCounters) Save(id string, st model.CounterState) error {
+	return g.Update(id, func(model.CounterState) (model.CounterState, error) { return st, nil })
+}
+
+// Update implements model.CounterStateUpdater: the generation is checked
+// inside the store's per-profile critical section, right before the write.
+func (g genCounters) Update(id string, fn func(model.CounterState) (model.CounterState, error)) error {
+	guarded := func(prev model.CounterState) (model.CounterState, error) {
+		if !g.current() {
+			return model.CounterState{}, errAbandoned
+		}
+		return fn(prev)
+	}
+	if u, ok := g.inner.(model.CounterStateUpdater); ok {
+		return u.Update(id, guarded)
+	}
+	g.e.cmu.Lock()
+	defer g.e.cmu.Unlock()
+	return model.UpdateCounterState(g.inner, id, guarded)
 }
 
 // Monitor polls all profiles and keeps the status snapshot.
@@ -728,7 +776,8 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 		if r == nil {
 			var err error
 			r, err = m.opt.NewReader(p, e.password, sqlcheck.Options{
-				Settings: p.EffectiveSettings(settings), Now: m.opt.Now, Counters: m.opt.Counters})
+				Settings: p.EffectiveSettings(settings), Now: m.opt.Now,
+				Counters: genCounters{inner: m.opt.Counters, e: e, gen: gen}})
 			if err != nil {
 				resc <- fail(err.Error(), ErrorKeyOf(err))
 				return
@@ -803,8 +852,11 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	}
 	if m.cfgFatal != nil {
 		snap.ConfigError = m.cfgFatal.Error()
-		snap.ConfigErrorKey = model.MsgMonitorConfigStale
 		snap.ConfigStale = m.stale
+		snap.ConfigErrorKey = model.MsgMonitorConfigInvalid
+		if m.stale {
+			snap.ConfigErrorKey = model.MsgMonitorConfigStale
+		}
 	}
 	m.snap = snap
 	m.mu.Unlock()

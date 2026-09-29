@@ -28,20 +28,26 @@ const (
 	// MsgMonitorConfigStale: profiles.json / secrets could not be read or
 	// parsed; the last good configuration stays in use (CHK-MON-10).
 	MsgMonitorConfigStale = "monitor.config_stale"
+	// MsgMonitorConfigInvalid: a config file cannot be read or parsed and
+	// there is no previously loaded valid configuration (first start):
+	// default settings are used; profiles from an unreadable profiles.json
+	// are not polled (CHK-MON-10).
+	MsgMonitorConfigInvalid = "monitor.config_invalid"
 )
 
 var monitorMessages = map[string][2]string{ // key -> {ru, en}
-	MsgMonitorPollError:   {"Ошибка опроса базы.", "Database poll failed."},
-	MsgMonitorConnError:   {"Нет соединения с SQL Server (сеть, имя сервера, логин или пароль).", "Cannot connect to SQL Server (network, server name, login or password)."},
-	MsgMonitorTimeout:     {"Опрос базы не уложился в отведённое время.", "The database poll timed out."},
-	MsgMonitorQueryError:  {"Ошибка запроса к базе.", "A database query failed."},
-	MsgMonitorMapping:     {"Для базы не настроены таблицы обмена (выполните «Найти таблицы»).", "The exchange tables are not configured (run \"Find tables\")."},
-	MsgMonitorConfig:      {"Ошибка настроек профиля или пароля.", "Profile settings or password error."},
-	MsgMonitorPanic:       {"Внутренняя ошибка при опросе базы.", "Internal error while polling the database."},
-	MsgMonitorBusy:        {"Предыдущий опрос базы ещё выполняется.", "The previous poll of the database is still running."},
-	MsgMonitorBaseline:    {"Не раньше запуска наблюдения службой.", "Not earlier than the service started observing."},
-	MsgMonitorHung:        {"Опрос базы завис; соединение закрыто и будет открыто заново.", "The database poll hung; the connection was closed and will be reopened."},
-	MsgMonitorConfigStale: {"Файл настроек не читается или повреждён; используются последние корректные настройки.", "The configuration file cannot be read or is corrupt; the last valid configuration is in use."},
+	MsgMonitorPollError:     {"Ошибка опроса базы.", "Database poll failed."},
+	MsgMonitorConnError:     {"Нет соединения с SQL Server (сеть, имя сервера, логин или пароль).", "Cannot connect to SQL Server (network, server name, login or password)."},
+	MsgMonitorTimeout:       {"Опрос базы не уложился в отведённое время.", "The database poll timed out."},
+	MsgMonitorQueryError:    {"Ошибка запроса к базе.", "A database query failed."},
+	MsgMonitorMapping:       {"Для базы не настроены таблицы обмена (выполните «Найти таблицы»).", "The exchange tables are not configured (run \"Find tables\")."},
+	MsgMonitorConfig:        {"Ошибка настроек профиля или пароля.", "Profile settings or password error."},
+	MsgMonitorPanic:         {"Внутренняя ошибка при опросе базы.", "Internal error while polling the database."},
+	MsgMonitorBusy:          {"Предыдущий опрос базы ещё выполняется.", "The previous poll of the database is still running."},
+	MsgMonitorBaseline:      {"Не раньше запуска наблюдения службой.", "Not earlier than the service started observing."},
+	MsgMonitorHung:          {"Опрос базы завис; соединение закрыто и будет открыто заново.", "The database poll hung; the connection was closed and will be reopened."},
+	MsgMonitorConfigInvalid: {"Файл настроек не читается или повреждён, а ранее загруженных корректных настроек нет: используются значения по умолчанию; базы из нечитаемого списка профилей не опрашиваются.", "A configuration file cannot be read or is corrupt and no valid configuration was loaded before: default settings are used; databases from an unreadable profile list are not polled."},
+	MsgMonitorConfigStale:   {"Файл настроек не читается или повреждён; используются последние корректные настройки.", "The configuration file cannot be read or is corrupt; the last valid configuration is in use."},
 }
 
 // MonitorMessage returns the text of a monitor.* key in lang ("en",
@@ -60,5 +66,5 @@ func MonitorMessage(key, lang string) string {
 // MonitorMessageKeys lists the monitor.* keys.
 func MonitorMessageKeys() []string {
 	return []string{MsgMonitorPollError, MsgMonitorConnError, MsgMonitorTimeout, MsgMonitorQueryError,
-		MsgMonitorMapping, MsgMonitorConfig, MsgMonitorPanic, MsgMonitorBusy, MsgMonitorBaseline, MsgMonitorHung, MsgMonitorConfigStale}
+		MsgMonitorMapping, MsgMonitorConfig, MsgMonitorPanic, MsgMonitorBusy, MsgMonitorBaseline, MsgMonitorHung, MsgMonitorConfigStale, MsgMonitorConfigInvalid}
 }

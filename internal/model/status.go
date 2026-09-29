@@ -68,8 +68,10 @@ type StatusSnapshot struct {
 	// ConfigError is set when settings/profiles/secrets could not be read
 	// (the monitor keeps running with the last good or default config).
 	ConfigError string `json:"configError,omitempty"`
-	// ConfigErrorKey is MsgMonitorConfigStale when profiles.json / secrets
-	// could not be read or parsed (CHK-MON-10).
+	// ConfigErrorKey is set when settings.json / profiles.json / secrets
+	// could not be read or parsed (CHK-MON-10): MsgMonitorConfigStale when
+	// the last good configuration is in use (ConfigStale), otherwise
+	// MsgMonitorConfigInvalid (first start: defaults / nothing polled).
 	ConfigErrorKey string `json:"configErrorKey,omitempty"`
 	// ConfigStale: the last load failed and the previous good
 	// configuration is still in use (profiles, counters, alerts kept).

@@ -178,6 +178,32 @@ type CounterStateStore interface {
 	Save(profileID string, st CounterState) error
 }
 
+// CounterStateUpdater is implemented by stores that can run a whole
+// Load -> apply -> Save step atomically for one profile (a per-profile
+// lock), so two readers of the same profile cannot lose each other's
+// update (CHK-MON-13). fn returning an error aborts the step: nothing is
+// saved and the error is returned.
+type CounterStateUpdater interface {
+	Update(profileID string, fn func(prev CounterState) (CounterState, error)) error
+}
+
+// UpdateCounterState runs fn through s.Update when s is a
+// CounterStateUpdater, otherwise as Load -> fn -> Save.
+func UpdateCounterState(s CounterStateStore, profileID string, fn func(prev CounterState) (CounterState, error)) error {
+	if u, ok := s.(CounterStateUpdater); ok {
+		return u.Update(profileID, fn)
+	}
+	prev, err := s.Load(profileID)
+	if err != nil {
+		return err
+	}
+	next, err := fn(prev)
+	if err != nil {
+		return err
+	}
+	return s.Save(profileID, next)
+}
+
 // MemCounterStore is an in-memory CounterStateStore (lost on restart,
 // which only means a new baseline).
 type MemCounterStore struct {
@@ -215,6 +241,26 @@ func (s *MemCounterStore) Save(profileID string, st CounterState) error {
 		s.m = map[string]CounterState{}
 	}
 	s.m[profileID] = copyCounterState(st)
+	return nil
+}
+
+// Update implements CounterStateUpdater (the store lock is held for the
+// whole step).
+func (s *MemCounterStore) Update(profileID string, fn func(prev CounterState) (CounterState, error)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev, ok := s.m[profileID]
+	if !ok {
+		prev = CounterState{Version: CounterStateVersion, Points: map[string]CounterPoint{}}
+	}
+	next, err := fn(copyCounterState(prev))
+	if err != nil {
+		return err
+	}
+	if s.m == nil {
+		s.m = map[string]CounterState{}
+	}
+	s.m[profileID] = copyCounterState(next)
 	return nil
 }
 

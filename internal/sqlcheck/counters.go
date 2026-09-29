@@ -33,14 +33,18 @@ func CounterObservations(raw []RawCounter) []model.CounterObservation {
 
 // applyCounters is the counters-mode step of ListPoints: apply the
 // observed counters (read with NOLOCK) to the remembered state, save the
-// state, evaluate points (same order as the returned times).
+// state, evaluate points (same order as the returned times). The
+// Load -> apply -> Save step is atomic per profile when the store supports
+// it (model.CounterStateUpdater; the monitor's store does, and it also
+// rejects the write of an abandoned hung reader — CHK-MON-13).
 func (b *base) applyCounters(obs []model.CounterObservation, now time.Time) ([]model.CounterTimes, []model.ExchangePoint, error) {
-	prev, err := b.opt.Counters.Load(b.profile.ID)
+	var times []model.CounterTimes
+	err := model.UpdateCounterState(b.opt.Counters, b.profile.ID, func(prev model.CounterState) (model.CounterState, error) {
+		var next model.CounterState
+		next, times = model.ApplyCounters(prev, obs, now)
+		return next, nil
+	})
 	if err != nil {
-		return nil, nil, &Error{Kind: KindConfig, Op: "counters state", Err: err}
-	}
-	next, times := model.ApplyCounters(prev, obs, now)
-	if err := b.opt.Counters.Save(b.profile.ID, next); err != nil {
 		return nil, nil, &Error{Kind: KindConfig, Op: "counters state", Err: err}
 	}
 	return times, model.CounterPoints(b.profile.ID, times, b.opt.Settings, now), nil

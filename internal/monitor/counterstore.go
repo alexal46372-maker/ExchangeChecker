@@ -49,6 +49,7 @@ type FileCounterStore struct {
 	mu      sync.Mutex
 	data    map[string]model.CounterState
 	lastErr error
+	locks   map[string]*sync.Mutex // per-profile Update / Save locks
 	write   func(dir, name string, data []byte, perm os.FileMode) error
 }
 
@@ -117,12 +118,51 @@ func (s *FileCounterStore) Load(profileID string) (model.CounterState, error) {
 	return copyState(st), nil
 }
 
+// plock returns the per-profile lock serializing Update / Save of one
+// profile (CHK-MON-13).
+func (s *FileCounterStore) plock(profileID string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.locks == nil {
+		s.locks = map[string]*sync.Mutex{}
+	}
+	l := s.locks[profileID]
+	if l == nil {
+		l = &sync.Mutex{}
+		s.locks[profileID] = l
+	}
+	return l
+}
+
+// Update implements model.CounterStateUpdater: Load -> fn -> Save under
+// the profile's lock, so concurrent readers of one profile (e.g. a new
+// reader and an abandoned hung one) cannot lose updates. Other profiles
+// are not blocked while fn runs.
+func (s *FileCounterStore) Update(profileID string, fn func(prev model.CounterState) (model.CounterState, error)) error {
+	l := s.plock(profileID)
+	l.Lock()
+	defer l.Unlock()
+	prev, _ := s.Load(profileID)
+	next, err := fn(prev)
+	if err != nil {
+		return err
+	}
+	return s.save(profileID, next)
+}
+
 // Save implements model.CounterStateStore: the in-memory state is updated
 // and the whole file rewritten atomically. A write error is not fatal for
 // monitoring (the in-memory state is used, the previous file stays intact):
 // it is logged, kept in LastError and nil is returned, so a full disk does
 // not turn every counters profile red.
 func (s *FileCounterStore) Save(profileID string, st model.CounterState) error {
+	l := s.plock(profileID)
+	l.Lock()
+	defer l.Unlock()
+	return s.save(profileID, st)
+}
+
+func (s *FileCounterStore) save(profileID string, st model.CounterState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data[profileID] = copyState(st)

@@ -197,7 +197,7 @@ func TestCHK_MON_10_FirstLoadFailure(t *testing.T) {
 	m.reloadConfig(true)
 	m.pollAll(context.Background())
 	s := m.Snapshot()
-	if len(s.Profiles) != 0 || s.ConfigError == "" || s.ConfigStale || s.ConfigErrorKey != model.MsgMonitorConfigStale {
+	if len(s.Profiles) != 0 || s.ConfigError == "" || s.ConfigStale || s.ConfigErrorKey != model.MsgMonitorConfigInvalid {
 		t.Errorf("snapshot %+v", s)
 	}
 	if w.n() != 1 || !strings.Contains(w.last(), "no previous good") {
@@ -546,8 +546,14 @@ func TestCHK_MON_10_SettingsBrokenOnFirstStart(t *testing.T) {
 	if !p.Polled || p.Level != model.LevelOK || s.PollIntervalSec != 60 || p.WarnMinutes != model.DefaultSettings().WarnMinutes {
 		t.Errorf("polling with defaults: %+v / %+v", s, p)
 	}
-	if s.ConfigStale || s.ConfigError == "" || s.ConfigErrorKey != model.MsgMonitorConfigStale {
+	if s.ConfigStale || s.ConfigError == "" || s.ConfigErrorKey != model.MsgMonitorConfigInvalid {
 		t.Errorf("snapshot flags %+v", s)
+	}
+	// the invalid key has its own RU/EN texts, distinct from "stale"
+	ru, en := model.MonitorMessage(model.MsgMonitorConfigInvalid, model.LangRU), model.MonitorMessage(model.MsgMonitorConfigInvalid, model.LangEN)
+	if ru == "" || en == "" || ru == model.MonitorMessage(model.MsgMonitorConfigStale, model.LangRU) ||
+		strings.Contains(en, "last valid") || !strings.Contains(en, "default") {
+		t.Errorf("config_invalid texts: %q / %q", ru, en)
 	}
 	if w.n() != 1 || !strings.Contains(w.last(), "using default settings") {
 		t.Errorf("warn %v", w.msgs)
@@ -560,5 +566,122 @@ func TestCHK_MON_10_SettingsBrokenOnFirstStart(t *testing.T) {
 	os.WriteFile(st.Path(config.SettingsFile), []byte(`{"version":1,"pollIntervalSec":20}`), 0o644)
 	if !m.reloadConfig(false) || m.Snapshot().PollIntervalSec != 20 || m.Snapshot().ConfigError != "" {
 		t.Errorf("after fix %+v", m.Snapshot())
+	}
+}
+
+// TestCHK_MON_13_AbandonedReaderCannotWriteCounters — a hung counters
+// reader is abandoned, a new reader takes over and advances the state;
+// when the old reader finally returns with its stale observation, its
+// write is rejected (generation check inside the profile lock): the new
+// reader's state and times are unchanged.
+func TestCHK_MON_13_AbandonedReaderCannotWriteCounters(t *testing.T) {
+	dir := t.TempDir()
+	store := OpenFileCounterStore(dir, nil)
+	f := newFactory()
+	hang := make(chan struct{})
+	f.set("c", behavior{counter: true, hang: hang})
+	f.counters["c"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 1, ReceivedNo: 1}} // stale obs
+	clk := &fakeClock{t: t0}
+	opt := baseOpt(f, NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("c")}}), clk)
+	opt.ProfileTimeout = func(model.Profile) time.Duration { return 50 * time.Millisecond }
+	opt.Counters = store
+	m := New(opt)
+	m.reloadConfig(true)
+	m.pollAll(context.Background()) // hangs -> timeout
+	clk.Add(200 * time.Millisecond)
+	f.set("c", behavior{counter: true})
+	m.pollAll(context.Background()) // abandoned as hung
+	if k := profileByID(m.Snapshot(), "c").ErrorKey; k != model.MsgMonitorHung {
+		t.Fatalf("not abandoned: %q", k)
+	}
+	f.mu.Lock()
+	f.counters["c"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 5, ReceivedNo: 5}}
+	f.mu.Unlock()
+	clk.Add(time.Minute)
+	m.pollAll(context.Background()) // new reader: baseline
+	f.mu.Lock()
+	f.counters["c"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 6, ReceivedNo: 6}}
+	f.mu.Unlock()
+	clk.Add(time.Minute)
+	tNew := clk.Now()
+	m.pollAll(context.Background()) // SentNo 5 -> 6: fresh time tNew
+	if f.get(f.created, "c") != 2 {
+		t.Fatalf("readers created %d", f.get(f.created, "c"))
+	}
+	want, _ := store.Load("c")
+	if want.Points["k"].SentNo != 6 || !want.Points["k"].SentChangedAt.Equal(tNew) {
+		t.Fatalf("new reader state %+v", want.Points["k"])
+	}
+	// the abandoned reader returns and tries to write SentNo 1
+	close(hang)
+	waitFor(t, func() bool { return f.get(f.finished, "c") >= 3 })
+	got, _ := store.Load("c")
+	if got.Points["k"] != want.Points["k"] {
+		t.Fatalf("abandoned reader overwrote the state: %+v, want %+v", got.Points["k"], want.Points["k"])
+	}
+	if disk, _ := OpenFileCounterStore(dir, nil).Load("c"); disk.Points["k"].SentNo != 6 {
+		t.Errorf("file rolled back: %+v", disk.Points["k"])
+	}
+	// the next poll sees no change: the time stays tNew (a rollback to
+	// SentNo 1 would make 6 look like a new change)
+	clk.Add(time.Minute)
+	m.pollAll(context.Background())
+	for _, p := range profileByID(m.Snapshot(), "c").Points {
+		if !p.FreshAt.Equal(tNew) {
+			t.Errorf("fresh time moved: %v, want %v", p.FreshAt, tNew)
+		}
+	}
+}
+
+// TestCHK_MON_13_CounterStoreProfileLock — FileCounterStore.Update runs
+// Load -> apply -> Save under a per-profile lock: concurrent updates of
+// one profile are not lost; another profile is not blocked meanwhile.
+func TestCHK_MON_13_CounterStoreProfileLock(t *testing.T) {
+	s := OpenFileCounterStore(t.TempDir(), nil)
+	var wg sync.WaitGroup
+	const n = 50
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := s.Update("p", func(prev model.CounterState) (model.CounterState, error) {
+				pt := prev.Points["k"]
+				time.Sleep(time.Millisecond) // widen the race window
+				pt.SentNo++
+				prev.Points["k"] = pt
+				return prev, nil
+			})
+			if err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	// a slow update of p does not block q
+	block := make(chan struct{})
+	go s.Update("p", func(prev model.CounterState) (model.CounterState, error) { <-block; return prev, errors.New("abort") })
+	time.Sleep(10 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		s.Update("q", func(prev model.CounterState) (model.CounterState, error) { return prev, nil })
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("profile q blocked by profile p")
+	}
+	close(block)
+	wg.Wait()
+	st, _ := s.Load("p")
+	if st.Points["k"].SentNo != n {
+		t.Errorf("lost updates: %d of %d", st.Points["k"].SentNo, n)
+	}
+	// an aborted step saves nothing
+	s.Update("p", func(prev model.CounterState) (model.CounterState, error) {
+		prev.Points["k"] = model.CounterPoint{SentNo: -1}
+		return prev, errors.New("abort")
+	})
+	if st, _ := s.Load("p"); st.Points["k"].SentNo != n {
+		t.Errorf("aborted update saved: %d", st.Points["k"].SentNo)
 	}
 }

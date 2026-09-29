@@ -2,6 +2,7 @@ package ipc
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"sync"
@@ -29,6 +30,27 @@ type Handler interface {
 	// PollNow polls every profile (profileID "") or one profile.
 	PollNow(profileID string) (coalesced bool, err error)
 	ReloadConfig() (coalesced bool)
+}
+
+// Optional handler interfaces (protocol version 2). A handler without
+// them serves version-1 commands only; Hello.Capabilities lists what it
+// supports and the other version-2 commands answer unknown_command.
+
+// Tester runs test_profile (CHK-IPC-03). Called on its own goroutine: a
+// test may take up to its timeout and must not block the client's other
+// requests (ping). Errors of type *model.IPCError carry the reply code.
+type Tester interface {
+	TestProfile(ctx context.Context, req model.IPCRequest) (model.TestProfileResult, error)
+}
+
+// Acker runs ack_alert (CHK-IPC-02).
+type Acker interface {
+	AckAlert(profileID, pointKey string) (int, error)
+}
+
+// HeartbeatSource fills the heartbeat of Hello / Pong (CHK-IPC-04).
+type HeartbeatSource interface {
+	Heartbeat() model.Heartbeat
 }
 
 // Logger is the line logger.
@@ -71,6 +93,9 @@ type Server struct {
 	stop   chan struct{}
 	slots  chan struct{}
 	wg     sync.WaitGroup
+	// ctx is canceled by Close (running test_profile calls end)
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type conn struct {
@@ -146,6 +171,42 @@ func (s *Server) initLocked() {
 	if s.after == nil {
 		s.after = time.After
 	}
+	if s.ctx == nil {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+	}
+}
+
+// Capabilities lists the version-2 features of the handler.
+func (s *Server) Capabilities() []string {
+	var caps []string
+	if _, ok := s.H.(Tester); ok {
+		caps = append(caps, model.CapTestProfile)
+	}
+	if _, ok := s.H.(Acker); ok {
+		caps = append(caps, model.CapAckAlert)
+	}
+	if _, ok := s.H.(HeartbeatSource); ok {
+		caps = append(caps, model.CapHeartbeat)
+	}
+	return caps
+}
+
+func (s *Server) heartbeat() *model.Heartbeat {
+	if h, ok := s.H.(HeartbeatSource); ok {
+		hb := h.Heartbeat()
+		return &hb
+	}
+	return nil
+}
+
+// errorReply builds MsgError; *model.IPCError supplies Code / ErrorKey.
+func errorReply(id uint64, err error, code string) model.IPCMessage {
+	m := model.IPCMessage{ID: id, Type: model.MsgError, Error: err.Error(), Code: code}
+	var ie *model.IPCError
+	if errors.As(err, &ie) {
+		m.Code, m.ErrorKey = ie.Code, ie.Key
+	}
+	return m
 }
 
 // Serve accepts clients until Close; it returns nil after Close.
@@ -331,7 +392,7 @@ func (s *Server) writeLoop(c *conn) {
 func (s *Server) readLoop(c *conn) {
 	defer s.wg.Done()
 	defer s.drop(c)
-	c.send(model.IPCMessage{Type: model.MsgHello, Version: model.IPCVersion})
+	c.send(model.IPCMessage{Type: model.MsgHello, Version: model.IPCVersion, Capabilities: s.Capabilities(), Heartbeat: s.heartbeat()})
 	for {
 		var req model.IPCRequest
 		if err := s.readRequest(c, &req); err != nil {
@@ -346,6 +407,10 @@ func (s *Server) readLoop(c *conn) {
 			}
 			return
 		}
+		if t, ok := s.H.(Tester); ok && req.Cmd == model.CmdTestProfile {
+			s.startTest(c, t, req)
+			continue
+		}
 		if !c.send(s.handle(req)) {
 			s.Log.Printf("ipc: client too slow, disconnected")
 			return
@@ -353,11 +418,52 @@ func (s *Server) readLoop(c *conn) {
 	}
 }
 
+// startTest runs test_profile on its own goroutine; the reply is matched
+// by ID (the client may send ping meanwhile). The test ends at its
+// timeout, when the client disconnects or when the server closes.
+func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	ctx := s.ctx
+	s.wg.Add(1)
+	s.mu.Unlock()
+	go func() {
+		defer s.wg.Done()
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			select {
+			case <-c.done:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		res, err := t.TestProfile(ctx, req)
+		var m model.IPCMessage
+		if err != nil {
+			m = errorReply(req.ID, err, "")
+		} else {
+			m = model.IPCMessage{ID: req.ID, Type: model.MsgTestResult, Test: &res}
+		}
+		if !c.send(m) {
+			select {
+			case <-c.done:
+			default:
+				s.Log.Printf("ipc: client too slow, disconnected")
+				s.drop(c)
+			}
+		}
+	}()
+}
+
 // handle executes one command.
 func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 	switch req.Cmd {
 	case model.CmdPing:
-		return model.IPCMessage{ID: req.ID, Type: model.MsgPong, Version: model.IPCVersion}
+		return model.IPCMessage{ID: req.ID, Type: model.MsgPong, Version: model.IPCVersion, Heartbeat: s.heartbeat()}
 	case model.CmdGetStatus:
 		snap := s.H.Snapshot()
 		return model.IPCMessage{ID: req.ID, Type: model.MsgStatus, Status: &snap}
@@ -366,11 +472,19 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 	case model.CmdPollNow:
 		coalesced, err := s.H.PollNow(req.ProfileID)
 		if err != nil {
-			return model.IPCMessage{ID: req.ID, Type: model.MsgError, Error: err.Error()}
+			return errorReply(req.ID, err, "")
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: result(coalesced)}
+	case model.CmdAckAlert:
+		if a, ok := s.H.(Acker); ok {
+			n, err := a.AckAlert(req.ProfileID, req.PointKey)
+			if err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultAcknowledged, Acked: n}
+		}
 	}
-	return model.IPCMessage{ID: req.ID, Type: model.MsgError, Error: "unknown command: " + req.Cmd}
+	return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 }
 
 func result(coalesced bool) string {
@@ -424,6 +538,7 @@ func (s *Server) Close() error {
 	s.initLocked()
 	s.closed = true
 	close(s.stop)
+	s.cancel()
 	l := s.l
 	cs := make([]*conn, 0, len(s.conns))
 	for c := range s.conns {

@@ -800,29 +800,43 @@ func TestCHK_MON_10_InvalidWhenSettingsNeverValid(t *testing.T) {
 	f := newFactory()
 	f.set("a", behavior{})
 	opt := baseOpt(f, FileConfig{Store: st}, &fakeClock{t: t0})
+	// explicit, strictly increasing mtimes instead of sleeping until the
+	// file system clock ticks (phase 4, CHK-MON-10): every change is
+	// visible in the stamp
+	mt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	touch := func(names ...string) {
+		t.Helper()
+		for _, n := range names {
+			mt = mt.Add(time.Minute)
+			if err := os.Chtimes(st.Path(n), mt, mt); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	touch(config.SettingsFile, config.ProfilesFile)
 	m := New(opt)
 	m.reloadConfig(true)
 	if s := m.Snapshot(); s.ConfigErrorKey != model.MsgMonitorConfigInvalid || s.ConfigStale {
 		t.Fatalf("broken settings on first start: %+v", s)
 	}
-	time.Sleep(15 * time.Millisecond)
 	os.WriteFile(st.Path(config.ProfilesFile), []byte("{broken"), 0o644)
+	touch(config.ProfilesFile)
 	m.reloadConfig(false)
 	s := m.Snapshot()
 	if s.ConfigErrorKey != model.MsgMonitorConfigInvalid || s.ConfigStale || len(s.Profiles) != 1 {
 		t.Errorf("profiles broken, settings never valid: key %q stale %v profiles %d", s.ConfigErrorKey, s.ConfigStale, len(s.Profiles))
 	}
 	// both valid once -> a later profiles failure is stale
-	time.Sleep(15 * time.Millisecond)
 	os.WriteFile(st.Path(config.SettingsFile), []byte(`{"version":1}`), 0o644)
 	if err := st.SaveProfiles([]model.Profile{prof("a")}); err != nil {
 		t.Fatal(err)
 	}
+	touch(config.SettingsFile, config.ProfilesFile)
 	if !m.reloadConfig(false) || m.Snapshot().ConfigError != "" {
 		t.Fatalf("fixed: %+v", m.Snapshot())
 	}
-	time.Sleep(15 * time.Millisecond)
 	os.WriteFile(st.Path(config.ProfilesFile), []byte("{broken"), 0o644)
+	touch(config.ProfilesFile)
 	m.reloadConfig(false)
 	if s := m.Snapshot(); s.ConfigErrorKey != model.MsgMonitorConfigStale || !s.ConfigStale {
 		t.Errorf("after a valid load: key %q stale %v", s.ConfigErrorKey, s.ConfigStale)

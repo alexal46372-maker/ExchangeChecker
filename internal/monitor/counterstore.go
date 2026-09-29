@@ -51,6 +51,9 @@ type FileCounterStore struct {
 	lastErr error
 	locks   map[string]*sync.Mutex // per-profile Update / Save locks
 	write   func(dir, name string, data []byte, perm os.FileMode) error
+	// retainHook is called by Retain with the IDs it is about to lock
+	// (tests).
+	retainHook func(ids []string)
 }
 
 // OpenFileCounterStore loads dir/CountersFile (missing file = empty).
@@ -179,16 +182,27 @@ func (s *FileCounterStore) LastError() error {
 
 // Retain drops the states of profiles not in ids (deleted profiles).
 //
-// Each deleted profile's lock is taken first, so an Update of that
-// profile that already passed its checks finishes before the deletion
-// (and a later one is rejected by the monitor, whose entry was retired
-// before Retain): a removed profile cannot reappear in the file
-// (CHK-MON-13).
+// The lock of every known profile not in ids is taken first — profiles
+// with a stored state AND profiles that only have a lock (an Update in
+// progress whose first write has not landed yet, phase 4) — so an Update
+// that already passed its checks finishes before the deletion (and a
+// later one is rejected by the monitor, whose entry was retired before
+// Retain): a removed profile cannot reappear in the file, not even by
+// its very first write (CHK-MON-13). The locks of dropped profiles are
+// forgotten afterwards.
 func (s *FileCounterStore) Retain(ids map[string]bool) error {
 	s.mu.Lock()
+	seen := map[string]bool{}
 	var drop []string
 	for id := range s.data {
-		if !ids[id] {
+		if !ids[id] && !seen[id] {
+			seen[id] = true
+			drop = append(drop, id)
+		}
+	}
+	for id := range s.locks {
+		if !ids[id] && !seen[id] {
+			seen[id] = true
 			drop = append(drop, id)
 		}
 	}
@@ -197,6 +211,9 @@ func (s *FileCounterStore) Retain(ids map[string]bool) error {
 		return nil
 	}
 	sort.Strings(drop)
+	if s.retainHook != nil {
+		s.retainHook(drop)
+	}
 	for _, id := range drop {
 		l := s.plock(id)
 		l.Lock()
@@ -204,8 +221,16 @@ func (s *FileCounterStore) Retain(ids map[string]bool) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	changed := false
 	for _, id := range drop {
-		delete(s.data, id)
+		if _, ok := s.data[id]; ok {
+			delete(s.data, id)
+			changed = true
+		}
+		delete(s.locks, id)
+	}
+	if !changed {
+		return nil
 	}
 	return s.flushLocked()
 }

@@ -128,3 +128,18 @@ func (c *Client) Close() error {
 	<-c.done
 	return err
 }
+
+// TestProfile sends test_profile (protocol version 2, CHK-IPC-03) for the
+// saved profile profileID (p nil) or the unsaved p with password. Use a
+// ctx longer than the service's test timeout (15 s). The reply is
+// MsgTestResult (Test) or MsgError (Code: busy, rate_limited, not_found,
+// invalid_request, unknown_command on a version-1 service).
+func (c *Client) TestProfile(ctx context.Context, profileID string, p *model.Profile, password string) (model.IPCMessage, error) {
+	return c.Do(ctx, model.IPCRequest{Cmd: model.CmdTestProfile, ProfileID: profileID, Profile: p, Password: password})
+}
+
+// AckAlert sends ack_alert (protocol version 2, CHK-IPC-02): every active
+// alert of profileID (pointKey "") or one point.
+func (c *Client) AckAlert(ctx context.Context, profileID, pointKey string) (model.IPCMessage, error) {
+	return c.Do(ctx, model.IPCRequest{Cmd: model.CmdAckAlert, ProfileID: profileID, PointKey: pointKey})
+}

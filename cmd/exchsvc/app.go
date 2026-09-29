@@ -33,6 +33,10 @@ type appConfig struct {
 	Now          func() time.Time
 	PollInterval time.Duration
 	ConfigCheck  time.Duration
+	// Test overrides the connection test of test_profile (tests).
+	Test monitor.TestFunc
+	// TestAfter overrides the timer of the test timeout (tests).
+	TestAfter func(time.Duration) <-chan time.Time
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -95,6 +99,15 @@ func runService(ctx context.Context, ac appConfig) error {
 		Source:    monitor.FileConfig{Store: store},
 		NewReader: ac.NewReader,
 		Counters:  monitor.OpenFileCounterStore(ac.Dir, log),
+		// alarm acknowledgements next to counters-state.json (CHK-IPC-02)
+		Acks: monitor.OpenFileAckStore(ac.Dir, log),
+		// one informational Event Log entry per acknowledgement; the
+		// alert entries themselves are not changed by an ack
+		OnAck: func(e model.AlertEvent) {
+			report(alert.EventTypeInformation, alert.EventIDAck, alert.FormatAck(e, lang))
+		},
+		Test:      ac.Test,
+		TestAfter: ac.TestAfter,
 		Log:       log,
 		Sink: alert.Multi{
 			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},

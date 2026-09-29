@@ -38,9 +38,14 @@ const (
 	HungFactor = 3
 )
 
-// ErrUnknownProfile is returned by PollNow for a profile ID that is not
-// in the current configuration.
-var ErrUnknownProfile = errors.New("monitor: unknown profile")
+// ErrUnknownProfile is returned by PollNow / AckAlert / TestProfile for a
+// profile ID that is not in the current configuration
+// (deleted or never saved); IPC code not_found.
+var ErrUnknownProfile = &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile, Message: "monitor: unknown profile"}
+
+// ErrRateLimited: test_profile refused by the command rate limit (IPC
+// code rate_limited).
+var ErrRateLimited = &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgMonitorRateLimited, Message: "monitor: too many requests"}
 
 // Options configure a Monitor. Zero values = defaults.
 type Options struct {
@@ -81,6 +86,24 @@ type Options struct {
 	// ConfigWarnEvery is the repeat period of an unchanged config-load
 	// warning (default 15 min).
 	ConfigWarnEvery time.Duration
+
+	// Acks keeps the alarm acknowledgements (FileAckStore in the
+	// service); nil = in-memory (CHK-IPC-02).
+	Acks AckStore
+	// OnAck is called for every newly acknowledged alert (the service
+	// writes one informational Event Log entry).
+	OnAck func(model.AlertEvent)
+
+	// Connection test of test_profile (CHK-IPC-03): Test (default
+	// sqlcheck.TestConnection without server information), TestCategory
+	// (default FallbackCategory), TestTimeout (default 15 s), TestMax
+	// concurrent tests (default 2), TestAfter = timer of the hard timeout
+	// (tests).
+	Test         TestFunc
+	TestCategory func(error) string
+	TestTimeout  time.Duration
+	TestMax      int
+	TestAfter    func(time.Duration) <-chan time.Time
 }
 
 // entry is the per-profile runtime state.
@@ -95,6 +118,13 @@ type entry struct {
 	gen       uint64 // incremented when a hung reader is abandoned
 	retired   bool
 	reader    sqlcheck.ReadCloser
+}
+
+// busyNow reports whether a poll of the entry is running.
+func (e *entry) busyNow() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.busy
 }
 
 // acquire marks the entry busy and returns its generation; false if a
@@ -238,6 +268,21 @@ type Monitor struct {
 	seq      uint64
 	lastPoll time.Time
 	snap     model.StatusSnapshot
+	// retired entries whose poll was still running when they were
+	// retired; reaped (abandonHung) like live entries (CHK-MON-13)
+	retired []*entry
+
+	// heartbeat (CHK-IPC-04)
+	started      time.Time
+	lastCycle    time.Time // end of the last completed full poll cycle
+	hungReported bool
+
+	// acknowledgements (CHK-IPC-02), guarded by mu; ackSave serializes
+	// the writes
+	acks    map[string]AckRecord
+	ackSave sync.Mutex
+
+	tester *Tester
 
 	clMu   sync.Mutex
 	cLocks map[string]*sync.Mutex // counterLock
@@ -283,12 +328,20 @@ func New(opt Options) *Monitor {
 	if opt.ConfigWarnEvery <= 0 {
 		opt.ConfigWarnEvery = DefaultConfigWarnEvery
 	}
-	return &Monitor{
+	if opt.Acks == nil {
+		opt.Acks = &MemAckStore{}
+	}
+	m := &Monitor{
 		opt: opt, tracker: alert.NewTracker(opt.Policy),
 		pollNow: make(chan struct{}, 1), reload: make(chan struct{}, 1),
 		entries: map[string]*entry{}, results: map[string]model.ProfileSnapshot{},
 		cmdLast: map[string]time.Time{}, pendIDs: map[string]bool{},
+		started: opt.Now().In(model.DBZone), acks: map[string]AckRecord{},
+		tester: &Tester{Test: opt.Test, Category: opt.TestCategory, Timeout: opt.TestTimeout,
+			Max: opt.TestMax, Now: opt.Now, After: opt.TestAfter},
 	}
+	m.loadAcks()
+	return m
 }
 
 // counterLock returns the monitor's per-profile counters lock (shared by
@@ -311,6 +364,7 @@ func (m *Monitor) counterLock(id string) *sync.Mutex {
 const (
 	cmdKeyPollAll = "poll_now"
 	cmdKeyReload  = "reload_config"
+	cmdKeyTest    = "test_profile"
 )
 
 // allowLocked reports whether a command may run now: neither key nor any
@@ -398,13 +452,126 @@ func (m *Monitor) ReloadConfig() (coalesced bool) {
 }
 
 // Snapshot returns the latest status snapshot.
+// The heartbeat fields (PollerHung, ...) are evaluated now (CHK-IPC-04).
 func (m *Monitor) Snapshot() model.StatusSnapshot {
+	now := m.opt.Now().In(model.DBZone)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	s := m.snap
 	if !m.loaded {
-		return model.StatusSnapshot{Now: m.opt.Now().In(model.DBZone), Profiles: []model.ProfileSnapshot{}}
+		s = model.StatusSnapshot{Now: now, Profiles: []model.ProfileSnapshot{}}
 	}
-	return m.snap
+	m.heartbeatLocked(now).apply(&s)
+	return s
+}
+
+// hb is the heartbeat state at one instant.
+type hb struct {
+	started, lastCycle time.Time
+	hung               bool
+	hungAfter          time.Duration
+	interval           time.Duration
+}
+
+func (h hb) apply(s *model.StatusSnapshot) {
+	st := h.started
+	s.ServiceStartedAt = &st
+	s.LastCycleAt = nil
+	if !h.lastCycle.IsZero() {
+		lc := h.lastCycle
+		s.LastCycleAt = &lc
+	}
+	s.PollerHung, s.HungAfterSec = h.hung, int(h.hungAfter/time.Second)
+}
+
+// HungAfter is the poller-hang threshold (CHK-IPC-04, PLAN.md §6.2):
+//
+//	hungAfter = max(2 × interval, interval + cycleBudget)
+//	cycleBudget = ceil(enabled profiles / MaxConcurrent) × max profile
+//	              timeout + max start jitter
+//
+// A cycle normally ends within cycleBudget (a hung profile is cut off at
+// its timeout), so "no completed cycle for hungAfter" means the poll loop
+// itself is stuck.
+func (m *Monitor) hungAfterLocked() time.Duration {
+	interval := m.intervalLocked()
+	n := 0
+	var maxT time.Duration
+	for _, p := range m.cfg.Profiles {
+		if !p.Enabled {
+			continue
+		}
+		n++
+		if d := m.profileTimeout(p); d > maxT {
+			maxT = d
+		}
+	}
+	waves := (n + m.opt.MaxConcurrent - 1) / m.opt.MaxConcurrent
+	budget := time.Duration(waves)*maxT + m.maxJitter(interval)
+	h := 2 * interval
+	if d := interval + budget; d > h {
+		h = d
+	}
+	return h
+}
+
+// heartbeatLocked evaluates the heartbeat at now (m.mu held).
+func (m *Monitor) heartbeatLocked(now time.Time) hb {
+	h := hb{started: m.started, lastCycle: m.lastCycle, hungAfter: m.hungAfterLocked(), interval: m.intervalLocked()}
+	ref := m.lastCycle
+	if ref.IsZero() {
+		ref = m.started
+	}
+	h.hung = now.Sub(ref) > h.hungAfter
+	return h
+}
+
+// Heartbeat returns the heartbeat block of Hello / Pong (CHK-IPC-04).
+func (m *Monitor) Heartbeat() model.Heartbeat {
+	now := m.opt.Now().In(model.DBZone)
+	m.mu.Lock()
+	h := m.heartbeatLocked(now)
+	m.mu.Unlock()
+	out := model.Heartbeat{Protocol: model.IPCVersion, Now: now, ServiceStartedAt: h.started,
+		PollerHung: h.hung, HungAfterSec: int(h.hungAfter / time.Second), PollIntervalSec: int(h.interval / time.Second)}
+	if !h.lastCycle.IsZero() {
+		lc := h.lastCycle
+		out.LastCycleAt = &lc
+	}
+	return out
+}
+
+// checkHung is the poller watchdog (own goroutine in Run, so it works
+// while the loop is stuck): the first time the poller is found hung it
+// logs, warns (Event Log) and publishes the snapshot with PollerHung; the
+// recovery is logged once (CHK-IPC-04).
+func (m *Monitor) checkHung() {
+	now := m.opt.Now().In(model.DBZone)
+	m.mu.Lock()
+	h := m.heartbeatLocked(now)
+	report := h.hung && !m.hungReported
+	recovered := !h.hung && m.hungReported
+	if report || recovered {
+		m.hungReported = h.hung
+	}
+	m.mu.Unlock()
+	switch {
+	case report:
+		ref := h.lastCycle
+		what := "the last completed poll cycle"
+		if ref.IsZero() {
+			ref, what = h.started, "the service start"
+		}
+		msg := fmt.Sprintf("poller hung: no poll cycle completed for %s since %s (threshold %s)",
+			now.Sub(ref).Round(time.Second), what, h.hungAfter)
+		m.opt.Log.Printf("%s", msg)
+		if m.opt.Warn != nil {
+			m.opt.Warn(msg)
+		}
+		m.publish(nil)
+	case recovered:
+		m.opt.Log.Printf("poller: poll cycles complete again")
+	}
 }
 
 // interval returns the poll period.
@@ -428,6 +595,21 @@ func (m *Monitor) Run(ctx context.Context) error {
 	tick := time.NewTicker(m.opt.ConfigCheck)
 	defer tick.Stop()
 	defer m.closeAll()
+	wdDone := make(chan struct{})
+	defer func() { <-wdDone }()
+	go func() { // poller watchdog (CHK-IPC-04)
+		defer close(wdDone)
+		t := time.NewTicker(m.opt.ConfigCheck)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				m.checkHung()
+			}
+		}
+	}()
 	var only map[string]bool
 	for {
 		m.pollSome(ctx, only)
@@ -535,6 +717,7 @@ func (m *Monitor) reloadConfig(force bool) bool {
 	for id, old := range m.entries {
 		if next[id] != old {
 			retired = append(retired, old)
+			m.retired = append(m.retired, old)
 			delete(m.results, id)
 		}
 	}
@@ -554,6 +737,21 @@ func (m *Monitor) reloadConfig(force bool) bool {
 		_ = r.Retain(ids)
 	}
 	m.tracker.Retain(func(key string) bool { return ids[alert.KeyProfile(key)] })
+	m.mu.Lock()
+	acksChanged := m.applyAcksLocked(func(key string) bool { return ids[alert.KeyProfile(key)] })
+	m.mu.Unlock()
+	if acksChanged {
+		m.saveAcks()
+	}
+	// per-profile counters locks of removed profiles (CHK-MON-13); a
+	// changed profile keeps its lock (shared by the old and new entry)
+	m.clMu.Lock()
+	for id := range m.cLocks {
+		if !ids[id] {
+			delete(m.cLocks, id)
+		}
+	}
+	m.clMu.Unlock()
 	if recovered {
 		m.opt.Log.Printf("config: loaded successfully again")
 	}
@@ -640,8 +838,8 @@ func (m *Monitor) closeAll() {
 	}
 }
 
-// jitterFor returns the start delay of one profile in a poll.
-func (m *Monitor) jitterFor(interval time.Duration) time.Duration {
+// maxJitter is the max start delay of one profile in a poll.
+func (m *Monitor) maxJitter(interval time.Duration) time.Duration {
 	max := m.opt.Jitter
 	if max < 0 {
 		return 0
@@ -652,6 +850,15 @@ func (m *Monitor) jitterFor(interval time.Duration) time.Duration {
 			max = DefaultMaxJitter
 		}
 	}
+	if max < 0 {
+		return 0
+	}
+	return max
+}
+
+// jitterFor returns the start delay of one profile in a poll.
+func (m *Monitor) jitterFor(interval time.Duration) time.Duration {
+	max := m.maxJitter(interval)
 	if max <= 0 {
 		return 0
 	}
@@ -673,6 +880,7 @@ func (m *Monitor) pollAll(ctx context.Context) { m.pollSome(ctx, nil) }
 
 // pollSome polls the enabled profiles in only (nil = all).
 func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
+	m.reapRetired()
 	m.mu.Lock()
 	var es []*entry
 	for _, p := range m.cfg.Profiles {
@@ -725,8 +933,46 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 			res[e.profile.ID] = model.NewProfileSnapshot(e.profile, *results[i], cfg.Settings, now)
 			polled[e.profile.ID] = true
 		}
+		if only == nil {
+			m.lastCycle = now // a full cycle completed (CHK-IPC-04)
+		}
 		return polled
 	})
+	if only == nil {
+		m.checkHung()
+	}
+}
+
+// reapRetired frees retired entries whose poll hangs: like a live entry
+// (pollOne), the reader is detached and closed in the background after
+// HungFactor poll timeouts, so the sql.DB of a changed or removed profile
+// is closed even if its last poll never returns (CHK-MON-13). Entries
+// that are no longer busy were closed by release and are forgotten.
+func (m *Monitor) reapRetired() {
+	now := m.opt.Now()
+	m.mu.Lock()
+	keep := m.retired[:0]
+	var msgs []string
+	for _, e := range m.retired {
+		if !e.busyNow() {
+			continue
+		}
+		limit := HungFactor * m.profileTimeout(e.profile)
+		if since, hung := e.abandonHung(now, limit); hung {
+			msgs = append(msgs, fmt.Sprintf("profile %s: poll of the retired (changed or removed) configuration hung for %s (> %s), reader closed",
+				e.profile.ID, since.Round(time.Second), limit))
+			continue
+		}
+		keep = append(keep, e)
+	}
+	for i := len(keep); i < len(m.retired); i++ {
+		m.retired[i] = nil
+	}
+	m.retired = keep
+	m.mu.Unlock()
+	for _, msg := range msgs {
+		m.opt.Log.Printf("%s", msg)
+	}
 }
 
 // errRecorder remembers the last ListPoints error (for ErrorKey).
@@ -865,15 +1111,24 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 			events = append(events, m.observe(ps, now)...)
 		}
 	}
+	var keep func(string) bool
 	if update != nil {
-		m.tracker.Retain(m.keepKeys(profiles))
+		keep = m.keepKeys(profiles)
+		m.tracker.Retain(keep)
+	}
+	acksChanged := m.applyAcksLocked(keep)
+	alerts := m.tracker.Active()
+	m.markAckedLocked(profiles, alerts)
+	for i := range events {
+		m.markEventLocked(&events[i])
 	}
 	m.seq++
 	snap := model.StatusSnapshot{
 		Seq: m.seq, Now: now, Level: model.WorstProfileLevel(profiles), Profiles: profiles,
-		Alerts: m.tracker.Active(), PollIntervalSec: int(m.intervalLocked() / time.Second),
+		Alerts: alerts, PollIntervalSec: int(m.intervalLocked() / time.Second),
 		LastPollAt: m.lastPoll,
 	}
+	m.heartbeatLocked(now).apply(&snap)
 	if cfg.Err != nil {
 		snap.ConfigError = cfg.Err.Error()
 	}
@@ -887,6 +1142,9 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	}
 	m.snap = snap
 	m.mu.Unlock()
+	if acksChanged {
+		m.saveAcks()
+	}
 	for _, ev := range events {
 		m.opt.Log.Printf("alert #%d: %s", ev.ID, alert.Format(ev, model.LangEN))
 		if m.opt.Sink != nil {
@@ -926,7 +1184,7 @@ func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) []model.Alert
 	}
 	for _, pt := range ps.Points {
 		tmpl := model.AlertEvent{ProfileID: ps.ProfileID, ProfileName: ps.Name, PointName: pt.Name,
-			PlanTable: pt.PlanTable, FreshAt: pt.FreshAt, Baseline: pt.Baseline}
+			PlanTable: pt.PlanTable, FreshAt: pt.FreshAt, Baseline: pt.Baseline, Key: model.PointKey(pt.ExchangePoint)}
 		if pt.LagMinutes > 0 {
 			tmpl.LagMinutes = pt.LagMinutes
 		}

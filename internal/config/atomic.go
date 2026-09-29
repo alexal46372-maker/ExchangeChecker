@@ -41,3 +41,11 @@ func writeFileAtomic(dir, name string, data []byte, perm os.FileMode) (err error
 	}
 	return nil
 }
+
+// WriteFileAtomic is the exported atomic writer (temp file in dir, fsync,
+// MoveFileExW MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH on Windows,
+// rename elsewhere) for other ProgramData files of the service, e.g. the
+// counters state (CHK-MON-02).
+func WriteFileAtomic(dir, name string, data []byte, perm os.FileMode) error {
+	return writeFileAtomic(dir, name, data, perm)
+}

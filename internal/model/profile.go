@@ -24,6 +24,11 @@ const (
 	MappingNone   MappingMode = ""       // not configured yet
 	MappingAuto   MappingMode = "auto"   // confirmed Discovery candidate
 	MappingManual MappingMode = "manual" // edited by hand / manual SQL fallback
+	// MappingCounters is the fallback for configurations that store no
+	// exchange times at all: the service watches the _SentNo/_ReceivedNo
+	// message counters of the exchange-plan table and uses the moment a
+	// counter changed as LastSend/LastRecv (PLAN.md §5.3, ApplyCounters).
+	MappingCounters MappingMode = "counters"
 )
 
 // DefaultSQLPort is used when Profile.Port is 0.
@@ -31,13 +36,36 @@ const DefaultSQLPort = 1433
 
 // Mapping is the discovered (or manually edited) location of exchange
 // timestamps inside a 1C 8.1 database.
+//
+// Single-table mapping: Table holds point name/id and the send/recv columns.
+// Linked mapping (TimesTable set): Table is the points directory, TimesTable
+// holds the send/recv columns and TimesLinkColumn (binary(16) ref) points to
+// Table.PointKeyColumn (usually _IDRRef). All phase-2 fields are omitempty,
+// so phase-1 profiles.json documents load unchanged.
 type Mapping struct {
 	Mode            MappingMode `json:"mode,omitempty"`
+	Schema          string      `json:"schema,omitempty"` // "" = dbo
 	Table           string      `json:"table,omitempty"`
 	PointIDColumn   string      `json:"pointIdColumn,omitempty"`
 	PointNameColumn string      `json:"pointNameColumn,omitempty"`
-	LastSendColumn  string      `json:"lastSendColumn,omitempty"`
-	LastRecvColumn  string      `json:"lastRecvColumn,omitempty"`
+	// PointKeyColumn is the key of Table referenced by TimesLinkColumn
+	// (linked mode) or used as the counter-state key (counters mode).
+	PointKeyColumn  string `json:"pointKeyColumn,omitempty"`
+	TimesSchema     string `json:"timesSchema,omitempty"` // "" = Schema
+	TimesTable      string `json:"timesTable,omitempty"`
+	TimesLinkColumn string `json:"timesLinkColumn,omitempty"`
+	// KeepUnlinkedPoints lists points without a row in TimesTable (as
+	// no_timestamps errors) instead of skipping them (LEFT vs INNER JOIN).
+	KeepUnlinkedPoints bool   `json:"keepUnlinkedPoints,omitempty"`
+	LastSendColumn     string `json:"lastSendColumn,omitempty"`
+	LastRecvColumn     string `json:"lastRecvColumn,omitempty"`
+	// YearOffset is subtracted from stored years: 2000 for 1C databases
+	// created with the default offset, 0 otherwise (see YearOffset1C).
+	YearOffset int `json:"yearOffset,omitempty"`
+	// SentNoColumn / ReceivedNoColumn override the counter columns in
+	// counters mode (default _SentNo / _ReceivedNo).
+	SentNoColumn     string `json:"sentNoColumn,omitempty"`
+	ReceivedNoColumn string `json:"receivedNoColumn,omitempty"`
 	// ManualSQL is the fallback query for non-standard databases. It must
 	// return point name, last send, last recv (validated in phase 2).
 	ManualSQL string `json:"manualSql,omitempty"`
@@ -51,7 +79,7 @@ func (m Mapping) Configured() bool {
 // Validate checks internal consistency of the mapping.
 func (m Mapping) Validate() error {
 	switch m.Mode {
-	case MappingNone, MappingAuto, MappingManual:
+	case MappingNone, MappingAuto, MappingManual, MappingCounters:
 	default:
 		return fmt.Errorf("mapping: unknown mode %q", string(m.Mode))
 	}
@@ -59,9 +87,15 @@ func (m Mapping) Validate() error {
 		if strings.TrimSpace(m.PointNameColumn) == "" && strings.TrimSpace(m.PointIDColumn) == "" {
 			return errors.New("mapping: point name/id column is required when table is set")
 		}
-		if strings.TrimSpace(m.LastSendColumn) == "" && strings.TrimSpace(m.LastRecvColumn) == "" {
+		if m.Mode != MappingCounters && strings.TrimSpace(m.LastSendColumn) == "" && strings.TrimSpace(m.LastRecvColumn) == "" {
 			return errors.New("mapping: at least one of last-send/last-recv columns is required")
 		}
+	}
+	if err := m.validateLinked(); err != nil {
+		return err
+	}
+	if err := m.validateCounters(); err != nil {
+		return err
 	}
 	if m.Mode == MappingManual && !m.Configured() {
 		return errors.New("mapping: manual mode requires a table mapping or manual SQL")
@@ -84,6 +118,15 @@ type Profile struct {
 	HasPassword bool     `json:"hasPassword,omitempty"`
 	Enabled     bool     `json:"enabled"`
 	Mapping     Mapping  `json:"mapping"`
+
+	// Connection options (phase 2, all optional; see sqlprofile.go).
+	// Encrypt "" keeps the driver default (TLS for the login packet only).
+	Encrypt         EncryptMode `json:"encrypt,omitempty"`
+	TrustServerCert bool        `json:"trustServerCert,omitempty"`
+	// TLSMinVersion is "", "1.0", "1.1" or "1.2" ("1.0" for SQL 2005/2008).
+	TLSMinVersion     string `json:"tlsMinVersion,omitempty"`
+	ConnectTimeoutSec int    `json:"connectTimeoutSec,omitempty"`
+	QueryTimeoutSec   int    `json:"queryTimeoutSec,omitempty"`
 }
 
 // DisplayName returns Name, or "Server/Database" when Name is empty.
@@ -121,6 +164,9 @@ func (p Profile) Validate() error {
 	}
 	if p.AuthMode == AuthSQL && strings.TrimSpace(p.Login) == "" {
 		return fmt.Errorf("profile %q: login is required for SQL authentication", p.ID)
+	}
+	if err := p.validateConn(); err != nil {
+		return fmt.Errorf("profile %q: %w", p.ID, err)
 	}
 	if err := p.Mapping.Validate(); err != nil {
 		return fmt.Errorf("profile %q: %w", p.ID, err)

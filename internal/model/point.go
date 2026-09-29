@@ -17,6 +17,15 @@ type ExchangePoint struct {
 	Level     AlertLevel `json:"level"`
 	Message   string     `json:"message,omitempty"`
 	CheckedAt time.Time  `json:"checkedAt"`
+	// Source is "" for timestamp mappings and PointSourceCounters when the
+	// times were derived from message counters (Mapping mode "counters").
+	Source string `json:"source,omitempty"`
+	// SendBaseline / RecvBaseline mark a counters-mode time that is only the
+	// first observation after the service started: the real change happened
+	// at or before that moment, so the UI shows "not earlier than service
+	// start" instead of an exact time.
+	SendBaseline bool `json:"sendBaseline,omitempty"`
+	RecvBaseline bool `json:"recvBaseline,omitempty"`
 }
 
 // FreshAt returns the later of LastSend / LastRecv in DBZone; NULLs are ignored.

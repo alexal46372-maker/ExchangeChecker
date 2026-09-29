@@ -343,8 +343,12 @@ func TestCHK_MON_03_LoopStopAndPollNow(t *testing.T) {
 	defer cancel2()
 	go m2.Run(ctx2)
 	waitFor(t, func() bool { return f2.get(f2.calls, "a") == 1 })
-	m2.PollNow()
-	m2.PollNow() // coalesced, never blocks
+	if c, err := m2.PollNow(""); c || err != nil {
+		t.Errorf("first poll_now: coalesced %v err %v", c, err)
+	}
+	if c, _ := m2.PollNow(""); !c { // rate-limited, never blocks
+		t.Error("second poll_now within 10 s must be coalesced")
+	}
 	waitFor(t, func() bool { return f2.get(f2.calls, "a") >= 2 })
 	if n := m2.Snapshot().PollIntervalSec; n != 3600 {
 		t.Errorf("interval in snapshot: %d", n)

@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -19,6 +20,11 @@ import (
 const PipeSDDL = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12018b;;;IU)"
 
 const pipeBuf = 64 << 10
+
+// maxInstances is nMaxInstances of CreateNamedPipeW: the OS refuses a
+// ninth instance even if a caller bypasses ipc.Server's own slot limit
+// (CHK-MON-11).
+const maxInstances = model.IPCMaxClients
 
 var errPipeClosed = errors.New("ipc: pipe closed")
 
@@ -225,7 +231,7 @@ func (l *PipeListener) create(first bool) (syscall.Handle, error) {
 	}
 	return winapi.CreateNamedPipe(l.name, mode,
 		winapi.PipeTypeByte|winapi.PipeReadmodeByte|winapi.PipeWait|winapi.PipeRejectRemoteClients,
-		winapi.PipeUnlimitedInstances, pipeBuf, pipeBuf, 0, l.sa)
+		maxInstances, pipeBuf, pipeBuf, 0, l.sa)
 }
 
 // Accept implements Listener. It must not be called concurrently

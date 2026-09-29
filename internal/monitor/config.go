@@ -16,9 +16,16 @@ type Config struct {
 	Settings  model.Settings
 	Profiles  []model.Profile
 	Passwords map[string]string
-	// Err is a non-fatal load problem (invalid file, DPAPI failure): the
-	// monitor keeps running with what could be loaded and reports it.
+	// Err is a non-fatal load problem (invalid settings, an individually
+	// invalid profile): the monitor applies what could be loaded and
+	// reports it.
 	Err error
+	// Fatal is set when profiles.json or the secrets file could not be
+	// read, decrypted or parsed. Such a Config must NOT be applied: the
+	// monitor keeps the last good configuration (readers, counters state,
+	// alerts), warns with anti-spam and retries on the next config check
+	// (CHK-MON-10).
+	Fatal error
 }
 
 // ConfigSource provides the configuration and a cheap change stamp.
@@ -51,8 +58,12 @@ func (f FileConfig) Stamp() string {
 }
 
 // Load implements ConfigSource. Invalid settings -> defaults; invalid
-// profiles are skipped individually (the valid ones are still polled);
-// unreadable secrets -> no passwords. Every problem is joined into Err.
+// profiles are skipped individually (the valid ones are still polled).
+// Every such problem is joined into Err. A profiles.json that cannot be
+// read or parsed (I/O error, broken JSON, unsupported version) and an
+// unreadable / undecryptable / broken secrets file set Fatal instead
+// (CHK-MON-10): applying the empty result would drop every profile and
+// wipe the counters state. A missing file is not an error.
 func (f FileConfig) Load() Config {
 	var errs []error
 	st, err := f.Store.LoadSettings()
@@ -62,20 +73,28 @@ func (f FileConfig) Load() Config {
 			st = model.DefaultSettings()
 		}
 	}
+	var fatal []error
 	ps, err := f.Store.LoadProfiles()
 	if err != nil {
-		errs = append(errs, err)
-		ps = validProfiles(ps)
+		// config.Store returns the parsed list with a validation error and
+		// an empty list for read / parse / version errors (an empty list
+		// is always valid, so len == 0 means the file itself is unusable).
+		if len(ps) == 0 {
+			fatal = append(fatal, err)
+		} else {
+			errs = append(errs, err)
+			ps = validProfiles(ps)
+		}
 	}
 	pw := map[string]string{}
 	sec, err := f.Store.LoadSecrets()
 	if err != nil {
-		errs = append(errs, err)
+		fatal = append(fatal, err)
 	}
 	for id, v := range sec {
 		pw[id] = v
 	}
-	return Config{Settings: st, Profiles: ps, Passwords: pw, Err: errors.Join(errs...)}
+	return Config{Settings: st, Profiles: ps, Passwords: pw, Err: errors.Join(errs...), Fatal: errors.Join(fatal...)}
 }
 
 // validProfiles keeps the individually valid profiles with unique IDs.

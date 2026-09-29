@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
 var pipeSeq int32
@@ -89,5 +91,41 @@ func TestCHK_MON_06_NamedPipeFirstInstance(t *testing.T) {
 	}
 	if _, err := ListenPipe(name, "D:bad-sddl"); err == nil {
 		t.Error("bad SDDL must fail")
+	}
+}
+
+// TestCHK_MON_11_NamedPipeInstanceCap — at most IPCMaxClients (8) pipe
+// instances: the ninth client gets ERROR_PIPE_BUSY until one disconnects.
+func TestCHK_MON_11_NamedPipeInstanceCap(t *testing.T) {
+	name := testPipeName()
+	l, err := ListenPipe(name, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(&fakeHandler{snap: testSnapshot()}, nil)
+	go srv.Serve(l)
+	defer srv.Close()
+	var conns []io.ReadWriteCloser
+	for i := 0; i < model.IPCMaxClients; i++ {
+		c, err := DialPipe(name, 5*time.Second)
+		if err != nil {
+			t.Fatalf("client %d: %v", i+1, err)
+		}
+		readHello(t, c)
+		conns = append(conns, c)
+	}
+	if c, err := DialPipe(name, 300*time.Millisecond); err == nil {
+		c.Close()
+		t.Fatal("ninth client connected above the instance cap")
+	}
+	conns[0].Close()
+	c, err := DialPipe(name, 5*time.Second)
+	if err != nil {
+		t.Fatalf("after a disconnect: %v", err)
+	}
+	readHello(t, c)
+	c.Close()
+	for _, c := range conns[1:] {
+		c.Close()
 	}
 }

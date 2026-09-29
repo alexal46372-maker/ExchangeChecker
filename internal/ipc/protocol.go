@@ -10,17 +10,29 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// ErrTooLarge is returned for frames above model.IPCMaxMessage.
+// ErrTooLarge is returned for frames above the limit of their direction:
+// model.IPCMaxRequest for tray -> service requests, model.IPCMaxMessage
+// for service -> tray messages (CHK-MON-11).
 var ErrTooLarge = errors.New("ipc: message too large")
 
-// WriteMessage writes v as one frame (length prefix + JSON) in a single
-// Write call.
+// WriteMessage writes a service -> tray message (limit IPCMaxMessage).
 func WriteMessage(w io.Writer, v interface{}) error {
+	return WriteFrame(w, v, model.IPCMaxMessage)
+}
+
+// WriteRequest writes a tray -> service request (limit IPCMaxRequest).
+func WriteRequest(w io.Writer, req model.IPCRequest) error {
+	return WriteFrame(w, req, model.IPCMaxRequest)
+}
+
+// WriteFrame writes v as one frame (length prefix + JSON) in a single
+// Write call; frames above max are refused with ErrTooLarge.
+func WriteFrame(w io.Writer, v interface{}, max int) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("ipc: marshal: %w", err)
 	}
-	if len(b) > model.IPCMaxMessage {
+	if len(b) > max {
 		return ErrTooLarge
 	}
 	frame := make([]byte, 4+len(b))
@@ -30,14 +42,20 @@ func WriteMessage(w io.Writer, v interface{}) error {
 	return err
 }
 
-// ReadMessage reads one frame into v.
+// ReadMessage reads one service -> tray frame (limit IPCMaxMessage).
 func ReadMessage(r io.Reader, v interface{}) error {
+	return ReadFrame(r, v, model.IPCMaxMessage)
+}
+
+// ReadFrame reads one frame into v. A length above max is rejected before
+// anything is allocated.
+func ReadFrame(r io.Reader, v interface{}, max int) error {
 	var hdr [4]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
 		return err
 	}
 	n := binary.LittleEndian.Uint32(hdr[:])
-	if n > model.IPCMaxMessage {
+	if uint64(n) > uint64(max) {
 		return ErrTooLarge
 	}
 	b := make([]byte, n)

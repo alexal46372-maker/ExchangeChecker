@@ -100,6 +100,9 @@ func runService(ctx context.Context, ac appConfig) error {
 			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),
 		},
+		// config-load failures and hung readers (already rate-limited by
+		// the monitor) -> Event Log warning (CHK-MON-10, CHK-MON-13)
+		Warn:         func(msg string) { report(alert.EventTypeWarning, alert.EventIDInternal, msg) },
 		OnSnapshot:   func(s model.StatusSnapshot) { srv.PublishStatus(s) },
 		Now:          ac.Now,
 		PollInterval: ac.PollInterval,

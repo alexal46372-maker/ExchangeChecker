@@ -16,11 +16,28 @@ import (
 type fakeHandler struct {
 	polls, reloads int32
 	snap           model.StatusSnapshot
+	coalesce       bool          // report every command as coalesced
+	block          chan struct{} // Snapshot blocks until closed
+	lastProfile    atomic.Value
 }
 
-func (h *fakeHandler) Snapshot() model.StatusSnapshot { return h.snap }
-func (h *fakeHandler) PollNow()                       { atomic.AddInt32(&h.polls, 1) }
-func (h *fakeHandler) ReloadConfig()                  { atomic.AddInt32(&h.reloads, 1) }
+func (h *fakeHandler) Snapshot() model.StatusSnapshot {
+	if h.block != nil {
+		<-h.block
+	}
+	return h.snap
+}
+
+func (h *fakeHandler) PollNow(id string) (bool, error) {
+	h.lastProfile.Store(id)
+	if id == "missing" || len(id) > 1000 {
+		return false, errors.New("monitor: unknown profile")
+	}
+	atomic.AddInt32(&h.polls, 1)
+	return h.coalesce, nil
+}
+
+func (h *fakeHandler) ReloadConfig() bool { atomic.AddInt32(&h.reloads, 1); return h.coalesce }
 
 func testSnapshot() model.StatusSnapshot {
 	now := time.Date(2026, 9, 29, 12, 0, 0, 0, model.DBZone)
@@ -86,11 +103,11 @@ func exerciseServer(t *testing.T, l Listener, dial func() (io.ReadWriteCloser, e
 	case <-time.After(5 * time.Second):
 		t.Fatal("no hello")
 	}
-	m, err := c.Call(model.CmdPing)
+	m, err := c.CallTimeout(model.CmdPing, 5*time.Second)
 	if err != nil || m.Type != model.MsgPong {
 		t.Fatalf("ping %+v %v", m, err)
 	}
-	m, err = c.Call(model.CmdGetStatus)
+	m, err = c.CallTimeout(model.CmdGetStatus, 5*time.Second)
 	if err != nil || m.Type != model.MsgStatus || m.Status == nil {
 		t.Fatalf("status %+v %v", m, err)
 	}
@@ -103,13 +120,13 @@ func exerciseServer(t *testing.T, l Listener, dial func() (io.ReadWriteCloser, e
 	if _, off := s.Now.Zone(); off != 3*3600 {
 		t.Errorf("now offset %d", off)
 	}
-	if m, err = c.Call(model.CmdReloadConfig); err != nil || m.Type != model.MsgOK || atomic.LoadInt32(&h.reloads) != 1 {
+	if m, err = c.CallTimeout(model.CmdReloadConfig, 5*time.Second); err != nil || m.Type != model.MsgOK || atomic.LoadInt32(&h.reloads) != 1 {
 		t.Errorf("reload %+v %v", m, err)
 	}
-	if m, err = c.Call(model.CmdPollNow); err != nil || m.Type != model.MsgOK || atomic.LoadInt32(&h.polls) != 1 {
+	if m, err = c.CallTimeout(model.CmdPollNow, 5*time.Second); err != nil || m.Type != model.MsgOK || atomic.LoadInt32(&h.polls) != 1 {
 		t.Errorf("poll now %+v %v", m, err)
 	}
-	if m, err = c.Call("format_disk"); err != nil || m.Type != model.MsgError {
+	if m, err = c.CallTimeout("format_disk", 5*time.Second); err != nil || m.Type != model.MsgError {
 		t.Errorf("unknown command %+v %v", m, err)
 	}
 	// concurrent calls are matched by ID
@@ -118,7 +135,7 @@ func exerciseServer(t *testing.T, l Listener, dial func() (io.ReadWriteCloser, e
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if m, err := c.Call(model.CmdPing); err != nil || m.Type != model.MsgPong {
+			if m, err := c.CallTimeout(model.CmdPing, 5*time.Second); err != nil || m.Type != model.MsgPong {
 				t.Errorf("concurrent ping %+v %v", m, err)
 			}
 		}()
@@ -148,7 +165,7 @@ func exerciseServer(t *testing.T, l Listener, dial func() (io.ReadWriteCloser, e
 		t.Fatalf("second dial: %v", err)
 	}
 	c2 := NewClient(rw2, nil)
-	if m, err := c2.Call(model.CmdGetStatus); err != nil || m.Status == nil {
+	if m, err := c2.CallTimeout(model.CmdGetStatus, 5*time.Second); err != nil || m.Status == nil {
 		t.Errorf("second client %+v %v", m, err)
 	}
 	waitClients(t, srv, 2)
@@ -176,7 +193,7 @@ func exerciseServer(t *testing.T, l Listener, dial func() (io.ReadWriteCloser, e
 	case <-time.After(5 * time.Second):
 		t.Fatal("client not disconnected by server Close")
 	}
-	if _, err := c.Call(model.CmdPing); err == nil {
+	if _, err := c.CallTimeout(model.CmdPing, 5*time.Second); err == nil {
 		t.Error("call after server close must fail")
 	}
 	c.Close()
@@ -233,4 +250,10 @@ func TestCHK_MON_06_SlowClientDropped(t *testing.T) {
 	if err := srv.Serve(NewMemListener()); err != nil {
 		t.Errorf("Serve after Close: %v", err)
 	}
+}
+
+func jsonSize(v interface{}) (int, error) {
+	var b bytes.Buffer
+	err := WriteMessage(&b, v)
+	return b.Len() - 4, err
 }

@@ -90,7 +90,7 @@ func TestCHK_MON_07_ServiceRunStop(t *testing.T) {
 	var snap *model.StatusSnapshot
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		m, err := c.Call(model.CmdGetStatus)
+		m, err := c.CallTimeout(model.CmdGetStatus, 5*time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +114,7 @@ func TestCHK_MON_07_ServiceRunStop(t *testing.T) {
 	mu.Lock()
 	lag = 40
 	mu.Unlock()
-	if m, err := c.Call(model.CmdPollNow); err != nil || m.Type != model.MsgOK {
+	if m, err := c.CallTimeout(model.CmdPollNow, 5*time.Second); err != nil || m.Type != model.MsgOK {
 		t.Fatalf("poll now %+v %v", m, err)
 	}
 	var alertMsg *model.AlertEvent
@@ -141,12 +141,12 @@ func TestCHK_MON_07_ServiceRunStop(t *testing.T) {
 	if err := st.SaveProfiles([]model.Profile{p, p2}); err != nil {
 		t.Fatal(err)
 	}
-	if m, err := c.Call(model.CmdReloadConfig); err != nil || m.Type != model.MsgOK {
+	if m, err := c.CallTimeout(model.CmdReloadConfig, 5*time.Second); err != nil || m.Type != model.MsgOK {
 		t.Fatalf("reload %+v %v", m, err)
 	}
 	deadline = time.Now().Add(5 * time.Second)
 	for {
-		m, _ := c.Call(model.CmdGetStatus)
+		m, _ := c.CallTimeout(model.CmdGetStatus, 5*time.Second)
 		if m.Status != nil && len(m.Status.Profiles) == 2 && m.Status.Profiles[1].Polled {
 			break
 		}

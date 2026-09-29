@@ -1,9 +1,11 @@
 package ipc
 
 import (
+	"context"
 	"errors"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
@@ -63,8 +65,25 @@ func (c *Client) readLoop() {
 	}
 }
 
-// Call sends cmd and waits for its reply.
-func (c *Client) Call(cmd string) (model.IPCMessage, error) {
+// Call sends cmd and waits for its reply until ctx is done (use
+// context.WithTimeout; CHK-MON-11). A late reply is discarded.
+func (c *Client) Call(ctx context.Context, cmd string) (model.IPCMessage, error) {
+	return c.Do(ctx, model.IPCRequest{Cmd: cmd})
+}
+
+// CallTimeout is Call with a timeout.
+func (c *Client) CallTimeout(cmd string, timeout time.Duration) (model.IPCMessage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return c.Call(ctx, cmd)
+}
+
+// Do sends req (its ID is assigned here) and waits for the reply until ctx
+// is done. Requests above model.IPCMaxRequest are refused (ErrTooLarge).
+func (c *Client) Do(ctx context.Context, req model.IPCRequest) (model.IPCMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return model.IPCMessage{}, err
+	}
 	c.mu.Lock()
 	if c.err != nil {
 		c.mu.Unlock()
@@ -75,20 +94,29 @@ func (c *Client) Call(cmd string) (model.IPCMessage, error) {
 	ch := make(chan model.IPCMessage, 1)
 	c.waiting[id] = ch
 	c.mu.Unlock()
-	c.wmu.Lock()
-	err := WriteMessage(c.rw, model.IPCRequest{ID: id, Cmd: cmd})
-	c.wmu.Unlock()
-	if err != nil {
+	req.ID = id
+	forget := func() {
 		c.mu.Lock()
 		delete(c.waiting, id)
 		c.mu.Unlock()
+	}
+	c.wmu.Lock()
+	err := WriteRequest(c.rw, req)
+	c.wmu.Unlock()
+	if err != nil {
+		forget()
 		return model.IPCMessage{}, err
 	}
-	m, ok := <-ch
-	if !ok {
-		return model.IPCMessage{}, ErrClientClosed
+	select {
+	case m, ok := <-ch:
+		if !ok {
+			return model.IPCMessage{}, ErrClientClosed
+		}
+		return m, nil
+	case <-ctx.Done():
+		forget()
+		return model.IPCMessage{}, ctx.Err()
 	}
-	return m, nil
 }
 
 // Done is closed when the connection ends.

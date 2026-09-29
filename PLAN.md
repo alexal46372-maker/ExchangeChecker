@@ -1,6 +1,6 @@
 # PLAN.md — детальный план Exchange Checker
 
-Статус: решения §12 п.2–9 **приняты** (см. §12). SQL Discovery — §5.3. **Фаза 0 и Фаза 1 выполнены.** Язык UI по умолчанию при первом запуске = язык ОС Windows (если не RU/EN — fallback RU).
+Статус: решения §12 п.2–9 **приняты** (см. §12). SQL Discovery — §5.3. **Фазы 0, 1, 2 (2b, 2c, 2d) и 3 выполнены** (фаза 3 — монитор, алерты, IPC-сервер и обёртка службы, §11). Язык UI по умолчанию при первом запуске = язык ОС Windows (если не RU/EN — fallback RU).
 
 Связанные документы: [`POLICY.md`](POLICY.md), позже [`DELIVERY.md`](DELIVERY.md).
 
@@ -79,7 +79,9 @@ Toolchain (жёстко): **Go 1.20.14**, `GOOS=windows` `GOARCH=amd64` `CGO_ENA
 | `settings.json` | интервал опроса, пороги warning/error (минуты), параметры звука, общие флаги | трей (настройки) |
 | `profiles.json` | список профилей SQL (без паролей в открытом виде) | трей |
 | `secrets.dpapi` | пароли профилей, защищённые `CryptProtectData` с **`CRYPTPROTECT_LOCAL_MACHINE`** (+ `UI_FORBIDDEN`); см. §12 п.9 | трей |
-| `state.json` | последний снимок статусов (опциональный кэш для трея при старте до ответа службы) | служба |
+| `state.json` | последний снимок статусов (опциональный кэш для трея при старте до ответа службы) — **в v1 не используется**: трей получает снимок по IPC сразу после подключения | служба |
+| `counters-state.json` | состояние режима `counters` по всем профилям (фаза 3, `monitor.FileCounterStore`, атомарная запись) | служба |
+| `logs\exchsvc.log` | журнал службы с ротацией по размеру (1 МиБ × 5, `alert.RotatingFile`) | служба |
 
 Служба и трей читают одни и те же файлы; **источник истины по статусу обмена — служба** (живой снимок по IPC). Трей при сохранении настроек уведомляет службу по IPC: `ReloadConfig`.
 
@@ -96,7 +98,8 @@ Profile {
   Username      string   // для sql auth
   // Password — только в secrets.dpapi
   Enabled       bool
-  // Опционально override порогов/интервала на профиль — фаза 2
+  WarnMinutes, ErrorMinutes int // фаза 3: override порогов на профиль (0 = глобальные 30/60)
+  ServerPreset string          // новые профили (model.NewProfile) — "mssql2008"
 }
 ```
 
@@ -251,7 +254,7 @@ Profile: + Encrypt ""|optional|disable|on|strict, TrustServerCert, TLSMinVersion
    - чистая функция `model.ApplyCounters(prev CounterState, observed []CounterObservation, now) (next CounterState, []CounterTimes)`: новая точка → время = now, флаги baseline; счётчик не изменился → время и флаг сохраняются; **любое** изменение (в т.ч. **уменьшение/сброс** — 1С пересоздал узел или сбросил нумерацию) → время = now, baseline снимается; исчезнувшие точки удаляются из состояния; дубликаты ключа — берётся первый; now приводится к UTC+3;
    - ключ точки: hex `_IDRRef`, иначе `code:`/`name:`;
    - `ExchangePoint` получает `source:"counters"`, `sendBaseline`/`recvBaseline` (`omitempty`, обратно совместимо) — UI пишет «не раньше запуска службы»;
-   - `CounterState{Version, Points map[key]CounterPoint}` сериализуется в JSON; интерфейс `model.CounterStateStore{Load(profileID), Save(profileID, state)}`; в фазе 2 только `MemCounterStore` (потеря состояния = новый baseline). Файловое хранение и цикл опроса — **фаза 3** (`internal/monitor`).
+   - `CounterState{Version, Points map[key]CounterPoint}` сериализуется в JSON; интерфейс `model.CounterStateStore{Load(profileID), Save(profileID, state)}`; в фазе 2 только `MemCounterStore` (потеря состояния = новый baseline). **Фаза 3:** `monitor.FileCounterStore` — `%ProgramData%\ExchangeChecker\counters-state.json` (`{version, profiles: {id: CounterState}}`), каждая запись атомарна (`config.WriteFileAtomic`: temp-файл + fsync + `MoveFileExW(MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)`, вне Windows — rename); после перезапуска службы состояние восстанавливается, baseline не сбрасывается; ключи дополнительных планов — с префиксом `Table/`; повреждённый файл → пустое состояние + запись в журнал + копия `.corrupt`; ошибка записи не останавливает опрос (журнал, `LastError`); состояния удалённых профилей удаляются (CHK-MON-02).
 10. Подключение: `github.com/microsoft/go-mssqldb`, логин/пароль только в `msdsn.Config` (не в строке DSN/логах/ошибках); `host\instance` без порта → SQL Browser; Windows Auth — `winsspi` (secur32.dll) на Windows, текущая учётка службы или `DOMAIN\user`+пароль. Ошибки — `*sqlcheck.Error{Kind conn|timeout|canceled|query|mapping|config}`; в статусе профиля ошибка соединения → `ProfileStatus.Error` (уровень Error).
 
 **Checks:** `CHK-SQL-01` TestConnection/драйвер/опции подключения; `CHK-SQL-02` Discovery + DiscoverByValue на фикстурах схем (2b: приоритет `_Node`, составные ссылки, поиск по времени, ListNodePoints); `CHK-SQL-03` ListPoints по mapping + режим counters (2b: несколько планов, составные ссылки); `CHK-SQL-04` ручной override / SQL-шаблон / валидация / preview; `CHK-SQL-05` совместимость с SQL Server 2008 (compat 100), пресет, TLS 1.0 и ключи ошибок. Интеграционные тесты (реальный SQL Server в linux-job CI, все базы — `COMPATIBILITY_LEVEL = 100`; фикстуры `_Node123`+`_InfoRg456` со сдвигом 2000 и 0, `_Reference77`+`_InfoRg88` без `_Node`, `_Reference55` с датами, не-1С схема `exch.[Node]]Exchange]`, 2b: два плана `_Node123`/`_Node124` + регистр с составной ссылкой `_InfoRg600` и коллизией RTRef) — по env `EC_SQL_TEST_*`.
@@ -288,7 +291,11 @@ type PlanPointLister interface { NodePoints(ctx) ([]model.NodePoint, error) }   
 
 Альтернатива localhost TCP через `internal/hcwinnet` — запасной план, если named pipe на NT 6.1 упрётся в ограничения; в v1 целимся в pipe.
 
-### 6.2. Протокол (черновик сообщений)
+### 6.2. Протокол
+
+**Реализовано в фазе 3 (серверная сторона, CHK-MON-06)** — `internal/ipc`, типы в `internal/model/ipc.go` (трей не импортирует драйвер): кадр = 4 байта длины (little-endian) + JSON, ≤ 16 МиБ. Трей → служба `IPCRequest{id, cmd}`: `ping`, `get_status`, `reload_config`, `poll_now`. Служба → трей `IPCMessage{id, type, status?, alert?, error?}`: при подключении `hello` (version 1); ответы `pong` / `status` / `ok` / `error` с тем же `id`; push-сообщения (`id` = 0) — `status` после каждого опроса и `alert` на каждое подтверждённое событие. Снимок `StatusSnapshot{seq, now, level, profiles[{profileId, name, enabled, level, points[ExchangePoint + freshAt, lagMinutes, baseline], error, errorKey, freshAt, baseline, warnMinutes, errorMinutes, checkedAt, polled}], alerts (активные), pollIntervalSec, lastPollAt, configError}`, все времена — UTC+3. Pipe: `\\.\pipe\ExchangeChecker`, overlapped-I/O, `FILE_FLAG_FIRST_PIPE_INSTANCE`, `PIPE_REJECT_REMOTE_CLIENTS`, DACL `D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12018b;;;IU)` (интерактивные пользователи — чтение/запись без права создавать экземпляры канала); медленный клиент (очередь 64) отключается, служба не блокируется. `ipc.Client`/`DialPipe` — минимальный клиент для трея. Ещё не реализовано (фазы 4/6): `TestProfile`, `AckAlert`, heartbeat-таймер на стороне трея.
+
+Исходный черновик:
 
 Служба → трей:
 
@@ -308,6 +315,8 @@ type PlanPointLister interface { NodePoints(ctx) ([]model.NodePoint, error) }   
 - `AckAlert` { alertID } — пользователь закрыл модалку → служба может остановить политику звука на своей стороне (звук играет трей)
 
 ### 6.3. Кто показывает UI алерта и кто пищит
+
+**Фаза 3:** события `AlertEvent{id, profileId, profileName, pointName, planTable, from, to, at, freshAt, lagMinutes, baseline, error, errorKey}` — переходы подтверждённого уровня точки (ok↔warning↔error) и профиля (ошибка соединения/запроса/таймаут). Антидребезг (`alert.Policy`): рост уровня точки — сразу (1 опрос), снижение — после 2 опросов подряд, ошибка профиля — после 2 опросов подряд; неизменный уровень событий не порождает. Приёмники: Windows Event Log (advapi32 `RegisterEventSourceW`/`ReportEventW`, источник `ExchangeChecker`, ID 100 служба, 101 восстановление, 102 warning, 103 error, 110 внутренняя ошибка), журнал службы, push по IPC; активные алерты — в каждом снимке (трей, подключившийся позже, видит их сразу — вместо очереди `state.json`).
 
 - Решение о warning/error принимает **служба** (`monitor` + `alert`).
 - **Трей** по `AlertRaised` показывает модальное окно поверх всех (`HWND_TOPMOST` + `MB_SYSTEMMODAL` / собственный dialog) и запускает **бесконечный** цикл `Beep` (WinAPI `Beep` / `MessageBeep` — предпочтительно `kernel32!Beep` с частотой из настроек) в отдельной goroutine до `AckAlert` / закрытия окна.
@@ -352,6 +361,8 @@ type PlanPointLister interface { NodePoints(ctx) ([]model.NodePoint, error) }   
 - Тип: own process, auto start — если галочка на «Готово».
 - `ServiceMain` → запуск IPC-сервера + `monitor` loop.
 - Корректный stop/shutdown: отмена `context`, закрытие pipe и SQL.
+- **Фаза 3 (CHK-MON-07):** `internal/winsvc` — `StartServiceCtrlDispatcherW` / `RegisterServiceCtrlHandlerExW` / `SetServiceStatus` через syscall + `syscall.NewCallback` (без golang.org/x/sys); START_PENDING → RUNNING (Stop+Shutdown) → STOP_PENDING (отмена ctx) → STOPPED; ошибка функции службы → `ERROR_SERVICE_SPECIFIC_ERROR`. Не из SCM → `ErrNotService`, `exchsvc` работает в консоли до Ctrl+C. Имя службы `model.ServiceName = "ExchangeChecker"` (для own-process SCM его не проверяет; инсталлятор регистрирует под этим именем).
+- **Монитор (CHK-MON-03/04):** период — `settings.pollIntervalSec` (по умолчанию 60 с); все включённые профили параллельно, но не более 4 одновременно; случайная задержка старта профиля до min(2 с, период/10); у каждого профиля своя горутина, `recover` и бюджет времени `ConnectTimeout + QueryTimeout × (число mapping + 1)` — паника (`monitor.panic`), зависший драйвер (`monitor.timeout`, при следующем опросе `monitor.busy`) или ошибка одного профиля не задерживают остальные; ридеры (пулы соединений) переиспользуются между опросами и пересоздаются только при изменении профиля/пароля/порогов; остановка — отмена ctx, закрытие всех ридеров. Конфигурация перечитывается при изменении размера/mtime `settings.json`/`profiles.json`/`secrets.dpapi` (проверка `os.Stat` каждые 5 с, без fsnotify и потоков-наблюдателей) и по IPC `reload_config`; невалидные профили пропускаются поштучно, невалидные настройки → умолчания, ошибка — в `StatusSnapshot.configError` и журнале.
 
 Цикл монитора:
 
@@ -405,7 +416,15 @@ Wizard Win32 (страницы):
 | `CHK-SQL-03` | ListPoints по сохранённому mapping |
 | `CHK-SQL-04` | Ручной override mapping / SQL-шаблон |
 | `CHK-SQL-05` | Совместимость с SQL Server 2008 (compat 100): запрещённые конструкции, пресет, TLS 1.0 |
-| `CHK-MON-01` | Пороги warning/error на фикстурах времени |
+| `CHK-MON-01` | Статус: FreshAt, UTC+3, пороги warning/error (профиль/глобальные), худший уровень базы, ошибка = Error, baseline |
+| `CHK-MON-02` | Файловое состояние counters: рестарт, повреждённый файл, атомарность |
+| `CHK-MON-03` | Цикл опроса: изоляция профилей (panic/timeout), ограничение параллелизма, jitter, остановка |
+| `CHK-MON-04` | Перечитывание конфигурации (mtime/size, IPC reload) |
+| `CHK-MON-05` | События алертов: переходы, антидребезг, Event Log, журнал с ротацией |
+| `CHK-MON-06` | IPC-сервер службы: протокол, named pipe, снимок статусов, команды |
+| `CHK-MON-07` | Служба: SCM start/stop, интеграция монитора и IPC в `exchsvc` |
+| `CHK-MON-08` | Пресет `mssql2008` по умолчанию для новых баз |
+| `CHK-MON-09` | Интеграция с SQL Server: полный цикл counters + рестарт монитора |
 | `CHK-IPC-01` | Pipe: connect, heartbeat, ReloadConfig, StatusSnapshot |
 | `CHK-IPC-02` | AlertRaised → AckAlert |
 | `CHK-SVC-01` | Каркас службы (start/stop в тестовом харнесе где возможно) |
@@ -459,19 +478,24 @@ Wizard Win32 (страницы):
 - предупреждение `sql.warn_plaintext_login` (RU/EN) для SQL-аутентификации без шифрования: `sqlcheck.Warnings(profile)`, `Profile.PlaintextLogin()`
 - checks: `CHK-SQL-01`, `CHK-SQL-05`
 
-### Фаза 3 — Monitor + alert logic
+### Фаза 3 — Monitor + alert logic ✅
 
-- `internal/monitor`, `internal/alert` без UI
-- check: `CHK-MON-01`
+- `internal/monitor`: цикл опроса всех профилей (период из настроек, 60 с по умолчанию; ≤ 4 параллельно; jitter; изоляция профилей — recover + свой таймаут; остановка по ctx), перечитывание конфигурации по mtime/size и по IPC, `FileCounterStore` (counters-state.json, атомарная запись, восстановление после рестарта, повреждённый файл → сброс + журнал)
+- `internal/model`: снимок `StatusSnapshot`/`ProfileSnapshot`/`PointStatus` (FreshAt, лаг, baseline), `AlertEvent`, типы IPC, пороги на профиль (`warnMinutes`/`errorMinutes`), `NewProfile` с пресетом `mssql2008`, ключи сообщений `monitor.*` (RU/EN)
+- `internal/alert`: переходы уровней с антидребезгом, тексты RU/EN, Windows Event Log (advapi32), журнал с ротацией
+- `internal/ipc` (серверная часть фазы 4): named pipe (overlapped, DACL, first instance), протокол `ping`/`get_status`/`reload_config`/`poll_now` + push статуса и алертов, минимальный клиент
+- `internal/winsvc` + `cmd/exchsvc` (часть фазы 5): SCM-обёртка на syscall, служба запускает монитор и IPC-сервер, корректно останавливается по Stop/Shutdown; консольный режим
+- интеграционный тест в linux-job CI (SQL Server, compat 100): цикл counters и рестарт монитора
+- checks: `CHK-MON-01` … `CHK-MON-09`
 
 ### Фаза 4 — IPC
 
-- `internal/ipc` named pipe, протокол
+- `internal/ipc` named pipe, протокол — **серверная часть сделана в фазе 3 (CHK-MON-06)**; остаток: клиент трея с переподключением/heartbeat, `TestProfile`, `AckAlert`
 - checks: `CHK-IPC-01`, `CHK-IPC-02`
 
 ### Фаза 5 — Служба
 
-- `cmd/exchsvc` + `internal/winsvc`, цикл + IPC server
+- `cmd/exchsvc` + `internal/winsvc`, цикл + IPC server — **сделано в фазе 3 (CHK-MON-07)**; остаток: тест под настоящим SCM (регистрация тестовой службы в CI), регистрация источника Event Log с `EventMessageFile` (инсталлятор)
 - check: `CHK-SVC-01`
 
 ### Фаза 6 — Трей
@@ -534,6 +558,12 @@ Wizard Win32 (страницы):
 
 31. **Основной режим подключения — без шифрования** (фаза 2d, решение заказчика: сервер — SQL Server 2008 R2 RTM без SP). `model.DefaultEncrypt = EncryptDisable`: новые профили (`Profile.ApplySQLDefaults()`), пресет `mssql2008` (`ApplyServerPreset`) и профили без поля `encrypt` (старый profiles.json читается как `disable`, `EffectiveEncrypt()`; сырое значение остаётся `""`, файл не переписывается) подключаются с `encrypt=disable`. Явно заданное значение (`optional`/`on`/`disable`) никогда не меняется. TLS 1.0 (`tlsMinVersion "1.0"`) и `on`/`optional` — опции профиля; `strict` с пресетом запрещён. **Предупреждение для GUI (фаза 6):** ключ `sql.warn_plaintext_login` (RU/EN в `sqlcheck.Message`, та же конвенция, что у ключей TLS): показывается при `EffectiveEncrypt() == disable` **и** SQL-аутентификации — пароль идёт почти открытым текстом (обратимая маскировка TDS); рекомендация — Windows-аутентификация или логин только с `db_datareader` (п. 30). Для Windows-аутентификации (SSPI/NTLM/Kerberos пароль не передают) не показывается. Запрос из GUI/трея: `sqlcheck.Warnings(profile) []string` (ключи), `Profile.PlaintextLogin()`; не блокирует сохранение и опрос. В `ProfileStatus` поле не добавлено (файл `internal/model/point.go` — вне зоны фазы 2d, параллельная фаза 3): при необходимости `Warnings []string` добавит фаза 3/6. Подтверждено интеграционно: сессия на базе compat 100 с `encrypt_option = FALSE`.
 
+32. **Статус и уровни (фаза 3, CHK-MON-01):** снимок пересчитывается монитором с `now` службы в UTC+3; `FreshAt = max(LastSend, LastRecv)`, лаг в целых минутах (`-1` — неизвестен, обе даты NULL → Error `no_timestamps`); пороги — `Profile.WarnMinutes/ErrorMinutes` (0 = глобальные из settings.json, по умолчанию 30/60; одиночный override, дающий warning ≥ error, игнорируется); уровень базы — худший из точек; любая ошибка опроса → Error с `errorKey` (TLS-ключи `sql.*` из sqlcheck, иначе `monitor.conn_error`/`timeout`/`query_error`/`mapping`/`config`/`panic`/`busy`/`poll_error`; тексты RU/EN — `model.MonitorMessage`); `baseline` точки — если более свежая сторона в режиме counters ещё «с момента наблюдения».
+33. **Антидребезг алертов (фаза 3, CHK-MON-05):** рост уровня точки — сразу (лаг между обменами только растёт), снижение — 2 опроса подряд, ошибка базы — 2 опроса подряд (разовый сбой сети не алертит); пока база в ошибке, уровни её точек заморожены; удалённые/выключенные профили и точки забываются без событий.
+34. **Event Log без helper-процессов:** `RegisterEventSourceW`/`ReportEventW` с одной строкой-вставкой; источник `ExchangeChecker` в реестре сервисом не регистрируется (зона инсталлятора, фаза 7) — без `EventMessageFile` просмотрщик показывает текст после преамбулы «описание не найдено»; ID событий ≤ 1000.
+35. **IPC-сервер и служба сделаны в фазе 3** (зона бота EC Service): сервер `internal/ipc` + SCM-обёртка `internal/winsvc` на `syscall` (golang.org/x/sys не добавлялся — в go.mod его нет); трею — `ipc.Client`/`DialPipe` и типы в `model`. Pipe-DACL: SYSTEM/Administrators — полный, интерактивные пользователи — чтение/запись без `FILE_CREATE_PIPE_INSTANCE`.
+36. **Новые базы — пресет `mssql2008`** (`model.NewProfile`, `DefaultServerPreset`): целевой сервер заказчика — SQL Server 2008 R2 RTM без SP и без TLS 1.2; вместе с п. 31 (фаза 2d) новый профиль получает `encrypt "disable"` и `tlsMinVersion "1.0"` (на случай, если шифрование включат); существующие профили не меняются; запросы по-прежнему проверяются CHK-SQL-05. Предупреждение `sql.warn_plaintext_login` (`sqlcheck.Warnings`) монитор кладёт в `ProfileSnapshot.warnings` — трей показывает его без импорта драйвера.
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.
@@ -557,7 +587,11 @@ Wizard Win32 (страницы):
 | `encrypt "disable"` — режим по умолчанию (фаза 2d, решение заказчика) | Нет TLS ни для данных, ни для Login7: пароль SQL фактически открытым текстом (маскировка XOR 0xA5 обратима), запросы/данные читаемы; перехват даёт пароль логина мониторинга. Заказчик принял риск (§12 п. 31). Митигация: Windows-аутентификация (SSPI-токены вместо пароля) или отдельный логин только с `db_datareader` (п. 30), предупреждение `sql.warn_plaintext_login` в GUI; TLS (`optional`/`on`, TLS 1.0) — опция профиля. Если на сервере включено «Force Encryption», `disable` не подключится — выбрать `optional`/`on` |
 | Уровень совместимости 100 на SQL 2019 ≠ настоящий SQL 2008 | Большинство функций 2012+ (IIF, TRY_CONVERT, CONCAT…) на движке 2019 работают при любом compat level — настоящая защита — статическая проверка CHK-SQL-05 всех запросов; интеграционные тесты подтверждают, что compat 100 действует (`STRING_SPLIT` отклоняется) и запросы выполняются. Отличия поведения движка 2008 (оптимизатор, версии TDS 7.3) в CI не проверяются |
 | Стоимость поиска по времени на больших регистрах | Поиск по ссылке ограничен `MaxLinkedRows`/`MaxLinkTables`/`MatchRows` и бюджетами Discovery; без индекса по ссылке — скан таблицы (NOLOCK, TOP), только по кнопке пользователя |
-| Режим counters: время = момент наблюдения, не реальное событие | Флаги baseline; точность = период опроса; сохранение состояния в фазе 3 |
+| Режим counters: время = момент наблюдения, не реальное событие | Флаги baseline; точность = период опроса; состояние в `counters-state.json` (фаза 3) — рестарт службы baseline не сбрасывает; изменения за время простоя службы получают время первого опроса после старта |
+| Зависший драйвер / сеть одного профиля (фаза 3) | Свой бюджет времени и горутина на профиль, `recover`; зависший вызов оставляется, профиль помечается `monitor.busy`, остальные опрашиваются |
+| Файл состояния counters повреждён / диск полон | Сброс состояния + запись в журнал + копия `.corrupt`; ошибка записи не останавливает опрос |
+| Источник Event Log не зарегистрирован | Запись всё равно идёт (преамбула «описание не найдено»); регистрацию источника — в инсталлятор (фаза 7) |
+| Named pipe на NT 6.1 и доступ из сессии пользователя | Overlapped-I/O, DACL с IU (чтение/запись), `PIPE_REJECT_REMOTE_CLIENTS`, first instance против подмены; проверено тестами на windows-latest (не на Win7 — в CI Win7 нет) |
 
 ---
 

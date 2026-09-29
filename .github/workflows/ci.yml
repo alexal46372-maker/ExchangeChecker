@@ -1,7 +1,8 @@
 # CHK-CI-01 — Go 1.20.14, Windows amd64, CGO off. No build artifacts are uploaded.
 # CHK-SQL-01 — windows job: no os/exec in the windows/amd64 dependency graph.
-# CHK-SQL-01..04 — linux job: SQL Server integration tests against a throwaway
-# mssql container (EC_SQL_TEST_*); without these env vars the tests skip.
+# CHK-SQL-01..05, CHK-MON-09 — linux job: SQL Server integration tests against a
+# throwaway mssql container (EC_SQL_TEST_*); without these env vars the tests skip.
+# CHK-MON-05/06/07 — windows job: Event Log, named pipe and SCM tests (*_windows_test.go).
 name: ci
 
 on:
@@ -46,7 +47,7 @@ jobs:
             exit 1
           fi
           echo "packages in graph: $(printf '%s\n' "$deps" | grep -c .)"
-      - name: go test
+      - name: go test (incl. named pipe / Event Log / SCM, CHK-MON-05..07)
         run: go test ./... -count=1 -v
       - name: go build (windows/amd64)
         env:
@@ -92,7 +93,7 @@ jobs:
           done
           echo "SQL Server did not open port 1433"
           exit 1
-      - name: go test (with SQL Server integration, CHK-SQL-01..04)
+      - name: go test (with SQL Server integration, CHK-SQL-01..05, CHK-MON-09)
         env:
           EC_SQL_TEST_HOST: 127.0.0.1
           EC_SQL_TEST_PORT: "1433"

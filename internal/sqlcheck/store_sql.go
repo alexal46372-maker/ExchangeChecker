@@ -3,6 +3,7 @@ package sqlcheck
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -275,15 +276,48 @@ func (s *SQLStore) Counters(ctx context.Context, m model.Mapping, limit int) ([]
 	return out, nil
 }
 
-// ManualPoints implements Store. The query runs in a READ UNCOMMITTED
-// transaction that is always rolled back.
+// restoreIsolationSQL resets the session isolation level after a manual
+// query. The manual transaction is started READ UNCOMMITTED (TDS begin-
+// transaction request); SQL Server keeps that level for the session after
+// the rollback, and sp_reset_connection restores it only since SQL Server
+// 2014 (the target is SQL Server 2008), so without this the pooled
+// connection would stay READ UNCOMMITTED (phase 2c).
+const restoreIsolationSQL = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
+
+// ManualPoints implements Store. The query runs on a dedicated pooled
+// connection in a READ UNCOMMITTED transaction that is always rolled back;
+// afterwards the session is set back to READ COMMITTED, and if that fails
+// the connection is discarded instead of being returned to the pool.
 func (s *SQLStore) ManualPoints(ctx context.Context, query string, limit int) (out []RawPoint, err error) {
 	if err := ValidateManualSQL(query); err != nil {
 		return nil, &Error{Kind: KindMapping, Op: "manual sql", Err: err}
 	}
 	ctx, cancel := s.qctx(ctx)
 	defer cancel()
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadUncommitted})
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return nil, classify("manual sql", err, false)
+	}
+	defer conn.Close()
+	out, err = manualOnConn(ctx, conn, query, limit)
+	restoreIsolation(conn, s.queryTimeout)
+	return out, err
+}
+
+// restoreIsolation runs restoreIsolationSQL on conn (own short context:
+// the caller's may be expired) and discards conn if it fails.
+func restoreIsolation(conn *sql.Conn, timeout time.Duration) {
+	rctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if _, err := conn.ExecContext(rctx, restoreIsolationSQL); err != nil {
+		_ = conn.Raw(func(interface{}) error { return driver.ErrBadConn })
+	}
+}
+
+// manualOnConn runs a validated manual query on conn inside a rolled-back
+// READ UNCOMMITTED transaction.
+func manualOnConn(ctx context.Context, conn *sql.Conn, query string, limit int) (out []RawPoint, err error) {
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadUncommitted})
 	if err != nil {
 		return nil, classify("manual sql", err, false)
 	}

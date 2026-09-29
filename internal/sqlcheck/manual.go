@@ -14,7 +14,10 @@ import (
 //
 // The mapping's YearOffset applies to the timestamps, then they are read as
 // UTC+3 like any other mapping. The query runs inside a transaction that is
-// always rolled back, and at most Options.MaxPoints rows are read.
+// always rolled back, and at most Options.MaxPoints rows are read. The
+// rollback is not a security boundary (a COMMIT inside the text would end
+// it), so ValidateManualSQL allows exactly one read-only SELECT (phase 2c);
+// the real boundary is a login with db_datareader only (PLAN.md §12).
 
 // Manual SQL errors (wrapped in *Error with KindMapping).
 var (
@@ -23,11 +26,105 @@ var (
 	ErrManualMulti     = errors.New("manual SQL must contain a single statement")
 	ErrManualLiteral   = errors.New("manual SQL has an unterminated string, [identifier] or comment")
 	ErrManualColumns   = errors.New("manual SQL must return exactly 3 columns: point, last send, last recv")
+	// ErrManualForbidden: a data-changing / session / batch keyword outside
+	// literals, comments and quoted identifiers (phase 2c, CHK-SQL-04).
+	ErrManualForbidden = errors.New("manual SQL must be read-only: forbidden keyword")
 )
 
+// manualForbidden are T-SQL keywords that never occur in a single read-only
+// SELECT. Statements need no ';' in T-SQL, so "SELECT 1 COMMIT DELETE FROM t"
+// is three statements (and the COMMIT would end the rolled-back
+// transaction); every keyword is therefore rejected wherever it appears
+// outside string literals, comments, [bracketed] and "double-quoted"
+// identifiers. All of them are T-SQL reserved words, so a column with such
+// a name must be quoted anyway ([Update], "Set").
+var manualForbidden = map[string]bool{}
+
+func init() {
+	for _, k := range strings.Fields(`INSERT UPDATE DELETE MERGE INTO EXEC EXECUTE COMMIT ROLLBACK SAVE BEGIN
+		DROP ALTER CREATE TRUNCATE GRANT REVOKE DENY DBCC BACKUP RESTORE SHUTDOWN KILL
+		OPENROWSET OPENQUERY OPENDATASOURCE BULK WAITFOR DECLARE SET USE
+		TRAN TRANSACTION RECONFIGURE CHECKPOINT REVERT SETUSER DEALLOCATE OPEN CLOSE FETCH
+		IF WHILE GOTO RETURN BREAK CONTINUE PRINT RAISERROR READTEXT WRITETEXT UPDATETEXT`) {
+		manualForbidden[k] = true
+	}
+}
+
+// sqlTokens splits blanked SQL (blankSQL: no comments, empty literals and
+// quoted identifiers) into upper-case words and single-character symbols.
+// Variables (@x, @@x) and temp names (#x) are kept whole, so "@set" is not
+// the keyword SET.
+func sqlTokens(blank string) []string {
+	var out []string
+	isWord := func(c byte) bool {
+		return c == '_' || c == '@' || c == '#' || c == '$' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
+	}
+	for i := 0; i < len(blank); {
+		c := blank[i]
+		switch {
+		case c == ' ' || c == '\t' || c == '\r' || c == '\n':
+			i++
+		case isWord(c):
+			j := i
+			for j < len(blank) && isWord(blank[j]) {
+				j++
+			}
+			out = append(out, strings.ToUpper(blank[i:j]))
+			i = j
+		default:
+			out = append(out, string(c))
+			i++
+		}
+	}
+	return out
+}
+
+// checkManualTokens rejects forbidden keywords and a second top-level
+// statement: at parenthesis depth 0 exactly one SELECT is allowed, apart
+// from the SELECTs joined by UNION [ALL] / EXCEPT / INTERSECT (CTE bodies
+// and subqueries are inside parentheses).
+func checkManualTokens(body string) error {
+	toks := sqlTokens(blankSQL(body, false))
+	depth, selects := 0, 0
+	for i, tk := range toks {
+		switch tk {
+		case "(":
+			depth++
+		case ")":
+			depth--
+			if depth < 0 {
+				return ErrManualNotSelect
+			}
+		case "SELECT":
+			if depth == 0 {
+				prev := ""
+				if i > 0 {
+					prev = toks[i-1]
+				}
+				if prev == "ALL" && i > 1 {
+					prev = toks[i-2]
+				}
+				if prev != "UNION" && prev != "EXCEPT" && prev != "INTERSECT" {
+					selects++
+				}
+			}
+		default:
+			if manualForbidden[tk] {
+				return fmt.Errorf("%w %s (only one read-only SELECT is allowed)", ErrManualForbidden, tk)
+			}
+		}
+	}
+	if selects != 1 {
+		return ErrManualMulti
+	}
+	return nil
+}
+
 // ValidateManualSQL checks the manual query: not empty, a single statement
-// (a trailing ';' is allowed), starting with SELECT or WITH, and no T-SQL
-// newer than SQL Server 2008 (ErrManualCompat2008, CHK-SQL-05).
+// (a trailing ';' is allowed), starting with SELECT or WITH, exactly one
+// top-level SELECT, none of the forbidden keywords outside literals /
+// comments / quoted identifiers (ErrManualForbidden, phase 2c), and no
+// T-SQL newer than SQL Server 2008 (ErrManualCompat2008, CHK-SQL-05).
 func ValidateManualSQL(q string) error {
 	body, err := stripManualSQL(q)
 	if err != nil {
@@ -44,7 +141,7 @@ func ValidateManualSQL(q string) error {
 		return fmt.Errorf("%w: %s (use TOP, ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...), CASE, CONVERT, + for strings)",
 			ErrManualCompat2008, strings.Join(v, ", "))
 	}
-	return nil
+	return checkManualTokens(body)
 }
 
 // stripManualSQL removes comments and returns the statement text with

@@ -232,7 +232,7 @@ type dirTable struct {
 //     points and a small number of points raise the score.
 //
 // Candidates of _NodeNNN tables carry PlanTable / PlanNo. All queries are
-// read-only (NOLOCK / READ UNCOMMITTED), bounded by TOP, per-query
+// read-only (WITH (NOLOCK), no session-level SET), bounded by TOP, per-query
 // timeouts, table caps and the total Timeout.
 func Discover(ctx context.Context, st Store, opt DiscoverOptions, now time.Time) ([]model.DiscoveryCandidate, error) {
 	d, cancel := newDiscoverer(ctx, st, opt, now)

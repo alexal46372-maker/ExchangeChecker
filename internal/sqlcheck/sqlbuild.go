@@ -14,19 +14,22 @@ import (
 // sysindexes); CHK-SQL-05 checks every builder with Compat2008Violations.
 // Identifiers are quoted with QuoteIdent; values (row limit, search
 // pattern, reference key) are parameters @p1, @p2. User tables are read
-// WITH (NOLOCK); catalog batches start with readUncommitted.
+// WITH (NOLOCK), catalog views too; no session-level SET is ever sent.
 
-// readUncommitted prefixes catalog batches (metadata views take no table hint).
-const readUncommitted = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n"
+// Catalog queries carry WITH (NOLOCK) on every view instead of a
+// session-level SET TRANSACTION ISOLATION LEVEL: a SET would stick to the
+// pooled connection (sp_reset_connection restores the isolation level only
+// since SQL Server 2014; the target is SQL Server 2008), so later queries
+// on it would silently run READ UNCOMMITTED (phase 2c, PLAN.md §12).
 
 // noLock is the table hint appended to every user table reference.
 const noLock = " WITH (NOLOCK)"
 
 // catalogSQL lists base-table columns; @p1 = 'BASE TABLE'.
-const catalogSQL = readUncommitted + `SELECT c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE,
+const catalogSQL = `SELECT c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE,
 	ISNULL(c.CHARACTER_MAXIMUM_LENGTH, 0), c.ORDINAL_POSITION
-FROM INFORMATION_SCHEMA.COLUMNS AS c
-JOIN INFORMATION_SCHEMA.TABLES AS t
+FROM INFORMATION_SCHEMA.COLUMNS AS c WITH (NOLOCK)
+JOIN INFORMATION_SCHEMA.TABLES AS t WITH (NOLOCK)
 	ON t.TABLE_CATALOG = c.TABLE_CATALOG AND t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
 WHERE t.TABLE_TYPE = @p1
 ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION`
@@ -34,10 +37,10 @@ ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION`
 const catalogTableType = "BASE TABLE"
 
 // rowCountsSQL returns approximate row counts of user tables; @p1 = 'U'.
-const rowCountsSQL = readUncommitted + `SELECT s.name, o.name, SUM(p.rows)
-FROM sys.partitions AS p
-JOIN sys.objects AS o ON o.object_id = p.object_id
-JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+const rowCountsSQL = `SELECT s.name, o.name, SUM(p.rows)
+FROM sys.partitions AS p WITH (NOLOCK)
+JOIN sys.objects AS o WITH (NOLOCK) ON o.object_id = p.object_id
+JOIN sys.schemas AS s WITH (NOLOCK) ON s.schema_id = o.schema_id
 WHERE o.type = @p1 AND p.index_id IN (0, 1)
 GROUP BY s.name, o.name`
 
@@ -45,9 +48,9 @@ const rowCountsObjectType = "U"
 
 // rowCountsLegacySQL is the fallback through the sysindexes compatibility
 // view (also present on SQL 2005/2008); @p1 = 'U'.
-const rowCountsLegacySQL = readUncommitted + `SELECT SCHEMA_NAME(o.uid), o.name, MAX(i.rows)
-FROM sysindexes AS i
-JOIN sysobjects AS o ON o.id = i.id
+const rowCountsLegacySQL = `SELECT SCHEMA_NAME(o.uid), o.name, MAX(i.rows)
+FROM sysindexes AS i WITH (NOLOCK)
+JOIN sysobjects AS o WITH (NOLOCK) ON o.id = i.id
 WHERE o.xtype = @p1 AND i.indid IN (0, 1)
 GROUP BY SCHEMA_NAME(o.uid), o.name`
 

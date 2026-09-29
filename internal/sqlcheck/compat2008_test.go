@@ -211,6 +211,7 @@ func allRecordedSQL(t *testing.T) map[string]string {
 		}
 		merge(r)
 	}
+	all[restoreIsolationSQL] = "restore_isolation" // SQLStore.ManualPoints, after the rollback
 	for _, tpl := range ManualSQLTemplates {
 		if _, run := all[tpl.SQL]; !run {
 			all[tpl.SQL] = "template:" + tpl.Name

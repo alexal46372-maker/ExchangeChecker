@@ -2,6 +2,7 @@ package sqlcheck
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -585,4 +586,148 @@ func TestCHK_SQL_02_IntegrationPlans(t *testing.T) {
 			t.Errorf("%s: node points %v %+v", db, err, np)
 		}
 	}
+}
+
+// ---- phase 2c: read-only manual SQL, isolation level on pooled sessions ----
+
+// sessionIsolation returns sys.dm_exec_sessions.transaction_isolation_level
+// of conn's session (1 = READ UNCOMMITTED, 2 = READ COMMITTED). Test-only:
+// product SQL uses no DMV (CHK-SQL-05).
+func sessionIsolation(t *testing.T, ctx context.Context, conn *sql.Conn) int {
+	t.Helper()
+	var lvl int
+	if err := conn.QueryRowContext(ctx, "SELECT transaction_isolation_level FROM sys.dm_exec_sessions WHERE session_id = @@SPID").Scan(&lvl); err != nil {
+		t.Fatal(err)
+	}
+	return lvl
+}
+
+func drain(t *testing.T, ctx context.Context, conn *sql.Conn, q string, args ...interface{}) {
+	t.Helper()
+	rows, err := conn.QueryContext(ctx, q, args...)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, q)
+	}
+	for rows.Next() {
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	rows.Close()
+}
+
+func TestCHK_SQL_04_IntegrationIsolationNotSticky(t *testing.T) {
+	st := itStore(t, "ec_1c_plans_off")
+	ctx := itCtx(t)
+	conn, err := st.DB().Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if lvl := sessionIsolation(t, ctx, conn); lvl != 2 {
+		t.Fatalf("initial isolation %d", lvl)
+	}
+	// catalog queries on the same session (no pool reset in between)
+	drain(t, ctx, conn, catalogSQL, catalogTableType)
+	drain(t, ctx, conn, rowCountsSQL, rowCountsObjectType)
+	drain(t, ctx, conn, rowCountsLegacySQL, rowCountsObjectType)
+	if lvl := sessionIsolation(t, ctx, conn); lvl != 2 {
+		t.Errorf("after catalog queries: isolation %d, want 2 (READ COMMITTED)", lvl)
+	}
+	// the method detects the phase-2 behaviour (session-level SET sticks)
+	drain(t, ctx, conn, "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT 1")
+	if lvl := sessionIsolation(t, ctx, conn); lvl != 1 {
+		t.Errorf("control: isolation %d after SET, want 1", lvl)
+	}
+	restoreIsolation(conn, 10*time.Second)
+	if lvl := sessionIsolation(t, ctx, conn); lvl != 2 {
+		t.Errorf("restoreIsolation: %d", lvl)
+	}
+	// the manual query's READ UNCOMMITTED transaction leaves the level on
+	// the session; ManualPoints restores it before the connection is reused
+	pts, err := manualOnConn(ctx, conn, ManualSQLTemplates[0].SQL, 100)
+	if err != nil || len(pts) != 3 {
+		t.Fatalf("manual on conn: %v %+v", err, pts)
+	}
+	after := sessionIsolation(t, ctx, conn)
+	restoreIsolation(conn, 10*time.Second)
+	if lvl := sessionIsolation(t, ctx, conn); lvl != 2 {
+		t.Errorf("after manual query + restore: isolation %d (before restore %d)", lvl, after)
+	}
+	t.Logf("isolation right after the rolled-back READ UNCOMMITTED manual tx: %d", after)
+	// the pool: one connection only, ManualPoints then catalog, then check
+	st.DB().SetMaxOpenConns(1)
+	conn.Close()
+	if _, err := st.ManualPoints(ctx, ManualSQLTemplates[0].SQL, 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Columns(ctx); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := st.DB().Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	if lvl := sessionIsolation(t, ctx, c2); lvl != 2 {
+		t.Errorf("pooled connection after ManualPoints + Columns: isolation %d", lvl)
+	}
+}
+
+func TestCHK_SQL_04_IntegrationManualBypassBlocked(t *testing.T) {
+	st := itStore(t, "ec_1c_custom")
+	ctx := itCtx(t)
+	for _, q := range []string{
+		"IF OBJECT_ID(N'dbo.ec_bypass') IS NOT NULL DROP TABLE dbo.ec_bypass",
+		"CREATE TABLE dbo.ec_bypass (a int NULL)",
+		"INSERT INTO dbo.ec_bypass (a) VALUES (1)",
+	} {
+		if _, err := st.DB().ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func() int {
+		var n int
+		if err := st.DB().QueryRowContext(ctx, "SELECT COUNT(*) FROM dbo.ec_bypass").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for _, q := range []string{
+		"SELECT 1, NULL, NULL COMMIT DELETE FROM dbo.ec_bypass",
+		"SELECT 1, NULL, NULL DELETE FROM dbo.ec_bypass",
+		"SELECT a, NULL, NULL INTO dbo.ec_bypass2 FROM dbo.ec_bypass",
+		"SELECT 1, NULL, NULL\nCOMMIT\nTRUNCATE TABLE dbo.ec_bypass",
+	} {
+		_, err := st.ManualPoints(ctx, q, 10)
+		if KindOf(err) != KindMapping || !errors.Is(err, ErrManualForbidden) {
+			t.Errorf("%q: %v", q, err)
+		}
+		if n := count(); n != 1 {
+			t.Fatalf("%q changed data: %d rows", q, n)
+		}
+	}
+	var obj interface{}
+	if err := st.DB().QueryRowContext(ctx, "SELECT OBJECT_ID(N'dbo.ec_bypass2')").Scan(&obj); err != nil || obj != nil {
+		t.Errorf("SELECT INTO created a table: %v %v", obj, err)
+	}
+	// why: without the check the same text in the rolled-back transaction
+	// really commits (phase-2 behaviour, run here directly, not via ManualPoints)
+	conn, err := st.DB().Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadUncommitted})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, execErr := tx.ExecContext(ctx, "SELECT 1, NULL, NULL COMMIT DELETE FROM dbo.ec_bypass")
+	_ = tx.Rollback()
+	restoreIsolation(conn, 10*time.Second)
+	t.Logf("unvalidated bypass: exec err %v, rows after rollback %d", execErr, count())
+	if n := count(); n != 0 {
+		t.Errorf("control: expected the unvalidated bypass to commit the DELETE, %d rows left", n)
+	}
+	_, _ = st.DB().ExecContext(ctx, "DROP TABLE dbo.ec_bypass")
 }

@@ -141,8 +141,10 @@ func TestCHK_SQL_02_SQLBuilders(t *testing.T) {
 		}
 	}
 	for _, q := range []string{catalogSQL, rowCountsSQL, rowCountsLegacySQL} {
-		if !strings.HasPrefix(q, "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;") || !strings.Contains(q, "@p1") {
-			t.Errorf("catalog query not read-uncommitted/parameterized:\n%s", q)
+		// phase 2c: NOLOCK on every catalog view, no session-level SET
+		views := strings.Count(q, "\nFROM ") + strings.Count(q, "\nJOIN ")
+		if strings.Contains(strings.ToUpper(q), "SET ") || strings.Count(q, "WITH (NOLOCK)") != views || views < 2 || !strings.Contains(q, "@p1") {
+			t.Errorf("catalog query not NOLOCK/parameterized:\n%s", q)
 		}
 	}
 }

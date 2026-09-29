@@ -120,8 +120,8 @@ type RawCounter struct {
 }
 
 // Store is the database access used by the readers. Every query it runs
-// is a read-only SELECT with WITH (NOLOCK) on user tables (catalog queries:
-// READ UNCOMMITTED), so Discovery and polling never block 1C writers. SQLStore implements it
+// is a read-only SELECT with WITH (NOLOCK) on user tables and catalog views
+// (no session-level SET), so Discovery and polling never block 1C writers. SQLStore implements it
 // with database/sql + go-mssqldb; tests use in-memory schema fixtures.
 type Store interface {
 	// Ping opens (or reuses) a session and runs a trivial query.

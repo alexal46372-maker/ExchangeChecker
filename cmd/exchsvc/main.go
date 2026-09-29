@@ -1,11 +1,47 @@
-// Command exchsvc is the Windows Service stub for Exchange Checker.
-// Phase 0: stub only; will become Win32 service (see PLAN.md §8).
+// Command exchsvc is the Exchange Checker Windows service
+// (ExchangeCheckerSvc.exe, PLAN.md §8): it polls the configured MSSQL
+// databases (internal/monitor), serves the tray over the named pipe
+// (internal/ipc) and reports alerts to the Windows Event Log and the log
+// file. Started by the SCM it runs as a service (internal/winsvc, WinAPI
+// only, no helper processes — POLICY); started from a console it runs
+// interactively until Ctrl+C.
+//
+// Flags: -config <dir> (default %ProgramData%\ExchangeChecker).
+//
+// Check ID: CHK-MON-07.
 package main
 
 import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/version"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winsvc"
 )
 
 func main() {
-	_ = version.Version
+	dir := flag.String("config", "", "config directory (default %ProgramData%\\ExchangeChecker)")
+	flag.Parse()
+	ac := appConfig{Dir: *dir}
+	if ac.Dir == "" {
+		ac.Dir = config.DefaultDir()
+	}
+	err := winsvc.Run(model.ServiceName, func(ctx context.Context) error { return runService(ctx, ac) })
+	if errors.Is(err, winsvc.ErrNotService) {
+		fmt.Fprintf(os.Stderr, "%s %s: console mode, config %s (Ctrl+C to stop)\n", model.ServiceName, version.Version, ac.Dir)
+		ac.Console = true
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		err = runService(ctx, ac)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "exchsvc:", err)
+		os.Exit(1)
+	}
 }

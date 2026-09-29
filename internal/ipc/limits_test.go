@@ -289,3 +289,86 @@ func TestCHK_MON_12_CoalescedReply(t *testing.T) {
 		t.Errorf("unknown profile %+v", m)
 	}
 }
+
+// flakyListener fails Accept until healed, recording attempt times.
+type flakyListener struct {
+	*MemListener
+	mu    sync.Mutex
+	times []time.Time
+	heal  bool
+}
+
+func (l *flakyListener) Accept() (io.ReadWriteCloser, error) {
+	l.mu.Lock()
+	l.times = append(l.times, time.Now())
+	heal := l.heal
+	l.mu.Unlock()
+	if !heal {
+		return nil, errors.New("CreateNamedPipe: All pipe instances are busy")
+	}
+	return l.MemListener.Accept()
+}
+
+func (l *flakyListener) attempts() []time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]time.Time(nil), l.times...)
+}
+
+// TestCHK_MON_11_AcceptBackoff — a persistent Accept failure is retried
+// with exponential backoff (capped) and logged once instead of every
+// attempt; after it heals clients are accepted and the backoff resets.
+func TestCHK_MON_11_AcceptBackoff(t *testing.T) {
+	if AcceptBackoffMin != 200*time.Millisecond || AcceptBackoffMax < 10*time.Second {
+		t.Fatalf("defaults %s / %s", AcceptBackoffMin, AcceptBackoffMax)
+	}
+	lg := &testLog{}
+	l := &flakyListener{MemListener: NewMemListener()}
+	srv := NewServer(&fakeHandler{snap: testSnapshot()}, lg)
+	srv.BackoffMin, srv.BackoffMax = 10*time.Millisecond, 80*time.Millisecond
+	go srv.Serve(l)
+	defer srv.Close()
+	time.Sleep(600 * time.Millisecond)
+	at := l.attempts()
+	// 10+20+40+80+80+... ms: about 9 attempts in 600 ms (fixed 10 ms: 60)
+	if len(at) < 5 || len(at) > 14 {
+		t.Errorf("attempts in 600 ms: %d", len(at))
+	}
+	var gaps []time.Duration
+	for i := 1; i < len(at); i++ {
+		gaps = append(gaps, at[i].Sub(at[i-1]))
+	}
+	if len(gaps) >= 4 && !(gaps[3] > gaps[0]*3) {
+		t.Errorf("backoff not growing: %v", gaps)
+	}
+	if last := gaps[len(gaps)-1]; last > 200*time.Millisecond {
+		t.Errorf("backoff above the cap: %s", last)
+	}
+	lg.mu.Lock()
+	n := 0
+	for _, s := range lg.lines {
+		if strings.Contains(s, "ipc: accept:") {
+			n++
+		}
+	}
+	lg.mu.Unlock()
+	if n != 1 {
+		t.Errorf("accept failure logged %d times, want 1: %v", n, lg.lines)
+	}
+	l.mu.Lock()
+	l.heal = true
+	l.mu.Unlock()
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	readHello(t, rw)
+	rw.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for !lg.has("accept works again") {
+		if time.Now().After(deadline) {
+			t.Fatalf("recovery not logged: %v", lg.lines)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

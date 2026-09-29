@@ -53,6 +53,9 @@ type Server struct {
 	MaxClients  int           // concurrent connections
 	ReadTimeout time.Duration // rest of a started request frame
 	IdleTimeout time.Duration // no request at all
+	// Accept failure backoff / log period (defaults AcceptBackoff*,
+	// AcceptLogEvery; tests shorten them).
+	BackoffMin, BackoffMax, LogEvery time.Duration
 
 	mu     sync.Mutex
 	l      Listener
@@ -103,12 +106,20 @@ func NewServer(h Handler, log Logger) *Server {
 	}
 	return &Server{H: h, Log: log, conns: map[*conn]struct{}{}, stop: make(chan struct{}),
 		MaxRequest: model.IPCMaxRequest, MaxClients: model.IPCMaxClients,
-		ReadTimeout: model.IPCReadTimeout, IdleTimeout: model.IPCIdleTimeout}
+		ReadTimeout: model.IPCReadTimeout, IdleTimeout: model.IPCIdleTimeout,
+		BackoffMin: AcceptBackoffMin, BackoffMax: AcceptBackoffMax, LogEvery: AcceptLogEvery}
 }
 
-// acceptBackoff is the pause after a failed Accept (e.g. a transient
-// CreateNamedPipe failure) before the next attempt.
-const acceptBackoff = 200 * time.Millisecond
+// Accept failure handling (CHK-MON-11): exponential backoff from
+// AcceptBackoffMin, doubling up to AcceptBackoffMax, reset after a
+// successful Accept; the failure is logged once, then only when the error
+// text changes or at most every AcceptLogEvery (with the number of
+// suppressed repeats).
+const (
+	AcceptBackoffMin = 200 * time.Millisecond
+	AcceptBackoffMax = 30 * time.Second
+	AcceptLogEvery   = 10 * time.Minute
+)
 
 // Serve accepts clients until Close; it returns nil after Close.
 func (s *Server) Serve(l Listener) error {
@@ -128,6 +139,7 @@ func (s *Server) Serve(l Listener) error {
 	}
 	slots := s.slots
 	s.mu.Unlock()
+	var fail acceptFailures
 	for {
 		// a free slot first: with MaxClients connections no new pipe
 		// instance is created, further clients get ERROR_PIPE_BUSY
@@ -146,14 +158,14 @@ func (s *Server) Serve(l Listener) error {
 			if closed || errors.Is(err, ErrListenerClosed) {
 				return nil
 			}
-			s.Log.Printf("ipc: accept: %v", err)
 			select {
-			case <-time.After(acceptBackoff):
+			case <-time.After(fail.next(s, err)):
 				continue
 			case <-s.stop:
 				return nil
 			}
 		}
+		fail.ok(s)
 		c := &conn{rw: rw, out: make(chan model.IPCMessage, outQueue), done: make(chan struct{}), release: release}
 		s.mu.Lock()
 		if s.closed {
@@ -167,6 +179,54 @@ func (s *Server) Serve(l Listener) error {
 		go s.writeLoop(c)
 		go s.readLoop(c)
 	}
+}
+
+// acceptFailures is the backoff / log anti-spam state of the accept loop.
+type acceptFailures struct {
+	n          int // consecutive failures
+	delay      time.Duration
+	lastMsg    string
+	lastLog    time.Time
+	suppressed int
+}
+
+// next records a failure, logs it (rate-limited) and returns the pause
+// before the next attempt.
+func (f *acceptFailures) next(s *Server, err error) time.Duration {
+	min, max, every := s.BackoffMin, s.BackoffMax, s.LogEvery
+	if min <= 0 {
+		min = AcceptBackoffMin
+	}
+	if max < min {
+		max = min
+	}
+	f.n++
+	if f.delay == 0 {
+		f.delay = min
+	} else if f.delay *= 2; f.delay > max {
+		f.delay = max
+	}
+	now := time.Now()
+	msg := err.Error()
+	if msg != f.lastMsg || now.Sub(f.lastLog) >= every {
+		if f.suppressed > 0 {
+			s.Log.Printf("ipc: accept: %v (failure #%d, %d repeat(s) not logged, retry in %s)", err, f.n, f.suppressed, f.delay)
+		} else {
+			s.Log.Printf("ipc: accept: %v (failure #%d, retry in %s)", err, f.n, f.delay)
+		}
+		f.lastMsg, f.lastLog, f.suppressed = msg, now, 0
+	} else {
+		f.suppressed++
+	}
+	return f.delay
+}
+
+// ok resets the state after a successful Accept.
+func (f *acceptFailures) ok(s *Server) {
+	if f.n > 0 {
+		s.Log.Printf("ipc: accept works again after %d failure(s)", f.n)
+	}
+	*f = acceptFailures{}
 }
 
 func (s *Server) drop(c *conn) {

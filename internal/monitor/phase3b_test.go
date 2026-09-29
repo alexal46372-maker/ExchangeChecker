@@ -402,3 +402,163 @@ func TestCHK_MON_08_SinglePresetSource(t *testing.T) {
 		}
 	}
 }
+
+// TestCHK_MON_10_SettingsFile — settings.json like profiles.json:
+// missing = defaults; broken or unreadable after a good load = the last
+// good settings stay, configStale, one warning (anti-spam), retry on the
+// next check, profiles are still applied and polled; fixed = applied.
+func TestCHK_MON_10_SettingsFile(t *testing.T) {
+	dir := t.TempDir()
+	st := config.NewStore(dir)
+	st.Protector = plainProtector{}
+	if err := st.SaveProfiles([]model.Profile{prof("a")}); err != nil {
+		t.Fatal(err)
+	}
+	f := newFactory()
+	f.set("a", behavior{})
+	f.set("b", behavior{})
+	clk := &fakeClock{t: t0}
+	lg := &memLog{}
+	w := &warnRec{}
+	opt := baseOpt(f, FileConfig{Store: st}, clk)
+	opt.PollInterval = 0 // from settings
+	opt.Log, opt.Warn = lg, w.warn
+	m := New(opt)
+	interval := func() int { return m.Snapshot().PollIntervalSec }
+	writeSettings := func(body string) {
+		t.Helper()
+		time.Sleep(15 * time.Millisecond) // new mtime
+		os.RemoveAll(st.Path(config.SettingsFile))
+		if err := os.WriteFile(st.Path(config.SettingsFile), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 1. missing file = defaults, no error
+	if c := (FileConfig{Store: st}).Load(); c.SettingsFatal != nil || c.Err != nil {
+		t.Fatalf("missing settings: %+v", c)
+	}
+	m.reloadConfig(true)
+	if s := m.Snapshot(); interval() != 60 || s.ConfigError != "" || s.ConfigStale {
+		t.Fatalf("defaults: %+v", s)
+	}
+	// 2. good file
+	writeSettings(`{"version":1,"pollIntervalSec":30}`)
+	if !m.reloadConfig(false) || interval() != 30 {
+		t.Fatalf("good settings: %d", interval())
+	}
+	stale := func(stage string) {
+		t.Helper()
+		s := m.Snapshot()
+		if interval() != 30 || !s.ConfigStale || s.ConfigErrorKey != model.MsgMonitorConfigStale || s.ConfigError == "" {
+			t.Errorf("%s: snapshot %+v", stage, s)
+		}
+		before := f.get(f.calls, "a")
+		m.pollAll(context.Background())
+		if f.get(f.calls, "a") != before+1 || f.get(f.created, "a") != 1 {
+			t.Errorf("%s: polling blocked or reader recreated", stage)
+		}
+	}
+	// 3. broken JSON after a good load
+	writeSettings(`{"version":1,"pollIntervalSec":`)
+	if c := (FileConfig{Store: st}).Load(); c.SettingsFatal == nil || c.Fatal != nil {
+		t.Fatalf("broken settings: %+v", c)
+	}
+	m.reloadConfig(false)
+	stale("broken json")
+	if w.n() != 1 || !strings.Contains(w.last(), "keeping the last good settings") || !lg.has("settings.json") {
+		t.Fatalf("warning %v", w.msgs)
+	}
+	// retry on the next check: no new warning, nothing re-applied
+	if m.reloadConfig(false) {
+		t.Error("a retry with the same broken file must not re-apply")
+	}
+	stale("retry")
+	if w.n() != 1 {
+		t.Errorf("warning repeated: %v", w.msgs)
+	}
+	clk.Add(DefaultConfigWarnEvery + time.Second)
+	m.reloadConfig(false)
+	if w.n() != 2 {
+		t.Errorf("warning not repeated after the anti-spam period: %d", w.n())
+	}
+	// 4. unreadable (a directory) + a profile added at the same time
+	time.Sleep(15 * time.Millisecond)
+	os.Remove(st.Path(config.SettingsFile))
+	if err := os.Mkdir(st.Path(config.SettingsFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveProfiles([]model.Profile{prof("a"), prof("b")}); err != nil {
+		t.Fatal(err)
+	}
+	m.reloadConfig(false)
+	stale("unreadable")
+	if len(m.Snapshot().Profiles) != 2 || !profileByID(m.Snapshot(), "b").Polled {
+		t.Errorf("profiles must still be applied with broken settings: %+v", m.Snapshot().Profiles)
+	}
+	if w.n() != 3 {
+		t.Errorf("new error must warn at once: %v", w.msgs)
+	}
+	// 5. fixed
+	writeSettings(`{"version":1,"pollIntervalSec":45}`)
+	if !m.reloadConfig(false) {
+		t.Fatal("fixed settings not applied")
+	}
+	if s := m.Snapshot(); interval() != 45 || s.ConfigStale || s.ConfigError != "" || s.ConfigErrorKey != "" {
+		t.Errorf("after fix: %+v", s)
+	}
+	if !lg.has("loaded successfully again") {
+		t.Error("recovery not logged")
+	}
+	// 6. file removed again = defaults
+	time.Sleep(15 * time.Millisecond)
+	os.Remove(st.Path(config.SettingsFile))
+	m.reloadConfig(false)
+	if s := m.Snapshot(); interval() != 60 || s.ConfigError != "" {
+		t.Errorf("removed: %+v", s)
+	}
+}
+
+// TestCHK_MON_10_SettingsBrokenOnFirstStart — a broken settings.json at
+// the first start: defaults + warning, polling proceeds (unlike a broken
+// profiles.json), not "stale" (there is no last good settings).
+func TestCHK_MON_10_SettingsBrokenOnFirstStart(t *testing.T) {
+	dir := t.TempDir()
+	st := config.NewStore(dir)
+	st.Protector = plainProtector{}
+	if err := st.SaveProfiles([]model.Profile{prof("a")}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(st.Path(config.SettingsFile), []byte("garbage"), 0o644)
+	f := newFactory()
+	f.set("a", behavior{points: lagPoints(map[string]int{"A": 1})})
+	w := &warnRec{}
+	opt := baseOpt(f, FileConfig{Store: st}, &fakeClock{t: t0})
+	opt.PollInterval = 0
+	opt.Warn = w.warn
+	m := New(opt)
+	if !m.reloadConfig(true) {
+		t.Fatal("profiles must be applied")
+	}
+	m.pollAll(context.Background())
+	s := m.Snapshot()
+	p := profileByID(s, "a")
+	if !p.Polled || p.Level != model.LevelOK || s.PollIntervalSec != 60 || p.WarnMinutes != model.DefaultSettings().WarnMinutes {
+		t.Errorf("polling with defaults: %+v / %+v", s, p)
+	}
+	if s.ConfigStale || s.ConfigError == "" || s.ConfigErrorKey != model.MsgMonitorConfigStale {
+		t.Errorf("snapshot flags %+v", s)
+	}
+	if w.n() != 1 || !strings.Contains(w.last(), "using default settings") {
+		t.Errorf("warn %v", w.msgs)
+	}
+	m.reloadConfig(false) // retry, same error: quiet
+	if w.n() != 1 || m.Snapshot().ConfigStale {
+		t.Errorf("retry: %v %+v", w.msgs, m.Snapshot())
+	}
+	time.Sleep(15 * time.Millisecond)
+	os.WriteFile(st.Path(config.SettingsFile), []byte(`{"version":1,"pollIntervalSec":20}`), 0o644)
+	if !m.reloadConfig(false) || m.Snapshot().PollIntervalSec != 20 || m.Snapshot().ConfigError != "" {
+		t.Errorf("after fix %+v", m.Snapshot())
+	}
+}

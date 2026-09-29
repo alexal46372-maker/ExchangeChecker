@@ -176,6 +176,8 @@ type Monitor struct {
 	good     bool  // a configuration was applied successfully
 	retry    bool  // the last load failed: reload on the next check
 	cfgFatal error // last load failure while the last good config is used
+	stale    bool  // cfgFatal set and a last good config/settings is in use
+	setGood  bool  // settings.json was loaded successfully at least once
 	warnMsg  string
 	warnAt   time.Time
 	entries  map[string]*entry
@@ -410,15 +412,37 @@ func (m *Monitor) reloadConfig(force bool) bool {
 	stamp := m.opt.Source.Stamp()
 	m.mu.Lock()
 	same := m.good && stamp == m.stamp && !m.retry
+	retryOnly := m.good && stamp == m.stamp && m.retry && !force
 	m.mu.Unlock()
 	if same && !force {
 		return false
 	}
 	cfg := m.opt.Source.Load()
 	if cfg.Fatal != nil {
-		m.configFailed(cfg.Fatal)
+		m.configFailed(cfg.Fatal, false)
 		return false
 	}
+	// settings.json unreadable / unparsable (CHK-MON-10): keep the last
+	// good settings (defaults on first start) and apply the rest; polling
+	// is not blocked.
+	settingsErr := cfg.SettingsFatal
+	if settingsErr != nil && retryOnly {
+		// same files, still failing: nothing new to apply
+		m.configFailed(settingsErr, true)
+		return false
+	}
+	m.mu.Lock()
+	stale := false
+	if settingsErr != nil {
+		if m.setGood {
+			cfg.Settings, stale = m.cfg.Settings, true
+		} else {
+			cfg.Settings = model.DefaultSettings()
+		}
+	} else {
+		m.setGood = true
+	}
+	m.mu.Unlock()
 	if cfg.Settings.WarnMinutes == 0 && cfg.Settings.ErrorMinutes == 0 {
 		cfg.Settings = model.DefaultSettings()
 	}
@@ -442,9 +466,13 @@ func (m *Monitor) reloadConfig(force bool) bool {
 			delete(m.results, id)
 		}
 	}
-	recovered := m.retry
+	recovered := m.retry && settingsErr == nil
 	m.entries, m.cfg, m.stamp, m.loaded, m.good = next, cfg, stamp, true, true
-	m.retry, m.cfgFatal, m.warnMsg = false, nil, ""
+	if settingsErr == nil {
+		m.retry, m.cfgFatal, m.stale, m.warnMsg = false, nil, false, ""
+	} else {
+		m.retry, m.cfgFatal, m.stale = true, settingsErr, stale
+	}
 	m.mu.Unlock()
 	for _, e := range retired {
 		e.retire()
@@ -461,6 +489,9 @@ func (m *Monitor) reloadConfig(force bool) bool {
 		m.opt.Log.Printf("config: loaded with errors: %v", cfg.Err)
 	}
 	m.opt.Log.Printf("config: %d profile(s), poll interval %s", len(cfg.Profiles), m.interval())
+	if settingsErr != nil {
+		m.warnConfig(settingsErr, stale, true)
+	}
 	m.publish(nil)
 	return true
 }
@@ -470,32 +501,56 @@ func (m *Monitor) reloadConfig(force bool) bool {
 // error; the warning goes to the log (and Warn -> event log) once per
 // distinct error and then at most every ConfigWarnEvery; the next config
 // check retries.
-func (m *Monitor) configFailed(err error) {
-	now := m.opt.Now()
-	msg := err.Error()
+// settings == true: a retry of an already applied config whose
+// settings.json still fails (the stale flag set at apply time is kept).
+func (m *Monitor) configFailed(err error, settings bool) {
 	m.mu.Lock()
 	m.retry, m.cfgFatal = true, err
 	first := !m.loaded
 	m.loaded = true
-	good := m.good
+	if !settings {
+		m.stale = m.good
+	}
+	stale := m.stale
+	m.mu.Unlock()
+	warn := m.warnConfig(err, stale, settings)
+	if first || warn {
+		m.publish(nil)
+	}
+}
+
+// warnConfig logs (and sends to Warn -> event log) a config-load problem
+// once per distinct error and then at most every ConfigWarnEvery. It
+// reports whether it warned.
+func (m *Monitor) warnConfig(err error, stale, settingsOnly bool) bool {
+	now := m.opt.Now()
+	msg := err.Error()
+	m.mu.Lock()
 	warn := msg != m.warnMsg || now.Sub(m.warnAt) >= m.opt.ConfigWarnEvery || now.Before(m.warnAt)
 	if warn {
 		m.warnMsg, m.warnAt = msg, now
 	}
+	good := m.good
 	m.mu.Unlock()
-	if warn {
-		text := "config: cannot load the configuration, keeping the last good one: " + msg
-		if !good {
-			text = "config: cannot load the configuration (no previous good one, nothing is polled): " + msg
-		}
-		m.opt.Log.Printf("%s", text)
-		if m.opt.Warn != nil {
-			m.opt.Warn(text)
-		}
+	if !warn {
+		return false
 	}
-	if first || warn {
-		m.publish(nil)
+	var text string
+	switch {
+	case settingsOnly && stale:
+		text = "config: cannot load settings.json, keeping the last good settings: " + msg
+	case settingsOnly:
+		text = "config: cannot load settings.json, using default settings: " + msg
+	case good:
+		text = "config: cannot load the configuration, keeping the last good one: " + msg
+	default:
+		text = "config: cannot load the configuration (no previous good one, nothing is polled): " + msg
 	}
+	m.opt.Log.Printf("%s", text)
+	if m.opt.Warn != nil {
+		m.opt.Warn(text)
+	}
+	return true
 }
 
 func (m *Monitor) closeAll() {
@@ -749,7 +804,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	if m.cfgFatal != nil {
 		snap.ConfigError = m.cfgFatal.Error()
 		snap.ConfigErrorKey = model.MsgMonitorConfigStale
-		snap.ConfigStale = m.good
+		snap.ConfigStale = m.stale
 	}
 	m.snap = snap
 	m.mu.Unlock()

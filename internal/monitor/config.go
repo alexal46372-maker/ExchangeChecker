@@ -26,6 +26,11 @@ type Config struct {
 	// alerts), warns with anti-spam and retries on the next config check
 	// (CHK-MON-10).
 	Fatal error
+	// SettingsFatal is set when settings.json exists but cannot be read or
+	// parsed (I/O, broken JSON, unsupported version); Settings then holds
+	// the defaults. The monitor keeps the last good settings (defaults on
+	// the first start) and still applies the profiles (CHK-MON-10).
+	SettingsFatal error
 }
 
 // ConfigSource provides the configuration and a cheap change stamp.
@@ -57,7 +62,9 @@ func (f FileConfig) Stamp() string {
 	return b.String()
 }
 
-// Load implements ConfigSource. Invalid settings -> defaults; invalid
+// Load implements ConfigSource. A missing settings.json -> defaults; one
+// that cannot be read or parsed sets SettingsFatal; invalid settings values
+// -> defaults; invalid
 // profiles are skipped individually (the valid ones are still polled).
 // Every such problem is joined into Err. A profiles.json that cannot be
 // read or parsed (I/O error, broken JSON, unsupported version) and an
@@ -66,11 +73,19 @@ func (f FileConfig) Stamp() string {
 // wipe the counters state. A missing file is not an error.
 func (f FileConfig) Load() Config {
 	var errs []error
+	var settingsFatal error
 	st, err := f.Store.LoadSettings()
 	if err != nil {
-		errs = append(errs, err)
-		if st.Validate() != nil {
-			st = model.DefaultSettings()
+		// config.Store returns exactly the defaults for read / parse /
+		// version errors and the parsed (hence non-default: the defaults
+		// are valid) settings with a validation error.
+		if st == model.DefaultSettings() {
+			settingsFatal = err
+		} else {
+			errs = append(errs, err)
+			if st.Validate() != nil {
+				st = model.DefaultSettings()
+			}
 		}
 	}
 	var fatal []error
@@ -94,7 +109,8 @@ func (f FileConfig) Load() Config {
 	for id, v := range sec {
 		pw[id] = v
 	}
-	return Config{Settings: st, Profiles: ps, Passwords: pw, Err: errors.Join(errs...), Fatal: errors.Join(fatal...)}
+	return Config{Settings: st, Profiles: ps, Passwords: pw, Err: errors.Join(errs...), Fatal: errors.Join(fatal...),
+		SettingsFatal: settingsFatal}
 }
 
 // validProfiles keeps the individually valid profiles with unique IDs.

@@ -37,6 +37,11 @@ const (
 	// STOP_PENDING is re-reported with CheckPoint+1 this often, well
 	// within StopWaitHint, so the SCM sees progress (CHK-MON-14).
 	StopCheckpointEvery = 2 * time.Second
+	// StopCheckpointMax caps the progress reports: after 60 s of
+	// STOP_PENDING the CheckPoint is no longer incremented, so a stop that
+	// hangs is detected by the SCM once the wait hint expires instead of
+	// looking busy forever (CHK-MON-14).
+	StopCheckpointMax = 60 * time.Second
 )
 
 // Status is SERVICE_STATUS.
@@ -57,13 +62,16 @@ type controller struct {
 	st     Status
 	cancel context.CancelFunc
 	set    func(Status) error // SetServiceStatus
-	// every is the STOP_PENDING progress period (tests shorten it).
-	every time.Duration
+	// every is the STOP_PENDING progress period, maxStop the cap after
+	// which the CheckPoint stops growing (tests shorten both).
+	every   time.Duration
+	maxStop time.Duration
+	stopAt  time.Time
 }
 
 func newController(set func(Status) error) *controller {
 	return &controller{st: Status{ServiceType: ServiceWin32OwnProcess, CurrentState: StateStopped}, set: set,
-		every: StopCheckpointEvery}
+		every: StopCheckpointEvery, maxStop: StopCheckpointMax}
 }
 
 func (c *controller) report(state, accepts, waitHint uint32) {
@@ -92,6 +100,7 @@ func (c *controller) control(code uint32) uint32 {
 	switch code {
 	case ControlStop, ControlShutdown:
 		if c.st.CurrentState == StateRunning || c.st.CurrentState == StateStartPending {
+			c.stopAt = time.Now()
 			c.reportLocked(StateStopPending, 0, StopWaitHint)
 		}
 		if c.cancel != nil {
@@ -149,11 +158,12 @@ wait:
 }
 
 // stopProgress re-reports STOP_PENDING with the next CheckPoint while the
-// stop is in progress (no-op in any other state).
+// stop is in progress, but only during the first maxStop of it (no-op in
+// any other state and after the cap).
 func (c *controller) stopProgress() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.st.CurrentState == StateStopPending {
+	if c.st.CurrentState == StateStopPending && time.Since(c.stopAt) < c.maxStop {
 		c.reportLocked(StateStopPending, 0, StopWaitHint)
 	}
 }

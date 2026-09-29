@@ -198,3 +198,48 @@ func TestCHK_MON_14_StopPendingCheckpoints(t *testing.T) {
 		t.Errorf("reports before stop: %v", r.states()[:nRunning])
 	}
 }
+
+// TestCHK_MON_14_StopCheckpointCap — after StopCheckpointMax of
+// STOP_PENDING the CheckPoint stops growing (no more reports), so the SCM
+// can detect a hung stop via the wait hint.
+func TestCHK_MON_14_StopCheckpointCap(t *testing.T) {
+	if StopCheckpointMax != 60*time.Second || StopCheckpointMax <= StopCheckpointEvery {
+		t.Fatalf("cap %s", StopCheckpointMax)
+	}
+	r := &recorder{}
+	c := newController(r.set)
+	c.every, c.maxStop = 20*time.Millisecond, 100*time.Millisecond
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- c.serve(func(ctx context.Context) error {
+			close(started)
+			<-ctx.Done()
+			time.Sleep(400 * time.Millisecond) // hangs well past the cap
+			return nil
+		})
+	}()
+	<-started
+	for c.state().CurrentState != StateRunning {
+		time.Sleep(time.Millisecond)
+	}
+	c.control(ControlStop)
+	stopAt := time.Now()
+	time.Sleep(250 * time.Millisecond)
+	cpAtCap := c.state().CheckPoint
+	nAtCap := len(r.states())
+	time.Sleep(100 * time.Millisecond)
+	if c.state().CheckPoint != cpAtCap || len(r.states()) != nAtCap || c.state().CurrentState != StateStopPending {
+		t.Errorf("checkpoint still growing after the cap: %d -> %d", cpAtCap, c.state().CheckPoint)
+	}
+	// 100 ms / 20 ms ≈ 5 progress reports + the initial STOP_PENDING
+	if cpAtCap < 3 || cpAtCap > 8 {
+		t.Errorf("checkpoint at cap = %d (elapsed %s)", cpAtCap, time.Since(stopAt))
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if c.state().CurrentState != StateStopped {
+		t.Error("not stopped")
+	}
+}

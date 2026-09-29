@@ -212,6 +212,8 @@ func allRecordedSQL(t *testing.T) map[string]string {
 		merge(r)
 	}
 	all[restoreIsolationSQL] = "restore_isolation" // SQLStore.ManualPoints, after the rollback
+	all[serverInfoSQL] = "server_info"             // TestConnectionInfo / SQLStore.ServerInfo (phase 4)
+	all[serverPropsSQL] = "server_info_props"      // its fallback without sys.databases
 	for _, tpl := range ManualSQLTemplates {
 		if _, run := all[tpl.SQL]; !run {
 			all[tpl.SQL] = "template:" + tpl.Name
@@ -237,7 +239,7 @@ func TestCHK_SQL_05_Compat2008AllQueries(t *testing.T) {
 	// every builder / query kind was exercised
 	for _, k := range []string{"ping", "catalog", "rowcounts", "rowcounts_legacy", "sample", "linkstats", "linkstats_composite",
 		"singlestats", "points_single", "points_linked", "points_linked_keep", "points_composite", "search_like",
-		"search_ref", "search_composite", "counters", "manual", "template"} {
+		"search_ref", "search_composite", "counters", "manual", "template", "server_info", "server_info_props"} {
 		if kinds[k] == 0 {
 			t.Errorf("query kind %q was not exercised (kinds: %v)", k, kinds)
 		}

@@ -215,8 +215,9 @@ func TestCHK_MON_14_StopPendingCheckpoints(t *testing.T) {
 		t.Fatalf("checkpoint period %s too long for wait hint %d ms", StopCheckpointEvery, StopWaitHint)
 	}
 	h := newStopHarness(t)
-	h.tick(t)
-	h.none(t) // RUNNING: no progress reports
+	// No ticks before the stop: a tick taken by the loop may still be in
+	// flight when control() runs and would add a STOP_PENDING report
+	// (RUNNING ticks are covered by TestCHK_MON_14_NoProgressWhileRunning).
 	h.c.control(ControlStop)
 	s := h.next(t)
 	if s.CurrentState != StateStopPending || s.CheckPoint != 1 || s.WaitHint != StopWaitHint {
@@ -235,6 +236,31 @@ func TestCHK_MON_14_StopPendingCheckpoints(t *testing.T) {
 	}
 	if s := h.next(t); s.CurrentState != StateStopped || s.CheckPoint != 0 {
 		t.Errorf("final %+v", s)
+	}
+}
+
+// TestCHK_MON_14_NoProgressWhileRunning — progress ticks while RUNNING
+// report nothing. The stop afterwards is only cleanup: the last taken tick
+// may be processed after control(), so any number of STOP_PENDING reports
+// is accepted before the final STOPPED.
+func TestCHK_MON_14_NoProgressWhileRunning(t *testing.T) {
+	h := newStopHarness(t)
+	h.tick(t)
+	h.none(t)
+	h.none(t)
+	h.c.control(ControlStop)
+	close(h.release)
+	if err := <-h.done; err != nil {
+		t.Fatal(err)
+	}
+	for {
+		s := h.next(t)
+		if s.CurrentState == StateStopped {
+			break
+		}
+		if s.CurrentState != StateStopPending {
+			t.Fatalf("after stop: %+v", s)
+		}
 	}
 }
 

@@ -29,27 +29,32 @@ func TestCHK_SQL_05_Preset2008(t *testing.T) {
 	if err := p.ApplyServerPreset(model.ServerPresetMSSQL2008); err != nil {
 		t.Fatal(err)
 	}
-	if p.ServerPreset != "mssql2008" || p.TLSMinVersion != model.TLSMin10 || p.Encrypt != model.EncryptDefault || p.Validate() != nil {
+	if p.ServerPreset != "mssql2008" || p.TLSMinVersion != model.TLSMin10 || p.Encrypt != model.EncryptDisable || p.Validate() != nil {
 		t.Fatalf("preset: %+v", p)
 	}
 	cfg, err := driverConfig(p, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// driver default encryption (login-only TLS), cert not validated, TLS 1.0 allowed
-	if cfg.Encryption != msdsn.EncryptionOff || cfg.TLSConfig == nil || cfg.TLSConfig.MinVersion != tls.VersionTLS10 || !cfg.TLSConfig.InsecureSkipVerify {
+	// phase 2d: the preset connects without encryption by default
+	if cfg.Encryption != msdsn.EncryptionDisabled || cfg.TLSConfig != nil {
+		t.Errorf("preset default: %v %+v", cfg.Encryption, cfg.TLSConfig)
+	}
+	// with login-only TLS turned on: cert not validated, TLS 1.0 allowed
+	p.Encrypt = model.EncryptOptional
+	if cfg, err = driverConfig(p, ""); err != nil || cfg.Encryption != msdsn.EncryptionOff || cfg.TLSConfig == nil || cfg.TLSConfig.MinVersion != tls.VersionTLS10 || !cfg.TLSConfig.InsecureSkipVerify {
 		t.Errorf("driver config %v %+v", cfg.Encryption, cfg.TLSConfig)
 	}
 	// preset without an explicit TLSMinVersion still means TLS 1.0
 	q := connProfile()
-	q.ServerPreset = model.ServerPresetMSSQL2008
+	q.ServerPreset, q.Encrypt = model.ServerPresetMSSQL2008, model.EncryptOn
 	if cfg, _ := driverConfig(q, ""); q.EffectiveTLSMinVersion() != "1.0" || cfg.TLSConfig.MinVersion != tls.VersionTLS10 {
 		t.Errorf("implicit preset TLS: %q", q.EffectiveTLSMinVersion())
 	}
 	// an explicit choice wins; strict is replaced; unknown presets fail
 	q = connProfile()
 	q.TLSMinVersion, q.Encrypt = model.TLSMin12, model.EncryptStrict
-	if err := q.ApplyServerPreset(model.ServerPresetMSSQL2008); err != nil || q.TLSMinVersion != "1.2" || q.Encrypt != model.EncryptDefault {
+	if err := q.ApplyServerPreset(model.ServerPresetMSSQL2008); err != nil || q.TLSMinVersion != "1.2" || q.Encrypt != model.EncryptDisable {
 		t.Errorf("explicit TLS / strict: %+v %v", q, err)
 	}
 	if err := q.ApplyServerPreset("mssql2000"); err == nil {
@@ -189,12 +194,14 @@ func handshake(t *testing.T, cert tls.Certificate, suites []uint16, cfg *tls.Con
 func TestCHK_SQL_05_GoTLS10CipherSuites(t *testing.T) {
 	cert := legacyCert(t)
 	legacy := connProfile()
-	legacy.ServerPreset = model.ServerPresetMSSQL2008
+	legacy.ServerPreset, legacy.Encrypt = model.ServerPresetMSSQL2008, model.EncryptOptional
 	lc, err := driverConfig(legacy, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	dc, _ := driverConfig(connProfile(), "") // no preset: Go 1.20 default MinVersion (TLS 1.2)
+	noPreset := connProfile()
+	noPreset.Encrypt = model.EncryptOptional
+	dc, _ := driverConfig(noPreset, "") // no preset: Go 1.20 default MinVersion (TLS 1.2)
 
 	// 1. without the preset a TLS 1.0-only server fails, with a classified key
 	if _, err := handshake(t, cert, nil, dc.TLSConfig.Clone()); err == nil {

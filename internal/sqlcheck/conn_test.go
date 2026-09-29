@@ -33,8 +33,9 @@ func TestCHK_SQL_01_DriverConfig(t *testing.T) {
 	if cfg.AppName != AppName || cfg.DialTimeout != 15*time.Second {
 		t.Errorf("app=%s dial=%v", cfg.AppName, cfg.DialTimeout)
 	}
-	if cfg.Encryption != msdsn.EncryptionOff || cfg.TLSConfig == nil || !cfg.TLSConfig.InsecureSkipVerify {
-		t.Errorf("default encryption = %v (login-only TLS, cert not validated expected)", cfg.Encryption)
+	// phase 2d (customer decision): unset encrypt = disable, no TLS at all
+	if cfg.Encryption != msdsn.EncryptionDisabled || cfg.TLSConfig != nil {
+		t.Errorf("default encryption = %v (disable expected)", cfg.Encryption)
 	}
 	for k, v := range cfg.Parameters {
 		if strings.Contains(v, secretPw) || strings.Contains(k, secretPw) {
@@ -94,7 +95,7 @@ func TestCHK_SQL_01_DriverConfig(t *testing.T) {
 	if cfg, _ = driverConfig(p, ""); cfg.TLSConfig.MinVersion != tls.VersionTLS10 {
 		t.Errorf("legacy TLS 1.0: MinVersion=%x", cfg.TLSConfig.MinVersion)
 	}
-	p.TLSMinVersion, p.Encrypt = "", model.EncryptDefault
+	p.TLSMinVersion, p.Encrypt = "", model.EncryptOptional
 	if cfg, _ = driverConfig(p, ""); cfg.TLSConfig.MinVersion != 0 {
 		t.Errorf("default MinVersion=%x (Go default expected)", cfg.TLSConfig.MinVersion)
 	}

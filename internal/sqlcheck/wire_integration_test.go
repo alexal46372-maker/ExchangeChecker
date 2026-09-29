@@ -95,7 +95,8 @@ func TestCHK_SQL_05_IntegrationEncryptWire(t *testing.T) {
 		queryClear bool
 	}{
 		{model.EncryptDisable, true, true},
-		{model.EncryptDefault, false, true},
+		{model.EncryptDefault, true, true}, // unset = disable (phase 2d)
+		{model.EncryptOptional, false, true},
 		{model.EncryptOn, false, false},
 	} {
 		px := newWireProxy(t, target)

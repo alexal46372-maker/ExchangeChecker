@@ -23,6 +23,9 @@ const (
 	MsgTLSCertificate = "sql.tls_certificate"
 	// MsgPresetMSSQL2008: hint shown with the "SQL Server 2008" preset.
 	MsgPresetMSSQL2008 = "sql.preset_mssql2008_hint"
+	// MsgWarnPlaintextLogin: warning (not an error) for profiles with SQL
+	// authentication and encryption disabled (phase 2d), see Warnings.
+	MsgWarnPlaintextLogin = "sql.warn_plaintext_login"
 )
 
 var messages = map[string][2]string{ // key -> {ru, en}
@@ -35,12 +38,16 @@ var messages = map[string][2]string{ // key -> {ru, en}
 		"The TLS handshake with SQL Server failed even with TLS 1.0 (no common cipher suite or protocol). Install the TLS 1.2 update on the server or choose \"Encryption: disable\" (no TLS for data and login; the SQL password is effectively sent in clear text).",
 	},
 	MsgTLSCertificate: {
-		"Сертификат SQL Server не прошёл проверку. Включите «Доверять сертификату сервера» или используйте шифрование по умолчанию (только логин, без проверки сертификата).",
-		"The SQL Server certificate was rejected. Enable \"Trust server certificate\" or use the default encryption (login only, certificate not validated).",
+		"Сертификат SQL Server не прошёл проверку. Включите «Доверять сертификату сервера» или выберите «Шифрование: только логин» (без проверки сертификата).",
+		"The SQL Server certificate was rejected. Enable \"Trust server certificate\" or choose \"Encryption: login only\" (certificate not validated).",
 	},
 	MsgPresetMSSQL2008: {
-		"SQL Server 2008: все запросы совместимы с уровнем 100. Если на сервере не установлены обновления TLS 1.2, нужен TLS 1.0 (пресет включает его); Go предложит AES-CBC-SHA или 3DES, RC4 не поддерживается.",
-		"SQL Server 2008: every query is compatible with level 100. Servers without the TLS 1.2 updates need TLS 1.0 (the preset enables it); Go offers AES-CBC-SHA or 3DES, RC4 is not supported.",
+		"SQL Server 2008: все запросы совместимы с уровнем 100. По умолчанию подключение без шифрования. Если включить шифрование, а на сервере нет обновлений TLS 1.2, нужен TLS 1.0 (пресет разрешает его); Go предложит AES-CBC-SHA или 3DES, RC4 не поддерживается.",
+		"SQL Server 2008: every query is compatible with level 100. By default the connection is not encrypted. If encryption is turned on and the server lacks the TLS 1.2 updates, TLS 1.0 is needed (the preset allows it); Go offers AES-CBC-SHA or 3DES, RC4 is not supported.",
+	},
+	MsgWarnPlaintextLogin: {
+		"Шифрование отключено: пароль SQL передаётся по сети практически открытым текстом (обратимая маскировка TDS). Рекомендуется Windows-аутентификация или отдельный логин только с ролью db_datareader.",
+		"Encryption is disabled: the SQL password travels over the network almost in plain text (reversible TDS scrambling). Use Windows authentication or a dedicated login with the db_datareader role only.",
 	},
 }
 
@@ -59,7 +66,20 @@ func Message(key, lang string) string {
 
 // MessageKeys lists the known message keys (tests, UI catalogs).
 func MessageKeys() []string {
-	return []string{MsgTLSEnableTLS10, MsgTLSLegacyFailed, MsgTLSCertificate, MsgPresetMSSQL2008}
+	return []string{MsgTLSEnableTLS10, MsgTLSLegacyFailed, MsgTLSCertificate, MsgPresetMSSQL2008, MsgWarnPlaintextLogin}
+}
+
+// Warnings returns the message keys of the connection warnings of p for
+// the setup GUI (phase 6) and the tray: MsgWarnPlaintextLogin when the
+// profile uses SQL authentication without encryption (encrypt "disable",
+// also when unset). Windows authentication gets no warning. Warnings do
+// not block saving or polling; texts come from Message(key, lang).
+func Warnings(p model.Profile) []string {
+	var w []string
+	if p.PlaintextLogin() {
+		w = append(w, MsgWarnPlaintextLogin)
+	}
+	return w
 }
 
 // MessageKeyOf returns the message key attached to err ("" if none).

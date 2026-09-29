@@ -49,7 +49,7 @@ func driverConfig(p model.Profile, password string) (msdsn.Config, error) {
 	q.Set("database", p.Database)
 	q.Set("app name", AppName)
 	q.Set("dial timeout", strconv.Itoa(int(p.ConnectTimeout()/time.Second)))
-	switch p.Encrypt {
+	switch p.EffectiveEncrypt() { // unset = disable (phase 2d, customer decision)
 	case model.EncryptDisable:
 		q.Set("encrypt", "disable")
 	case model.EncryptOn:
@@ -57,7 +57,7 @@ func driverConfig(p model.Profile, password string) (msdsn.Config, error) {
 		q.Set("TrustServerCertificate", strconv.FormatBool(p.TrustServerCert))
 	case model.EncryptStrict:
 		q.Set("encrypt", "strict")
-	default: // EncryptDefault / EncryptOptional: driver default (login-only TLS, cert not validated)
+	default: // EncryptOptional: driver default (login-only TLS, cert not validated)
 	}
 	if v := p.EffectiveTLSMinVersion(); v != "" {
 		// go-mssqldb: tlsmin "1.0" -> tls.Config.MinVersion = tls.VersionTLS10

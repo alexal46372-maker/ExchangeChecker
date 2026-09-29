@@ -227,7 +227,7 @@ func itCtx(t *testing.T) context.Context {
 func TestCHK_SQL_01_IntegrationConnect(t *testing.T) {
 	p, pw := itProfile(t, "ec_1c_custom")
 	ctx := itCtx(t)
-	for _, e := range []model.EncryptMode{model.EncryptDefault, model.EncryptDisable, model.EncryptOn} {
+	for _, e := range []model.EncryptMode{model.EncryptDefault, model.EncryptOptional, model.EncryptDisable, model.EncryptOn} {
 		q := p
 		q.Encrypt, q.TrustServerCert = e, e == model.EncryptOn
 		if err := TestConnection(ctx, q, pw); err != nil {
@@ -484,7 +484,7 @@ func TestCHK_SQL_05_IntegrationCompat100(t *testing.T) {
 	if err := pp.ApplyServerPreset(model.ServerPresetMSSQL2008); err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range []model.EncryptMode{model.EncryptDefault, model.EncryptDisable} {
+	for _, e := range []model.EncryptMode{model.EncryptDefault, model.EncryptOptional, model.EncryptDisable} {
 		pp.Encrypt = e
 		if err := TestConnection(ctx, pp, ppw); err != nil {
 			t.Errorf("preset, encrypt %q: %v", e, err)

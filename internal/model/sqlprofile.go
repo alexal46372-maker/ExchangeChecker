@@ -8,16 +8,21 @@ import (
 )
 
 // EncryptMode is the TDS encryption setting of a profile (PLAN.md §5.2).
-// Legacy SQL Server 2005/2008 (1C 8.1) usually needs EncryptDisable, or
-// EncryptDefault/EncryptOn together with TLSMinVersion "1.0".
+// Customer decision (phase 2d): the target is SQL Server 2008 R2 RTM
+// without service packs and the primary mode is no encryption, so an
+// unset mode means EncryptDisable (EffectiveEncrypt). TLS stays available
+// as a profile option: EncryptOptional / EncryptOn, with TLSMinVersion
+// "1.0" for servers without the TLS 1.2 update.
 type EncryptMode string
 
 const (
-	// EncryptDefault is the driver default: only the login packet is
-	// encrypted, and only when the server supports TLS; the server
-	// certificate is not validated.
+	// EncryptDefault is the unset mode (field omitted in profiles.json).
+	// Since phase 2d it means EncryptDisable (DefaultEncrypt); profiles
+	// written earlier without the field therefore connect without TLS.
 	EncryptDefault EncryptMode = ""
-	// EncryptOptional is an explicit alias of EncryptDefault.
+	// EncryptOptional encrypts only the login packet, and only when the
+	// server supports TLS; the server certificate is not validated (the
+	// go-mssqldb default, which EncryptDefault meant before phase 2d).
 	EncryptOptional EncryptMode = "optional"
 	// EncryptDisable turns TLS off completely (no login encryption either).
 	EncryptDisable EncryptMode = "disable"
@@ -28,6 +33,40 @@ const (
 	// certificate always validated. Not usable with legacy servers.
 	EncryptStrict EncryptMode = "strict"
 )
+
+// DefaultEncrypt is the encryption mode of new profiles, of the
+// "mssql2008" preset and of profiles without the field (phase 2d).
+const DefaultEncrypt = EncryptDisable
+
+// Effective resolves the unset mode to DefaultEncrypt; explicit modes are
+// returned unchanged.
+func (e EncryptMode) Effective() EncryptMode {
+	if e == EncryptDefault {
+		return DefaultEncrypt
+	}
+	return e
+}
+
+// EffectiveEncrypt is the encryption mode used for the connection.
+func (p Profile) EffectiveEncrypt() EncryptMode { return p.Encrypt.Effective() }
+
+// ApplySQLDefaults fills the connection defaults of a new profile (setup
+// GUI "new profile"): Encrypt = DefaultEncrypt when unset. Explicit values
+// are kept.
+func (p *Profile) ApplySQLDefaults() {
+	if p.Encrypt == EncryptDefault {
+		p.Encrypt = DefaultEncrypt
+	}
+}
+
+// PlaintextLogin reports whether the SQL password travels without TLS:
+// SQL authentication with the effective mode EncryptDisable. The TDS
+// login packet then only XOR-scrambles the password (reversible), see
+// PLAN.md §12. Windows authentication (SSPI/NTLM/Kerberos) never sends
+// the password itself, so it is not affected.
+func (p Profile) PlaintextLogin() bool {
+	return p.AuthMode == AuthSQL && p.EffectiveEncrypt() == EncryptDisable
+}
 
 // Valid reports whether e is a supported encryption mode.
 func (e EncryptMode) Valid() bool {
@@ -52,14 +91,18 @@ const (
 // R2-only features). Every query of the service is T-SQL of SQL 2008
 // (CHK-SQL-05). Legacy servers without the TLS 1.2 update speak TLS 1.0
 // only, while Go 1.20 clients default to TLS 1.2 minimum, so the preset
-// sets TLSMinVersion "1.0" (tls.Config.MinVersion = tls.VersionTLS10).
+// sets TLSMinVersion "1.0" (tls.Config.MinVersion = tls.VersionTLS10) for
+// profiles that turn encryption on. Customer decision (phase 2d): the
+// server is 2008 R2 RTM without SP and the preset connects without
+// encryption by default (Encrypt "disable").
 const ServerPresetMSSQL2008 = "mssql2008"
 
 // ApplyServerPreset fills the connection defaults of a preset. For
-// ServerPresetMSSQL2008: TLSMinVersion "1.0" (unless set explicitly),
-// Encrypt "strict" (TDS 8.0, SQL 2022+) falls back to the driver default
-// (TLS for the login packet only, certificate not validated). Other
-// fields are kept. preset "" clears ServerPreset only.
+// ServerPresetMSSQL2008: Encrypt "disable" when unset (phase 2d), Encrypt
+// "strict" (TDS 8.0, SQL 2022+, forbidden with the preset) is replaced by
+// "disable", explicit "optional"/"on"/"disable" are kept; TLSMinVersion
+// "1.0" unless set explicitly (used only if encryption is turned on).
+// Other fields are kept. preset "" clears ServerPreset only.
 func (p *Profile) ApplyServerPreset(preset string) error {
 	switch preset {
 	case "":
@@ -67,8 +110,8 @@ func (p *Profile) ApplyServerPreset(preset string) error {
 		if p.TLSMinVersion == TLSMinDefault {
 			p.TLSMinVersion = TLSMin10
 		}
-		if p.Encrypt == EncryptStrict {
-			p.Encrypt = EncryptDefault
+		if p.Encrypt == EncryptDefault || p.Encrypt == EncryptStrict {
+			p.Encrypt = DefaultEncrypt
 		}
 	default:
 		return fmt.Errorf("unknown server preset %q", preset)

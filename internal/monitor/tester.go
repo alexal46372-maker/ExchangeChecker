@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"time"
@@ -39,45 +38,12 @@ type TestInfo struct {
 // passes sqlcheck.TestConnectionInfo; tests pass fakes).
 type TestFunc func(ctx context.Context, p model.Profile, password string) (TestInfo, error)
 
-// defaultTest is sqlcheck.TestConnection (no server information).
-func defaultTest(ctx context.Context, p model.Profile, password string) (TestInfo, error) {
-	return TestInfo{}, sqlcheck.TestConnection(ctx, p, password)
-}
-
-// FallbackCategory classifies a connection error without
-// sqlcheck.ConnCategory: TLS hint key -> tls, timeout, config, SQL Server
-// login / database error numbers, network errors, other.
-func FallbackCategory(err error) string {
-	if err == nil {
-		return ""
-	}
-	var se *sqlcheck.Error
-	if errors.As(err, &se) && se.Key != "" {
-		return model.TestTLS
-	}
-	switch sqlcheck.KindOf(err) {
-	case sqlcheck.KindTimeout, sqlcheck.KindCanceled:
-		return model.TestTimeout
-	case sqlcheck.KindConfig:
-		return model.TestConfig
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return model.TestTimeout
-	}
-	var num interface{ SQLErrorNumber() int32 }
-	if errors.As(err, &num) {
-		switch num.SQLErrorNumber() {
-		case 18456, 18452, 18486, 18487, 18488:
-			return model.TestLogin
-		case 4060, 4064:
-			return model.TestDatabase
-		}
-	}
-	var ne net.Error
-	if errors.As(err, &ne) || sqlcheck.KindOf(err) == sqlcheck.KindConn {
-		return model.TestNetwork
-	}
-	return model.TestOther
+// SQLTest is the production TestFunc: sqlcheck.TestConnectionInfo
+// (session + ping + one read-only 2008-compatible query for the server
+// description; encrypt "disable" and the TLS 1.0 preset go the same way).
+func SQLTest(ctx context.Context, p model.Profile, password string) (TestInfo, error) {
+	i, err := sqlcheck.TestConnectionInfo(ctx, p, password)
+	return TestInfo{Version: i.Version, ProductLevel: i.ProductLevel, Edition: i.Edition, CompatLevel: i.CompatLevel}, err
 }
 
 // Tester runs connection tests: at most Max at a time, each with a hard
@@ -108,10 +74,10 @@ type testRun struct {
 
 func (t *Tester) defaults() {
 	if t.Test == nil {
-		t.Test = defaultTest
+		t.Test = SQLTest
 	}
 	if t.Category == nil {
-		t.Category = FallbackCategory
+		t.Category = sqlcheck.ConnCategory
 	}
 	if t.Timeout <= 0 {
 		t.Timeout = DefaultTestTimeout

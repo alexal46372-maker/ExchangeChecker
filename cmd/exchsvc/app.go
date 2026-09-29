@@ -12,6 +12,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/monitor"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/sqlcheck"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/version"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
@@ -94,6 +95,10 @@ func runService(ctx context.Context, ac appConfig) error {
 		}
 	}
 
+	test := ac.Test
+	if test == nil {
+		test = monitor.SQLTest
+	}
 	var srv *ipc.Server
 	mon := monitor.New(monitor.Options{
 		Source:    monitor.FileConfig{Store: store},
@@ -106,9 +111,12 @@ func runService(ctx context.Context, ac appConfig) error {
 		OnAck: func(e model.AlertEvent) {
 			report(alert.EventTypeInformation, alert.EventIDAck, alert.FormatAck(e, lang))
 		},
-		Test:      ac.Test,
-		TestAfter: ac.TestAfter,
-		Log:       log,
+		// test_profile: sqlcheck.TestConnectionInfo + ConnCategory
+		// (CHK-IPC-03); tests inject a fake
+		Test:         test,
+		TestCategory: sqlcheck.ConnCategory,
+		TestAfter:    ac.TestAfter,
+		Log:          log,
 		Sink: alert.Multi{
 			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),

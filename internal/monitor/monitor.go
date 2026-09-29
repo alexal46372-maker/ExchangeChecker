@@ -95,8 +95,8 @@ type Options struct {
 	OnAck func(model.AlertEvent)
 
 	// Connection test of test_profile (CHK-IPC-03): Test (default
-	// sqlcheck.TestConnection without server information), TestCategory
-	// (default FallbackCategory), TestTimeout (default 15 s), TestMax
+	// SQLTest = sqlcheck.TestConnectionInfo), TestCategory (default
+	// sqlcheck.ConnCategory), TestTimeout (default 15 s), TestMax
 	// concurrent tests (default 2), TestAfter = timer of the hard timeout
 	// (tests).
 	Test         TestFunc

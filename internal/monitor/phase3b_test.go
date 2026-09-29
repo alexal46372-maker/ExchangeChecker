@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -646,7 +647,7 @@ func TestCHK_MON_13_CounterStoreProfileLock(t *testing.T) {
 			defer wg.Done()
 			err := s.Update("p", func(prev model.CounterState) (model.CounterState, error) {
 				pt := prev.Points["k"]
-				time.Sleep(time.Millisecond) // widen the race window
+				runtime.Gosched() // widen the race window (no timing assumption)
 				pt.SentNo++
 				prev.Points["k"] = pt
 				return prev, nil
@@ -656,10 +657,14 @@ func TestCHK_MON_13_CounterStoreProfileLock(t *testing.T) {
 			}
 		}()
 	}
-	// a slow update of p does not block q
-	block := make(chan struct{})
-	go s.Update("p", func(prev model.CounterState) (model.CounterState, error) { <-block; return prev, errors.New("abort") })
-	time.Sleep(10 * time.Millisecond)
+	// a slow update of p (holding p's lock) does not block q
+	block, entered := make(chan struct{}), make(chan struct{})
+	go s.Update("p", func(prev model.CounterState) (model.CounterState, error) {
+		close(entered)
+		<-block
+		return prev, errors.New("abort")
+	})
+	<-entered // p's lock is held now
 	done := make(chan struct{})
 	go func() {
 		s.Update("q", func(prev model.CounterState) (model.CounterState, error) { return prev, nil })
@@ -667,7 +672,7 @@ func TestCHK_MON_13_CounterStoreProfileLock(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second): // generous: q only needs its own lock
 		t.Error("profile q blocked by profile p")
 	}
 	close(block)
@@ -683,5 +688,143 @@ func TestCHK_MON_13_CounterStoreProfileLock(t *testing.T) {
 	})
 	if st, _ := s.Load("p"); st.Points["k"].SentNo != n {
 		t.Errorf("aborted update saved: %d", st.Points["k"].SentNo)
+	}
+}
+
+// hungCountersSetup: profile c in counters mode with one saved state
+// (SentNo 1), then a poll that hangs holding the stale observation
+// SentNo 1 (the reader applies it only when released).
+func hungCountersSetup(t *testing.T, dir string) (*Monitor, *fakeFactory, *MemConfig, *fakeClock, *FileCounterStore, chan struct{}) {
+	t.Helper()
+	store := OpenFileCounterStore(dir, nil)
+	f := newFactory()
+	f.set("c", behavior{counter: true})
+	f.counters["c"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 1, ReceivedNo: 1}}
+	clk := &fakeClock{t: t0}
+	src := NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("c")}})
+	opt := baseOpt(f, src, clk)
+	opt.ProfileTimeout = func(model.Profile) time.Duration { return 50 * time.Millisecond }
+	opt.Counters = store
+	m := New(opt)
+	m.reloadConfig(true)
+	m.pollAll(context.Background()) // state saved: SentNo 1
+	hang := make(chan struct{})
+	f.set("c", behavior{counter: true, hang: hang})
+	m.pollAll(context.Background()) // hangs -> timeout, entry stays busy
+	if k := profileByID(m.Snapshot(), "c").ErrorKey; k != model.MsgMonitorTimeout {
+		t.Fatalf("hung poll: %q", k)
+	}
+	return m, f, src, clk, store, hang
+}
+
+// TestCHK_MON_13_RetiredEntryCannotWriteCounters — the profile's
+// signature changes while its old reader hangs: the old entry is retired
+// (not abandoned, gen unchanged), the new entry's reader advances the
+// state; the old reader returning late is rejected, so SentNo is not
+// rolled back and no false "fresh" time appears.
+func TestCHK_MON_13_RetiredEntryCannotWriteCounters(t *testing.T) {
+	dir := t.TempDir()
+	m, f, src, clk, store, hang := hungCountersSetup(t, dir)
+	pc := prof("c")
+	pc.Database = "moved" // signature change -> new entry, old one retired
+	src.Set(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{pc}})
+	f.set("c", behavior{counter: true})
+	f.mu.Lock()
+	f.counters["c"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 5, ReceivedNo: 5}}
+	f.mu.Unlock()
+	m.reloadConfig(false)
+	clk.Add(time.Minute)
+	tNew := clk.Now()
+	m.pollAll(context.Background()) // new reader: 1 -> 5 = change at tNew
+	if f.get(f.created, "c") != 2 {
+		t.Fatalf("readers %d", f.get(f.created, "c"))
+	}
+	want, _ := store.Load("c")
+	if want.Points["k"].SentNo != 5 || !want.Points["k"].SentChangedAt.Equal(tNew) {
+		t.Fatalf("new state %+v", want.Points["k"])
+	}
+	close(hang) // the old reader applies SentNo 1 now
+	waitFor(t, func() bool { return f.get(f.finished, "c") >= 3 })
+	if got, _ := store.Load("c"); got.Points["k"] != want.Points["k"] {
+		t.Fatalf("retired reader rolled the state back: %+v", got.Points["k"])
+	}
+	if disk, _ := OpenFileCounterStore(dir, nil).Load("c"); disk.Points["k"].SentNo != 5 {
+		t.Errorf("file rolled back: %+v", disk.Points["k"])
+	}
+	clk.Add(time.Minute)
+	m.pollAll(context.Background()) // unchanged 5: the time stays tNew
+	for _, p := range profileByID(m.Snapshot(), "c").Points {
+		if !p.FreshAt.Equal(tNew) {
+			t.Errorf("false fresh time %v, want %v", p.FreshAt, tNew)
+		}
+	}
+}
+
+// TestCHK_MON_13_RemovedProfileNotResurrected — the profile is removed
+// while its reader hangs: Retain drops its state, and the reader
+// returning late does not bring it back (memory or file).
+func TestCHK_MON_13_RemovedProfileNotResurrected(t *testing.T) {
+	dir := t.TempDir()
+	m, f, src, _, store, hang := hungCountersSetup(t, dir)
+	src.Set(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{}})
+	m.reloadConfig(false)
+	if hasID(store.ProfileIDs(), "c") {
+		t.Fatal("Retain did not drop the removed profile")
+	}
+	close(hang)
+	waitFor(t, func() bool { return f.get(f.finished, "c") >= 2 })
+	if hasID(store.ProfileIDs(), "c") {
+		t.Error("removed profile resurrected in memory")
+	}
+	if hasID(OpenFileCounterStore(dir, nil).ProfileIDs(), "c") {
+		t.Error("removed profile resurrected in counters-state.json")
+	}
+	if f.get(f.closed, "c") != 1 {
+		t.Errorf("retired reader closed %d times", f.get(f.closed, "c"))
+	}
+}
+
+// TestCHK_MON_10_InvalidWhenSettingsNeverValid — first start with a
+// broken settings.json (defaults), then profiles.json breaks too: there
+// never was a valid configuration, so the key is config_invalid (not
+// config_stale); the profiles keep being polled with the last applied
+// list. Once both files were valid, a later failure is config_stale.
+func TestCHK_MON_10_InvalidWhenSettingsNeverValid(t *testing.T) {
+	dir := t.TempDir()
+	st := config.NewStore(dir)
+	st.Protector = plainProtector{}
+	if err := st.SaveProfiles([]model.Profile{prof("a")}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(st.Path(config.SettingsFile), []byte("garbage"), 0o644)
+	f := newFactory()
+	f.set("a", behavior{})
+	opt := baseOpt(f, FileConfig{Store: st}, &fakeClock{t: t0})
+	m := New(opt)
+	m.reloadConfig(true)
+	if s := m.Snapshot(); s.ConfigErrorKey != model.MsgMonitorConfigInvalid || s.ConfigStale {
+		t.Fatalf("broken settings on first start: %+v", s)
+	}
+	time.Sleep(15 * time.Millisecond)
+	os.WriteFile(st.Path(config.ProfilesFile), []byte("{broken"), 0o644)
+	m.reloadConfig(false)
+	s := m.Snapshot()
+	if s.ConfigErrorKey != model.MsgMonitorConfigInvalid || s.ConfigStale || len(s.Profiles) != 1 {
+		t.Errorf("profiles broken, settings never valid: key %q stale %v profiles %d", s.ConfigErrorKey, s.ConfigStale, len(s.Profiles))
+	}
+	// both valid once -> a later profiles failure is stale
+	time.Sleep(15 * time.Millisecond)
+	os.WriteFile(st.Path(config.SettingsFile), []byte(`{"version":1}`), 0o644)
+	if err := st.SaveProfiles([]model.Profile{prof("a")}); err != nil {
+		t.Fatal(err)
+	}
+	if !m.reloadConfig(false) || m.Snapshot().ConfigError != "" {
+		t.Fatalf("fixed: %+v", m.Snapshot())
+	}
+	time.Sleep(15 * time.Millisecond)
+	os.WriteFile(st.Path(config.ProfilesFile), []byte("{broken"), 0o644)
+	m.reloadConfig(false)
+	if s := m.Snapshot(); s.ConfigErrorKey != model.MsgMonitorConfigStale || !s.ConfigStale {
+		t.Errorf("after a valid load: key %q stale %v", s.ConfigErrorKey, s.ConfigStale)
 	}
 }

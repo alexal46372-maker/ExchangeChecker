@@ -178,18 +178,34 @@ func (s *FileCounterStore) LastError() error {
 }
 
 // Retain drops the states of profiles not in ids (deleted profiles).
+//
+// Each deleted profile's lock is taken first, so an Update of that
+// profile that already passed its checks finishes before the deletion
+// (and a later one is rejected by the monitor, whose entry was retired
+// before Retain): a removed profile cannot reappear in the file
+// (CHK-MON-13).
 func (s *FileCounterStore) Retain(ids map[string]bool) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	changed := false
+	var drop []string
 	for id := range s.data {
 		if !ids[id] {
-			delete(s.data, id)
-			changed = true
+			drop = append(drop, id)
 		}
 	}
-	if !changed {
+	s.mu.Unlock()
+	if len(drop) == 0 {
 		return nil
+	}
+	sort.Strings(drop)
+	for _, id := range drop {
+		l := s.plock(id)
+		l.Lock()
+		defer l.Unlock()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range drop {
+		delete(s.data, id)
 	}
 	return s.flushLocked()
 }

@@ -95,7 +95,6 @@ type entry struct {
 	gen       uint64 // incremented when a hung reader is abandoned
 	retired   bool
 	reader    sqlcheck.ReadCloser
-	cmu       sync.Mutex // counters step lock for stores without Update
 }
 
 // acquire marks the entry busy and returns its generation; false if a
@@ -163,26 +162,32 @@ func (e *entry) closeLocked() {
 	}
 }
 
-// errAbandoned: the counters write of a reader abandoned as hung is
-// rejected (CHK-MON-13).
-var errAbandoned = errors.New("monitor: reader abandoned as hung, counters state not written")
+// errAbandoned: the counters write of a reader abandoned as hung, or of a
+// retired entry (profile changed or removed), is rejected (CHK-MON-13).
+var errAbandoned = errors.New("monitor: reader abandoned or profile retired, counters state not written")
 
 // genCounters is the counters store handed to one reader: every write is
-// accepted only while the entry is still in the reader's generation, and
-// the Load -> apply -> Save step runs under the profile lock of the
-// underlying store (or the entry's own lock), so an abandoned hung reader
-// that returns late can never overwrite the state of its successor with
-// a stale observation (CHK-MON-13).
+// accepted only while the entry is still in the reader's generation AND
+// not retired (profile signature/settings change, profile removed,
+// service stop). The check runs inside the per-profile critical section
+// of the underlying store (or the monitor's per-profile lock), right
+// before the write, so a hung reader that returns late can never
+// overwrite its successor's state with a stale observation nor resurrect
+// a removed profile in counters-state.json (CHK-MON-13).
 type genCounters struct {
 	inner model.CounterStateStore
 	e     *entry
 	gen   uint64
+	lock  *sync.Mutex // per-profile lock for stores without Update
 }
 
+// current: the reader may still write. retired is a one-way flag of the
+// entry object (a changed profile gets a new entry), gen covers the
+// abandoned-hung case within the same entry.
 func (g genCounters) current() bool {
 	g.e.mu.Lock()
 	defer g.e.mu.Unlock()
-	return g.e.gen == g.gen
+	return !g.e.retired && g.e.gen == g.gen
 }
 
 // Load implements model.CounterStateStore.
@@ -205,8 +210,8 @@ func (g genCounters) Update(id string, fn func(model.CounterState) (model.Counte
 	if u, ok := g.inner.(model.CounterStateUpdater); ok {
 		return u.Update(id, guarded)
 	}
-	g.e.cmu.Lock()
-	defer g.e.cmu.Unlock()
+	g.lock.Lock()
+	defer g.lock.Unlock()
 	return model.UpdateCounterState(g.inner, id, guarded)
 }
 
@@ -221,7 +226,7 @@ type Monitor struct {
 	cfg      Config
 	stamp    string
 	loaded   bool  // a snapshot exists (after the first load attempt)
-	good     bool  // a configuration was applied successfully
+	good     bool  // profiles.json + secrets were applied successfully once
 	retry    bool  // the last load failed: reload on the next check
 	cfgFatal error // last load failure while the last good config is used
 	stale    bool  // cfgFatal set and a last good config/settings is in use
@@ -233,6 +238,9 @@ type Monitor struct {
 	seq      uint64
 	lastPoll time.Time
 	snap     model.StatusSnapshot
+
+	clMu   sync.Mutex
+	cLocks map[string]*sync.Mutex // counterLock
 
 	cmdMu   sync.Mutex
 	cmdLast map[string]time.Time // rate limiter of IPC commands
@@ -281,6 +289,22 @@ func New(opt Options) *Monitor {
 		entries: map[string]*entry{}, results: map[string]model.ProfileSnapshot{},
 		cmdLast: map[string]time.Time{}, pendIDs: map[string]bool{},
 	}
+}
+
+// counterLock returns the monitor's per-profile counters lock (shared by
+// the old and the new entry of a changed profile).
+func (m *Monitor) counterLock(id string) *sync.Mutex {
+	m.clMu.Lock()
+	defer m.clMu.Unlock()
+	if m.cLocks == nil {
+		m.cLocks = map[string]*sync.Mutex{}
+	}
+	l := m.cLocks[id]
+	if l == nil {
+		l = &sync.Mutex{}
+		m.cLocks[id] = l
+	}
+	return l
 }
 
 // Rate-limiter keys of the IPC commands.
@@ -557,7 +581,10 @@ func (m *Monitor) configFailed(err error, settings bool) {
 	first := !m.loaded
 	m.loaded = true
 	if !settings {
-		m.stale = m.good
+		// "last good configuration" needs both parts to have been valid
+		// once: after a first start with broken settings.json (defaults)
+		// a broken profiles.json is config_invalid, not config_stale
+		m.stale = m.good && m.setGood
 	}
 	stale := m.stale
 	m.mu.Unlock()
@@ -777,7 +804,7 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 			var err error
 			r, err = m.opt.NewReader(p, e.password, sqlcheck.Options{
 				Settings: p.EffectiveSettings(settings), Now: m.opt.Now,
-				Counters: genCounters{inner: m.opt.Counters, e: e, gen: gen}})
+				Counters: genCounters{inner: m.opt.Counters, e: e, gen: gen, lock: m.counterLock(p.ID)}})
 			if err != nil {
 				resc <- fail(err.Error(), ErrorKeyOf(err))
 				return

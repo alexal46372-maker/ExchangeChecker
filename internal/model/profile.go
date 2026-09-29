@@ -147,6 +147,12 @@ type Profile struct {
 	ServerPreset      string `json:"serverPreset,omitempty"`
 	ConnectTimeoutSec int    `json:"connectTimeoutSec,omitempty"`
 	QueryTimeoutSec   int    `json:"queryTimeoutSec,omitempty"`
+
+	// WarnMinutes / ErrorMinutes override the global thresholds of
+	// settings.json for this profile (phase 3, CHK-MON-01); 0 = global
+	// value (defaults 30 / 60 min). See EffectiveSettings.
+	WarnMinutes  int `json:"warnMinutes,omitempty"`
+	ErrorMinutes int `json:"errorMinutes,omitempty"`
 }
 
 // DisplayName returns Name, or "Server/Database" when Name is empty.
@@ -186,6 +192,9 @@ func (p Profile) Validate() error {
 		return fmt.Errorf("profile %q: login is required for SQL authentication", p.ID)
 	}
 	if err := p.validateConn(); err != nil {
+		return fmt.Errorf("profile %q: %w", p.ID, err)
+	}
+	if err := p.validateThresholds(); err != nil {
 		return fmt.Errorf("profile %q: %w", p.ID, err)
 	}
 	if err := p.Mapping.Validate(); err != nil {

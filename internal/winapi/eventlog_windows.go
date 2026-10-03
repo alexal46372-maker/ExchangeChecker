@@ -40,7 +40,7 @@ func OpenEventLog(source string) (*EventLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	h, _, e := procRegisterEventSourceW.Call(0, uintptr(unsafe.Pointer(s)))
+	h, _, e := callProc(procRegisterEventSourceW, 0, uintptr(unsafe.Pointer(s)))
 	if h == 0 {
 		return nil, fmt.Errorf("winapi: RegisterEventSourceW: %w", e)
 	}
@@ -60,7 +60,7 @@ func (l *EventLog) Report(eventType uint16, eventID uint32, msg string) error {
 		return err
 	}
 	strs := [1]*uint16{s}
-	r, _, e := procReportEventW.Call(l.h, uintptr(eventType), 0, uintptr(eventID), 0,
+	r, _, e := callProc(procReportEventW, l.h, uintptr(eventType), 0, uintptr(eventID), 0,
 		1, 0, uintptr(unsafe.Pointer(&strs[0])), 0)
 	if r == 0 {
 		return fmt.Errorf("winapi: ReportEventW: %w", e)
@@ -75,7 +75,7 @@ func (l *EventLog) Close() error {
 	if l.h == 0 {
 		return nil
 	}
-	r, _, e := procDeregisterEventSource.Call(l.h)
+	r, _, e := callProc(procDeregisterEventSource, l.h)
 	l.h = 0
 	if r == 0 {
 		return fmt.Errorf("winapi: DeregisterEventSource: %w", e)

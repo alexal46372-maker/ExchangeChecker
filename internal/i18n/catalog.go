@@ -130,6 +130,7 @@ const (
 	KeySetPolled          = "set.polled"
 	KeySetPollCoalesced   = "set.poll_coalesced"
 	KeySetNotConnected    = "set.not_connected"
+	KeySetChangedOffline  = "set.changed_offline"
 	KeySetUnsupported     = "set.unsupported"
 	KeySetTooLarge        = "set.too_large"
 	KeySetNoRevision      = "set.no_revision"
@@ -271,6 +272,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetPolled:          {"Опрос запущен.", "Poll started."},
 	KeySetPollCoalesced:   {"Опрос уже запланирован.", "A poll is already scheduled."},
 	KeySetNotConnected:    {"Нет связи со службой Exchange Checker.", "No connection to the Exchange Checker service."},
+	KeySetChangedOffline:  {"Настройки изменились, пока не было связи со службой. Нажмите «Перечитать» (несохранённые правки будут потеряны).", "The settings were changed while the service was not connected. Click Reload (unsaved changes will be lost)."},
 	KeySetUnsupported:     {"Эта версия службы не поддерживает эту команду.", "This service version does not support this command."},
 	KeySetTooLarge:        {"Запрос больше 64 КиБ — сократите данные профиля.", "The request is larger than 64 KiB — shorten the profile data."},
 	KeySetNoRevision:      {"Неизвестна версия настроек — нажмите «Перечитать».", "The settings version is unknown — press Reload."},

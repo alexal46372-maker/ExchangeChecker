@@ -29,6 +29,7 @@ type alertWindow struct {
 	ack, close               uintptr
 	level                    model.AlertLevel
 	shown                    bool
+	raised                   int // bring-to-front requests (tests)
 	lang                     string
 	onAck, onClose           func()
 }
@@ -92,8 +93,11 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 	winapi.SetWindowText(aw.status, v.Message)
 	winapi.EnableWindow(aw.ack, v.CanAck)
 	switch {
-	case v.Visible && !aw.shown:
+	case v.Visible && (!aw.shown || v.Raise):
+		// first show, or a new alert / escalation while already open:
+		// to the front again (foreground, else the taskbar flashes)
 		aw.shown = true
+		aw.raised++
 		if show {
 			aw.bringToFront()
 		}

@@ -336,3 +336,69 @@ func TestCHK_TRAY_03_PlayerLoop(t *testing.T) {
 		t.Error("closed player restarted")
 	}
 }
+
+// TestCHK_TRAY_03_PlayerMinGap — a gap of 1..49 ms is raised to 50 ms
+// between Beep calls (gapMs = 10).
+func TestCHK_TRAY_03_PlayerMinGap(t *testing.T) {
+	f := &fakeBeeper{}
+	p := NewPlayer(f)
+	p.Set(true, Tone{800, 1, 10})
+	time.Sleep(300 * time.Millisecond)
+	p.Close()
+	// 300 ms / (1 ms beep + 50 ms) ≈ 6; with the 10 ms gap it would be ~27
+	if c := f.count(); c == 0 || c > 8 {
+		t.Errorf("gapMs=10: %d beeps in 300 ms, want at most one per 50 ms", c)
+	}
+}
+
+// TestCHK_TRAY_03_RaiseOnChange — Raise is set when an update brings a
+// new alert or a worse level (also while the window is visible), not for
+// an unchanged status or an improvement.
+func TestCHK_TRAY_03_RaiseOnChange(t *testing.T) {
+	c := New(i18n.RU)
+	st := func(alerts ...model.AlertEvent) trayipc.Status {
+		return trayipc.Status{State: trayipc.StateConnected, Snapshot: &model.StatusSnapshot{Alerts: alerts}}
+	}
+	w := model.AlertEvent{ProfileID: "a", Key: "k", To: model.LevelWarning}
+	e := w
+	e.To = model.LevelError
+	other := model.AlertEvent{ProfileID: "b", Key: "k", To: model.LevelWarning}
+	steps := []struct {
+		alerts []model.AlertEvent
+		raise  bool
+	}{
+		{[]model.AlertEvent{w}, true},
+		{[]model.AlertEvent{w}, false},
+		{[]model.AlertEvent{w, other}, true},
+		{[]model.AlertEvent{e, other}, true},
+		{[]model.AlertEvent{w, other}, false},
+		{nil, false},
+	}
+	for i, s := range steps {
+		if v := c.Update(st(s.alerts...), true); v.Raise != s.raise {
+			t.Errorf("step %d: raise %v, want %v", i, v.Raise, s.raise)
+		}
+	}
+	if c.View().Raise {
+		t.Error("View() must not carry the one-shot Raise")
+	}
+}
+
+// TestCHK_TRAY_03_BeepDisabled — settings.beep.enabled = false: the alert
+// window is shown, no sound; unset (old file) = sound on.
+func TestCHK_TRAY_03_BeepDisabled(t *testing.T) {
+	a := model.AlertEvent{ProfileID: "a", Key: "k", To: model.LevelError}
+	for _, tc := range []struct {
+		enabled model.OptBool
+		sound   bool
+	}{{model.OptFalse, false}, {model.OptTrue, true}, {model.OptUnset, true}} {
+		s := model.DefaultSettings()
+		s.Beep.Enabled = tc.enabled
+		c := New(i18n.RU)
+		v := c.Update(trayipc.Status{State: trayipc.StateConnected,
+			Snapshot: &model.StatusSnapshot{Alerts: []model.AlertEvent{a}, Settings: &s}}, true)
+		if !v.Visible || v.Sound != tc.sound {
+			t.Errorf("enabled %v: visible %v sound %v", tc.enabled, v.Visible, v.Sound)
+		}
+	}
+}

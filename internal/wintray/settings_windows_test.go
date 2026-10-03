@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
@@ -40,6 +41,7 @@ type cfgService struct {
 	polls    []string
 	tests    []model.IPCRequest
 	canceled int
+	gets     int
 	// saveErr: reply to the next save_profile
 	saveErr error
 	// test: "ok", "busy", "rate", "timeout", "block"
@@ -97,6 +99,7 @@ func (f *cfgService) TestProfile(ctx context.Context, req model.IPCRequest) (mod
 func (f *cfgService) GetConfig() (model.ConfigView, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.gets++
 	return model.ConfigView{Settings: model.DefaultSettings(), Profiles: append([]model.Profile(nil), f.profiles...)}, f.revision(), nil
 }
 
@@ -178,6 +181,8 @@ func (f *cfgService) count(what string) int {
 		return len(f.tests)
 	case "canceled":
 		return f.canceled
+	case "get":
+		return f.gets
 	}
 	return -1
 }
@@ -414,7 +419,8 @@ func TestCHK_TRAY_06_SettingsOtherProfileInvalid(t *testing.T) {
 	bad.Name, bad.Server, bad.Database, bad.Login = "Ручной", "x", "y", "z"
 	svc.profiles = append(svc.profiles, bad)
 	svc.saveErr = &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorProfileInvalid,
-		Message: `monitor: profile "bad": mapping: point name/id column is required`, Args: []string{"mapping.pointNameColumn", model.ValRequired}}
+		Message: `monitor: profile "bad": mapping: point name/id column is required`, Args: []string{"mapping.pointNameColumn", model.ValRequired},
+		ProfileID: "bad"}
 	app := startCfgApp(t, svc, true, nil)
 	w := openAdmin(t, app)
 	w.click(t, idSetSave)
@@ -634,5 +640,132 @@ func TestCHK_TRAY_04_SettingsDiscardPrompt(t *testing.T) {
 	want(6, "close button with edits")
 	if winapi.IsWindow(w.hwnd) || app.settings != nil {
 		t.Error("«Да» on close must close the window")
+	}
+}
+
+// TestCHK_TRAY_06_SettingsPasswordReads — the password box is read only
+// for save / test (readPassword, wiped UTF-16 buffer); editing other
+// fields, readForm and EN_CHANGE of the password only look at its length.
+func TestCHK_TRAY_06_SettingsPasswordReads(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	app := startCfgApp(t, svc, true, &fakeElevator{})
+	w := openAdmin(t, app)
+	w.set(idSetPassword, "s1")
+	w.set(idSetHost, "srv2")
+	w.readForm()
+	w.command(idSetPassword, winapi.EN_CHANGE)
+	if w.pwReads != 0 || !w.ed.Form.PasswordTyped || !w.ed.Unsaved() {
+		t.Fatalf("password read outside save/test: reads %d typed %v", w.pwReads, w.ed.Form.PasswordTyped)
+	}
+	w.click(t, idSetSave)
+	pumpUntil(t, "saved", func() bool { return svc.count("save") == 1 && !w.busy })
+	if w.pwReads != 1 || svc.lastSave().password != "s1" {
+		t.Errorf("save: reads %d password %q", w.pwReads, svc.lastSave().password)
+	}
+	if w.ed.Form.PasswordTyped || w.text(idSetPassword) != "" {
+		t.Error("password box must be cleared after save")
+	}
+	w.set(idSetDatabase, "db3") // edit without a password (same server: reuse): no read
+	w.click(t, idSetSave)
+	pumpUntil(t, "saved 2", func() bool { return svc.count("save") == 2 && !w.busy })
+	if w.pwReads != 1 || svc.lastSave().password != "" {
+		t.Errorf("save without password: reads %d password %q", w.pwReads, svc.lastSave().password)
+	}
+
+	buf := winapi.GetWindowTextUTF16(w.ctl[idSetDatabase])
+	if string(utf16.Decode(buf)) != "db3" {
+		t.Errorf("GetWindowTextUTF16 %q", string(utf16.Decode(buf)))
+	}
+	winapi.ZeroUTF16(buf)
+	for _, c := range buf {
+		if c != 0 {
+			t.Fatal("ZeroUTF16 left data")
+		}
+	}
+}
+
+// TestCHK_TRAY_04_SettingsWindowClasses — the read-only window has its own
+// class, so FindWindow(SettingsClass) of `--settings` finds only the
+// administrator window.
+func TestCHK_TRAY_04_SettingsWindowClasses(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	app := startCfgApp(t, newCfgService(), false, &fakeElevator{})
+	app.Command(1001) // trayui.CmdSettings
+	w := app.settings
+	if w == nil || w.ed.Mode != traysettings.ReadOnly {
+		t.Fatal("read-only window not opened")
+	}
+	// (hidden windows of earlier tests may still exist in this process, so
+	// the class of each window is checked, not only the first FindWindow hit)
+	if c := winapi.GetClassName(w.hwnd); c != SettingsViewClass {
+		t.Errorf("read-only window class %q, want %q", c, SettingsViewClass)
+	}
+	if h := winapi.FindWindow(SettingsClass); h == w.hwnd {
+		t.Error("FindWindow(SettingsClass) found the read-only window")
+	}
+	if h := winapi.FindWindow(SettingsViewClass); h == 0 || winapi.GetClassName(h) != SettingsViewClass {
+		t.Errorf("FindWindow(SettingsViewClass) = %#x", h)
+	}
+	w.close()
+
+	admin := startCfgApp(t, newCfgService(), true, &fakeElevator{})
+	aw := openAdmin(t, admin)
+	if c := winapi.GetClassName(aw.hwnd); c != SettingsClass {
+		t.Errorf("admin window class %q, want %q", c, SettingsClass)
+	}
+	if h := winapi.FindWindow(SettingsClass); h == 0 || winapi.GetClassName(h) != SettingsClass {
+		t.Errorf("FindWindow(SettingsClass) = %#x", h)
+	}
+}
+
+// TestCHK_TRAY_06_SettingsReconnect — «Нет связи» while disconnected; on
+// reconnection get_config is read again: without edits the form is
+// reloaded, with edits the form and revision stay and a changed
+// configuration is reported.
+func TestCHK_TRAY_06_SettingsReconnect(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	app := startCfgApp(t, svc, true, &fakeElevator{})
+	w := openAdmin(t, app)
+	down := trayipc.Status{State: trayipc.StateUnavailable}
+	up := trayipc.Status{State: trayipc.StateConnected}
+	gets := svc.count("get")
+
+	w.onSessionState(down)
+	if w.statusText() != i18n.T(i18n.KeySetNotConnected, i18n.RU) {
+		t.Errorf("disconnected status %q", w.statusText())
+	}
+	svc.mu.Lock()
+	svc.profiles[0].Database, svc.rev = "db9", 2
+	svc.mu.Unlock()
+	w.onSessionState(up)
+	pumpUntil(t, "reloaded", func() bool { return svc.count("get") == gets+1 && !w.busy })
+	if w.statusText() != "" || w.ed.Revision != "r2" || w.text(idSetDatabase) != "db9" {
+		t.Errorf("reload after reconnect: status %q rev %q db %q", w.statusText(), w.ed.Revision, w.text(idSetDatabase))
+	}
+	w.onSessionState(up) // no transition: nothing
+	if svc.count("get") != gets+1 {
+		t.Error("get_config without a reconnection")
+	}
+
+	w.set(idSetHost, "edited")
+	w.onSessionState(down)
+	w.onSessionState(up) // same revision: the edit stays, status cleared
+	pumpUntil(t, "checked", func() bool { return svc.count("get") == gets+2 && !w.busy })
+	if w.statusText() != "" || w.text(idSetHost) != "edited" || !w.ed.Unsaved() {
+		t.Errorf("same revision: status %q host %q", w.statusText(), w.text(idSetHost))
+	}
+	w.onSessionState(down)
+	svc.mu.Lock()
+	svc.rev = 3
+	svc.mu.Unlock()
+	w.onSessionState(up)
+	pumpUntil(t, "checked 2", func() bool { return svc.count("get") == gets+3 && !w.busy })
+	if w.statusText() != i18n.T(i18n.KeySetChangedOffline, i18n.RU) || w.text(idSetHost) != "edited" || w.ed.Revision != "r2" {
+		t.Errorf("changed revision: status %q host %q rev %q", w.statusText(), w.text(idSetHost), w.ed.Revision)
 	}
 }

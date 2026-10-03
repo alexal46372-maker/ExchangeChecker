@@ -44,7 +44,9 @@ func EncryptIndex(e model.EncryptMode) int {
 
 // Form is the edited state of one profile. The server is split into host
 // and instance (stored as "host\instance"); Port is the text of the edit
-// box. Password is never shown or logged; empty means "keep the saved
+// box. The password itself is not part of the form (it stays in the edit
+// control until a save / test request is built, see SaveRequest);
+// PasswordTyped tells that the box is not empty. Empty means "keep the saved
 // one" (when the service allows it).
 type Form struct {
 	Name            string
@@ -54,7 +56,7 @@ type Form struct {
 	Database        string
 	Auth            model.AuthMode
 	Login           string
-	Password        string
+	PasswordTyped   bool
 	ClearPassword   bool
 	Encrypt         model.EncryptMode
 	TLS10           bool

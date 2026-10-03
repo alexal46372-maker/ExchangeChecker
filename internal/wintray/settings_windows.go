@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"unicode/utf16"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -17,9 +18,14 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// SettingsClass is the window class of the settings window (FindWindow
-// of a second `exchtray --settings`).
-const SettingsClass = "ExchangeCheckerTraySettings"
+// SettingsClass is the window class of the administrator settings window
+// (FindWindow of a second `exchtray --settings`). The read-only window of
+// the tray process has its own class, SettingsViewClass, so that search
+// can never find a read-only window that is closing after «Изменить».
+const (
+	SettingsClass     = "ExchangeCheckerTraySettings"
+	SettingsViewClass = "ExchangeCheckerTraySettingsView"
+)
 
 // msgSetTask: queued results of the settings window's requests.
 const msgSetTask = winapi.WM_APP + 3
@@ -133,6 +139,9 @@ type settingsWindow struct {
 	testSeq    int
 	lastFocus  traysettings.Field
 	status     string
+	pwReads    int  // readPassword calls (test hook)
+	connected  bool // service session state seen by onSessionState
+	loaded     bool // get_config (or a snapshot) loaded at least once
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
@@ -148,7 +157,11 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	if cfg.mode == traysettings.Admin {
 		title = i18n.T(i18n.KeySetTitleAdmin, cfg.lang)
 	}
-	hwnd, err := createWindow(SettingsClass, title, 0,
+	class := SettingsViewClass
+	if cfg.mode == traysettings.Admin {
+		class = SettingsClass
+	}
+	hwnd, err := createWindow(class, title, 0,
 		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU|winapi.WS_MINIMIZEBOX, x, y, ww, wh, 0, w.wndProc)
 	if err != nil {
 		return nil, err
@@ -298,7 +311,13 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 
 func (w *settingsWindow) command(id int32, code uint32) {
 	switch id {
-	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetPassword:
+	case idSetPassword:
+		// Dirty tracking by a flag, not by content: only the length is asked.
+		if code == winapi.EN_CHANGE && !w.loading && w.ed.CanEdit() {
+			w.ed.Form.PasswordTyped = winapi.GetWindowTextLength(w.ctl[idSetPassword]) > 0
+			w.update()
+		}
+	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin:
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readForm()
 			w.update()
@@ -354,6 +373,24 @@ func (w *settingsWindow) setCheck(id int32, on bool) {
 
 func (w *settingsWindow) text(id int32) string { return winapi.GetWindowText(w.ctl[id]) }
 
+// readPassword returns the password box text for one save / test request.
+// The UTF-16 copy is wiped right away; the returned string lives only as
+// long as the request (Go strings cannot be wiped).
+func (w *settingsWindow) readPassword() string {
+	if !w.ed.Form.PasswordTyped {
+		return ""
+	}
+	w.pwReads++
+	buf := winapi.GetWindowTextUTF16(w.ctl[idSetPassword])
+	defer winapi.ZeroUTF16(buf)
+	r := utf16.Decode(buf)
+	s := string(r)
+	for i := range r {
+		r[i] = 0
+	}
+	return s
+}
+
 // readForm copies the controls into the editor form (admin mode).
 func (w *settingsWindow) readForm() {
 	if !w.ed.CanEdit() {
@@ -361,7 +398,9 @@ func (w *settingsWindow) readForm() {
 	}
 	f := &w.ed.Form
 	f.Name, f.Host, f.Instance, f.Port = w.text(idSetName), w.text(idSetHost), w.text(idSetInstance), w.text(idSetPort)
-	f.Database, f.Login, f.Password = w.text(idSetDatabase), w.text(idSetLogin), w.text(idSetPassword)
+	f.Database, f.Login = w.text(idSetDatabase), w.text(idSetLogin)
+	// The password box is never read here (only its length on EN_CHANGE,
+	// see command); its text is taken by readPassword for save / test.
 	f.Auth = model.AuthSQL
 	if winapi.SendMessage(w.ctl[idSetAuth], winapi.CB_GETCURSEL, 0, 0) == 1 {
 		f.Auth = model.AuthWindows
@@ -389,10 +428,13 @@ func (w *settingsWindow) fill() {
 	winapi.SendMessage(lb, winapi.LB_SETCURSEL, uintptr(sel), 0) // -1 clears
 	f := w.ed.Form
 	for id, s := range map[int32]string{idSetName: f.Name, idSetHost: f.Host, idSetInstance: f.Instance, idSetPort: f.Port,
-		idSetDatabase: f.Database, idSetLogin: f.Login, idSetPassword: f.Password} {
+		idSetDatabase: f.Database, idSetLogin: f.Login} {
 		if w.text(id) != s {
 			winapi.SetWindowText(w.ctl[id], s)
 		}
+	}
+	if !f.PasswordTyped && winapi.GetWindowTextLength(w.ctl[idSetPassword]) > 0 {
+		winapi.SetWindowText(w.ctl[idSetPassword], "") // the box is only ever cleared
 	}
 	auth := 0
 	if f.Auth == model.AuthWindows {
@@ -596,19 +638,18 @@ func (w *settingsWindow) save() {
 		return
 	}
 	w.readForm()
-	req, pr := w.ed.SaveRequest()
+	req, pr := w.ed.SaveRequest(w.readPassword())
 	if pr != nil {
 		w.problem(pr)
 		return
 	}
 	w.status = w.t(i18n.KeySetSaving)
-	sent := req.Profile
 	w.call(req, func(m model.IPCMessage, err error) {
 		switch {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, sent))
+			w.problem(w.ed.Reply(m))
 		default:
 			w.status = w.ed.SaveDone(m)
 			w.fill()
@@ -634,7 +675,7 @@ func (w *settingsWindow) deleteProfile() {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, nil))
+			w.problem(w.ed.Reply(m))
 		default:
 			w.status = w.ed.DeleteDone(m)
 			w.fill()
@@ -649,7 +690,7 @@ func (w *settingsWindow) test() {
 		return
 	}
 	w.readForm()
-	req, pr := w.ed.TestRequest()
+	req, pr := w.ed.TestRequest(w.readPassword())
 	if pr != nil {
 		w.problem(pr)
 		return
@@ -691,7 +732,7 @@ func (w *settingsWindow) poll() {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, nil))
+			w.problem(w.ed.Reply(m))
 		default:
 			w.setStatus(w.ed.PollText(m))
 		}
@@ -733,13 +774,60 @@ func (w *settingsWindow) Reload() {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, nil))
+			w.problem(w.ed.Reply(m))
 		case m.Config == nil:
 			w.problem(&traysettings.Problem{Text: fmt.Sprintf(w.t(i18n.KeySetFailed), "get_config: "+m.Type)})
 		default:
 			w.ed.LoadConfig(*m.Config, m.Revision)
+			w.loaded = true
 			w.status = ""
 			w.fill()
+		}
+	})
+}
+
+// onSessionState follows the service connection: «Нет связи» while it is
+// lost, and on (re)connection the data is loaded again. Unsaved edits are
+// never dropped: with edits only the revision is checked in the
+// background and a changed configuration is reported (the user decides
+// with «Перечитать», which asks before discarding).
+func (w *settingsWindow) onSessionState(st trayipc.Status) {
+	up := st.State == trayipc.StateConnected
+	was := w.connected
+	w.connected = up
+	if !up {
+		if !w.busy {
+			w.setStatus(w.t(i18n.KeySetNotConnected))
+		}
+		return
+	}
+	if was {
+		return
+	}
+	if w.cfg.mode == traysettings.ReadOnly || !w.loaded || !w.ed.Unsaved() {
+		w.Reload()
+		return
+	}
+	w.checkRevision()
+}
+
+// checkRevision reads get_config without touching the form or the
+// revision of the edit (used after a reconnection with unsaved edits).
+func (w *settingsWindow) checkRevision() {
+	if w.busy {
+		return
+	}
+	rev := w.ed.Revision
+	w.call(model.IPCRequest{Cmd: model.CmdGetConfig}, func(m model.IPCMessage, err error) {
+		switch {
+		case err != nil:
+			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
+		case m.Type == model.MsgError:
+			w.problem(w.ed.Reply(m))
+		case m.Revision != rev:
+			w.setStatus(w.t(i18n.KeySetChangedOffline))
+		default:
+			w.setStatus("")
 		}
 	})
 }
@@ -748,6 +836,7 @@ func (w *settingsWindow) Reload() {
 func (w *settingsWindow) loadSnapshot(snap *model.StatusSnapshot) {
 	if snap != nil {
 		w.ed.LoadSnapshot(*snap)
+		w.loaded = true
 	}
 	w.fill()
 }
@@ -821,25 +910,13 @@ func RunSettings(opt SettingsOptions) int {
 	}
 	defer release()
 	var w *settingsWindow
-	loaded := false
 	so := opt.Session
 	so.OnEvent = func(e trayipc.Event) {
 		if e.Kind != trayipc.EventState || w == nil {
 			return
 		}
 		st := e.Status
-		w.post(func() {
-			if st.State == trayipc.StateConnected {
-				if !loaded {
-					loaded = true
-					w.Reload()
-				}
-				return
-			}
-			if !w.busy {
-				w.setStatus(i18n.T(i18n.KeySetNotConnected, w.cfg.lang))
-			}
-		})
+		w.post(func() { w.onSessionState(st) })
 	}
 	s := trayipc.New(so)
 	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,

@@ -308,6 +308,13 @@ func (a *App) drain() {
 	// events are followed by a status push; the active alerts of the
 	// snapshot drive the alert window (trayalert).
 	a.status = q[len(q)-1].Status
+	if w := a.settings; w != nil {
+		for _, e := range q { // every transition, not only the last state
+			if e.Kind == trayipc.EventState {
+				w.onSessionState(e.Status)
+			}
+		}
+	}
 	a.applyAlert(a.alerts.Update(a.status, a.session.Supported(model.CmdAckAlert)))
 	old := a.ind
 	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
@@ -386,6 +393,7 @@ func (a *App) OpenSettings() uintptr {
 		return 0
 	}
 	a.settings = w
+	w.connected = a.status.State == trayipc.StateConnected
 	if mode == traysettings.Admin {
 		w.Reload()
 	} else {

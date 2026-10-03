@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -185,9 +184,9 @@ func (e *Editor) PasswordHint() string {
 		return e.t(i18n.KeySetPwWindows)
 	case f.ClearPassword && saved:
 		return e.t(i18n.KeySetPwClear)
-	case f.Password != "" && saved:
+	case f.PasswordTyped && saved:
 		return e.t(i18n.KeySetPwReplace)
-	case f.Password != "":
+	case f.PasswordTyped:
 		return ""
 	case e.IsNew:
 		return e.t(i18n.KeySetPwNew)
@@ -275,8 +274,10 @@ func (e *Editor) checkSize(req model.IPCRequest) *Problem {
 
 // SaveRequest is save_profile of the form: local validation, password
 // rules (new SQL profile needs a password; empty = keep only when the
-// saved one may be reused), expectedRevision, size limit.
-func (e *Editor) SaveRequest() (model.IPCRequest, *Problem) {
+// saved one may be reused), expectedRevision, size limit. password is
+// the content of the password box, read by the caller only for this
+// request (used only when Form.PasswordTyped).
+func (e *Editor) SaveRequest(password string) (model.IPCRequest, *Problem) {
 	if !e.CanEdit() {
 		return model.IPCRequest{}, &Problem{Text: e.t(i18n.KeySetNoProfile)}
 	}
@@ -290,7 +291,10 @@ func (e *Editor) SaveRequest() (model.IPCRequest, *Problem) {
 	p.HasPassword = false // derived by the service
 	req := model.IPCRequest{Cmd: model.CmdSaveProfile, Profile: &p, ExpectedRevision: e.Revision}
 	if p.AuthMode == model.AuthSQL {
-		pw := e.Form.Password
+		pw := ""
+		if e.Form.PasswordTyped {
+			pw = password
+		}
 		switch {
 		case pw != "" && e.Form.ClearPassword:
 			return model.IPCRequest{}, e.fieldProblem(&model.FieldError{Field: "clearPassword", Key: model.ValConflict})
@@ -332,7 +336,7 @@ func (e *Editor) SaveDone(m model.IPCMessage) string {
 		}
 		e.Select(idx)
 	} else {
-		e.Form.Password, e.Form.ClearPassword = "", false
+		e.Form.PasswordTyped, e.Form.ClearPassword = false, false
 	}
 	if m.PollScheduled {
 		return e.t(i18n.KeySetSavedPoll)
@@ -377,7 +381,7 @@ func (e *Editor) DeleteDone(m model.IPCMessage) string {
 // TestRequest is test_profile: the saved profile by id when nothing was
 // edited (always in read-only mode), else the form with the typed
 // password (empty = the service reuses the saved one if allowed).
-func (e *Editor) TestRequest() (model.IPCRequest, *Problem) {
+func (e *Editor) TestRequest(password string) (model.IPCRequest, *Problem) {
 	if !e.HasProfile() {
 		return model.IPCRequest{}, &Problem{Text: e.t(i18n.KeySetNoProfile)}
 	}
@@ -391,8 +395,8 @@ func (e *Editor) TestRequest() (model.IPCRequest, *Problem) {
 	p.Mapping, p.Mappings = model.Mapping{}, nil // not needed to connect
 	p.HasPassword = false
 	req := model.IPCRequest{Cmd: model.CmdTestProfile, ProfileID: e.Base.ID, Profile: &p}
-	if p.AuthMode == model.AuthSQL {
-		req.Password = e.Form.Password
+	if p.AuthMode == model.AuthSQL && e.Form.PasswordTyped {
+		req.Password = password
 	}
 	if pr := e.checkSize(req); pr != nil {
 		return model.IPCRequest{}, pr
@@ -444,7 +448,7 @@ func (e *Editor) TestReply(m model.IPCMessage, err error) *Problem {
 	if m.Type == model.MsgTestResult && m.Test != nil {
 		return &Problem{Text: e.TestText(*m.Test)}
 	}
-	return e.Reply(m, nil)
+	return e.Reply(m)
 }
 
 // PollRequest is poll_now of the selected saved profile.
@@ -480,18 +484,12 @@ func (e *Editor) ErrorProblem(err error, timeout time.Duration) *Problem {
 	return &Problem{Text: fmt.Sprintf(e.t(i18n.KeySetFailed), err.Error())}
 }
 
-var profileIDInError = regexp.MustCompile(`profile "([^"]*)"`)
-
-// requestFields are errorArgs paths that belong to the request, not to a
-// profile.
-var requestFields = map[string]bool{"password": true, "clearPassword": true, "expectedRevision": true, "profile": true, "id": true}
-
 // Reply renders an error reply of the service (nil for a non-error
-// message). invalid_request focuses errorArgs[0]; a validation error of
-// another (hand-edited) profile in the file is told apart by the profile
-// id of the technical error text (errorArgs carry the path only, see
-// otherInvalid).
-func (e *Editor) Reply(m model.IPCMessage, sent *model.Profile) *Problem {
+// message). invalid_request focuses errorArgs[0] of the current profile;
+// a validation error of another (hand-edited) profile of the file comes
+// with profileId (set by the service only for another profile, PLAN
+// §6.2), which is then named instead of focusing a field.
+func (e *Editor) Reply(m model.IPCMessage) *Problem {
 	if m.Type != model.MsgError {
 		return nil
 	}
@@ -522,7 +520,7 @@ func (e *Editor) Reply(m model.IPCMessage, sent *model.Profile) *Problem {
 			params = m.ErrorArgs[2:]
 		}
 		detail := e.validationText(m.ErrorArgs)
-		if m.ErrorKey == model.MsgMonitorProfileInvalid && sent != nil && !requestFields[path] && e.otherInvalid(m, *sent) {
+		if m.ProfileID != "" { // only set for ANOTHER profile of the file
 			return e.otherProfile(m, detail)
 		}
 		if path == "expectedRevision" {
@@ -539,42 +537,14 @@ func (e *Editor) Reply(m model.IPCMessage, sent *model.Profile) *Problem {
 	return &Problem{Text: base}
 }
 
-// otherInvalid tells whether a profile_invalid reply is about another
-// profile of the file: the profile id of the technical text differs from
-// the sent one (for a new profile: it is one of the loaded profiles);
-// without an id, our profile passing the same model validation means the
-// error is about another one.
-func (e *Editor) otherInvalid(m model.IPCMessage, sent model.Profile) bool {
-	if sm := profileIDInError.FindStringSubmatch(m.Error); sm != nil {
-		if sent.ID != "" {
-			return sm[1] != sent.ID
-		}
-		for _, p := range e.Profiles {
-			if p.ID == sm[1] {
-				return true
-			}
-		}
-		return false
-	}
-	check := sent
-	if check.ID == "" {
-		check.ID = "new"
-	}
-	return check.Validate() == nil
-}
-
+// otherProfile is the error of another (hand-edited) profile of the file
+// named by the profileId of the reply.
 func (e *Editor) otherProfile(m model.IPCMessage, detail string) *Problem {
-	name := ""
-	if sm := profileIDInError.FindStringSubmatch(m.Error); sm != nil {
-		name = sm[1]
-		for _, p := range e.Profiles {
-			if p.ID == sm[1] {
-				name = p.DisplayName()
-			}
+	name := m.ProfileID
+	for _, p := range e.Profiles {
+		if p.ID == m.ProfileID {
+			name = p.DisplayName()
 		}
-	}
-	if name == "" {
-		name = "?"
 	}
 	if detail == "" {
 		detail = m.Error

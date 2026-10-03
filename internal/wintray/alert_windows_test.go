@@ -232,6 +232,24 @@ func TestCHK_TRAY_03_AlertWindowAck(t *testing.T) {
 	worse.To = model.LevelError
 	srv.PublishStatus(svc.set(12, append(acked, worse)...))
 	pumpUntil(t, "escalation reopens", func() bool { v := app.AlertView(); return v.Visible && v.Sound })
+
+	// already visible: a new alert and a warning -> error escalation bring
+	// the window to the front again; the same status does not
+	raised := app.awin.raised
+	another := ptAlert("d", "Офис", "_Node1/Офис", model.LevelWarning)
+	srv.PublishStatus(svc.set(13, append(acked, worse, another)...))
+	pumpUntil(t, "new alert while visible raises", func() bool { return app.awin.raised == raised+1 })
+	srv.PublishStatus(svc.set(14, append(acked, worse, another)...))
+	pumpFor(150 * time.Millisecond)
+	if app.awin.raised != raised+1 {
+		t.Error("unchanged status raised the window")
+	}
+	another.To = model.LevelError
+	srv.PublishStatus(svc.set(15, append(acked, worse, another)...))
+	pumpUntil(t, "escalation while visible raises", func() bool { return app.awin.raised == raised+2 })
+	if !app.AlertView().Visible {
+		t.Error("window hidden")
+	}
 }
 
 // TestCHK_TRAY_03_AckGone — no_active_alert / not_found replies (alarm

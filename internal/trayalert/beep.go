@@ -45,8 +45,8 @@ type Beeper interface {
 	Beep(freqHz, durMs int) error
 }
 
-// minWait between beeps when Beep fails at once (no speaker), so a zero
-// gap never spins.
+// minWait is the minimum pause between two Beep calls, always: a small
+// or zero gapMs and a Beep that fails at once (no speaker) never spin.
 const minWait = 50 * time.Millisecond
 
 // Player plays the endless beep on its own goroutine until stopped.
@@ -122,7 +122,7 @@ func (p *Player) loop(t Tone, stop chan struct{}) {
 				wait = rest
 			}
 		}
-		if wait < minWait && (err != nil || t.GapMs == 0) {
+		if wait < minWait {
 			wait = minWait
 		}
 		select {

@@ -49,6 +49,13 @@ func localFree(p unsafe.Pointer) {
 
 // callProc resolves p (LazyProc.Find) and calls it. A missing DLL or
 // export returns its error instead of panicking in Call (CHK-TRAY-10).
+//
+// uintptrescapes (like syscall.LazyProc.Call, also variadic): pointers
+// converted to uintptr in the argument list of a callProc call are moved
+// to the heap and kept alive until callProc returns, so neither a stack
+// move (growth inside p.Find) nor the GC can invalidate them.
+//
+//go:uintptrescapes
 func callProc(p *syscall.LazyProc, args ...uintptr) (uintptr, uintptr, error) {
 	if err := p.Find(); err != nil {
 		return 0, 0, err

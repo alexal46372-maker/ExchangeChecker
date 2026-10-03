@@ -97,39 +97,43 @@ func TestCHK_MON_02_ReplaceGivesUp(t *testing.T) {
 	}
 }
 
-// TestCHK_MON_02_SharedReaderDoesNotBlockReplace — our own reader
-// (config.ReadFile / openShared, FILE_SHARE_DELETE) keeps the old content
-// and does not make the atomic replace fail even if it holds the file open
-// for longer than the whole retry budget.
-func TestCHK_MON_02_SharedReaderDoesNotBlockReplace(t *testing.T) {
+// TestCHK_MON_02_ReplaceAfterSharedReaderCloses — even a reader with
+// FILE_SHARE_DELETE blocks MOVEFILE_REPLACE_EXISTING on Windows (CI run
+// 37126745802: ERROR_ACCESS_DENIED for the whole retry budget), so the
+// guarantee is the retry: once the reader closes within the budget, the
+// write lands. The first attempt's outcome is logged.
+func TestCHK_MON_02_ReplaceAfterSharedReaderCloses(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "state.json")
 	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	f, err := openShared(target)
+	p, _ := syscall.UTF16PtrFromString(target)
+	h, err := syscall.CreateFile(p, syscall.GENERIC_READ, syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|0x4, /* FILE_SHARE_DELETE */
+		nil, syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
 	var calls int32
+	var first error
 	orig := moveFileReplace
 	moveFileReplace = func(from, to string) error {
-		atomic.AddInt32(&calls, 1)
-		return orig(from, to)
+		err := orig(from, to)
+		if atomic.AddInt32(&calls, 1) == 1 {
+			first = err
+		}
+		return err
 	}
 	defer func() { moveFileReplace = orig }()
-	start := time.Now()
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		syscall.CloseHandle(h)
+	}()
 	if err := WriteFileAtomic(dir, "state.json", []byte("new"), 0o644); err != nil {
-		t.Fatalf("replace while a FILE_SHARE_DELETE reader is open: %v (attempts %d)", err, calls)
+		t.Fatalf("write after the reader closed: %v", err)
 	}
-	buf := make([]byte, 16)
-	n, _ := f.Read(buf)
-	if string(buf[:n]) != "old" {
-		t.Errorf("open reader sees %q, want the old content", buf[:n])
+	if b, _ := os.ReadFile(target); string(b) != "new" {
+		t.Fatalf("content %q", b)
 	}
-	if b, _ := ReadFile(target); string(b) != "new" {
-		t.Fatalf("new content %q", b)
-	}
-	t.Logf("attempts %d, %v", atomic.LoadInt32(&calls), time.Since(start))
+	t.Logf("first MoveFileEx with a FILE_SHARE_DELETE reader open: %v; attempts %d", first, atomic.LoadInt32(&calls))
 }

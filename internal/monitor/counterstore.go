@@ -73,7 +73,7 @@ func OpenFileCounterStore(dir string, log Logger) *FileCounterStore {
 func (s *FileCounterStore) Path() string { return filepath.Join(s.dir, s.name) }
 
 func (s *FileCounterStore) load() {
-	b, err := config.ReadFile(s.Path()) // FILE_SHARE_DELETE on Windows
+	b, err := os.ReadFile(s.Path())
 	if errors.Is(err, os.ErrNotExist) {
 		return
 	}

@@ -4,7 +4,6 @@ package config
 
 import (
 	"errors"
-	"io"
 	"os"
 	"syscall"
 	"time"
@@ -13,8 +12,10 @@ import (
 )
 
 // Windows errors of MoveFileEx while another process (antivirus, search
-// indexer, backup, an editor, a reader without FILE_SHARE_DELETE) has the
-// target or the temp file open.
+// indexer, backup, an editor, any reader) has the target or the temp file
+// open. Opening readers with FILE_SHARE_DELETE does not help: windows CI
+// (run 37126745802) showed MOVEFILE_REPLACE_EXISTING still failing with
+// ERROR_ACCESS_DENIED while such a handle is open, so the retry is the fix.
 const (
 	errorAccessDenied     syscall.Errno = 5
 	errorSharingViolation syscall.Errno = 32
@@ -59,38 +60,6 @@ func replaceRetryable(err error) bool {
 		return false
 	}
 	return e == errorAccessDenied || e == errorSharingViolation || e == errorLockViolation
-}
-
-const fileShareDelete = 0x4
-
-// openShared opens path for reading with FILE_SHARE_READ |
-// FILE_SHARE_WRITE | FILE_SHARE_DELETE: unlike os.Open (no
-// FILE_SHARE_DELETE), our own reader does not make a concurrent
-// MoveFileEx replace of the file fail.
-func openShared(path string) (*os.File, error) {
-	p, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
-	}
-	h, err := syscall.CreateFile(p, syscall.GENERIC_READ,
-		syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|fileShareDelete,
-		nil, syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
-	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
-	}
-	return os.NewFile(uintptr(h), path), nil
-}
-
-// ReadFile reads a whole service file (config, counters, acks) through
-// openShared; a missing file -> an error satisfying errors.Is(err,
-// os.ErrNotExist), like os.ReadFile.
-func ReadFile(path string) ([]byte, error) {
-	f, err := openShared(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return io.ReadAll(f)
 }
 
 // createSecret creates the temp file with SecretsSDDL applied at creation.

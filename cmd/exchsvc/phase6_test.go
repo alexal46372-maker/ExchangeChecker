@@ -132,9 +132,12 @@ func TestCHK_IPC_06_ServiceBeepAndOtherProfileID(t *testing.T) {
 	defer s.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	st, err := s.c.Call(ctx, model.CmdGetStatus)
-	if err != nil || st.Status.Settings == nil || st.Status.Settings.Beep.Enabled != model.OptTrue {
-		t.Fatalf("get_status: %+v %v", st.Status, err)
+	// the service loads the configuration before it serves (the snapshot
+	// is complete at once - TestCHK_IPC_06_ConfigLoadedBeforeServe guards
+	// that); the bounded wait only keeps this test about beep/profileId
+	st := waitLoadedStatus(ctx, t, s.c)
+	if st.Status.Settings.Beep.Enabled != model.OptTrue {
+		t.Fatalf("get_status: %+v", st.Status)
 	}
 	if b, _ := json.Marshal(st.Status.Settings); !strings.Contains(string(b), `"enabled":true`) {
 		t.Fatalf("get_status settings JSON: %s", b)
@@ -180,5 +183,22 @@ func TestCHK_IPC_06_ServiceBeepAndOtherProfileID(t *testing.T) {
 		if b, _ := json.Marshal(m); !strings.Contains(string(b), `"profileId":"bad"`) {
 			t.Errorf("%s JSON: %s", what, b)
 		}
+	}
+}
+
+// waitLoadedStatus polls get_status (at most 5 s) until the snapshot
+// carries the loaded configuration (settings, configRevision).
+func waitLoadedStatus(ctx context.Context, t *testing.T, c *ipc.Client) model.IPCMessage {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, err := c.Call(ctx, model.CmdGetStatus)
+		if err == nil && st.Status != nil && st.Status.Settings != nil && st.Status.ConfigRevision != "" {
+			return st
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("get_status: configuration not loaded within 5s: %+v %v", st.Status, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

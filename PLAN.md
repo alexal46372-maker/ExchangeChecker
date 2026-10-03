@@ -567,7 +567,7 @@ Wizard Win32 (страницы):
 - checks: `CHK-IPC-06`, `CHK-CFG-03`, `CHK-IPC-07`, расширение `CHK-MON-05`; `FILE_FLAG_FIRST_PIPE_INSTANCE` (G7) — уже `TestCHK_MON_06_NamedPipeFirstInstance`
 - **фаза 6b (доработка по Вике, CHK-CFG-03, CHK-IPC-06) ✅:** DACL существующего `secrets.dpapi` — при старте службы (`SetNamedSecurityInfoW`, protected; ошибка — предупреждение); `expectedRevision` обязателен для `save_*`/`delete_profile` (`invalid_request` + `errorArgs ["expectedRevision", "validation.required"]`); `configRevision` снимка — из тех же байтов, что разобрал `Load`
 - **фаза 6c ✅ (CHK-CFG-03, CHK-IPC-06):** `beep.enabled` в settings (§12 п. 65); `profileId` в ошибке записи из-за другого невалидного профиля (запрос EC Tray)
-- **исправления по windows CI (CHK-MON-02, CHK-IPC-06):** атомарная запись повторяет `MoveFileEx` с коротким backoff (~1,9 с), пока файл держит другой процесс (`ERROR_ACCESS_DENIED`/`SHARING_VIOLATION`/`LOCK_VIOLATION`; `FILE_SHARE_DELETE` у читателя замену не спасает — проверено в CI); конфигурация загружается до того, как канал принимает клиентов
+- **исправления по windows CI (CHK-MON-02, CHK-IPC-06):** атомарная запись повторяет `MoveFileEx` с коротким backoff (~1,9 с), пока файл держит другой процесс (`ERROR_ACCESS_DENIED`/`SHARING_VIOLATION`/`LOCK_VIOLATION`; `FILE_SHARE_DELETE` у читателя замену не спасает — проверено в CI); конфигурация загружается до того, как канал принимает клиентов; остановка службы не превращает идущую проверку профиля в ответ `invalid_request` (CHK-IPC-03)
 - далее: G1/G4 (тексты `sql.*`, `Warnings`, `ManualSQLTemplates` в `model`, совместно с EC SQL), затем G2/G3 (discovery и `check_mapping` по IPC, только админ)
 
 ### Фаза 7 — Инсталлятор

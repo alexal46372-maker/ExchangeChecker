@@ -100,6 +100,9 @@ const outQueue = 64
 type Server struct {
 	H   Handler
 	Log Logger
+	// closeHook (tests) runs in Close after the cancel, before the
+	// clients are disconnected.
+	closeHook func()
 	// Limits (CHK-MON-11); NewServer sets the model.IPC* defaults.
 	MaxRequest  int           // request frame limit (bytes)
 	MaxClients  int           // concurrent connections
@@ -262,6 +265,9 @@ func errorReply(id uint64, err error, code string) model.IPCMessage {
 	var ie *model.IPCError
 	if errors.As(err, &ie) {
 		m.Code, m.ErrorKey, m.ErrorArgs, m.ProfileID = ie.Code, ie.Key, ie.Args, ie.ProfileID
+	}
+	if m.Code == "" && errors.Is(err, context.Canceled) {
+		m.Code = model.ErrCodeCanceled
 	}
 	if m.Code == "" {
 		m.Code = model.ErrCodeInvalidRequest
@@ -545,7 +551,8 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 		s.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(s.ctx)
+	sctx := s.ctx
+	ctx, cancel := context.WithCancel(sctx)
 	c.opsMu.Lock()
 	if c.ops == nil {
 		c.ops = map[uint64]*asyncOp{}
@@ -578,6 +585,12 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 		canceled := op.canceled
 		delete(c.ops, req.ID)
 		c.opsMu.Unlock()
+		if !canceled && sctx.Err() != nil {
+			// the server is closing (Close cancels before it disconnects
+			// the clients): no answer, the connection is about to close;
+			// a shutdown must not reach the tray as invalid_request
+			return
+		}
 		var m model.IPCMessage
 		if canceled {
 			// the client canceled it: whatever the test returned, the
@@ -757,12 +770,16 @@ func (s *Server) Close() error {
 	s.closed = true
 	close(s.stop)
 	s.cancel()
+	hook := s.closeHook
 	l := s.l
 	cs := make([]*conn, 0, len(s.conns))
 	for c := range s.conns {
 		cs = append(cs, c)
 	}
 	s.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	var err error
 	if l != nil {
 		err = l.Close()

@@ -566,6 +566,7 @@ Wizard Win32 (страницы):
 - checks: `CHK-IPC-06`, `CHK-CFG-03`, `CHK-IPC-07`, расширение `CHK-MON-05`; `FILE_FLAG_FIRST_PIPE_INSTANCE` (G7) — уже `TestCHK_MON_06_NamedPipeFirstInstance`
 - **фаза 6b (доработка по Вике, CHK-CFG-03, CHK-IPC-06) ✅:** DACL существующего `secrets.dpapi` — при старте службы (`SetNamedSecurityInfoW`, protected; ошибка — предупреждение); `expectedRevision` обязателен для `save_*`/`delete_profile` (`invalid_request` + `errorArgs ["expectedRevision", "validation.required"]`); `configRevision` снимка — из тех же байтов, что разобрал `Load`
 - **фаза 6c ✅ (CHK-CFG-03, CHK-IPC-06):** `beep.enabled` в settings (§12 п. 65); `profileId` в ошибке записи из-за другого невалидного профиля (запрос EC Tray)
+- **исправления по windows CI (CHK-MON-02, CHK-IPC-06):** атомарная запись повторяет `MoveFileEx` с коротким backoff (~1,9 с), пока файл держит другой процесс (`ERROR_ACCESS_DENIED`/`SHARING_VIOLATION`/`LOCK_VIOLATION`), свои чтения — с `FILE_SHARE_DELETE`; конфигурация загружается до того, как канал принимает клиентов
 - далее: G1/G4 (тексты `sql.*`, `Warnings`, `ManualSQLTemplates` в `model`, совместно с EC SQL), затем G2/G3 (discovery и `check_mapping` по IPC, только админ)
 
 ### Фаза 7 — Инсталлятор
@@ -711,6 +712,7 @@ Wizard Win32 (страницы):
 | Ложный `pollerHung` при многих недоступных базах (фаза 4) | Порог учитывает бюджет цикла: `max(2 × interval, interval + cycleBudget)` |
 | `ack-state.json` повреждён (фаза 4) | Копия `.corrupt`, подтверждения сброшены (тревоги снова не подтверждены), служба работает |
 | Обход проверки администратора для записи конфигурации (фаза 6) | Проверка на каждой команде, без кеша; олицетворение в отдельном OS-потоке, который уничтожается (`LockOSThread` без `Unlock`); любая ошибка (анонимный клиент, олицетворение до чтения) = отказ; windows-тесты: повышенный админ — разрешено, токен с BA deny-only и SQOS Anonymous — `access_denied` |
+| Антивирус / индексатор / резервное копирование держит файл конфигурации или состояния открытым | `MoveFileEx` повторяется с backoff ~1,9 с; при более долгой блокировке запись настроек — `save_failed`, запись counters/подтверждений — предупреждение в журнал (мониторинг не прерывается) |
 | Два администратора правят настройки одновременно / ручная правка файла (фаза 6) | `revision` с диска под мьютексом записи, `expectedRevision` обязателен (фаза 6b; без него — `invalid_request`), несовпадение → `conflict`, ничего не записано |
 | Строже `Profile.Validate` (фаза 6: `\inst`, `host\`, второй `\`, `manualSql` > 16 КиБ, > 64 mapping) | Такой профиль из файла, правленного вручную, пропускается при загрузке (как любой невалидный), сохранение других профилей — `invalid_request` с его полем, пока его не исправят или не удалят; через трей такие значения не сохраняются |
 | Пароли в `secrets.dpapi` читаемы любым локальным процессом (DPAPI LocalMachine) | Фаза 6: DACL файла SY+BA без наследования (п. 58), пишет только служба |

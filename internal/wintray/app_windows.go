@@ -7,7 +7,11 @@ import (
 	"sync"
 	"unsafe"
 
+	"time"
+
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -28,7 +32,20 @@ type Options struct {
 	Session trayipc.Options // Dial and Verify; OnEvent is set by the App
 	// NoNotifyIcon skips Shell_NotifyIconW (tests without Explorer).
 	NoNotifyIcon bool
+	// Beeper plays the alert sound; nil = kernel32 Beep (tests: a fake).
+	Beeper trayalert.Beeper
+	// HiddenAlerts keeps the alert window hidden (tests); its state is
+	// still maintained.
+	HiddenAlerts bool
 }
+
+// ackTimeout bounds one ack_alert request.
+const ackTimeout = 10 * time.Second
+
+// speaker is the kernel32 Beep (PC speaker).
+type speaker struct{}
+
+func (speaker) Beep(freqHz, durMs int) error { return winapi.Beep(uint32(freqHz), uint32(durMs)) }
 
 // App is the tray application. All methods except the session callback
 // run on the thread that called NewApp (a locked OS thread).
@@ -41,7 +58,13 @@ type App struct {
 
 	qmu     sync.Mutex
 	queue   []trayipc.Event
+	tasks   []func()
 	closing bool
+
+	alerts    *trayalert.Controller
+	player    *trayalert.Player
+	awin      *alertWindow
+	alertView trayalert.View
 
 	status         trayipc.Status
 	ind            trayui.Indicator
@@ -64,6 +87,12 @@ func NewApp(opt Options) (*App, error) {
 	}
 	a.hwnd = hwnd
 	a.taskbarCreated = winapi.RegisterWindowMessage("TaskbarCreated")
+	a.alerts = trayalert.New(a.opt.Lang)
+	b := opt.Beeper
+	if b == nil {
+		b = speaker{}
+	}
+	a.player = trayalert.NewPlayer(b)
 	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
 	a.addIcon()
 
@@ -86,12 +115,91 @@ func (a *App) onEvent(e trayipc.Event) {
 		a.qmu.Unlock()
 		return
 	}
-	first := len(a.queue) == 0
+	first := len(a.queue) == 0 && len(a.tasks) == 0
 	a.queue = append(a.queue, e)
 	a.qmu.Unlock()
 	if first {
 		winapi.PostMessage(a.hwnd, msgEvents, 0, 0)
 	}
+}
+
+// runOnUI queues f for the UI thread (from any goroutine).
+func (a *App) runOnUI(f func()) {
+	a.qmu.Lock()
+	if a.closing {
+		a.qmu.Unlock()
+		return
+	}
+	first := len(a.queue) == 0 && len(a.tasks) == 0
+	a.tasks = append(a.tasks, f)
+	a.qmu.Unlock()
+	if first {
+		winapi.PostMessage(a.hwnd, msgEvents, 0, 0)
+	}
+}
+
+// AlertView is the current alert state (UI thread).
+func (a *App) AlertView() trayalert.View { return a.alertView }
+
+// AlertWindow is the alert window handle (0 before the first alert).
+func (a *App) AlertWindow() uintptr {
+	if a.awin == nil {
+		return 0
+	}
+	return a.awin.hwnd
+}
+
+// applyAlert shows the alert view: window and sound.
+func (a *App) applyAlert(v trayalert.View) {
+	a.alertView = v
+	a.player.Set(v.Sound, v.Tone)
+	if a.awin == nil {
+		if !v.Visible {
+			return
+		}
+		// unowned: own taskbar button (flashes when the foreground lock refuses)
+		aw, err := newAlertWindow(0, a.opt.Lang, a.ackAlerts, a.closeAlerts)
+		if err != nil {
+			return
+		}
+		a.awin = aw
+	}
+	a.awin.apply(v, !a.opt.HiddenAlerts)
+}
+
+// closeAlerts: the user closed the alert window (mute until the next
+// change, PLAN §12 p.50).
+func (a *App) closeAlerts() { a.applyAlert(a.alerts.Close()) }
+
+// ackAlerts: «Подтвердить» — ack_alert for the shown alerts, off the UI
+// thread; replies come back through runOnUI.
+func (a *App) ackAlerts() {
+	reqs := a.alerts.BeginAck()
+	if reqs == nil {
+		return
+	}
+	a.applyAlert(a.alerts.View())
+	s := a.session
+	go func() {
+		res := make([]trayalert.AckResult, 0, len(reqs))
+		for _, r := range reqs {
+			ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
+			m, err := s.Do(ctx, r.Req)
+			cancel()
+			res = append(res, trayalert.AckResult{Req: r, Msg: m, Err: err})
+		}
+		a.runOnUI(func() {
+			v, refresh := a.alerts.AckDone(res)
+			a.applyAlert(v)
+			if refresh {
+				go func() {
+					ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
+					defer cancel()
+					s.Refresh(ctx)
+				}()
+			}
+		})
+	}()
 }
 
 // Indicator is the current tray state (UI thread).
@@ -133,8 +241,12 @@ func (a *App) Exit() {
 		return
 	}
 	a.removeIcon()
+	a.player.Close()
 	a.cancel()
 	<-a.done
+	if a.awin != nil {
+		winapi.DestroyWindow(a.awin.hwnd)
+	}
 	if a.about != 0 {
 		winapi.DestroyWindow(a.about)
 	}
@@ -166,15 +278,20 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 // drain applies queued session events (UI thread).
 func (a *App) drain() {
 	a.qmu.Lock()
-	q := a.queue
-	a.queue = nil
+	q, tasks := a.queue, a.tasks
+	a.queue, a.tasks = nil, nil
 	a.qmu.Unlock()
+	for _, f := range tasks {
+		f()
+	}
 	if len(q) == 0 {
 		return
 	}
-	// every event carries the full status; the last one wins. Alerts are
-	// handled from phase 6b (alert window, sound).
+	// every event carries the full status; the last one wins. Alert push
+	// events are followed by a status push; the active alerts of the
+	// snapshot drive the alert window (trayalert).
 	a.status = q[len(q)-1].Status
+	a.applyAlert(a.alerts.Update(a.status, a.session.Supported(model.CmdAckAlert)))
 	old := a.ind
 	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
 	if !a.nidAdded {

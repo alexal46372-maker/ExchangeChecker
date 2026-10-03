@@ -321,6 +321,7 @@ func TestCHK_TRAY_10_StructSizes(t *testing.T) {
 		{"WNDCLASSEXW", unsafe.Sizeof(winapi.WNDCLASSEXW{}), 80},
 		{"MSG", unsafe.Sizeof(winapi.MSG{}), 48},
 		{"BITMAPINFOHEADER", unsafe.Sizeof(winapi.BITMAPINFOHEADER{}), 40},
+		{"FLASHWINFO", unsafe.Sizeof(winapi.FLASHWINFO{}), 32},
 		{"ICONINFO", unsafe.Sizeof(winapi.ICONINFO{}), 32},
 	}
 	for _, c := range cases {

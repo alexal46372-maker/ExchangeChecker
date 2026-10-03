@@ -124,6 +124,9 @@ var winAPIMinVersion = map[string]float64{
 	"RegisterClassExW": 5.0, "RegisterWindowMessageW": 5.0, "SendMessageW": 5.0,
 	"SetForegroundWindow": 5.0, "ShowWindow": 5.0, "TrackPopupMenuEx": 5.0, "TranslateMessage": 5.0,
 	"UnregisterClassW": 5.0,
+	// phase 6b alert window and sound (CHK-TRAY-03)
+	"Beep": 5.0, "SetWindowTextW": 5.0, "EnableWindow": 5.0, "IsWindowEnabled": 5.0, "IsWindowVisible": 5.0,
+	"LoadIconW": 5.0, "SetWindowPos": 5.0, "FlashWindowEx": 5.0, "GetForegroundWindow": 5.0,
 	// gdi32
 	"CreateBitmap": 5.0, "CreateDIBSection": 5.0, "DeleteObject": 5.0, "GetStockObject": 5.0,
 	// shell32

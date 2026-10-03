@@ -31,6 +31,10 @@ type Config struct {
 	// the defaults. The monitor keeps the last good settings (defaults on
 	// the first start) and still applies the profiles (CHK-MON-10).
 	SettingsFatal error
+	// Revision is the configuration revision of exactly the bytes Load
+	// parsed (FileConfig, phase 6b); "" = unknown (MemConfig, or a file
+	// could not be read): the monitor then hashes the files itself.
+	Revision string
 }
 
 // ConfigSource provides the configuration and a cheap change stamp.
@@ -74,7 +78,20 @@ func (f FileConfig) Stamp() string {
 func (f FileConfig) Load() Config {
 	var errs []error
 	var settingsFatal error
-	st, err := f.Store.LoadSettings()
+	// each file is read once; the parsed data and the revision come from
+	// the same bytes (phase 6b: configRevision cannot describe a newer
+	// file than the one applied)
+	rawSet, errSet := f.Store.ReadFileRaw(config.SettingsFile)
+	rawProf, errProf := f.Store.ReadFileRaw(config.ProfilesFile)
+	rawSec, errSec := f.Store.ReadFileRaw(config.SecretsFile)
+	rev := ""
+	if errSet == nil && errProf == nil && errSec == nil {
+		rev = revisionOf(rawSet, rawProf, rawSec)
+	}
+	st, err := model.DefaultSettings(), errSet
+	if err == nil {
+		st, err = config.ParseSettings(rawSet)
+	}
 	if err != nil {
 		// config.Store returns exactly the defaults for read / parse /
 		// version errors and the parsed (hence non-default: the defaults
@@ -89,7 +106,10 @@ func (f FileConfig) Load() Config {
 		}
 	}
 	var fatal []error
-	ps, err := f.Store.LoadProfiles()
+	ps, err := []model.Profile{}, errProf
+	if err == nil {
+		ps, err = config.ParseProfiles(rawProf)
+	}
 	if err != nil {
 		// config.Store returns the parsed list with a validation error and
 		// an empty list for read / parse / version errors (an empty list
@@ -102,7 +122,11 @@ func (f FileConfig) Load() Config {
 		}
 	}
 	pw := map[string]string{}
-	sec, err := f.Store.LoadSecrets()
+	var sec config.Secrets
+	err = errSec
+	if err == nil {
+		sec, err = f.Store.DecodeSecrets(rawSec)
+	}
 	if err != nil {
 		fatal = append(fatal, err)
 	}
@@ -110,7 +134,7 @@ func (f FileConfig) Load() Config {
 		pw[id] = v
 	}
 	return Config{Settings: st, Profiles: ps, Passwords: pw, Err: errors.Join(errs...), Fatal: errors.Join(fatal...),
-		SettingsFatal: settingsFatal}
+		SettingsFatal: settingsFatal, Revision: rev}
 }
 
 // validProfiles keeps the individually valid profiles with unique IDs.

@@ -70,6 +70,16 @@ func (e *cfgEnv) secrets() config.Secrets {
 	return s
 }
 
+// rev is the current revision on disk (expectedRevision is mandatory).
+func (e *cfgEnv) rev() string {
+	e.t.Helper()
+	r, err := configRevision(e.m.configWriter())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return r
+}
+
 func (e *cfgEnv) files() string {
 	var b strings.Builder
 	for _, n := range []string{config.SettingsFile, config.ProfilesFile, config.SecretsFile} {
@@ -99,13 +109,13 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 	m := e.m
 	p := sqlProf6("s1")
 	before := e.files()
-	_, err := m.SaveProfile(p, "", false, "", `HOST\admin`)
+	_, err := m.SaveProfile(p, "", false, e.rev(), `HOST\admin`)
 	wantCode(t, "new SQL profile without password", err, model.ErrCodeInvalidRequest, model.MsgTestPasswordRequired)
 	if e.files() != before {
 		t.Fatal("refused save wrote files")
 	}
 	p.HasPassword = true // client lies: ignored
-	res, err := m.SaveProfile(p, "Pw-One!", false, "", `HOST\admin`)
+	res, err := m.SaveProfile(p, "Pw-One!", false, e.rev(), `HOST\admin`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +141,7 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 		t.Helper()
 		q := sqlProf6("s1")
 		mut(&q)
-		if _, err := m.SaveProfile(q, "", false, "", "a"); err != nil {
+		if _, err := m.SaveProfile(q, "", false, e.rev(), "a"); err != nil {
 			t.Fatalf("%s: %v", what, err)
 		}
 		if e.secrets()["s1"] != "Pw-One!" {
@@ -147,7 +157,7 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 		q.Encrypt = model.EncryptOn
 		mut(&q)
 		before := e.files()
-		_, err := m.SaveProfile(q, "", false, "", "a")
+		_, err := m.SaveProfile(q, "", false, e.rev(), "a")
 		wantCode(t, what, err, model.ErrCodeInvalidRequest, model.MsgTestPasswordRequired)
 		if e.files() != before || e.secrets()["s1"] != "Pw-One!" {
 			t.Fatalf("%s: written", what)
@@ -160,16 +170,16 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 	refuse("trust cert (weaker)", func(q *model.Profile) { q.TrustServerCert = true })
 	// replace
 	q := sqlProf6("s1")
-	if _, err := m.SaveProfile(q, "Pw-Two!", false, "", "a"); err != nil || e.secrets()["s1"] != "Pw-Two!" {
+	if _, err := m.SaveProfile(q, "Pw-Two!", false, e.rev(), "a"); err != nil || e.secrets()["s1"] != "Pw-Two!" {
 		t.Fatalf("replace: %v", err)
 	}
 	// both password and clear
-	_, err = m.SaveProfile(q, "x", true, "", "a")
+	_, err = m.SaveProfile(q, "x", true, e.rev(), "a")
 	if ie := wantCode(t, "password+clear", err, model.ErrCodeInvalidRequest, model.MsgMonitorProfileInvalid); ie.Args[0] != "clearPassword" || ie.Args[1] != model.ValConflict {
 		t.Errorf("args %v", ie.Args)
 	}
 	// clear
-	res, err = m.SaveProfile(q, "", true, "", "a")
+	res, err = m.SaveProfile(q, "", true, e.rev(), "a")
 	if _, ok := e.secrets()["s1"]; err != nil || ok || res.Profile.HasPassword {
 		t.Fatalf("clear: %v %+v", err, res)
 	}
@@ -177,35 +187,35 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 		t.Error("snapshot hasPassword after clear")
 	}
 	// no saved password any more: empty password -> enter the password
-	_, err = m.SaveProfile(q, "", false, "", "a")
+	_, err = m.SaveProfile(q, "", false, e.rev(), "a")
 	wantCode(t, "empty after clear", err, model.ErrCodeInvalidRequest, model.MsgTestPasswordRequired)
 	// Windows auth deletes the password (also one sent along)
-	if _, err := m.SaveProfile(q, "Pw-3", false, "", "a"); err != nil {
+	if _, err := m.SaveProfile(q, "Pw-3", false, e.rev(), "a"); err != nil {
 		t.Fatal(err)
 	}
 	w := q
 	w.AuthMode, w.Login = model.AuthWindows, ""
-	res, err = m.SaveProfile(w, "ignored-pw", false, "", "a")
+	res, err = m.SaveProfile(w, "ignored-pw", false, e.rev(), "a")
 	if _, ok := e.secrets()["s1"]; err != nil || ok || res.Profile.HasPassword {
 		t.Fatalf("windows auth: %v %v", err, e.secrets())
 	}
 	// generated UUIDv4 id
 	n := sqlProf6("")
 	n.Database = "newdb"
-	res, err = m.SaveProfile(n, "pw", false, "", "a")
+	res, err = m.SaveProfile(n, "pw", false, e.rev(), "a")
 	if err != nil || !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(res.Profile.ID) {
 		t.Fatalf("generated id %q %v", res.Profile.ID, err)
 	}
 	// invalid profile -> profile_invalid with errorArgs
 	bad := sqlProf6("s1")
 	bad.Port = 70000
-	_, err = m.SaveProfile(bad, "pw", false, "", "a")
+	_, err = m.SaveProfile(bad, "pw", false, e.rev(), "a")
 	if ie := wantCode(t, "invalid", err, model.ErrCodeInvalidRequest, model.MsgMonitorProfileInvalid); strings.Join(ie.Args, "|") != "port|validation.range|0|65535|70000" {
 		t.Errorf("args %v", ie.Args)
 	}
 	bad = sqlProf6("s1")
 	bad.Server = `\INST`
-	_, err = m.SaveProfile(bad, "pw", false, "", "a")
+	_, err = m.SaveProfile(bad, "pw", false, e.rev(), "a")
 	if ie := wantCode(t, "empty host", err, model.ErrCodeInvalidRequest, model.MsgMonitorProfileInvalid); ie.Args[0] != "server" || ie.Args[1] != model.ValServerFormat {
 		t.Errorf("args %v", ie.Args)
 	}
@@ -269,8 +279,22 @@ func TestCHK_CFG_03_Revision(t *testing.T) {
 	}
 	_, err = m.SaveSettings(model.DefaultSettings(), res.Revision, "x")
 	wantCode(t, "after manual edit", err, model.ErrCodeConflict, model.MsgMonitorConfigConflict)
-	// without expectedRevision the last writer wins
-	if _, err := m.SaveSettings(model.DefaultSettings(), "", "x"); err != nil {
+	// phase 6b: expectedRevision is mandatory for every write
+	before = e.files()
+	for what, call := range map[string]func() error{
+		"save_profile":   func() error { _, err := m.SaveProfile(sqlProf6("c"), "pw", false, "", "x"); return err },
+		"delete_profile": func() error { _, err := m.DeleteProfile("a", "", "x"); return err },
+		"save_settings":  func() error { _, err := m.SaveSettings(model.DefaultSettings(), "", "x"); return err },
+	} {
+		ie := wantCode(t, what+" without expectedRevision", call(), model.ErrCodeInvalidRequest, model.MsgMonitorBadRequest)
+		if len(ie.Args) != 2 || ie.Args[0] != "expectedRevision" || ie.Args[1] != model.ValRequired {
+			t.Errorf("%s: errorArgs %q", what, ie.Args)
+		}
+	}
+	if e.files() != before {
+		t.Fatal("a write without expectedRevision changed files")
+	}
+	if _, err := m.SaveSettings(model.DefaultSettings(), e.rev(), "x"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -284,10 +308,10 @@ func TestCHK_CFG_03_Revision(t *testing.T) {
 func TestCHK_IPC_06_DeleteSettingsGetConfig(t *testing.T) {
 	e := newCfgEnv(t)
 	m := e.m
-	if _, err := m.SaveProfile(sqlProf6("a"), "Secret-A", false, "", `D\u1`); err != nil {
+	if _, err := m.SaveProfile(sqlProf6("a"), "Secret-A", false, e.rev(), `D\u1`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.SaveProfile(prof("w"), "", false, "", `D\u1`); err != nil {
+	if _, err := m.SaveProfile(prof("w"), "", false, e.rev(), `D\u1`); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, err := m.GetConfig()
@@ -297,10 +321,10 @@ func TestCHK_IPC_06_DeleteSettingsGetConfig(t *testing.T) {
 	if b, _ := json.Marshal(cfg); bytes.Contains(b, []byte("Secret-A")) {
 		t.Fatal("password in get_config")
 	}
-	if _, err := m.DeleteProfile("nope", "", "x"); !errors.Is(err, ErrUnknownProfile) {
+	if _, err := m.DeleteProfile("nope", e.rev(), "x"); !errors.Is(err, ErrUnknownProfile) {
 		t.Errorf("unknown delete: %v", err)
 	}
-	if _, err := m.DeleteProfile("a", "", `D\u2`); err != nil {
+	if _, err := m.DeleteProfile("a", e.rev(), `D\u2`); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := e.secrets()["a"]; ok {
@@ -314,13 +338,13 @@ func TestCHK_IPC_06_DeleteSettingsGetConfig(t *testing.T) {
 	}
 	st := model.DefaultSettings()
 	st.Beep.ErrorFreqHz = 5
-	_, err = m.SaveSettings(st, "", "x")
+	_, err = m.SaveSettings(st, e.rev(), "x")
 	if ie := wantCode(t, "invalid settings", err, model.ErrCodeInvalidRequest, model.MsgMonitorSettingsInvalid); ie.Args[0] != "beep.errorFreqHz" || ie.Args[1] != model.ValRange {
 		t.Errorf("args %v", ie.Args)
 	}
 	st = model.DefaultSettings()
 	st.TrayAutostart, st.PollIntervalSec, st.Language = true, 300, model.LangEN
-	if _, err := m.SaveSettings(st, "", `D\u3`); err != nil {
+	if _, err := m.SaveSettings(st, e.rev(), `D\u3`); err != nil {
 		t.Fatal(err)
 	}
 	s := m.Snapshot()
@@ -367,7 +391,7 @@ func TestCHK_IPC_06_SnapshotReadOnlyView(t *testing.T) {
 	p := sqlProf6("a")
 	p.WarnMinutes, p.ErrorMinutes, p.Port = 15, 0, 1500
 	p.Mappings = []model.Mapping{{Mode: model.MappingManual, ManualSQL: "SELECT 'TOP-SECRET-SQL' AS PointName", PlanLabel: "Ручной"}}
-	if _, err := e.m.SaveProfile(p, "Hidden-PW", false, "", "x"); err != nil {
+	if _, err := e.m.SaveProfile(p, "Hidden-PW", false, e.rev(), "x"); err != nil {
 		t.Fatal(err)
 	}
 	s := e.m.Snapshot()
@@ -393,9 +417,9 @@ func TestCHK_CFG_03_UnreadableConfigRefusesWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := e.files()
-	_, err := e.m.SaveProfile(sqlProf6("a"), "pw", false, "", "x")
+	_, err := e.m.SaveProfile(sqlProf6("a"), "pw", false, e.rev(), "x")
 	wantCode(t, "broken profiles.json", err, model.ErrCodeSaveFailed, model.MsgMonitorConfigSaveFailed)
-	_, err = e.m.DeleteProfile("a", "", "x")
+	_, err = e.m.DeleteProfile("a", e.rev(), "x")
 	wantCode(t, "broken profiles.json delete", err, model.ErrCodeSaveFailed, model.MsgMonitorConfigSaveFailed)
 	if e.files() != before {
 		t.Fatal("written")
@@ -404,7 +428,7 @@ func TestCHK_CFG_03_UnreadableConfigRefusesWrite(t *testing.T) {
 	if err := os.WriteFile(e.st.Path(config.SecretsFile), []byte("garbage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = e.m.SaveProfile(sqlProf6("a"), "pw", false, "", "x")
+	_, err = e.m.SaveProfile(sqlProf6("a"), "pw", false, e.rev(), "x")
 	wantCode(t, "broken secrets", err, model.ErrCodeSaveFailed, model.MsgMonitorConfigSaveFailed)
 	m := New(Options{Source: NewMemConfig(Config{Settings: model.DefaultSettings()})})
 	_, _, err = m.GetConfig()
@@ -420,8 +444,18 @@ func TestCHK_CFG_03_ConcurrentSaves(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if _, err := e.m.SaveProfile(sqlProf6(fmt.Sprintf("c%d", i)), fmt.Sprintf("pw%d", i), false, "", "x"); err != nil {
-				t.Error(err)
+			// read-modify-write with the mandatory revision: a conflict
+			// means another save got in between -> re-read and retry
+			for attempt := 0; ; attempt++ {
+				_, err := e.m.SaveProfile(sqlProf6(fmt.Sprintf("c%d", i)), fmt.Sprintf("pw%d", i), false, e.rev(), "x")
+				var ie *model.IPCError
+				if errors.As(err, &ie) && ie.Code == model.ErrCodeConflict && attempt < 1000 {
+					continue
+				}
+				if err != nil {
+					t.Error(err)
+				}
+				return
 			}
 		}(i)
 	}

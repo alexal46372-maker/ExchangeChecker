@@ -78,26 +78,46 @@ func configRevision(w ConfigWriter) (string, error) {
 	if w == nil {
 		return "", nil
 	}
-	h := sha256.New()
+	var raw [3][]byte
 	for i, name := range []string{config.SettingsFile, config.ProfilesFile, config.SecretsFile} {
-		if i > 0 {
-			h.Write([]byte{0})
-		}
 		b, err := os.ReadFile(w.Path(name))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}
-		h.Write(b)
+		raw[i] = b
 	}
-	return hex.EncodeToString(h.Sum(nil)[:16]), nil
+	return revisionOf(raw[0], raw[1], raw[2]), nil
+}
+
+// revisionOf is the revision of the raw bytes of settings.json,
+// profiles.json and secrets.dpapi (nil = missing file). FileConfig.Load
+// uses it on the bytes it parsed, so the snapshot's configRevision always
+// describes exactly the applied data (phase 6b).
+func revisionOf(settings, profiles, secrets []byte) string {
+	h := sha256.New()
+	h.Write(settings)
+	h.Write([]byte{0})
+	h.Write(profiles)
+	h.Write([]byte{0})
+	h.Write(secrets)
+	return hex.EncodeToString(h.Sum(nil)[:16])
+}
+
+// requireRevision: expectedRevision is mandatory for save_profile,
+// delete_profile and save_settings (phase 6b, Вика): without it a client
+// could overwrite a change it has not seen. Missing -> invalid_request +
+// monitor.bad_request, errorArgs ["expectedRevision", "validation.required"].
+func requireRevision(expected string) error {
+	if expected != "" {
+		return nil
+	}
+	return invalid(model.MsgMonitorBadRequest, &model.FieldError{Field: "expectedRevision", Key: model.ValRequired,
+		Msg: "expectedRevision is required (revision of get_config or configRevision of get_status)"})
 }
 
 // checkRevisionLocked compares expected with the revision on disk (cfgMu
-// held).
+// held); expected is non-empty (requireRevision).
 func (m *Monitor) checkRevisionLocked(w ConfigWriter, expected string) error {
-	if expected == "" {
-		return nil
-	}
 	rev, err := configRevision(w)
 	if err != nil {
 		return saveFailed(err)
@@ -111,7 +131,16 @@ func (m *Monitor) checkRevisionLocked(w ConfigWriter, expected string) error {
 // afterWriteLocked reloads synchronously and returns the new revision
 // (cfgMu held).
 func (m *Monitor) afterWriteLocked(w ConfigWriter) string {
-	m.reloadConfigLocked(true)
+	if m.reloadConfigLocked(true) {
+		// the revision of the bytes the reload just applied (= the
+		// snapshot's configRevision)
+		m.mu.Lock()
+		rev := m.revision
+		m.mu.Unlock()
+		if rev != "" {
+			return rev
+		}
+	}
 	rev, err := configRevision(w)
 	if err != nil {
 		m.opt.Log.Printf("config: revision after write: %v", err)
@@ -197,6 +226,9 @@ func loadForWrite(w ConfigWriter) ([]model.Profile, config.Secrets, error) {
 // SQL-auth profile (or one without a saved password) gets
 // invalid_request + monitor.test_password_required.
 func (m *Monitor) SaveProfile(p model.Profile, password string, clearPassword bool, expectedRevision, account string) (model.SavedProfile, error) {
+	if err := requireRevision(expectedRevision); err != nil {
+		return model.SavedProfile{}, err
+	}
 	w := m.configWriter()
 	if w == nil {
 		return model.SavedProfile{}, saveFailed(errNoStore)
@@ -299,6 +331,9 @@ func (m *Monitor) SaveProfile(p model.Profile, password string, clearPassword bo
 // DeleteProfile implements ipc.ConfigManager (admin only): the profile,
 // its password, counters state, alerts and acknowledgements go.
 func (m *Monitor) DeleteProfile(profileID, expectedRevision, account string) (string, error) {
+	if err := requireRevision(expectedRevision); err != nil {
+		return "", err
+	}
 	w := m.configWriter()
 	if w == nil {
 		return "", saveFailed(errNoStore)
@@ -345,6 +380,9 @@ func (m *Monitor) DeleteProfile(profileID, expectedRevision, account string) (st
 // SaveSettings implements ipc.ConfigManager (admin only): the whole
 // settings object incl. trayAutostart.
 func (m *Monitor) SaveSettings(st model.Settings, expectedRevision, account string) (string, error) {
+	if err := requireRevision(expectedRevision); err != nil {
+		return "", err
+	}
 	w := m.configWriter()
 	if w == nil {
 		return "", saveFailed(errNoStore)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -26,6 +27,8 @@ var (
 	procGetNamedSecurityInfoW      = modadvapi32.NewProc("GetNamedSecurityInfoW")
 	procConvertSDToStringSDW       = modadvapi32.NewProc("ConvertSecurityDescriptorToStringSecurityDescriptorW")
 	procGetCurrentThread           = modkernel32.NewProc("GetCurrentThread")
+	procSetNamedSecurityInfoW      = modadvapi32.NewProc("SetNamedSecurityInfoW")
+	procGetSecurityDescriptorDacl  = modadvapi32.NewProc("GetSecurityDescriptorDacl")
 )
 
 // SIDAdministrators is BUILTIN\Administrators.
@@ -263,4 +266,52 @@ func CreateFileSDDL(path, sddl string) (*os.File, error) {
 		return nil, &os.PathError{Op: "CreateFile", Path: path, Err: err}
 	}
 	return os.NewFile(uintptr(h), path), nil
+}
+
+const (
+	protectedDACLSecurityInformation   = 0x80000000
+	unprotectedDACLSecurityInformation = 0x20000000
+)
+
+// SetFileDACL replaces the DACL of an existing file or directory with the
+// DACL of sddl (SetNamedSecurityInfoW, SE_FILE_OBJECT). A "D:P…" SDDL is
+// applied with PROTECTED_DACL_SECURITY_INFORMATION: inherited ACEs are
+// removed and no longer flow from the parent; otherwise with
+// UNPROTECTED_DACL_SECURITY_INFORMATION (phase 6, CHK-CFG-03: an existing
+// secrets.dpapi is brought to SecretsSDDL at service start).
+func SetFileDACL(path, sddl string) error {
+	sa, free, err := SecurityAttributesFromSDDL(sddl)
+	if err != nil {
+		return err
+	}
+	defer free()
+	var present, defaulted int32
+	var dacl uintptr
+	r, _, e := callProc(procGetSecurityDescriptorDacl, sa.SecurityDescriptor,
+		uintptr(unsafe.Pointer(&present)), uintptr(unsafe.Pointer(&dacl)), uintptr(unsafe.Pointer(&defaulted)))
+	if r == 0 {
+		return fmt.Errorf("winapi: GetSecurityDescriptorDacl: %w", e)
+	}
+	if present == 0 || dacl == 0 {
+		return fmt.Errorf("winapi: SetFileDACL: no DACL in %q", sddl)
+	}
+	info := uintptr(daclSecurityInformation | unprotectedDACLSecurityInformation)
+	if strings.HasPrefix(sddl, "D:P") {
+		info = daclSecurityInformation | protectedDACLSecurityInformation
+	}
+	p, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	// SetNamedSecurityInfoW returns the Win32 error code itself
+	r, _, e = callProc(procSetNamedSecurityInfoW, uintptr(unsafe.Pointer(p)), seFileObject, info, 0, 0, dacl, 0)
+	if e != nil && r == 0 {
+		if _, ok := e.(syscall.Errno); !ok {
+			return e // export not found (callProc)
+		}
+	}
+	if r != 0 {
+		return &os.PathError{Op: "SetNamedSecurityInfo", Path: path, Err: syscall.Errno(r)}
+	}
+	return nil
 }

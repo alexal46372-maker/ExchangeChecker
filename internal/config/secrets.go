@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -75,10 +76,17 @@ func (s *Store) protector() (Protector, error) {
 
 // LoadSecrets decrypts secrets.dpapi. Missing file -> empty map, nil error.
 func (s *Store) LoadSecrets() (Secrets, error) {
-	b, err := s.readFile(SecretsFile)
+	b, err := s.ReadFileRaw(SecretsFile)
 	if err != nil {
 		return nil, err
 	}
+	return s.DecodeSecrets(b)
+}
+
+// DecodeSecrets is LoadSecrets over raw file bytes (ReadFileRaw; nil =
+// missing file -> empty map).
+func (s *Store) DecodeSecrets(raw []byte) (Secrets, error) {
+	b := trimBOM(raw)
 	if b == nil {
 		return Secrets{}, nil
 	}
@@ -128,6 +136,23 @@ func (s *Store) SaveSecrets(sec Secrets) error {
 		return fmt.Errorf("config: encrypt %s: %w", SecretsFile, err)
 	}
 	return writeSecretAtomic(s.Dir, SecretsFile, blob)
+}
+
+// SecureSecretsFile brings an existing secrets.dpapi to SecretsSDDL
+// (Windows: SetNamedSecurityInfoW with PROTECTED_DACL_SECURITY_INFORMATION;
+// elsewhere mode 0600). Called once at service start (phase 6b,
+// CHK-CFG-03), so a file written before phase 6 (inherited, Users-read
+// DACL) does not wait for the next password write. A missing file is not
+// an error: present = false, nothing is created.
+func (s *Store) SecureSecretsFile() (present bool, err error) {
+	path := s.Path(SecretsFile)
+	if _, err := os.Lstat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, secureSecretFile(path)
 }
 
 // Password returns the stored password for profileID.

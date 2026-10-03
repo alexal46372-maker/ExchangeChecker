@@ -82,17 +82,33 @@ func (s *SQLStore) ServerInfo(ctx context.Context) (ServerInfo, error) {
 // If only the info query fails with a query error (e.g. DENY on
 // sys.databases), the connection test still succeeds and ServerInfo is
 // returned empty; context/connection errors of that query are returned.
+// Unlike poll stores, the session stays guarded after login: if the server
+// goes silent, the call still returns when the operation context ends
+// (sessionHold).
 func TestConnectionInfo(ctx context.Context, p model.Profile, password string) (ServerInfo, error) {
-	st, err := Open(p, password)
+	hold := &sessionHold{}
+	st, err := openWith(p, password, hold)
 	if err != nil {
 		return ServerInfo{}, err
 	}
 	defer st.Close()
-	if err := refineTLS(st.Ping(ctx), p); err != nil {
-		return ServerInfo{}, err
+	// Ping and the info query each run under the hold: when their context
+	// ends (2 x connect timeout / query + connect timeout, or the caller's
+	// deadline / cancel), the session socket is closed (PLAN.md §12 п. 40).
+	pctx, pcancel := context.WithTimeout(ctx, 2*st.connectTimeout)
+	end := hold.op(pctx)
+	err = st.Ping(pctx)
+	end()
+	pcancel()
+	if err = holdError("connect", err, hold); err != nil {
+		return ServerInfo{}, refineTLS(err, p)
 	}
-	info, err := st.ServerInfo(ctx)
-	if err != nil {
+	qctx, qcancel := context.WithTimeout(ctx, st.queryTimeout+st.connectTimeout)
+	end = hold.op(qctx)
+	info, err := st.ServerInfo(qctx)
+	end()
+	qcancel()
+	if err = holdError("server_info", err, hold); err != nil {
 		if KindOf(err) == KindQuery {
 			return ServerInfo{}, nil
 		}

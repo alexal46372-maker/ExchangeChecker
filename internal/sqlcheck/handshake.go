@@ -88,6 +88,13 @@ func (h *hsGuard) kill(cause error) bool {
 	return true
 }
 
+// sockets returns the registered sockets (for a sessionHold).
+func (h *hsGuard) sockets() []net.Conn {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]net.Conn(nil), h.conns...)
+}
+
 // finish ends the handshake after the driver's Connect returned: on
 // success the sockets lose any deadline (state done), on failure they are
 // closed. It reports whether the session is usable (false if the watcher
@@ -163,6 +170,7 @@ func (d handshakeDialer) DialContext(ctx context.Context, network, addr string) 
 type guardedConnector struct {
 	inner  *mssql.Connector
 	budget time.Duration
+	hold   *sessionHold // nil: the guard ends at login (poll stores)
 }
 
 func newGuardedConnector(cfg msdsn.Config, budget time.Duration) *guardedConnector {
@@ -177,6 +185,10 @@ func (g *guardedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	h := newHSGuard()
 	go h.watch(ctx, g.budget)
 	conn, err := g.inner.Connect(context.WithValue(ctx, hsKey{}, h))
+	var socks []net.Conn
+	if err == nil && g.hold != nil {
+		socks = h.sockets()
+	}
 	if !h.finish(err) && err == nil {
 		// the watcher killed the sockets while the driver was returning
 		_ = conn.Close()
@@ -192,6 +204,10 @@ func (g *guardedConnector) Connect(ctx context.Context) (driver.Conn, error) {
 		}
 		return nil, err
 	}
+	if g.hold != nil && !g.hold.adopt(socks) {
+		_ = conn.Close()
+		return nil, g.hold.causeOr(driver.ErrBadConn)
+	}
 	return conn, nil
 }
 
@@ -200,3 +216,112 @@ type hsError struct{ err, cause error }
 
 func (e *hsError) Error() string   { return e.err.Error() + " (" + e.cause.Error() + ")" }
 func (e *hsError) Unwrap() []error { return []error{e.err, e.cause} }
+
+// sessionHold keeps the sockets of a short-lived store (TestConnectionInfo)
+// under a watcher after login. go-mssqldb v1.8.2 reacts to the end of a
+// query context by sending ATTENTION and then waits for the server's
+// confirmation with a blocking read without deadline (tokenProcessor.
+// nextToken -> readCancelConfirmation): on a server that went silent after
+// login, Ping or the server-info query hung until TCP keepalive gave up
+// (forever when the peer host still ACKs). While an operation of the hold
+// is active, the end of its context expires and closes every adopted
+// socket; between operations and after the store is closed it does
+// nothing. Long-lived poll stores (Open) have no hold, so polling is never
+// cut by it.
+type sessionHold struct {
+	mu     sync.Mutex
+	conns  []net.Conn
+	gen    int  // operation generation
+	active bool // an operation of generation gen is running
+	cause  error
+}
+
+// adopt takes over the sockets of a new session; false if the hold
+// already killed its sessions (the sockets are closed then).
+func (s *sessionHold) adopt(c []net.Conn) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cause != nil {
+		for _, x := range c {
+			_ = x.Close()
+		}
+		return false
+	}
+	s.conns = append(s.conns, c...)
+	return true
+}
+
+// op starts an operation bounded by ctx and returns its end function.
+// When ctx ends while the operation runs, the sockets are expired and
+// closed, so the blocked driver read returns at once.
+func (s *sessionHold) op(ctx context.Context) (end func()) {
+	s.mu.Lock()
+	s.gen++
+	gen := s.gen
+	s.active = true
+	s.mu.Unlock()
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-stop:
+		case <-ctx.Done():
+			s.kill(gen, ctx.Err())
+		}
+	}()
+	return func() {
+		s.mu.Lock()
+		if s.gen == gen {
+			s.active = false
+		}
+		s.mu.Unlock()
+		close(stop)
+		<-done
+	}
+}
+
+func (s *sessionHold) kill(gen int, cause error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.active || s.gen != gen || s.cause != nil {
+		return
+	}
+	s.cause = cause
+	for _, c := range s.conns {
+		_ = c.SetDeadline(time.Unix(1, 0))
+		_ = c.Close()
+	}
+	s.conns = nil
+}
+
+// causeOr returns why the hold killed its sessions, or def.
+func (s *sessionHold) causeOr(def error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cause != nil {
+		return s.cause
+	}
+	return def
+}
+
+// killed reports the kill reason (nil if the sessions were not killed).
+func (s *sessionHold) killed() error { return s.causeOr(nil) }
+
+// holdError turns an operation error into a timeout / cancel error when
+// the hold cut the session (the driver then reports a closed socket or a
+// missing cancel confirmation).
+func holdError(op string, err error, hold *sessionHold) error {
+	cause := hold.killed()
+	if cause == nil {
+		return err
+	}
+	kind := KindTimeout
+	if errors.Is(cause, context.Canceled) {
+		kind = KindCanceled
+	}
+	if err == nil {
+		err = cause
+	}
+	return &Error{Kind: kind, Op: op, Err: &hsError{err: err, cause: cause}}
+}

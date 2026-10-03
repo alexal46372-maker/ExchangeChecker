@@ -238,3 +238,55 @@ func TestCHK_SQL_01_HandshakeStateMachine(t *testing.T) {
 		t.Error("socket of a failed handshake still open")
 	}
 }
+
+// TestCHK_SQL_01_SessionHold: the post-login hold of TestConnectionInfo
+// kills only while an operation runs; a finished operation cannot be cut
+// later; sessions adopted after a kill are closed at once.
+func TestCHK_SQL_01_SessionHold(t *testing.T) {
+	buf := make([]byte, 4)
+	c, s := tcpPair(t)
+	h := &sessionHold{}
+	if !h.adopt([]net.Conn{c}) {
+		t.Fatal("adopt")
+	}
+	// an operation that ends before its context: nothing happens later
+	ctx, cancel := context.WithCancel(context.Background())
+	end := h.op(ctx)
+	end()
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+	if h.killed() != nil {
+		t.Fatal("killed after the operation ended")
+	}
+	go func() { _, _ = s.Write([]byte("ok!!")) }()
+	if _, err := io.ReadFull(c, buf); err != nil {
+		t.Fatalf("socket after a finished operation: %v", err)
+	}
+	// the context ends while the operation runs: sockets closed
+	ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
+	end = h.op(ctx)
+	_ = s.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := s.Read(buf); err == nil {
+		t.Error("socket still open after the operation context expired")
+	}
+	end()
+	cancel()
+	if !errors.Is(h.killed(), context.DeadlineExceeded) {
+		t.Errorf("cause: %v", h.killed())
+	}
+	if err := holdError("connect", errors.New("closed"), h); ConnCategory(err) != ConnCategoryTimeout || KindOf(err) != KindTimeout {
+		t.Errorf("holdError: %v -> %q", err, ConnCategory(err))
+	}
+	c2, s2 := tcpPair(t)
+	if h.adopt([]net.Conn{c2}) {
+		t.Error("adopt after kill must fail")
+	}
+	_ = s2.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := s2.Read(buf); err == nil {
+		t.Error("socket adopted after the kill still open")
+	}
+	// no hold kill: errors pass through
+	if err := holdError("x", nil, &sessionHold{}); err != nil {
+		t.Error(err)
+	}
+}

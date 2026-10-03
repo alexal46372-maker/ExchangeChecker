@@ -101,11 +101,20 @@ func driverConfig(p model.Profile, password string) (msdsn.Config, error) {
 // Open creates a lazily-connecting SQLStore for p. It does not touch the
 // network; use Ping / TestConnection for that.
 func Open(p model.Profile, password string) (*SQLStore, error) {
+	return openWith(p, password, nil)
+}
+
+// openWith is Open with an optional sessionHold: the sockets of sessions
+// established through the store stay under the hold after login
+// (TestConnectionInfo only; poll stores pass nil).
+func openWith(p model.Profile, password string, hold *sessionHold) (*SQLStore, error) {
 	cfg, err := driverConfig(p, password)
 	if err != nil {
 		return nil, &Error{Kind: KindConfig, Op: "open", Err: err}
 	}
-	db := sql.OpenDB(newGuardedConnector(cfg, p.ConnectTimeout()))
+	gc := newGuardedConnector(cfg, p.ConnectTimeout())
+	gc.hold = hold
+	db := sql.OpenDB(gc)
 	db.SetMaxOpenConns(2)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxIdleTime(5 * time.Minute)

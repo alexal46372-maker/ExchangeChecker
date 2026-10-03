@@ -173,12 +173,12 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 }
 
 // TestCHK_TRAY_01_RightClickItems — Settings (enabled since 6c), About,
-// Exit.
+// Language submenu (6e, the preference checked), Exit.
 func TestCHK_TRAY_01_RightClickItems(t *testing.T) {
 	for _, lang := range []string{i18n.RU, i18n.EN} {
-		it := BuildRightMenu(lang)
-		if len(it) != 4 || it[0].ID != CmdSettings || it[0].Disabled || it[1].ID != CmdAbout || it[1].Disabled ||
-			!it[2].Separator || it[3].ID != CmdExit {
+		it := BuildRightMenu(lang, "")
+		if len(it) != 5 || it[0].ID != CmdSettings || it[0].Disabled || it[1].ID != CmdAbout || it[1].Disabled ||
+			len(it[2].Sub) != 3 || !it[3].Separator || it[4].ID != CmdExit {
 			t.Fatalf("%s: %+v", lang, it)
 		}
 		if it[0].Text != i18n.T(i18n.KeyMenuSettings, lang) {
@@ -317,4 +317,33 @@ func databases(items []Item) []Item {
 		}
 	}
 	return items
+}
+
+// TestCHK_TRAY_08_LanguageMenu — «Язык (Language)»: as in Windows /
+// Русский / English, exactly the stored preference checked.
+func TestCHK_TRAY_08_LanguageMenu(t *testing.T) {
+	for pref, want := range map[string]int{"": CmdLangAuto, "ru": CmdLangRU, "en": CmdLangEN} {
+		sub := BuildRightMenu(i18n.RU, pref)[2]
+		if sub.Text != "Язык (Language)" {
+			t.Errorf("submenu text %q", sub.Text)
+		}
+		n := 0
+		for _, s := range sub.Sub {
+			if s.Checked {
+				n++
+				if s.ID != want {
+					t.Errorf("pref %q: checked %d, want %d", pref, s.ID, want)
+				}
+			}
+			if LangCommands[s.ID] != map[int]string{CmdLangAuto: "", CmdLangRU: "ru", CmdLangEN: "en"}[s.ID] {
+				t.Errorf("command %d", s.ID)
+			}
+		}
+		if n != 1 {
+			t.Errorf("pref %q: %d checked", pref, n)
+		}
+	}
+	if BuildRightMenu(i18n.EN, "en")[2].Text != "Language (Язык)" {
+		t.Error("EN submenu text")
+	}
 }

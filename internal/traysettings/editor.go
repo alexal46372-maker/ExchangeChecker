@@ -52,6 +52,11 @@ type Editor struct {
 	Form Form
 	// MapSummary per profile id (read-only mode).
 	MapSummary map[string]*model.MappingSummary
+	// Settings are the saved general settings (same revision as the
+	// profiles), General the edited page; HasSettings once loaded.
+	Settings    model.Settings
+	General     GeneralForm
+	HasSettings bool
 }
 
 // NewEditor returns an empty editor.
@@ -65,6 +70,7 @@ func (e *Editor) t(key string) string { return i18n.T(key, e.Lang) }
 // The selected profile is kept by id; unsaved edits are dropped.
 func (e *Editor) LoadConfig(cfg model.ConfigView, revision string) {
 	e.Revision = revision
+	e.LoadSettings(cfg.Settings)
 	e.load(append([]model.Profile(nil), cfg.Profiles...))
 }
 
@@ -72,6 +78,9 @@ func (e *Editor) LoadConfig(cfg model.ConfigView, revision string) {
 // (read-only mode).
 func (e *Editor) LoadSnapshot(snap model.StatusSnapshot) {
 	e.Revision = snap.ConfigRevision
+	if snap.Settings != nil {
+		e.LoadSettings(*snap.Settings)
+	}
 	ps := make([]model.Profile, 0, len(snap.Profiles))
 	e.MapSummary = map[string]*model.MappingSummary{}
 	for _, p := range snap.Profiles {
@@ -150,6 +159,11 @@ func (e *Editor) Dirty() bool {
 // «Добавить», «Перечитать» or closing: a changed form (a new profile
 // counts only once something was typed).
 func (e *Editor) Unsaved() bool {
+	return e.ProfileUnsaved() || e.GeneralUnsaved()
+}
+
+// ProfileUnsaved tells whether the profile form has unsaved edits.
+func (e *Editor) ProfileUnsaved() bool {
 	if e.Mode != Admin || !e.HasProfile() {
 		return false
 	}
@@ -233,6 +247,10 @@ func (e *Editor) fieldLabel(path string) string {
 		"authMode": i18n.KeySetAuth, "login": i18n.KeySetLogin, "password": i18n.KeySetPassword,
 		"clearPassword": i18n.KeySetClearPassword, "encrypt": i18n.KeySetEncrypt, "tlsMinVersion": i18n.KeySetTLS10,
 		"trustServerCert": i18n.KeySetTrust, "enabled": i18n.KeySetEnabled,
+		"pollIntervalSec": i18n.KeyGenPoll, "warnMinutes": i18n.KeyGenWarn, "errorMinutes": i18n.KeyGenError,
+		"beep.enabled": i18n.KeyGenBeepEnabled, "beep.warningFreqHz": i18n.KeyGenWarnFreq, "beep.warningDurMs": i18n.KeyGenWarnDur,
+		"beep.errorFreqHz": i18n.KeyGenErrorFreq, "beep.errorDurMs": i18n.KeyGenErrorDur, "beep.gapMs": i18n.KeyGenGap,
+		"language": i18n.KeyGenLanguage, "trayAutostart": i18n.KeyGenAutostart,
 	}[path]
 	if key == "" {
 		return path

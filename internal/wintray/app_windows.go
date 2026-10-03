@@ -29,8 +29,13 @@ const (
 
 // Options configure the tray application.
 type Options struct {
-	Lang    string
-	Session trayipc.Options // Dial and Verify; OnEvent is set by the App
+	Lang string
+	// LangPref is the per-user language preference Lang was resolved from
+	// ("" = as in Windows); LangStore keeps a new choice of the menu
+	// (nil = not stored, tests).
+	LangPref  string
+	LangStore LangStore
+	Session   trayipc.Options // Dial and Verify; OnEvent is set by the App
 	// NoNotifyIcon skips Shell_NotifyIconW (tests without Explorer).
 	NoNotifyIcon bool
 	// Beeper plays the alert sound; nil = kernel32 Beep (tests: a fake).
@@ -344,7 +349,7 @@ func (a *App) onNotify(ev uint32) {
 
 // LeftMenu / RightMenu are the current menu models.
 func (a *App) LeftMenu() []trayui.Item  { return trayui.BuildLeftMenu(a.status, a.opt.Lang) }
-func (a *App) RightMenu() []trayui.Item { return trayui.BuildRightMenu(a.opt.Lang) }
+func (a *App) RightMenu() []trayui.Item { return trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref) }
 
 // ShowLeftMenu shows the databases menu at the cursor.
 func (a *App) ShowLeftMenu() { a.Command(trackMenu(a.hwnd, a.LeftMenu(), &a.squares)) }
@@ -361,7 +366,33 @@ func (a *App) Command(cmd int) {
 		a.ShowAbout(true)
 	case trayui.CmdExit:
 		a.Exit()
+	case trayui.CmdLangAuto, trayui.CmdLangRU, trayui.CmdLangEN:
+		a.SetLanguage(trayui.LangCommands[cmd])
 	}
+}
+
+// SetLanguage applies a per-user language preference at once to the
+// menus, the icon tooltip and the alert window, and stores it (HKCU).
+// Already open settings / About windows take it when opened next time.
+func (a *App) SetLanguage(pref string) error {
+	pref = NormalizePref(pref)
+	var err error
+	if a.opt.LangStore != nil {
+		err = a.opt.LangStore.Save(pref)
+	}
+	a.opt.LangPref = pref
+	a.opt.Lang = ResolveLang(pref)
+	a.alerts.SetLang(a.opt.Lang)
+	if a.awin != nil {
+		a.awin.setLang(a.opt.Lang)
+		a.awin.apply(a.alerts.View(), !a.opt.HiddenAlerts)
+	}
+	old := a.ind
+	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
+	if a.nidAdded && old.Tooltip != a.ind.Tooltip {
+		a.modifyIcon()
+	}
+	return err
 }
 
 // OpenSettings opens (or focuses) the settings window and returns its

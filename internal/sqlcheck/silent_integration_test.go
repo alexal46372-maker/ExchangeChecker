@@ -21,6 +21,9 @@ type silentProxy struct {
 	ln       net.Listener
 	target   string
 	marker   []byte
+	except   []byte // a packet with marker that also contains except is forwarded
+	drop     bool   // on marker: close both sockets at once instead of going silent
+	dropped  int
 	mu       sync.Mutex
 	conns    []net.Conn
 	silenced int
@@ -87,7 +90,17 @@ func (px *silentProxy) serve() {
 					continue // silent: swallow
 				default:
 				}
-				if px.marker != nil && bytes.Contains(buf[:n], px.marker) {
+				hit := px.marker != nil && bytes.Contains(buf[:n], px.marker) &&
+					(px.except == nil || !bytes.Contains(buf[:n], px.except))
+				if hit && px.drop {
+					px.mu.Lock()
+					px.dropped++
+					px.mu.Unlock()
+					c.Close()
+					s.Close()
+					continue // the next Read fails: counted as closed
+				}
+				if hit {
 					silent.Do(func() {
 						px.mu.Lock()
 						px.silenced++
@@ -237,4 +250,73 @@ func TestCHK_SQL_01_IntegrationDriverIgnoresCtxAfterLogin(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the query did not return after the sockets were closed")
 	}
+}
+
+// TestCHK_SQL_01_IntegrationServerInfoFallbackDropped: a login denied
+// SELECT on sys.databases gets a query error for the info query, then the
+// SERVERPROPERTY fallback runs. Through a transparent proxy the fallback
+// succeeds (version, CompatLevel 0, no error). When the proxy drops the
+// session at the fallback, TestConnectionInfo returns an error with
+// ConnCategory "network" (or "timeout"), not a success with CompatLevel 0.
+func TestCHK_SQL_01_IntegrationServerInfoFallbackDropped(t *testing.T) {
+	p, _ := itProfile(t, "ec_1c_plans_off")
+	ctx := itCtx(t)
+	const login, lpw = "ec_reader_fb", "Ec_Reader-fbPassw0rd!"
+	admin := itStore(t, "master")
+	exec := func(q string) {
+		t.Helper()
+		if _, err := admin.DB().ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	drop := []string{
+		"USE [ec_1c_plans_off]; IF USER_ID(N'" + login + "') IS NOT NULL DROP USER [" + login + "]",
+		"USE [master]; IF USER_ID(N'" + login + "') IS NOT NULL DROP USER [" + login + "]",
+		"USE [master]; IF SUSER_ID(N'" + login + "') IS NOT NULL DROP LOGIN [" + login + "]",
+	}
+	for _, q := range drop {
+		exec(q)
+	}
+	t.Cleanup(func() {
+		for _, q := range drop {
+			_, _ = admin.DB().ExecContext(context.Background(), q)
+		}
+	})
+	exec("USE [master]; CREATE LOGIN [" + login + "] WITH PASSWORD = N'" + lpw + "', CHECK_POLICY = OFF")
+	exec("USE [ec_1c_plans_off]; CREATE USER [" + login + "] FOR LOGIN [" + login + "]; EXEC sp_addrolemember N'db_datareader', N'" + login + "'")
+	exec("USE [master]; CREATE USER [" + login + "] FOR LOGIN [" + login + "]; DENY SELECT ON sys.databases TO [" + login + "]")
+	r := p
+	r.Login = login
+	target := net.JoinHostPort(p.Server, strconv.Itoa(p.Port))
+
+	// fallback succeeds: connection OK, version, CompatLevel 0, no error
+	px := newSilentProxy(t, target, "")
+	info, err := TestConnectionInfo(ctx, silentProfile(t, px, r), lpw)
+	if err != nil || info.Version == "" || info.Edition == "" || info.CompatLevel != 0 {
+		t.Fatalf("fallback ok: %+v %v", info, err)
+	}
+	px.waitClosed(t, "fallback ok")
+
+	// the session is dropped at the fallback (SERVERPROPERTY without sys.databases)
+	px = newSilentProxy(t, target, "SERVERPROPERTY")
+	px.except, px.drop = ucs2("sys.databases"), true
+	q := silentProfile(t, px, r)
+	q.ConnectTimeoutSec, q.QueryTimeoutSec = 2, 2
+	start := time.Now()
+	info, err = TestConnectionInfo(ctx, q, lpw)
+	d := time.Since(start)
+	px.mu.Lock()
+	dropped := px.dropped
+	px.mu.Unlock()
+	cat := ConnCategory(err)
+	if err == nil || info != (ServerInfo{}) || (cat != ConnCategoryNetwork && cat != ConnCategoryTimeout) || KindOf(err) == KindQuery {
+		t.Errorf("fallback dropped: %+v %v kind %q -> %q", info, err, KindOf(err), cat)
+	}
+	if dropped < 1 {
+		t.Errorf("fallback dropped: the proxy saw no fallback query")
+	}
+	if d > 6*time.Second {
+		t.Errorf("fallback dropped: returned after %v", d)
+	}
+	t.Logf("fallback dropped (%d session(s)): %v after %v -> %q", dropped, err, d.Round(10*time.Millisecond), cat)
 }

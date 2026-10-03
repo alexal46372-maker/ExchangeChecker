@@ -51,8 +51,10 @@ const serverPropsSQL = `SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar
 // compatibility level of the current database with serverInfoSQL. NULL
 // columns become "" / 0. If that query is rejected (query error, e.g. no
 // SELECT on sys.databases), SERVERPROPERTY alone is read (serverPropsSQL)
-// and CompatLevel stays 0 without an error. Errors are classified like
-// other queries.
+// and CompatLevel stays 0 without an error. If the fallback fails too, its
+// own error is returned (a network drop or timeout during the fallback is
+// KindConn / KindTimeout, not the query error of the first query). Errors
+// are classified like other queries.
 func (s *SQLStore) ServerInfo(ctx context.Context) (ServerInfo, error) {
 	ctx, cancel := s.qctx(ctx)
 	defer cancel()
@@ -66,7 +68,9 @@ func (s *SQLStore) ServerInfo(ctx context.Context) (ServerInfo, error) {
 		// no access to sys.databases: keep the version, CompatLevel 0
 		ver, lvl, ed = sql.NullString{}, sql.NullString{}, sql.NullString{}
 		if err2 := s.db.QueryRowContext(ctx, serverPropsSQL).Scan(&ver, &lvl, &ed); err2 != nil {
-			return ServerInfo{}, err
+			// the fallback's own error: a dropped session or an expired
+			// context is a connection / timeout problem, not "no access"
+			return ServerInfo{}, classify("server_info", err2, false)
 		}
 		return ServerInfo{Version: ver.String, ProductLevel: lvl.String, Edition: ed.String}, nil
 	}
@@ -79,9 +83,10 @@ func (s *SQLStore) ServerInfo(ctx context.Context) (ServerInfo, error) {
 // "mssql2008" TLS 1.0 preset —, login, database), pings, then runs
 // serverInfoSQL. Connection errors are *Error with KindConn / KindTimeout
 // / KindConfig (TLS failures carry the message key, see ConnCategory).
-// If only the info query fails with a query error (e.g. DENY on
-// sys.databases), the connection test still succeeds and ServerInfo is
-// returned empty; context/connection errors of that query are returned.
+// If the info query is rejected (e.g. DENY on sys.databases) and the
+// SERVERPROPERTY fallback succeeds, the test succeeds with CompatLevel 0;
+// any error left after the fallback (network, timeout, or the fallback's
+// own query error) is returned.
 // Unlike poll stores, the session stays guarded after login: if the server
 // goes silent, the call still returns when the operation context ends
 // (sessionHold).
@@ -109,9 +114,8 @@ func TestConnectionInfo(ctx context.Context, p model.Profile, password string) (
 	end()
 	qcancel()
 	if err = holdError("server_info", err, hold); err != nil {
-		if KindOf(err) == KindQuery {
-			return ServerInfo{}, nil
-		}
+		// ServerInfo already swallowed a rejected info query whose
+		// fallback succeeded; whatever is left is a real failure
 		return ServerInfo{}, refineTLS(err, p)
 	}
 	return info, nil

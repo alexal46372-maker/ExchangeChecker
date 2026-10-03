@@ -25,6 +25,7 @@ import (
 type infoDriver struct {
 	row     []driver.Value
 	err     error
+	errs    map[string]error // per query text, overrides err (nil = answer row)
 	queries *[]string
 }
 
@@ -51,13 +52,24 @@ func (s *infoStmt) Exec([]driver.Value) (driver.Result, error) {
 }
 func (s *infoStmt) Query([]driver.Value) (driver.Rows, error) {
 	*s.d.queries = append(*s.d.queries, s.q)
+	if e, ok := s.d.errs[s.q]; ok {
+		if e != nil {
+			return nil, e
+		}
+		return &infoRows{row: s.d.row}, nil
+	}
 	if s.d.err != nil {
 		return nil, s.d.err
 	}
 	return &infoRows{row: s.d.row}, nil
 }
-func (r *infoRows) Columns() []string { return []string{"v", "l", "e", "c"} }
-func (r *infoRows) Close() error      { return nil }
+func (r *infoRows) Columns() []string {
+	if len(r.row) == 3 { // serverPropsSQL fallback rows
+		return []string{"v", "l", "e"}
+	}
+	return []string{"v", "l", "e", "c"}
+}
+func (r *infoRows) Close() error { return nil }
 func (r *infoRows) Next(dest []driver.Value) error {
 	if r.done {
 		return io.EOF
@@ -71,10 +83,15 @@ var infoDriverN int
 
 func infoStore(t *testing.T, row []driver.Value, err error) (*SQLStore, *[]string) {
 	t.Helper()
+	return infoStoreErrs(t, row, err, nil)
+}
+
+func infoStoreErrs(t *testing.T, row []driver.Value, err error, errs map[string]error) (*SQLStore, *[]string) {
+	t.Helper()
 	var qs []string
 	infoDriverN++
 	name := fmt.Sprintf("ecinfo%d", infoDriverN)
-	sql.Register(name, &infoDriver{row: row, err: err, queries: &qs})
+	sql.Register(name, &infoDriver{row: row, err: err, errs: errs, queries: &qs})
 	db, e := sql.Open(name, "")
 	if e != nil {
 		t.Fatal(e)
@@ -124,6 +141,53 @@ func TestCHK_SQL_05_ServerInfoQuery(t *testing.T) {
 	}
 	if v := Compat2008Violations(serverPropsSQL); len(v) != 0 || !strings.HasPrefix(serverInfoSQL, serverPropsSQL) {
 		t.Errorf("fallback SQL: %v", v)
+	}
+}
+
+// TestCHK_SQL_01_ServerInfoFallbackError: the info query is rejected as a
+// query error (no SELECT on sys.databases) and the SERVERPROPERTY fallback
+// runs. Fallback OK -> version, CompatLevel 0, no error. Fallback fails ->
+// its own classified error is returned (network drop -> KindConn /
+// "network", timeout -> KindTimeout / "timeout"), never the first query
+// error, so TestConnectionInfo cannot report such a failure as success.
+func TestCHK_SQL_01_ServerInfoFallbackError(t *testing.T) {
+	denied := mssql.Error{Number: 229, Message: "The SELECT permission was denied on the object 'databases'"}
+	row := []driver.Value{"10.50.1600.1", "RTM", "Standard Edition (64-bit)"}
+
+	st, qs := infoStoreErrs(t, row, nil, map[string]error{serverInfoSQL: denied, serverPropsSQL: nil})
+	info, err := st.ServerInfo(context.Background())
+	if err != nil || info != (ServerInfo{Version: "10.50.1600.1", ProductLevel: "RTM", Edition: "Standard Edition (64-bit)"}) {
+		t.Errorf("fallback ok: %+v %v", info, err)
+	}
+	if len(*qs) != 2 || (*qs)[0] != serverInfoSQL || (*qs)[1] != serverPropsSQL {
+		t.Errorf("fallback ok: queries %q", *qs)
+	}
+
+	for _, c := range []struct {
+		name     string
+		err2     error
+		kind     ErrorKind
+		category string
+	}{
+		{"net error", &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}, KindConn, ConnCategoryNetwork},
+		{"net timeout", ciNetErr{timeout: true}, KindConn, ConnCategoryTimeout},
+		{"deadline", context.DeadlineExceeded, KindTimeout, ConnCategoryTimeout},
+		{"connection error number", mssql.Error{Number: 10054, Message: "forcibly closed"}, KindConn, ConnCategoryNetwork},
+		{"fallback rejected too", mssql.Error{Number: 229, Message: "denied"}, KindQuery, ConnCategoryOther},
+	} {
+		st, qs := infoStoreErrs(t, row, nil, map[string]error{serverInfoSQL: denied, serverPropsSQL: c.err2})
+		info, err := st.ServerInfo(context.Background())
+		if err == nil || info != (ServerInfo{}) || KindOf(err) != c.kind || ConnCategory(err) != c.category {
+			t.Errorf("%s: %+v %v kind %q -> %q", c.name, info, err, KindOf(err), ConnCategory(err))
+			continue
+		}
+		var me mssql.Error
+		if errors.As(err, &me) && me.Number == 229 && c.kind != KindQuery {
+			t.Errorf("%s: the first query error is returned: %v", c.name, err)
+		}
+		if len(*qs) != 2 {
+			t.Errorf("%s: queries %q", c.name, *qs)
+		}
 	}
 }
 

@@ -127,7 +127,7 @@ func (s *Store) SaveSecrets(sec Secrets) error {
 	if err != nil {
 		return fmt.Errorf("config: encrypt %s: %w", SecretsFile, err)
 	}
-	return writeFileAtomic(s.Dir, SecretsFile, blob, 0o600)
+	return writeSecretAtomic(s.Dir, SecretsFile, blob)
 }
 
 // Password returns the stored password for profileID.

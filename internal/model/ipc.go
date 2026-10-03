@@ -147,7 +147,9 @@ type IPCRequest struct {
 	Settings *Settings `json:"settings,omitempty"`
 	// ClearPassword: save_profile deletes the saved password (phase 6).
 	ClearPassword bool `json:"clearPassword,omitempty"`
-	// ExpectedRevision of save_* (optional): mismatch -> conflict.
+	// ExpectedRevision of save_profile / delete_profile / save_settings:
+	// mandatory since phase 6b (missing -> invalid_request, errorArgs
+	// ["expectedRevision", "validation.required"]); mismatch -> conflict.
 	ExpectedRevision string `json:"expectedRevision,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`

@@ -703,9 +703,12 @@ func (m *Monitor) reloadConfigLocked(force bool) bool {
 	if cfg.Settings.WarnMinutes == 0 && cfg.Settings.ErrorMinutes == 0 {
 		cfg.Settings = model.DefaultSettings()
 	}
-	rev, rerr := configRevision(m.configWriter())
-	if rerr != nil {
-		m.opt.Log.Printf("config: revision: %v", rerr)
+	rev := cfg.Revision // same bytes as the applied data (FileConfig)
+	if rev == "" {
+		var rerr error
+		if rev, rerr = configRevision(m.configWriter()); rerr != nil {
+			m.opt.Log.Printf("config: revision: %v", rerr)
+		}
 	}
 	var retired []*entry
 	m.mu.Lock()

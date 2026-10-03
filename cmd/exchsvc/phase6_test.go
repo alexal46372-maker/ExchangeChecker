@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
@@ -69,5 +72,46 @@ func TestCHK_IPC_06_ServiceConfigWrite(t *testing.T) {
 	}
 	if st, _ := s.c.Call(ctx, model.CmdGetStatus); len(st.Status.Profiles) != 1 {
 		t.Error("non-admin changed the configuration")
+	}
+}
+
+// TestCHK_IPC_06_ServiceRevisionRequired — over IPC, save_profile,
+// delete_profile and save_settings without expectedRevision get
+// invalid_request + monitor.bad_request with errorArgs
+// ["expectedRevision", "validation.required"]; nothing is written; the
+// same request with the revision of get_config succeeds.
+func TestCHK_IPC_06_ServiceRevisionRequired(t *testing.T) {
+	dir := t.TempDir()
+	s := startSvcWith(t, dir, 40, nil, &fakeEvents{}, func(ac *appConfig) {
+		ac.Authorize = func(io.ReadWriteCloser) (ipc.Peer, error) { return ipc.Peer{Admin: true, Account: `TEST\admin`}, nil }
+	})
+	defer s.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	p := model.NewProfile("db1")
+	p.Name, p.Server, p.Database, p.AuthMode = "Офис", "srv", "db", model.AuthWindows
+	p.Mapping = model.Mapping{Table: "_Node1", PointNameColumn: "_Description", LastSendColumn: "s"}
+	for what, call := range map[string]func() (model.IPCMessage, error){
+		"save_profile":   func() (model.IPCMessage, error) { return s.c.SaveProfile(ctx, p, "", false, "") },
+		"delete_profile": func() (model.IPCMessage, error) { return s.c.DeleteProfile(ctx, "db1", "") },
+		"save_settings":  func() (model.IPCMessage, error) { return s.c.SaveSettings(ctx, model.DefaultSettings(), "") },
+	} {
+		m, err := call()
+		if err != nil || m.Type != model.MsgError || m.Code != model.ErrCodeInvalidRequest || m.ErrorKey != model.MsgMonitorBadRequest ||
+			len(m.ErrorArgs) != 2 || m.ErrorArgs[0] != "expectedRevision" || m.ErrorArgs[1] != model.ValRequired {
+			t.Errorf("%s without expectedRevision: %+v %v", what, m, err)
+		}
+	}
+	for _, n := range []string{config.SettingsFile, config.ProfilesFile, config.SecretsFile} {
+		if _, err := os.Stat(filepath.Join(dir, n)); !os.IsNotExist(err) {
+			t.Errorf("%s written without expectedRevision", n)
+		}
+	}
+	cfg, err := s.c.GetConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := s.c.SaveProfile(ctx, p, "", false, cfg.Revision); err != nil || r.Type != model.MsgOK {
+		t.Fatalf("save_profile with revision: %+v %v", r, err)
 	}
 }

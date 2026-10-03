@@ -26,6 +26,12 @@ type svc struct {
 
 func startSvc(t *testing.T, dir string, lag int, test monitor.TestFunc, ev *fakeEvents) *svc {
 	t.Helper()
+	return startSvcWith(t, dir, lag, test, ev, nil)
+}
+
+// startSvcWith is startSvc with mut applied to the appConfig.
+func startSvcWith(t *testing.T, dir string, lag int, test monitor.TestFunc, ev *fakeEvents, mut func(*appConfig)) *svc {
+	t.Helper()
 	now := time.Date(2026, 9, 29, 12, 0, 0, 0, model.DBZone)
 	newReader := func(pr model.Profile, pw string, opt sqlcheck.Options) (sqlcheck.ReadCloser, error) {
 		return &stubRC{list: func() []model.ExchangePoint {
@@ -37,11 +43,13 @@ func startSvc(t *testing.T, dir string, lag int, test monitor.TestFunc, ev *fake
 	ready := make(chan struct{})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() {
-		done <- runService(ctx, appConfig{Dir: dir, Listener: l, NewReader: newReader, Events: ev, Test: test,
-			Now: func() time.Time { return now }, PollInterval: time.Hour, ConfigCheck: time.Hour,
-			Ready: func(*monitor.Monitor, *ipc.Server) { close(ready) }})
-	}()
+	ac := appConfig{Dir: dir, Listener: l, NewReader: newReader, Events: ev, Test: test,
+		Now: func() time.Time { return now }, PollInterval: time.Hour, ConfigCheck: time.Hour,
+		Ready: func(*monitor.Monitor, *ipc.Server) { close(ready) }}
+	if mut != nil {
+		mut(&ac)
+	}
+	go func() { done <- runService(ctx, ac) }()
 	<-ready
 	rw, err := l.Dial()
 	if err != nil {
@@ -129,7 +137,8 @@ func TestCHK_IPC_02_ServiceAckAndTest(t *testing.T) {
 	ev := &fakeEvents{}
 	s := startSvc(t, dir, 40, test, ev)
 	hello := s.waitPush(t, func(m model.IPCMessage) bool { return m.Type == model.MsgHello })
-	if hello.Version != 2 || len(hello.Capabilities) != 3 || hello.Heartbeat == nil {
+	// phase 6 adds cancel, config_read, config_write
+	if hello.Version != 2 || len(hello.Capabilities) != 6 || hello.Heartbeat == nil {
 		t.Fatalf("hello %+v", hello)
 	}
 	snap := s.polled(t)

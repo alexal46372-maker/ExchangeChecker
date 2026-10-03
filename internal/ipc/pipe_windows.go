@@ -21,6 +21,39 @@ const PipeSDDL = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12018b;;;IU)"
 
 const pipeBuf = 64 << 10
 
+// clientAccess is the access a client requests: FILE_GENERIC_READ |
+// FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES = exactly the 0x12018b granted
+// to interactive users by PipeSDDL. GENERIC_WRITE (FILE_GENERIC_WRITE)
+// would also ask for FILE_APPEND_DATA (= FILE_CREATE_PIPE_INSTANCE) and
+// FILE_WRITE_EA, which PipeSDDL deliberately does not grant: a non-admin
+// client would get ERROR_ACCESS_DENIED (phase 6 fix, CHK-IPC-06).
+const clientAccess = syscall.GENERIC_READ | fileWriteData | fileWriteAttributes
+
+const (
+	fileWriteData       = 0x2
+	fileWriteAttributes = 0x100
+)
+
+// ClientIdentity identifies the client of a server end (phase 6,
+// CHK-IPC-06): ImpersonateNamedPipeClient + CheckTokenMembership
+// (BUILTIN\Administrators) + RevertToSelf on a dedicated OS thread. It
+// fails before the server has read data from the client
+// (ERROR_CANNOT_IMPERSONATE) and for an anonymous client.
+func (c *pipeConn) ClientIdentity() (Peer, error) {
+	if !c.server {
+		return Peer{}, errors.New("ipc: not a server end")
+	}
+	if !c.begin() {
+		return Peer{}, errPipeClosed
+	}
+	defer c.active.Done()
+	pc, err := winapi.ImpersonatePipeClient(c.h)
+	if err != nil {
+		return Peer{}, err
+	}
+	return Peer{Admin: pc.Admin, Account: pc.Account}, nil
+}
+
 // maxInstances is nMaxInstances of CreateNamedPipeW: the OS refuses a
 // ninth instance even if a caller bypasses ipc.Server's own slot limit
 // (CHK-MON-11).
@@ -320,7 +353,7 @@ func DialPipe(name string, timeout time.Duration) (io.ReadWriteCloser, error) {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		h, err := syscall.CreateFile(n, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING,
+		h, err := syscall.CreateFile(n, clientAccess, 0, nil, syscall.OPEN_EXISTING,
 			winapi.FileFlagOverlapped|winapi.SecuritySQOSPresent|winapi.SecurityIdentification, 0)
 		if err == nil {
 			c, cerr := newPipeConn(h, false)

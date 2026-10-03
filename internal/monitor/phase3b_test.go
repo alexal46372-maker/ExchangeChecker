@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -584,7 +585,8 @@ func TestCHK_MON_13_AbandonedReaderCannotWriteCounters(t *testing.T) {
 	f.counters["c"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 1, ReceivedNo: 1}} // stale obs
 	clk := &fakeClock{t: t0}
 	opt := baseOpt(f, NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("c")}}), clk)
-	opt.ProfileTimeout = func(model.Profile) time.Duration { return 50 * time.Millisecond }
+	pt := newPhaseTimeout(hangTimeout)
+	opt.ProfileTimeout = pt.get
 	opt.Counters = store
 	m := New(opt)
 	m.reloadConfig(true)
@@ -595,6 +597,9 @@ func TestCHK_MON_13_AbandonedReaderCannotWriteCounters(t *testing.T) {
 	if k := profileByID(m.Snapshot(), "c").ErrorKey; k != model.MsgMonitorHung {
 		t.Fatalf("not abandoned: %q", k)
 	}
+	// the polls below write counters-state.json (fsync) inside the poll
+	// budget: a long one, so a slow CI disk cannot turn them into timeouts
+	pt.set(okTimeout)
 	f.mu.Lock()
 	f.counters["c"] = []model.CounterObservation{{Key: "k", Name: "N", SentNo: 5, ReceivedNo: 5}}
 	f.mu.Unlock()
@@ -703,19 +708,39 @@ func hungCountersSetup(t *testing.T, dir string) (*Monitor, *fakeFactory, *MemCo
 	clk := &fakeClock{t: t0}
 	src := NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("c")}})
 	opt := baseOpt(f, src, clk)
-	opt.ProfileTimeout = func(model.Profile) time.Duration { return 50 * time.Millisecond }
+	pt := newPhaseTimeout(okTimeout)
+	opt.ProfileTimeout = pt.get
 	opt.Counters = store
 	m := New(opt)
 	m.reloadConfig(true)
-	m.pollAll(context.Background()) // state saved: SentNo 1
+	m.pollAll(context.Background()) // state saved: SentNo 1 (fsync within a long budget)
 	hang := make(chan struct{})
 	f.set("c", behavior{counter: true, hang: hang})
+	pt.set(hangTimeout)
 	m.pollAll(context.Background()) // hangs -> timeout, entry stays busy
 	if k := profileByID(m.Snapshot(), "c").ErrorKey; k != model.MsgMonitorTimeout {
 		t.Fatalf("hung poll: %q", k)
 	}
+	// later polls write counters-state.json inside their budget
+	pt.set(okTimeout)
 	return m, f, src, clk, store, hang
 }
+
+// Poll budgets of the hung-reader tests (phase 6 CI flake fix): a poll
+// that is meant to hang times out after hangTimeout (real time), a poll
+// that must succeed gets okTimeout — it writes counters-state.json with
+// fsync inside the budget, which can take longer than 50 ms on a loaded
+// CI runner (run 37119650865).
+const (
+	hangTimeout = 50 * time.Millisecond
+	okTimeout   = 30 * time.Second
+)
+
+type phaseTimeout struct{ d int64 }
+
+func newPhaseTimeout(d time.Duration) *phaseTimeout     { return &phaseTimeout{d: int64(d)} }
+func (p *phaseTimeout) set(d time.Duration)             { atomic.StoreInt64(&p.d, int64(d)) }
+func (p *phaseTimeout) get(model.Profile) time.Duration { return time.Duration(atomic.LoadInt64(&p.d)) }
 
 // TestCHK_MON_13_RetiredEntryCannotWriteCounters — the profile's
 // signature changes while its old reader hangs: the old entry is retired

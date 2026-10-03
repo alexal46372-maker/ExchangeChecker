@@ -99,7 +99,8 @@ func TestCHK_IPC_05_ProtocolV2Compat(t *testing.T) {
 	}
 	var hello model.IPCMessage
 	json.Unmarshal(raw, &hello)
-	want := []string{model.CapTestProfile, model.CapAckAlert, model.CapHeartbeat}
+	// phase 6: cancel comes with the async test_profile (CHK-IPC-07)
+	want := []string{model.CapTestProfile, model.CapAckAlert, model.CapHeartbeat, model.CapCancel}
 	if hello.Type != model.MsgHello || hello.Version != 2 || !reflect.DeepEqual(hello.Capabilities, want) ||
 		hello.Heartbeat == nil || hello.Heartbeat.HungAfterSec != 120 || hello.Heartbeat.Protocol != 2 {
 		t.Fatalf("hello %s", raw)
@@ -137,7 +138,8 @@ func TestCHK_IPC_05_ProtocolV2Compat(t *testing.T) {
 				t.Errorf("poll_now %s", raw)
 			}
 		case 3:
-			if o.Type != model.MsgError || !strings.Contains(o.Error, "unknown command") || n.Code != model.ErrCodeUnknownCommand {
+			if o.Type != model.MsgError || !strings.Contains(o.Error, "unknown command") || n.Code != model.ErrCodeUnknownCommand ||
+				n.ErrorKey != model.MsgMonitorUnknownCommand {
 				t.Errorf("unknown command %s", raw)
 			}
 		}

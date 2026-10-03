@@ -59,6 +59,11 @@ type ProfileSnapshot struct {
 	// Acknowledged: the profile-level alert (connection / query error)
 	// was acknowledged (CHK-IPC-02).
 	Acknowledged bool `json:"acknowledged,omitempty"`
+	// Read-only settings view (phase 6): connection without password,
+	// the profile's own thresholds, mapping summary (no SQL, no columns).
+	Connection        *ProfileConnection `json:"connection,omitempty"`
+	ThresholdOverride *ThresholdOverride `json:"thresholdOverride,omitempty"`
+	MappingSummary    *MappingSummary    `json:"mappingSummary,omitempty"`
 }
 
 // StatusSnapshot is the full monitor state sent to the tray.
@@ -94,6 +99,11 @@ type StatusSnapshot struct {
 	LastCycleAt      *time.Time `json:"lastCycleAt,omitempty"`
 	PollerHung       bool       `json:"pollerHung"`
 	HungAfterSec     int        `json:"hungAfterSec,omitempty"`
+	// Read-only settings view (phase 6): the applied global settings
+	// (incl. beep, language, trayAutostart) and the configuration
+	// revision (as returned by get_config / save_*).
+	Settings       *Settings `json:"settings,omitempty"`
+	ConfigRevision string    `json:"configRevision,omitempty"`
 }
 
 // minutesFloor returns whole minutes of d (d >= 0).

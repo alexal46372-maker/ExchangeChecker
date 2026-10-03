@@ -87,24 +87,26 @@ func (s Settings) ErrorAfter() time.Duration { return time.Duration(s.ErrorMinut
 func (s Settings) Validate() error {
 	var errs []error
 	if s.PollIntervalSec < MinPollIntervalSec || s.PollIntervalSec > MaxPollIntervalSec {
-		errs = append(errs, fmt.Errorf("settings: pollIntervalSec must be in [%d..%d], got %d",
-			MinPollIntervalSec, MaxPollIntervalSec, s.PollIntervalSec))
+		errs = append(errs, fieldErr("pollIntervalSec", ValRange, fmt.Sprintf("settings: pollIntervalSec must be in [%d..%d], got %d",
+			MinPollIntervalSec, MaxPollIntervalSec, s.PollIntervalSec), itoa(MinPollIntervalSec), itoa(MaxPollIntervalSec), itoa(s.PollIntervalSec)))
 	}
 	if s.WarnMinutes < 1 {
-		errs = append(errs, fmt.Errorf("settings: warnMinutes must be >= 1, got %d", s.WarnMinutes))
+		errs = append(errs, fieldErr("warnMinutes", ValRange, fmt.Sprintf("settings: warnMinutes must be >= 1, got %d", s.WarnMinutes),
+			"1", itoa(MaxThresholdMinutes), itoa(s.WarnMinutes)))
 	}
 	if s.ErrorMinutes <= s.WarnMinutes {
-		errs = append(errs, fmt.Errorf("settings: errorMinutes (%d) must be greater than warnMinutes (%d)",
-			s.ErrorMinutes, s.WarnMinutes))
+		errs = append(errs, fieldErr("errorMinutes", ValGreaterThan, fmt.Sprintf("settings: errorMinutes (%d) must be greater than warnMinutes (%d)",
+			s.ErrorMinutes, s.WarnMinutes), "warnMinutes", itoa(s.WarnMinutes)))
 	}
 	if s.ErrorMinutes > MaxThresholdMinutes {
-		errs = append(errs, fmt.Errorf("settings: errorMinutes must be <= %d, got %d", MaxThresholdMinutes, s.ErrorMinutes))
+		errs = append(errs, fieldErr("errorMinutes", ValRange, fmt.Sprintf("settings: errorMinutes must be <= %d, got %d", MaxThresholdMinutes, s.ErrorMinutes),
+			"2", itoa(MaxThresholdMinutes), itoa(s.ErrorMinutes)))
 	}
 	errs = append(errs, s.Beep.validate()...)
 	switch s.Language {
 	case LangAuto, LangRU, LangEN:
 	default:
-		errs = append(errs, fmt.Errorf("settings: unsupported language %q (want \"\", %q or %q)", s.Language, LangRU, LangEN))
+		errs = append(errs, fieldErr("language", ValEnum, fmt.Sprintf("settings: unsupported language %q (want \"\", %q or %q)", s.Language, LangRU, LangEN), s.Language))
 	}
 	return errors.Join(errs...)
 }
@@ -113,12 +115,14 @@ func (b BeepSettings) validate() []error {
 	var errs []error
 	freq := func(name string, v int) {
 		if v < MinBeepFreqHz || v > MaxBeepFreqHz {
-			errs = append(errs, fmt.Errorf("settings: beep.%s must be in [%d..%d] Hz, got %d", name, MinBeepFreqHz, MaxBeepFreqHz, v))
+			errs = append(errs, fieldErr("beep."+name, ValRange, fmt.Sprintf("settings: beep.%s must be in [%d..%d] Hz, got %d", name, MinBeepFreqHz, MaxBeepFreqHz, v),
+				itoa(MinBeepFreqHz), itoa(MaxBeepFreqHz), itoa(v)))
 		}
 	}
 	dur := func(name string, v int) {
 		if v < 1 || v > MaxBeepDurMs {
-			errs = append(errs, fmt.Errorf("settings: beep.%s must be in [1..%d] ms, got %d", name, MaxBeepDurMs, v))
+			errs = append(errs, fieldErr("beep."+name, ValRange, fmt.Sprintf("settings: beep.%s must be in [1..%d] ms, got %d", name, MaxBeepDurMs, v),
+				"1", itoa(MaxBeepDurMs), itoa(v)))
 		}
 	}
 	freq("warningFreqHz", b.WarningFreqHz)
@@ -126,7 +130,8 @@ func (b BeepSettings) validate() []error {
 	freq("errorFreqHz", b.ErrorFreqHz)
 	dur("errorDurMs", b.ErrorDurMs)
 	if b.GapMs < 0 || b.GapMs > MaxBeepGapMs {
-		errs = append(errs, fmt.Errorf("settings: beep.gapMs must be in [0..%d] ms, got %d", MaxBeepGapMs, b.GapMs))
+		errs = append(errs, fieldErr("beep.gapMs", ValRange, fmt.Sprintf("settings: beep.gapMs must be in [0..%d] ms, got %d", MaxBeepGapMs, b.GapMs),
+			"0", itoa(MaxBeepGapMs), itoa(b.GapMs)))
 	}
 	return errs
 }

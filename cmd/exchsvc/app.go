@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,6 +40,9 @@ type appConfig struct {
 	// TestWithTimeout overrides the context carrying the single test
 	// deadline (tests; default context.WithTimeout).
 	TestWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+	// Authorize overrides the pipe client check of admin commands
+	// (tests over a MemListener; nil = ImpersonateNamedPipeClient).
+	Authorize func(io.ReadWriteCloser) (ipc.Peer, error)
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -112,6 +116,13 @@ func runService(ctx context.Context, ac appConfig) error {
 		OnAck: func(e model.AlertEvent) {
 			report(alert.EventTypeInformation, alert.EventIDAck, alert.FormatAck(e, lang))
 		},
+		// configuration changed through IPC by an administrator (phase
+		// 6): one informational entry 105 with account, action, profile
+		// id (CHK-MON-05 extension); the installer of phase 7 registers
+		// 104 and 105 in the message file
+		OnConfigChange: func(c model.ConfigChange) {
+			report(alert.EventTypeInformation, alert.EventIDConfig, alert.FormatConfigChange(c, lang))
+		},
 		// test_profile: sqlcheck.TestConnectionInfo + ConnCategory
 		// (CHK-IPC-03); tests inject a fake
 		Test:            test,
@@ -131,6 +142,7 @@ func runService(ctx context.Context, ac appConfig) error {
 		ConfigCheck:  ac.ConfigCheck,
 	})
 	srv = ipc.NewServer(mon, log)
+	srv.Authorize = ac.Authorize
 
 	l := ac.Listener
 	if l == nil {

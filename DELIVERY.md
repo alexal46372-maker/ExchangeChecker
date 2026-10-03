@@ -58,6 +58,12 @@ EXEC sp_addrolemember N'db_datareader', N'ec_monitor';
 - Если сеть не доверенная, включите в профиле шифрование: «только логин» (`optional`) или «полное» (`on`, при самоподписанном сертификате — «Доверять сертификату сервера»); пресет уже разрешает TLS 1.0 для серверов без обновлений TLS 1.2.
 - Если на сервере включено «Force Encryption», режим «без шифрования» не подключится — выберите `optional` или `on`.
 
+## Требования к инсталлятору (фаза 7) из фазы 6
+
+- Источник Event Log `ExchangeChecker`: зарегистрировать `EventMessageFile` с событиями 100–104, **105** («Конфигурация изменена», фаза 6) и 110.
+- `secrets.dpapi` служба создаёт сама с DACL SYSTEM + Administrators без наследования; инсталлятор не должен давать на него Users-read (каталог `%ProgramData%\ExchangeChecker\` — по-прежнему Administrators+SYSTEM+Users-read для `profiles.json`/`settings.json`).
+- Не-администраторам (Interactive Users / Authenticated Users) — право `SERVICE_QUERY_STATUS` в DACL службы (трей сверяет PID сервера канала с PID службы, G7).
+
 ## Когда собирать
 
 Сборка zip — **только по явной просьбе** заказчика (см. POLICY.md / PLAN.md §11 фаза 8).

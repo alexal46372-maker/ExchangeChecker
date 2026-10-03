@@ -110,6 +110,8 @@ type IPCError struct {
 	Code    string
 	Key     string
 	Message string
+	// Args are copied into IPCMessage.ErrorArgs (phase 6).
+	Args []string
 }
 
 func (e *IPCError) Error() string { return e.Message }
@@ -141,6 +143,14 @@ type IPCRequest struct {
 	Password string `json:"password,omitempty"`
 	// PointKey restricts ack_alert to one point (PointStatus.Key).
 	PointKey string `json:"pointKey,omitempty"`
+	// Settings of save_settings (phase 6).
+	Settings *Settings `json:"settings,omitempty"`
+	// ClearPassword: save_profile deletes the saved password (phase 6).
+	ClearPassword bool `json:"clearPassword,omitempty"`
+	// ExpectedRevision of save_* (optional): mismatch -> conflict.
+	ExpectedRevision string `json:"expectedRevision,omitempty"`
+	// Ref is the request ID canceled by cancel (phase 6, G6).
+	Ref uint64 `json:"ref,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -153,8 +163,8 @@ func (r IPCRequest) String() string {
 	if r.Profile != nil {
 		prof = r.Profile.ID + "@" + r.Profile.Server + "/" + r.Profile.Database
 	}
-	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s}",
-		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey)
+	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t}",
+		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey, r.ClearPassword, r.ExpectedRevision, r.Ref, r.Settings != nil)
 }
 
 // GoString masks the password (fmt %#v).
@@ -201,4 +211,26 @@ type IPCMessage struct {
 	Test *TestProfileResult `json:"test,omitempty"`
 	// Acked is the number of alerts acknowledged by ack_alert.
 	Acked int `json:"acked,omitempty"`
+
+	// Phase 6 (protocol 2, capabilities config_read / config_write /
+	// cancel):
+	// ErrorArgs are the parameters of ErrorKey; for profile_invalid /
+	// settings_invalid: [JSON field path, validation.* reason, params...].
+	ErrorArgs []string `json:"errorArgs,omitempty"`
+	// ClientElevated (replies to get_status and ping only, display only):
+	// the client token is an elevated administrator. Admin commands
+	// re-check it every time.
+	ClientElevated *bool `json:"clientElevated,omitempty"`
+	// ProfileID / Profile of save_profile / delete_profile replies
+	// (Profile with HasPassword, never a password).
+	ProfileID string   `json:"profileId,omitempty"`
+	Profile   *Profile `json:"profile,omitempty"`
+	// Reloaded: the configuration was re-read synchronously.
+	Reloaded bool `json:"reloaded,omitempty"`
+	// PollScheduled: a poll of the saved (enabled) profile is queued.
+	PollScheduled bool `json:"pollScheduled,omitempty"`
+	// Revision of the configuration after save_* / of get_config.
+	Revision string `json:"revision,omitempty"`
+	// Config is the get_config reply (MsgConfig).
+	Config *ConfigView `json:"config,omitempty"`
 }

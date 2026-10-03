@@ -9,13 +9,16 @@ import "fmt"
 // validateThresholds checks the optional per-profile overrides.
 func (p Profile) validateThresholds() error {
 	if p.WarnMinutes < 0 || p.WarnMinutes > MaxThresholdMinutes {
-		return fmt.Errorf("warnMinutes must be in [0..%d], got %d", MaxThresholdMinutes, p.WarnMinutes)
+		return fieldErr("warnMinutes", ValRange, fmt.Sprintf("warnMinutes must be in [0..%d], got %d", MaxThresholdMinutes, p.WarnMinutes),
+			"0", itoa(MaxThresholdMinutes), itoa(p.WarnMinutes))
 	}
 	if p.ErrorMinutes < 0 || p.ErrorMinutes > MaxThresholdMinutes {
-		return fmt.Errorf("errorMinutes must be in [0..%d], got %d", MaxThresholdMinutes, p.ErrorMinutes)
+		return fieldErr("errorMinutes", ValRange, fmt.Sprintf("errorMinutes must be in [0..%d], got %d", MaxThresholdMinutes, p.ErrorMinutes),
+			"0", itoa(MaxThresholdMinutes), itoa(p.ErrorMinutes))
 	}
 	if p.WarnMinutes > 0 && p.ErrorMinutes > 0 && p.ErrorMinutes <= p.WarnMinutes {
-		return fmt.Errorf("errorMinutes (%d) must be greater than warnMinutes (%d)", p.ErrorMinutes, p.WarnMinutes)
+		return fieldErr("errorMinutes", ValGreaterThan, fmt.Sprintf("errorMinutes (%d) must be greater than warnMinutes (%d)", p.ErrorMinutes, p.WarnMinutes),
+			"warnMinutes", itoa(p.WarnMinutes))
 	}
 	return nil
 }

@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -45,17 +44,17 @@ func (m Mapping) ReceivedNoCol() string {
 func (m Mapping) validateCounters() error {
 	if m.Mode != MappingCounters {
 		if strings.TrimSpace(m.SentNoColumn) != "" || strings.TrimSpace(m.ReceivedNoColumn) != "" {
-			return errors.New("mapping: sentNoColumn/receivedNoColumn require mode \"counters\"")
+			return fieldErr("mode", ValMapping, "mapping: sentNoColumn/receivedNoColumn require mode \"counters\"", "mode")
 		}
 		return nil
 	}
 	switch {
 	case strings.TrimSpace(m.Table) == "":
-		return errors.New("mapping: counters mode requires the exchange-plan table")
+		return fieldErr("table", ValRequired, "mapping: counters mode requires the exchange-plan table")
 	case m.Linked():
-		return errors.New("mapping: counters mode does not use a times table")
+		return fieldErr("timesTable", ValMapping, "mapping: counters mode does not use a times table", "timesTable")
 	case strings.TrimSpace(m.ManualSQL) != "":
-		return errors.New("mapping: counters mode does not use manual SQL")
+		return fieldErr("manualSql", ValMapping, "mapping: counters mode does not use manual SQL", "manualSql")
 	}
 	return nil
 }

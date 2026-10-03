@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -161,29 +160,31 @@ func (p Profile) QueryTimeout() time.Duration {
 // always valid, so profiles written by phase 1 keep loading.
 func (p Profile) validateConn() error {
 	if !p.Encrypt.Valid() {
-		return fmt.Errorf("unknown encrypt mode %q (want \"\", %q, %q, %q or %q)",
-			string(p.Encrypt), EncryptOptional, EncryptDisable, EncryptOn, EncryptStrict)
+		return fieldErr("encrypt", ValEnum, fmt.Sprintf("unknown encrypt mode %q (want \"\", %q, %q, %q or %q)",
+			string(p.Encrypt), EncryptOptional, EncryptDisable, EncryptOn, EncryptStrict), string(p.Encrypt))
 	}
 	switch p.TLSMinVersion {
 	case TLSMinDefault, TLSMin10, TLSMin11, TLSMin12:
 	default:
-		return fmt.Errorf("unsupported tlsMinVersion %q (want \"\", %q, %q or %q)",
-			p.TLSMinVersion, TLSMin10, TLSMin11, TLSMin12)
+		return fieldErr("tlsMinVersion", ValEnum, fmt.Sprintf("unsupported tlsMinVersion %q (want \"\", %q, %q or %q)",
+			p.TLSMinVersion, TLSMin10, TLSMin11, TLSMin12), p.TLSMinVersion)
 	}
 	switch p.ServerPreset {
 	case "":
 	case ServerPresetMSSQL2008:
 		if p.Encrypt == EncryptStrict {
-			return errors.New("encrypt \"strict\" (TDS 8.0) needs SQL Server 2022+, not the \"mssql2008\" preset")
+			return fieldErr("encrypt", ValPresetConflict, "encrypt \"strict\" (TDS 8.0) needs SQL Server 2022+, not the \"mssql2008\" preset", string(p.Encrypt), p.ServerPreset)
 		}
 	default:
-		return fmt.Errorf("unknown serverPreset %q (want \"\" or %q)", p.ServerPreset, ServerPresetMSSQL2008)
+		return fieldErr("serverPreset", ValEnum, fmt.Sprintf("unknown serverPreset %q (want \"\" or %q)", p.ServerPreset, ServerPresetMSSQL2008), p.ServerPreset)
 	}
 	if p.ConnectTimeoutSec < 0 || p.ConnectTimeoutSec > MaxTimeoutSec {
-		return fmt.Errorf("connectTimeoutSec must be in [0..%d], got %d", MaxTimeoutSec, p.ConnectTimeoutSec)
+		return fieldErr("connectTimeoutSec", ValRange, fmt.Sprintf("connectTimeoutSec must be in [0..%d], got %d", MaxTimeoutSec, p.ConnectTimeoutSec),
+			"0", itoa(MaxTimeoutSec), itoa(p.ConnectTimeoutSec))
 	}
 	if p.QueryTimeoutSec < 0 || p.QueryTimeoutSec > MaxTimeoutSec {
-		return fmt.Errorf("queryTimeoutSec must be in [0..%d], got %d", MaxTimeoutSec, p.QueryTimeoutSec)
+		return fieldErr("queryTimeoutSec", ValRange, fmt.Sprintf("queryTimeoutSec must be in [0..%d], got %d", MaxTimeoutSec, p.QueryTimeoutSec),
+			"0", itoa(MaxTimeoutSec), itoa(p.QueryTimeoutSec))
 	}
 	return nil
 }
@@ -196,22 +197,22 @@ func (m Mapping) Linked() bool { return strings.TrimSpace(m.TimesTable) != "" }
 // validateLinked checks the phase-2 mapping fields (linked mode, YearOffset).
 func (m Mapping) validateLinked() error {
 	if m.YearOffset != 0 && m.YearOffset != YearOffset1C {
-		return fmt.Errorf("mapping: yearOffset must be 0 or %d, got %d", YearOffset1C, m.YearOffset)
+		return fieldErr("yearOffset", ValEnum, fmt.Sprintf("mapping: yearOffset must be 0 or %d, got %d", YearOffset1C, m.YearOffset), itoa(m.YearOffset))
 	}
 	if !m.Linked() {
 		if strings.TrimSpace(m.TimesLinkColumn) != "" || strings.TrimSpace(m.TimesSchema) != "" {
-			return errors.New("mapping: timesLinkColumn/timesSchema require timesTable")
+			return fieldErr("timesTable", ValMapping, "mapping: timesLinkColumn/timesSchema require timesTable", "timesTable")
 		}
 		return nil
 	}
 	if strings.TrimSpace(m.Table) == "" {
-		return errors.New("mapping: timesTable requires the points table")
+		return fieldErr("table", ValMapping, "mapping: timesTable requires the points table", "table")
 	}
 	if strings.TrimSpace(m.PointKeyColumn) == "" {
-		return errors.New("mapping: pointKeyColumn is required in linked mode")
+		return fieldErr("pointKeyColumn", ValRequired, "mapping: pointKeyColumn is required in linked mode")
 	}
 	if strings.TrimSpace(m.TimesLinkColumn) == "" {
-		return errors.New("mapping: timesLinkColumn is required in linked mode")
+		return fieldErr("timesLinkColumn", ValRequired, "mapping: timesLinkColumn is required in linked mode")
 	}
 	return nil
 }

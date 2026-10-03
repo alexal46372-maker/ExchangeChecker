@@ -91,14 +91,14 @@ func (m Mapping) Validate() error {
 	switch m.Mode {
 	case MappingNone, MappingAuto, MappingManual, MappingCounters:
 	default:
-		return fmt.Errorf("mapping: unknown mode %q", string(m.Mode))
+		return fieldErr("mode", ValEnum, fmt.Sprintf("mapping: unknown mode %q", string(m.Mode)), string(m.Mode))
 	}
 	if strings.TrimSpace(m.Table) != "" {
 		if strings.TrimSpace(m.PointNameColumn) == "" && strings.TrimSpace(m.PointIDColumn) == "" {
-			return errors.New("mapping: point name/id column is required when table is set")
+			return fieldErr("pointNameColumn", ValRequired, "mapping: point name/id column is required when table is set")
 		}
 		if m.Mode != MappingCounters && strings.TrimSpace(m.LastSendColumn) == "" && strings.TrimSpace(m.LastRecvColumn) == "" {
-			return errors.New("mapping: at least one of last-send/last-recv columns is required")
+			return fieldErr("lastSendColumn", ValRequired, "mapping: at least one of last-send/last-recv columns is required")
 		}
 	}
 	if err := m.validateLinked(); err != nil {
@@ -111,7 +111,10 @@ func (m Mapping) Validate() error {
 		return err
 	}
 	if m.Mode == MappingManual && !m.Configured() {
-		return errors.New("mapping: manual mode requires a table mapping or manual SQL")
+		return fieldErr("manualSql", ValRequired, "mapping: manual mode requires a table mapping or manual SQL")
+	}
+	if len(m.ManualSQL) > MaxManualSQLBytes {
+		return fieldErr("manualSql", ValTooLong, fmt.Sprintf("mapping: manualSql longer than %d bytes", MaxManualSQLBytes), itoa(MaxManualSQLBytes))
 	}
 	return nil
 }
@@ -176,22 +179,23 @@ func (p Profile) EffectivePort() int {
 // Validate checks required fields of a single profile.
 func (p Profile) Validate() error {
 	if strings.TrimSpace(p.ID) == "" {
-		return errors.New("profile: id is required")
+		return fieldErr("id", ValRequired, "profile: id is required")
 	}
-	if strings.TrimSpace(p.Server) == "" {
-		return fmt.Errorf("profile %q: server is required", p.ID)
+	if fe := validateServer(p.Server); fe != nil {
+		return fmt.Errorf("profile %q: %w", p.ID, fe)
 	}
 	if p.Port < 0 || p.Port > 65535 {
-		return fmt.Errorf("profile %q: port %d out of range", p.ID, p.Port)
+		return fmt.Errorf("profile %q: %w", p.ID, fieldErr("port", ValRange, fmt.Sprintf("port %d out of range", p.Port), "0", "65535", itoa(p.Port)))
 	}
 	if strings.TrimSpace(p.Database) == "" {
-		return fmt.Errorf("profile %q: database is required", p.ID)
+		return fmt.Errorf("profile %q: %w", p.ID, fieldErr("database", ValRequired, "database is required"))
 	}
 	if !p.AuthMode.Valid() {
-		return fmt.Errorf("profile %q: unknown auth mode %q (want %q or %q)", p.ID, string(p.AuthMode), AuthSQL, AuthWindows)
+		return fmt.Errorf("profile %q: %w", p.ID, fieldErr("authMode", ValEnum,
+			fmt.Sprintf("unknown auth mode %q (want %q or %q)", string(p.AuthMode), AuthSQL, AuthWindows), string(p.AuthMode)))
 	}
 	if p.AuthMode == AuthSQL && strings.TrimSpace(p.Login) == "" {
-		return fmt.Errorf("profile %q: login is required for SQL authentication", p.ID)
+		return fmt.Errorf("profile %q: %w", p.ID, fieldErr("login", ValRequired, "login is required for SQL authentication"))
 	}
 	if err := p.validateConn(); err != nil {
 		return fmt.Errorf("profile %q: %w", p.ID, err)
@@ -200,7 +204,7 @@ func (p Profile) Validate() error {
 		return fmt.Errorf("profile %q: %w", p.ID, err)
 	}
 	if err := p.Mapping.Validate(); err != nil {
-		return fmt.Errorf("profile %q: %w", p.ID, err)
+		return fmt.Errorf("profile %q: %w", p.ID, withFieldPrefix(err, "mapping."))
 	}
 	if err := p.validateMappings(); err != nil {
 		return fmt.Errorf("profile %q: %w", p.ID, err)
@@ -218,7 +222,7 @@ func ValidateProfiles(ps []Profile) error {
 			continue
 		}
 		if seen[p.ID] {
-			errs = append(errs, fmt.Errorf("profile %q: duplicate id", p.ID))
+			errs = append(errs, fmt.Errorf("profile %q: %w", p.ID, fieldErr("id", ValDuplicate, "duplicate id")))
 		}
 		seen[p.ID] = true
 	}

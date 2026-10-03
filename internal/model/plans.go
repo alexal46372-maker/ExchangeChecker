@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -78,17 +77,18 @@ func (m Mapping) PlanNo() int { return PlanNoOf(m.Table) }
 func (m Mapping) validateComposite() error {
 	if !m.Composite() {
 		if m.TimesLinkRTRef != 0 {
-			return errors.New("mapping: timesLinkRTRef requires timesLinkTypeColumn and timesLinkRTRefColumn")
+			return fieldErr("timesLinkRTRef", ValMapping, "mapping: timesLinkRTRef requires timesLinkTypeColumn and timesLinkRTRefColumn", "timesLinkRTRef")
 		}
 		return nil
 	}
 	switch {
 	case !m.Linked():
-		return errors.New("mapping: a composite link requires timesTable")
+		return fieldErr("timesTable", ValMapping, "mapping: a composite link requires timesTable", "timesTable")
 	case strings.TrimSpace(m.TimesLinkTypeColumn) == "" || strings.TrimSpace(m.TimesLinkRTRefColumn) == "":
-		return errors.New("mapping: a composite link needs both timesLinkTypeColumn (_TYPE) and timesLinkRTRefColumn (_RTRef)")
+		return fieldErr("timesLinkRTRefColumn", ValRequired, "mapping: a composite link needs both timesLinkTypeColumn (_TYPE) and timesLinkRTRefColumn (_RTRef)")
 	case m.TimesLinkRTRef <= 0 || m.TimesLinkRTRef > MaxRTRef:
-		return fmt.Errorf("mapping: timesLinkRTRef must be the referenced table number (1..%d), got %d", MaxRTRef, m.TimesLinkRTRef)
+		return fieldErr("timesLinkRTRef", ValRange, fmt.Sprintf("mapping: timesLinkRTRef must be the referenced table number (1..%d), got %d", MaxRTRef, m.TimesLinkRTRef),
+			"1", itoa(MaxRTRef), itoa(m.TimesLinkRTRef))
 	}
 	return nil
 }
@@ -108,14 +108,18 @@ func (p Profile) validateMappings() error {
 		return nil
 	}
 	if !p.Mapping.Configured() {
-		return errors.New("mappings: additional mappings require a configured primary mapping")
+		return fieldErr("mapping.table", ValRequired, "mappings: additional mappings require a configured primary mapping")
+	}
+	if len(p.Mappings)+1 > MaxMappings {
+		return fieldErr("mappings", ValTooMany, fmt.Sprintf("mappings: more than %d mappings", MaxMappings), itoa(MaxMappings))
 	}
 	for i, m := range p.Mappings {
+		pre := fmt.Sprintf("mappings[%d].", i)
 		if !m.Configured() {
-			return fmt.Errorf("mappings[%d]: not configured (table or manual SQL required)", i)
+			return fieldErr(pre+"table", ValRequired, fmt.Sprintf("mappings[%d]: not configured (table or manual SQL required)", i))
 		}
 		if err := m.Validate(); err != nil {
-			return fmt.Errorf("mappings[%d]: %w", i, err)
+			return fmt.Errorf("mappings[%d]: %w", i, withFieldPrefix(err, pre))
 		}
 	}
 	return nil

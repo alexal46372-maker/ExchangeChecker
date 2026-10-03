@@ -158,6 +158,10 @@ func runService(ctx context.Context, ac appConfig) error {
 	})
 	srv = ipc.NewServer(mon, log)
 	srv.Authorize = ac.Authorize
+	// first configuration load before the pipe accepts clients: a tray
+	// connecting at service start never sees a snapshot without settings /
+	// configRevision / profiles (windows CI 37123714167)
+	mon.LoadConfig()
 
 	l := ac.Listener
 	if l == nil {

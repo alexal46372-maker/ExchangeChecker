@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/alert"
@@ -255,10 +256,13 @@ func (g genCounters) Update(id string, fn func(model.CounterState) (model.Counte
 
 // Monitor polls all profiles and keeps the status snapshot.
 type Monitor struct {
-	opt     Options
-	tracker *alert.Tracker
-	pollNow chan struct{}
-	reload  chan struct{}
+	// initLoaded: the first configuration load is done (LoadConfig before
+	// the IPC server starts, or Run).
+	initLoaded int32
+	opt        Options
+	tracker    *alert.Tracker
+	pollNow    chan struct{}
+	reload     chan struct{}
 
 	mu       sync.Mutex
 	cfg      Config
@@ -584,10 +588,24 @@ func (m *Monitor) interval() time.Duration {
 	return d
 }
 
+// LoadConfig performs the first configuration load synchronously (phase 6,
+// windows CI 37123714167): the service calls it before the IPC server
+// accepts clients, so the very first get_status already carries the
+// settings, configRevision and profiles instead of an empty, not yet
+// loaded snapshot. Run then skips its own initial load. Safe to call once;
+// later calls are no-ops.
+func (m *Monitor) LoadConfig() {
+	if atomic.CompareAndSwapInt32(&m.initLoaded, 0, 1) {
+		m.reloadConfig(true)
+	}
+}
+
 // Run polls until ctx is canceled, then closes every reader. It returns
 // nil on a normal stop.
 func (m *Monitor) Run(ctx context.Context) error {
-	m.reloadConfig(true)
+	if atomic.CompareAndSwapInt32(&m.initLoaded, 0, 1) {
+		m.reloadConfig(true)
+	}
 	tick := time.NewTicker(m.opt.ConfigCheck)
 	defer tick.Stop()
 	defer m.closeAll()

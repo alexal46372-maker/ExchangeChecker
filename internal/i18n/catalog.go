@@ -44,6 +44,23 @@ const (
 	KeyAboutText      = "about.text"
 	KeyAboutOK        = "about.ok"
 
+	// alert window (phase 6b, CHK-TRAY-03)
+	KeyAlertTitleError     = "alert.title_error"
+	KeyAlertTitleWarning   = "alert.title_warning"
+	KeyAlertHeadError      = "alert.head_error"
+	KeyAlertHeadWarning    = "alert.head_warning"
+	KeyAlertPoint          = "alert.point"
+	KeyAlertPointNever     = "alert.point_never"
+	KeyAlertProfile        = "alert.profile"
+	KeyAlertMore           = "alert.more"
+	KeyAlertAck            = "alert.ack"
+	KeyAlertClose          = "alert.close"
+	KeyAlertAckPending     = "alert.ack_pending"
+	KeyAlertAckGone        = "alert.ack_gone"
+	KeyAlertAckUnsupported = "alert.ack_unsupported"
+	KeyAlertAckFailed      = "alert.ack_failed"
+	KeyAlertCloseHint      = "alert.close_hint"
+
 	KeyUnknownMessage = "msg.unknown"
 )
 
@@ -88,6 +105,22 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAboutNoService: {"Служба: не подключена", "Service: not connected"},
 	KeyAboutText:      {"Контроль обменов 1С 8.1 в базах Microsoft SQL Server.", "Monitoring of 1C 8.1 exchanges in Microsoft SQL Server databases."},
 	KeyAboutOK:        {"OK", "OK"},
+
+	KeyAlertTitleError:     {"Exchange Checker — ошибка обмена", "Exchange Checker — exchange error"},
+	KeyAlertTitleWarning:   {"Exchange Checker — предупреждение", "Exchange Checker — warning"},
+	KeyAlertHeadError:      {"Обмен данными остановлен или база недоступна:", "Data exchange has stopped or a database is unavailable:"},
+	KeyAlertHeadWarning:    {"Обмен данными задерживается:", "Data exchange is delayed:"},
+	KeyAlertPoint:          {"%s — %s: %s, нет обмена %d мин", "%s — %s: %s, no exchange for %d min"},
+	KeyAlertPointNever:     {"%s — %s: %s, обмена ещё не было", "%s — %s: %s, no exchange yet"},
+	KeyAlertProfile:        {"%s: %s — %s", "%s: %s — %s"},
+	KeyAlertMore:           {"…и ещё %d", "…and %d more"},
+	KeyAlertAck:            {"Подтвердить", "Acknowledge"},
+	KeyAlertClose:          {"Закрыть", "Close"},
+	KeyAlertAckPending:     {"Подтверждение…", "Acknowledging…"},
+	KeyAlertAckGone:        {"Тревога уже снята или подтверждена.", "The alarm has already cleared or been acknowledged."},
+	KeyAlertAckUnsupported: {"Эта версия службы не поддерживает подтверждение тревог.", "This service version cannot acknowledge alarms."},
+	KeyAlertAckFailed:      {"Не удалось подтвердить: %s", "Could not acknowledge: %s"},
+	KeyAlertCloseHint:      {"«Закрыть» выключает звук до следующего изменения; «Подтвердить» снимает тревогу.", "Close mutes the sound until the next change; Acknowledge clears the alarm."},
 
 	KeyUnknownMessage: {"Ошибка", "Error"},
 }

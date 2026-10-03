@@ -297,6 +297,20 @@ func (s *Session) Call(ctx context.Context, cmd string) (model.IPCMessage, error
 	return s.Do(ctx, model.IPCRequest{Cmd: cmd})
 }
 
+// Refresh re-reads the status (get_status) and publishes it, e.g. after
+// ack_alert changed the alerts (phase 6b).
+func (s *Session) Refresh(ctx context.Context) error {
+	m, err := s.Call(ctx, model.CmdGetStatus)
+	if err != nil {
+		return err
+	}
+	if m.Type != model.MsgStatus || m.Status == nil {
+		return errors.New("trayipc: bad get_status reply: " + m.Type)
+	}
+	s.applySnapshot(*m.Status, true)
+	return nil
+}
+
 // Run connects and keeps the session alive until ctx is done.
 func (s *Session) Run(ctx context.Context) {
 	done := make(chan struct{})

@@ -552,7 +552,8 @@ Wizard Win32 (страницы):
 
 - `cmd/exchtray` + `internal/wintray`: меню, настройки, статус, модалки, Beep; подфазы 6a–6e (п. 46–56 §12)
 - **6a ✅** — клиент `internal/trayipc` (heartbeat, переподключение, рестарт службы, v1/`unknown_command`, проверка PID G7), значок и меню (`internal/trayui` + `internal/wintray`), RU/EN (`internal/i18n`), «О программе», ресурсы exe (`.ico` + манифест + `.syso`), политика сборки трея; «Настройки» в меню неактивен до 6c
-- 6b — тревоги и звук; 6c — настройки баз (после G5 в службе); 6d — Discovery UI (после G2+G3); 6e — общие настройки
+- **6b ✅** — тревоги и звук (`CHK-TRAY-03`): окно тревоги поверх всех, бесконечный `Beep` по `settings.beep`, «Закрыть» глушит до следующего изменения, «Подтвердить» → `ack_alert`; логика — `internal/trayalert`
+- 6c — настройки баз (после G5 в службе); 6d — Discovery UI (после G2+G3); 6e — общие настройки
 - checks: `CHK-IPC-01`, `CHK-TRAY-01` … `CHK-TRAY-10`
 
 ### Фаза 6 — служба (G5/G6 для трея; EC Service) ✅

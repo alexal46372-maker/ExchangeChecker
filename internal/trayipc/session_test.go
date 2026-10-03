@@ -426,3 +426,29 @@ func TestCHK_IPC_01_BadFrameReconnects(t *testing.T) {
 	})
 	clk.fire(t, DefaultBackoffMin) // and it retries
 }
+
+// TestCHK_TRAY_03_SessionRefresh — Refresh re-reads get_status and
+// publishes it (after ack_alert), even when the sequence did not grow.
+func TestCHK_TRAY_03_SessionRefresh(t *testing.T) {
+	h := &fakeHandler{snap: model.StatusSnapshot{Seq: 4}, hb: model.Heartbeat{Protocol: 2}}
+	l := ipc.NewMemListener()
+	srv := ipc.NewServer(h, nil)
+	go srv.Serve(l)
+	defer srv.Close()
+	clk := newFakeClock()
+	s := New(testOptions(clk, func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }))
+	if err := s.Refresh(context.Background()); err != ErrNotConnected {
+		t.Fatalf("refresh before connect: %v", err)
+	}
+	runSession(t, s)
+	waitFor(t, "connected", connected(s))
+	h.mu.Lock()
+	h.snap = model.StatusSnapshot{Seq: 4, Alerts: []model.AlertEvent{{ProfileID: "a", To: model.LevelError, Acknowledged: true}}}
+	h.mu.Unlock()
+	if err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st := s.Status(); st.Snapshot == nil || len(st.Snapshot.Alerts) != 1 || !st.Snapshot.Alerts[0].Acknowledged {
+		t.Fatalf("refreshed snapshot %+v", st.Snapshot)
+	}
+}

@@ -285,18 +285,18 @@ func TestCHK_IPC_01_UnknownCommandDisablesFeature(t *testing.T) {
 	s := New(testOptions(clk, dial))
 	runSession(t, s)
 	waitFor(t, "connected", connected(s))
-	if !s.Supported("save_profile") {
+	if !s.Supported("future_command") {
 		t.Fatal("unknown future command is tried on v2")
 	}
-	if _, err := s.Call(context.Background(), "save_profile"); !errors.Is(err, ErrUnsupported) {
+	if _, err := s.Call(context.Background(), "future_command"); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("first call: %v", err)
 	}
-	if _, err := s.Call(context.Background(), "save_profile"); !errors.Is(err, ErrUnsupported) {
+	if _, err := s.Call(context.Background(), "future_command"); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("second call: %v", err)
 	}
 	n := 0
 	for _, c := range ms.got() {
-		if c == "save_profile" {
+		if c == "future_command" {
 			n++
 		}
 	}
@@ -450,5 +450,34 @@ func TestCHK_TRAY_03_SessionRefresh(t *testing.T) {
 	}
 	if st := s.Status(); st.Snapshot == nil || len(st.Snapshot.Alerts) != 1 || !st.Snapshot.Alerts[0].Acknowledged {
 		t.Fatalf("refreshed snapshot %+v", st.Snapshot)
+	}
+}
+
+// TestCHK_TRAY_06_ConfigCapabilitiesAndElevation — phase 6 commands need
+// their capabilities (config_read / config_write / cancel);
+// clientElevated of get_status / ping replies is kept per connection.
+func TestCHK_TRAY_06_ConfigCapabilitiesAndElevation(t *testing.T) {
+	yes := true
+	ms := &manualServer{}
+	dial := ms.dialer(model.IPCMessage{Type: model.MsgHello, Version: 2, Capabilities: []string{model.CapTestProfile, model.CapConfigRead},
+		Heartbeat: &model.Heartbeat{Protocol: 2}}, func(r model.IPCRequest) *model.IPCMessage {
+		if r.Cmd == model.CmdGetStatus {
+			return &model.IPCMessage{Type: model.MsgStatus, Status: &model.StatusSnapshot{}, ClientElevated: &yes}
+		}
+		return &model.IPCMessage{Type: model.MsgOK}
+	})
+	clk := newFakeClock()
+	s := New(testOptions(clk, dial))
+	runSession(t, s)
+	waitFor(t, "connected", connected(s))
+	if !s.Supported(model.CmdGetConfig) || s.Supported(model.CmdSaveProfile) || s.Supported(model.CmdCancel) {
+		t.Errorf("capabilities: get_config %v save_profile %v cancel %v",
+			s.Supported(model.CmdGetConfig), s.Supported(model.CmdSaveProfile), s.Supported(model.CmdCancel))
+	}
+	if _, err := s.Do(context.Background(), model.IPCRequest{Cmd: model.CmdSaveProfile}); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("save_profile without config_write: %v", err)
+	}
+	if !s.Status().Elevated() {
+		t.Error("clientElevated from get_status")
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
@@ -37,6 +38,13 @@ type Options struct {
 	// HiddenAlerts keeps the alert window hidden (tests); its state is
 	// still maintained.
 	HiddenAlerts bool
+	// Elevator starts `exchtray --settings` elevated; nil =
+	// ShellExecuteW "runas" (tests: a fake).
+	Elevator Elevator
+	// HiddenSettings keeps the settings window hidden (tests).
+	HiddenSettings bool
+	// ConfirmDelete asks before delete_profile; nil = MessageBoxW (tests).
+	ConfirmDelete func(owner uintptr, text, caption string) bool
 }
 
 // ackTimeout bounds one ack_alert request.
@@ -74,6 +82,7 @@ type App struct {
 	nidV4          bool
 	taskbarCreated uint32
 	about          uintptr
+	settings       *settingsWindow
 }
 
 // NewApp creates the hidden owner window, the tray icon and starts the
@@ -225,6 +234,9 @@ func (a *App) Loop() int {
 		if r == 0 || r == -1 {
 			break
 		}
+		if w := a.settings; w != nil && winapi.IsWindow(w.hwnd) && winapi.IsDialogMessage(w.hwnd, &m) {
+			continue
+		}
 		winapi.TranslateMessage(&m)
 		winapi.DispatchMessage(&m)
 	}
@@ -249,6 +261,9 @@ func (a *App) Exit() {
 	}
 	if a.about != 0 {
 		winapi.DestroyWindow(a.about)
+	}
+	if a.settings != nil {
+		a.settings.close() // cancels a running test
 	}
 	winapi.DestroyWindow(a.hwnd) // WM_DESTROY -> PostQuitMessage
 	a.icons.free()
@@ -331,11 +346,50 @@ func (a *App) ShowRightMenu() { a.Command(trackMenu(a.hwnd, a.RightMenu(), &a.sq
 // Command executes a menu command.
 func (a *App) Command(cmd int) {
 	switch cmd {
+	case trayui.CmdSettings:
+		a.OpenSettings()
 	case trayui.CmdAbout:
 		a.ShowAbout(true)
 	case trayui.CmdExit:
 		a.Exit()
 	}
+}
+
+// OpenSettings opens (or focuses) the settings window and returns its
+// handle: the administrator mode in this process when the service reports
+// it elevated (clientElevated) and accepts config writes, otherwise the
+// read-only mode from the last get_status, with «Изменить
+// (администратор)» starting `exchtray --settings` elevated.
+func (a *App) OpenSettings() uintptr {
+	if w := a.settings; w != nil && winapi.IsWindow(w.hwnd) {
+		if !a.opt.HiddenSettings {
+			winapi.ShowWindow(w.hwnd, winapi.SW_SHOWNORMAL)
+			winapi.SetForegroundWindow(w.hwnd)
+		}
+		return w.hwnd
+	}
+	mode := traysettings.ReadOnly
+	if a.status.Elevated() && a.session.Supported(model.CmdSaveProfile) && a.session.Supported(model.CmdGetConfig) {
+		mode = traysettings.Admin
+	}
+	var w *settingsWindow
+	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
+		confirm: a.opt.ConfirmDelete, hidden: a.opt.HiddenSettings,
+		onClose: func() {
+			if a.settings == w {
+				a.settings = nil
+			}
+		}})
+	if err != nil {
+		return 0
+	}
+	a.settings = w
+	if mode == traysettings.Admin {
+		w.Reload()
+	} else {
+		w.loadSnapshot(a.status.Snapshot)
+	}
+	return w.hwnd
 }
 
 // ShowAbout opens (or focuses) the About window; returns its handle.

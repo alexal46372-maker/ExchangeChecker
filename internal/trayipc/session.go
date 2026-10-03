@@ -83,7 +83,15 @@ type Status struct {
 	Snapshot *model.StatusSnapshot
 	// EverConnected: at least one hello was received.
 	EverConnected bool
+	// ClientElevated from the last get_status / ping reply of this
+	// connection (phase 6, display only; nil = not reported): this
+	// process runs as an elevated administrator. Admin commands are
+	// re-checked by the service every time.
+	ClientElevated *bool
 }
+
+// Elevated reports ClientElevated == true.
+func (s Status) Elevated() bool { return s.ClientElevated != nil && *s.ClientElevated }
 
 // Has reports whether the service announced capability c.
 func (s Status) Has(c string) bool {
@@ -208,7 +216,19 @@ func (s *Session) copyLocked() Status {
 		hb := *s.st.Heartbeat
 		st.Heartbeat = &hb
 	}
+	if s.st.ClientElevated != nil {
+		v := *s.st.ClientElevated
+		st.ClientElevated = &v
+	}
 	return st
+}
+
+// setElevatedLocked stores clientElevated of a get_status / ping reply.
+func (s *Session) setElevatedLocked(v *bool) {
+	if v != nil {
+		b := *v
+		s.st.ClientElevated = &b
+	}
 }
 
 // commandCapability maps version-2 commands to the capability that the
@@ -216,6 +236,12 @@ func (s *Session) copyLocked() Status {
 var commandCapability = map[string]string{
 	model.CmdTestProfile: model.CapTestProfile,
 	model.CmdAckAlert:    model.CapAckAlert,
+	// phase 6 (G5 / G6)
+	model.CmdGetConfig:     model.CapConfigRead,
+	model.CmdSaveProfile:   model.CapConfigWrite,
+	model.CmdDeleteProfile: model.CapConfigWrite,
+	model.CmdSaveSettings:  model.CapConfigWrite,
+	model.CmdCancel:        model.CapCancel,
 }
 
 var v1Commands = map[string]bool{
@@ -307,8 +333,46 @@ func (s *Session) Refresh(ctx context.Context) error {
 	if m.Type != model.MsgStatus || m.Status == nil {
 		return errors.New("trayipc: bad get_status reply: " + m.Type)
 	}
+	s.mu.Lock()
+	s.setElevatedLocked(m.ClientElevated)
+	s.mu.Unlock()
 	s.applySnapshot(*m.Status, true)
 	return nil
+}
+
+// DoCancel is Do for an asynchronous command (test_profile): when ctx
+// ends before the reply, the client sends cancel {ref} to the service
+// (G6, only if the service announced the cancel capability). Request IDs
+// are never reused (ipc.Client numbers them).
+func (s *Session) DoCancel(ctx context.Context, req model.IPCRequest) (model.IPCMessage, error) {
+	s.mu.Lock()
+	c := s.client
+	if c == nil || s.st.State != StateConnected {
+		s.mu.Unlock()
+		return model.IPCMessage{}, ErrNotConnected
+	}
+	if !s.supportedLocked(req.Cmd) {
+		s.mu.Unlock()
+		return model.IPCMessage{}, ErrUnsupported
+	}
+	cancel := s.supportedLocked(model.CmdCancel)
+	s.mu.Unlock()
+	var m model.IPCMessage
+	var err error
+	if cancel {
+		m, err = c.DoCancel(ctx, req)
+	} else {
+		m, err = c.Do(ctx, req)
+	}
+	if err == nil && IsUnknownCommand(m) {
+		s.mu.Lock()
+		if s.client == c {
+			s.disabled[req.Cmd] = true
+		}
+		s.mu.Unlock()
+		return m, ErrUnsupported
+	}
+	return m, err
 }
 
 // Run connects and keeps the session alive until ctx is done.
@@ -443,6 +507,7 @@ func (s *Session) onHello(c *ipc.Client, h model.IPCMessage) {
 	}
 	s.st.Version = ver
 	s.st.Capabilities = append([]string(nil), h.Capabilities...)
+	s.st.ClientElevated = nil // per connection, from get_status / ping
 	s.disabled = map[string]bool{}
 	if h.Heartbeat != nil {
 		hb := *h.Heartbeat
@@ -497,6 +562,9 @@ func (s *Session) refreshStatus(ctx context.Context, c *ipc.Client) bool {
 		}
 		return false
 	}
+	s.mu.Lock()
+	s.setElevatedLocked(m.ClientElevated)
+	s.mu.Unlock()
 	s.applySnapshot(*m.Status, true)
 	return true
 }
@@ -512,10 +580,13 @@ func (s *Session) ping(ctx context.Context, c *ipc.Client) bool {
 		}
 		return false
 	}
-	if m.Heartbeat != nil {
+	if m.Heartbeat != nil || m.ClientElevated != nil {
 		s.mu.Lock()
-		hb := *m.Heartbeat
-		s.st.Heartbeat = &hb
+		if m.Heartbeat != nil {
+			hb := *m.Heartbeat
+			s.st.Heartbeat = &hb
+		}
+		s.setElevatedLocked(m.ClientElevated)
 		st := s.copyLocked()
 		s.mu.Unlock()
 		s.emit(Event{Kind: EventState, Status: st})

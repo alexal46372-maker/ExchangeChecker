@@ -172,16 +172,16 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_01_RightClickItems — Settings (disabled until 6c, explicit
-// label), About, Exit.
+// TestCHK_TRAY_01_RightClickItems — Settings (enabled since 6c), About,
+// Exit.
 func TestCHK_TRAY_01_RightClickItems(t *testing.T) {
 	for _, lang := range []string{i18n.RU, i18n.EN} {
 		it := BuildRightMenu(lang)
-		if len(it) != 4 || it[0].ID != CmdSettings || !it[0].Disabled || it[1].ID != CmdAbout || it[1].Disabled ||
+		if len(it) != 4 || it[0].ID != CmdSettings || it[0].Disabled || it[1].ID != CmdAbout || it[1].Disabled ||
 			!it[2].Separator || it[3].ID != CmdExit {
 			t.Fatalf("%s: %+v", lang, it)
 		}
-		if it[0].Text != i18n.T(i18n.KeyMenuSettingsDisabled, lang) {
+		if it[0].Text != i18n.T(i18n.KeyMenuSettings, lang) {
 			t.Error("settings label")
 		}
 	}

@@ -174,11 +174,11 @@ func PointText(p model.PointStatus, lang string) string {
 	return s
 }
 
-// BuildRightMenu is the right-click menu. Settings is shown disabled with
-// an explicit label until phase 6c implements it (no stub window).
+// BuildRightMenu is the right-click menu: Settings (phase 6c: read-only
+// window, «Изменить (администратор)» elevates), About, Exit.
 func BuildRightMenu(lang string) []Item {
 	return []Item{
-		{ID: CmdSettings, Text: i18n.T(i18n.KeyMenuSettingsDisabled, lang), Disabled: true},
+		{ID: CmdSettings, Text: i18n.T(i18n.KeyMenuSettings, lang)},
 		{ID: CmdAbout, Text: i18n.T(i18n.KeyMenuAbout, lang)},
 		{Separator: true},
 		{ID: CmdExit, Text: i18n.T(i18n.KeyMenuExit, lang)},

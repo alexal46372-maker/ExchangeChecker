@@ -136,7 +136,7 @@ func TestCHK_TRAY_01_NativeMenu(t *testing.T) {
 	}
 	defer winapi.DestroyMenu(rm)
 	text, mii := menuItem(t, rm, 0)
-	if mii.ID != trayui.CmdSettings || mii.State&winapi.MFS_DISABLED == 0 || !strings.Contains(text, "Настройки") {
+	if mii.ID != trayui.CmdSettings || mii.State&winapi.MFS_DISABLED != 0 || !strings.Contains(text, "Настройки") {
 		t.Errorf("settings item %q state %x", text, mii.State)
 	}
 	if _, mii := menuItem(t, rm, 1); mii.ID != trayui.CmdAbout || mii.State&winapi.MFS_DISABLED != 0 {

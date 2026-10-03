@@ -27,6 +27,17 @@ func main() {
 }
 
 func run() int {
+	session := trayipc.Options{
+		Dial:   trayipc.PipeDialer(model.PipeName, pipeDialTimeout),
+		Verify: trayipc.ServiceVerifier(model.ServiceName), // G7 before any command
+	}
+	for _, a := range os.Args[1:] {
+		if a == wintray.SettingsArg {
+			// elevated settings window (ShellExecuteW "runas" from the
+			// read-only window): own process, own connection
+			return wintray.RunSettings(wintray.SettingsOptions{Lang: i18n.Default(), Session: session})
+		}
+	}
 	release, ok, err := wintray.SingleInstance(wintray.MutexName)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "exchtray:", err)
@@ -38,11 +49,8 @@ func run() int {
 	defer release()
 
 	app, err := wintray.NewApp(wintray.Options{
-		Lang: i18n.Default(),
-		Session: trayipc.Options{
-			Dial:   trayipc.PipeDialer(model.PipeName, pipeDialTimeout),
-			Verify: trayipc.ServiceVerifier(model.ServiceName),
-		},
+		Lang:    i18n.Default(),
+		Session: session,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "exchtray:", err)

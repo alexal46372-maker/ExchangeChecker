@@ -112,6 +112,9 @@ type IPCError struct {
 	Message string
 	// Args are copied into IPCMessage.ErrorArgs (phase 6).
 	Args []string
+	// ProfileID is copied into IPCMessage.ProfileID: the OTHER profile
+	// whose invalid entry in profiles.json refused the write (phase 6).
+	ProfileID string
 }
 
 func (e *IPCError) Error() string { return e.Message }
@@ -224,7 +227,10 @@ type IPCMessage struct {
 	// re-check it every time.
 	ClientElevated *bool `json:"clientElevated,omitempty"`
 	// ProfileID / Profile of save_profile / delete_profile replies
-	// (Profile with HasPassword, never a password).
+	// (Profile with HasPassword, never a password). In an error reply
+	// (invalid_request + monitor.profile_invalid) ProfileID names ANOTHER
+	// profile in profiles.json whose invalid entry refused the write
+	// (errorArgs[0] is then that profile's field).
 	ProfileID string   `json:"profileId,omitempty"`
 	Profile   *Profile `json:"profile,omitempty"`
 	// Reloaded: the configuration was re-read synchronously.

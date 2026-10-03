@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -113,5 +115,70 @@ func TestCHK_IPC_06_ServiceRevisionRequired(t *testing.T) {
 	}
 	if r, err := s.c.SaveProfile(ctx, p, "", false, cfg.Revision); err != nil || r.Type != model.MsgOK {
 		t.Fatalf("save_profile with revision: %+v %v", r, err)
+	}
+}
+
+// TestCHK_IPC_06_ServiceBeepAndOtherProfileID — over IPC through the
+// service: get_status.settings and get_config carry beep.enabled (true by
+// default), save_settings with false is applied and returned; a
+// save_profile / delete_profile refused because of ANOTHER invalid profile
+// in profiles.json (edited by hand) carries "profileId" of that profile,
+// errorArgs[0] its field.
+func TestCHK_IPC_06_ServiceBeepAndOtherProfileID(t *testing.T) {
+	dir := t.TempDir()
+	s := startSvcWith(t, dir, 40, nil, &fakeEvents{}, func(ac *appConfig) {
+		ac.Authorize = func(io.ReadWriteCloser) (ipc.Peer, error) { return ipc.Peer{Admin: true, Account: `TEST\admin`}, nil }
+	})
+	defer s.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	st, err := s.c.Call(ctx, model.CmdGetStatus)
+	if err != nil || st.Status.Settings == nil || st.Status.Settings.Beep.Enabled != model.OptTrue {
+		t.Fatalf("get_status: %+v %v", st.Status, err)
+	}
+	if b, _ := json.Marshal(st.Status.Settings); !strings.Contains(string(b), `"enabled":true`) {
+		t.Fatalf("get_status settings JSON: %s", b)
+	}
+	cfg, err := s.c.GetConfig(ctx)
+	if err != nil || cfg.Config == nil || cfg.Config.Settings.Beep.Enabled != model.OptTrue {
+		t.Fatalf("get_config: %+v %v", cfg, err)
+	}
+	off := model.DefaultSettings()
+	off.Beep.Enabled = model.OptFalse
+	if r, err := s.c.SaveSettings(ctx, off, cfg.Revision); err != nil || r.Type != model.MsgOK {
+		t.Fatalf("save_settings false: %+v %v", r, err)
+	}
+	cfg, _ = s.c.GetConfig(ctx)
+	if cfg.Config.Settings.Beep.Enabled != model.OptFalse {
+		t.Fatalf("get_config after false: %v", cfg.Config.Settings.Beep.Enabled)
+	}
+	if b, _ := json.Marshal(cfg.Config.Settings); !strings.Contains(string(b), `"enabled":false`) {
+		t.Fatalf("get_config settings JSON: %s", b)
+	}
+	// another invalid profile, written by hand
+	good := model.NewProfile("a")
+	good.Name, good.Server, good.Database, good.AuthMode = "A", "srv", "db", model.AuthWindows
+	good.Mapping = model.Mapping{Table: "_Node1", PointNameColumn: "_Description", LastSendColumn: "s"}
+	bad := good
+	bad.ID, bad.Server = "bad", `host\`
+	raw, _ := json.Marshal(map[string]interface{}{"version": config.SchemaVersion, "profiles": []model.Profile{good, bad}})
+	if err := os.WriteFile(filepath.Join(dir, config.ProfilesFile), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = s.c.GetConfig(ctx)
+	newer := good
+	newer.ID = "c"
+	for what, call := range map[string]func() (model.IPCMessage, error){
+		"save_profile":   func() (model.IPCMessage, error) { return s.c.SaveProfile(ctx, newer, "", false, cfg.Revision) },
+		"delete_profile": func() (model.IPCMessage, error) { return s.c.DeleteProfile(ctx, "a", cfg.Revision) },
+	} {
+		m, err := call()
+		if err != nil || m.Type != model.MsgError || m.Code != model.ErrCodeInvalidRequest || m.ErrorKey != model.MsgMonitorProfileInvalid ||
+			m.ProfileID != "bad" || len(m.ErrorArgs) < 2 || m.ErrorArgs[0] != "server" || m.Error != bad.Validate().Error() {
+			t.Errorf("%s: %+v %v", what, m, err)
+		}
+		if b, _ := json.Marshal(m); !strings.Contains(string(b), `"profileId":"bad"`) {
+			t.Errorf("%s JSON: %s", what, b)
+		}
 	}
 }

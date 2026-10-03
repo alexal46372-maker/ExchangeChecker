@@ -127,6 +127,9 @@ func ParseSettings(raw []byte) (model.Settings, error) {
 	if err := checkVersion(SettingsFile, doc.Version); err != nil {
 		return model.DefaultSettings(), err
 	}
+	// beep.enabled: missing -> the default (true) prefilled above; an
+	// explicit null -> true as well; false stays false
+	doc.Settings = doc.Settings.Normalized()
 	if err := doc.Settings.Validate(); err != nil {
 		return doc.Settings, fmt.Errorf("config: %s: %w", SettingsFile, err)
 	}

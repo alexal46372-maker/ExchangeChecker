@@ -1142,7 +1142,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		LastPollAt: m.lastPoll, ConfigRevision: m.revision,
 	}
 	if m.loaded {
-		st := cfg.Settings
+		st := cfg.Settings.Normalized() // beep.enabled always explicit
 		snap.Settings = &st
 	}
 	m.heartbeatLocked(now).apply(&snap)

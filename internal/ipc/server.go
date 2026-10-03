@@ -261,7 +261,7 @@ func errorReply(id uint64, err error, code string) model.IPCMessage {
 	m := model.IPCMessage{ID: id, Type: model.MsgError, Error: err.Error(), Code: code}
 	var ie *model.IPCError
 	if errors.As(err, &ie) {
-		m.Code, m.ErrorKey, m.ErrorArgs = ie.Code, ie.Key, ie.Args
+		m.Code, m.ErrorKey, m.ErrorArgs, m.ProfileID = ie.Code, ie.Key, ie.Args, ie.ProfileID
 	}
 	if m.Code == "" {
 		m.Code = model.ErrCodeInvalidRequest

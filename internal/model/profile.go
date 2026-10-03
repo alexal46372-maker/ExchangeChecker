@@ -218,11 +218,16 @@ func ValidateProfiles(ps []Profile) error {
 	var errs []error
 	for _, p := range ps {
 		if err := p.Validate(); err != nil {
+			if fe := AsFieldError(err); fe != nil {
+				fe.ProfileID = p.ID // fresh per Validate call
+			}
 			errs = append(errs, err)
 			continue
 		}
 		if seen[p.ID] {
-			errs = append(errs, fmt.Errorf("profile %q: %w", p.ID, fieldErr("id", ValDuplicate, "duplicate id")))
+			fe := fieldErr("id", ValDuplicate, "duplicate id")
+			fe.ProfileID = p.ID
+			errs = append(errs, fmt.Errorf("profile %q: %w", p.ID, fe))
 		}
 		seen[p.ID] = true
 	}

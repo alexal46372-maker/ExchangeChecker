@@ -22,6 +22,11 @@ type FieldError struct {
 	Args []string
 	// Msg is the English technical text (Error()).
 	Msg string
+	// ProfileID is the id of the profile the error belongs to, set by
+	// ValidateProfiles (phase 6: a write refused because of ANOTHER
+	// invalid profile in profiles.json names it in the reply's
+	// profileId). Not part of IPCArgs / Error().
+	ProfileID string
 }
 
 func (e *FieldError) Error() string { return e.Msg }

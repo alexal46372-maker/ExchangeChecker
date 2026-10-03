@@ -34,13 +34,72 @@ const (
 	MaxBeepGapMs        = 60000
 )
 
+// OptBool is a JSON bool that also remembers "not given" (phase 6,
+// beep.enabled): comparable (Settings stays usable with ==, unlike a
+// *bool), zero = unset and omitted with omitempty, otherwise marshalled
+// as false / true; JSON null reads as unset.
+type OptBool uint8
+
+const (
+	OptUnset OptBool = iota
+	OptFalse
+	OptTrue
+)
+
+// OptBoolOf returns OptTrue / OptFalse.
+func OptBoolOf(b bool) OptBool {
+	if b {
+		return OptTrue
+	}
+	return OptFalse
+}
+
+// Or returns the value, def when unset.
+func (o OptBool) Or(def bool) bool {
+	if o == OptUnset {
+		return def
+	}
+	return o == OptTrue
+}
+
+// MarshalJSON writes false / true (null when unset and not omitted).
+func (o OptBool) MarshalJSON() ([]byte, error) {
+	switch o {
+	case OptTrue:
+		return []byte("true"), nil
+	case OptFalse:
+		return []byte("false"), nil
+	}
+	return []byte("null"), nil
+}
+
+// UnmarshalJSON reads true / false; null = unset.
+func (o *OptBool) UnmarshalJSON(b []byte) error {
+	switch string(b) {
+	case "true":
+		*o = OptTrue
+	case "false":
+		*o = OptFalse
+	case "null":
+		*o = OptUnset
+	default:
+		return fmt.Errorf("want true or false, got %s", b)
+	}
+	return nil
+}
+
 // BeepSettings are PC-speaker parameters for alert sounds.
 type BeepSettings struct {
-	WarningFreqHz int `json:"warningFreqHz"`
-	WarningDurMs  int `json:"warningDurMs"`
-	ErrorFreqHz   int `json:"errorFreqHz"`
-	ErrorDurMs    int `json:"errorDurMs"`
-	GapMs         int `json:"gapMs"`
+	// Enabled switches the alert sound (phase 6, PLAN §12 p.65, Вика's
+	// decision of 03.10): machine-wide, default true; a settings.json
+	// without the field reads as true, an explicit false stays false; the
+	// alert window is shown either way. Read it with BeepEnabled().
+	Enabled       OptBool `json:"enabled,omitempty"`
+	WarningFreqHz int     `json:"warningFreqHz"`
+	WarningDurMs  int     `json:"warningDurMs"`
+	ErrorFreqHz   int     `json:"errorFreqHz"`
+	ErrorDurMs    int     `json:"errorDurMs"`
+	GapMs         int     `json:"gapMs"`
 }
 
 // Settings are global monitoring settings (settings.json). WarnMinutes and
@@ -66,10 +125,23 @@ func DefaultSettings() Settings {
 			ErrorFreqHz:   DefaultErrorFreqHz,
 			ErrorDurMs:    DefaultErrorDurMs,
 			GapMs:         DefaultBeepGapMs,
+			Enabled:       OptTrue,
 		},
 		Language:      LangAuto,
 		TrayAutostart: true,
 	}
+}
+
+// BeepEnabled reports beep.enabled (unset = true).
+func (b BeepSettings) BeepEnabled() bool { return b.Enabled.Or(true) }
+
+// Normalized returns s with an unset beep.enabled made explicit (true),
+// so get_status / get_config always carry the field.
+func (s Settings) Normalized() Settings {
+	if s.Beep.Enabled == OptUnset {
+		s.Beep.Enabled = OptTrue
+	}
+	return s
 }
 
 // PollInterval returns PollIntervalSec as a duration.

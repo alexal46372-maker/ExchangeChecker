@@ -62,6 +62,20 @@ var ErrConfigConflict = &model.IPCError{Code: model.ErrCodeConflict, Key: model.
 var errPasswordRequired = &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgTestPasswordRequired,
 	Message: "monitor: enter the password", Args: []string{"password", model.ValRequired}}
 
+// invalidOther is invalid(monitor.profile_invalid) for a write refused
+// because ANOTHER profile in profiles.json is invalid (edited by hand): the
+// reply carries that profile's id (IPCMessage.profileId, from
+// FieldError.ProfileID set by model.ValidateProfiles); errorArgs and the
+// text are unchanged. self = the profile being saved / deleted: never
+// reported as "the other one".
+func invalidOther(err error, self string) error {
+	ie := invalid(model.MsgMonitorProfileInvalid, err).(*model.IPCError)
+	if fe := model.AsFieldError(err); fe != nil && fe.ProfileID != self {
+		ie.ProfileID = fe.ProfileID
+	}
+	return ie
+}
+
 func invalid(key string, err error) error {
 	ie := &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: key, Message: err.Error()}
 	if fe := model.AsFieldError(err); fe != nil {
@@ -198,7 +212,7 @@ func (m *Monitor) GetConfig() (model.ConfigView, string, error) {
 	if err != nil {
 		return model.ConfigView{}, "", saveFailed(err)
 	}
-	return model.ConfigView{Settings: st, Profiles: out}, rev, nil
+	return model.ConfigView{Settings: st.Normalized(), Profiles: out}, rev, nil
 }
 
 // loadForWrite reads profiles and secrets for a write. A profiles.json or
@@ -289,8 +303,8 @@ func (m *Monitor) SaveProfile(p model.Profile, password string, clearPassword bo
 	}
 	if err := model.ValidateProfiles(next); err != nil {
 		// another saved profile is invalid (e.g. written by hand): refuse,
-		// nothing is dropped silently
-		return model.SavedProfile{}, invalid(model.MsgMonitorProfileInvalid, err)
+		// nothing is dropped silently; the reply names it (profileId)
+		return model.SavedProfile{}, invalidOther(err, p.ID)
 	}
 	secretsChanged := has != hadSecret || (has && newSecret != oldSecret)
 	if secretsChanged {
@@ -360,7 +374,8 @@ func (m *Monitor) DeleteProfile(profileID, expectedRevision, account string) (st
 		return "", ErrUnknownProfile
 	}
 	if err := model.ValidateProfiles(next); err != nil {
-		return "", invalid(model.MsgMonitorProfileInvalid, err)
+		// another (remaining) profile in the file is invalid
+		return "", invalidOther(err, profileID)
 	}
 	if err := w.SaveProfiles(next); err != nil {
 		return "", saveFailed(err)
@@ -394,6 +409,15 @@ func (m *Monitor) SaveSettings(st model.Settings, expectedRevision, account stri
 	defer m.cfgMu.Unlock()
 	if err := m.checkRevisionLocked(w, expectedRevision); err != nil {
 		return "", err
+	}
+	if st.Beep.Enabled == model.OptUnset {
+		// beep.enabled not sent (a client that does not know the field,
+		// e.g. tray 6c): keep the stored value instead of silently
+		// switching the sound back on
+		st.Beep.Enabled = model.OptTrue
+		if cur, err := w.LoadSettings(); err == nil || cur != model.DefaultSettings() {
+			st.Beep.Enabled = cur.Normalized().Beep.Enabled
+		}
 	}
 	if err := w.SaveSettings(st); err != nil {
 		return "", saveFailed(fmt.Errorf("save settings: %w", err))

@@ -41,7 +41,7 @@ type Indicator struct {
 	Level model.AlertLevel
 	Icon  Icon
 	// ServiceLine is the text of the disabled status line above the
-	// databases ("" when the service is fine).
+	// databases, always set (PLAN §12 p. 48).
 	ServiceLine string
 	// ConfigLine is set for config_stale / config_invalid.
 	ConfigLine string
@@ -63,6 +63,9 @@ func Evaluate(st trayipc.Status, lang string) Indicator {
 	}
 	ind.Fresh = st.State == trayipc.StateConnected && snap != nil
 	switch ind.Service {
+	case SvcOK:
+		// always shown above the databases (PLAN §12 p. 48)
+		ind.ServiceLine = i18n.T(i18n.KeySvcOK, lang)
 	case SvcConnecting:
 		ind.ServiceLine = i18n.T(i18n.KeySvcConnecting, lang)
 	case SvcPollerHung:

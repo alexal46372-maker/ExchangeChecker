@@ -42,7 +42,7 @@ func connected(snap *model.StatusSnapshot) trayipc.Status {
 // TestCHK_TRAY_01_MenuOnlyDatabases — the left menu lists only databases
 // (no points at the root), colored squares + status text.
 func TestCHK_TRAY_01_MenuOnlyDatabases(t *testing.T) {
-	items := BuildLeftMenu(connected(sampleSnapshot()), i18n.RU)
+	items := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.RU))
 	if len(items) != 4 {
 		t.Fatalf("want 4 database items, got %d: %+v", len(items), items)
 	}
@@ -71,7 +71,7 @@ func TestCHK_TRAY_01_MenuOnlyDatabases(t *testing.T) {
 			t.Errorf("points must not be at the root: %q", it.Text)
 		}
 	}
-	en := BuildLeftMenu(connected(sampleSnapshot()), i18n.EN)
+	en := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.EN))
 	if !strings.Contains(en[0].Text, "warning") || !strings.Contains(en[1].Text, "error") {
 		t.Errorf("EN statuses: %q %q", en[0].Text, en[1].Text)
 	}
@@ -80,7 +80,7 @@ func TestCHK_TRAY_01_MenuOnlyDatabases(t *testing.T) {
 // TestCHK_TRAY_01_PointsSubmenu — points of a database: sorted, grouped by
 // exchange plan, times in UTC+3, lag, level, acknowledged mark.
 func TestCHK_TRAY_01_PointsSubmenu(t *testing.T) {
-	sub := BuildLeftMenu(connected(sampleSnapshot()), i18n.RU)[0].Sub
+	sub := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.RU))[0].Sub
 	if len(sub) != 4 {
 		t.Fatalf("want 2 plan headers + 2 points, got %+v", sub)
 	}
@@ -115,7 +115,7 @@ func TestCHK_TRAY_01_PointsSubmenu(t *testing.T) {
 // localized error first; warnings follow; empty database -> a disabled
 // "no points" line.
 func TestCHK_TRAY_01_ErrorAndWarnings(t *testing.T) {
-	items := BuildLeftMenu(connected(sampleSnapshot()), i18n.RU)
+	items := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.RU))
 	sub := items[1].Sub
 	if len(sub) != 2 || !sub[0].Disabled || !strings.Contains(sub[0].Text, model.MonitorMessage(model.MsgMonitorConnError, i18n.RU)) {
 		t.Fatalf("error line: %+v", sub)
@@ -126,7 +126,7 @@ func TestCHK_TRAY_01_ErrorAndWarnings(t *testing.T) {
 	if s := items[2].Sub; len(s) != 1 || s[0].Text != "Нет точек обмена" || !s[0].Disabled {
 		t.Errorf("empty database: %+v", s)
 	}
-	none := BuildLeftMenu(connected(&model.StatusSnapshot{}), i18n.RU)
+	none := databases(BuildLeftMenu(connected(&model.StatusSnapshot{}), i18n.RU))
 	if len(none) != 1 || none[0].Text != "Нет настроенных баз" {
 		t.Errorf("no databases: %+v", none)
 	}
@@ -137,8 +137,8 @@ func TestCHK_TRAY_01_ErrorAndWarnings(t *testing.T) {
 // poller hung, not running; config stale / invalid shown.
 func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 	st := connected(sampleSnapshot())
-	if it := BuildLeftMenu(st, i18n.RU); it[0].Disabled {
-		t.Fatal("healthy service: no status line")
+	if it := BuildLeftMenu(st, i18n.RU); !it[0].Disabled || it[0].Text != "Служба работает" || !it[1].Separator {
+		t.Fatalf("healthy service: the status line is always on top: %+v", it[:2])
 	}
 	texts := map[string]bool{}
 	for _, mod := range []func(*trayipc.Status){
@@ -166,8 +166,8 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 		snap := sampleSnapshot()
 		snap.ConfigErrorKey, snap.ConfigError, snap.ConfigStale = key, "boom", key == model.MsgMonitorConfigStale
 		items := BuildLeftMenu(connected(snap), i18n.RU)
-		if items[0].Text != model.MonitorMessage(key, i18n.RU) || !items[0].Disabled || !items[1].Separator {
-			t.Errorf("%s line: %+v", key, items[:2])
+		if items[1].Text != model.MonitorMessage(key, i18n.RU) || !items[0].Disabled || !items[1].Disabled || !items[2].Separator {
+			t.Errorf("%s line: %+v", key, items[:3])
 		}
 	}
 }
@@ -307,4 +307,14 @@ func TestCHK_TRAY_01_AboutText(t *testing.T) {
 	if AboutTitle(i18n.EN) != "About Exchange Checker" {
 		t.Error("title")
 	}
+}
+
+// databases drops the status lines and the separator above the databases.
+func databases(items []Item) []Item {
+	for i, it := range items {
+		if it.Separator {
+			return items[i+1:]
+		}
+	}
+	return items
 }

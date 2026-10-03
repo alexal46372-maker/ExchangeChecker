@@ -53,7 +53,8 @@ func LevelColor(l model.AlertLevel) Color {
 }
 
 // BuildLeftMenu is the left-click menu: the disabled service / config
-// status lines on top (only when something is wrong), then ONLY the
+// status line always on top (PLAN §12 p. 48), the config line when the
+// configuration is stale or invalid, then ONLY the
 // databases, each with its exchange points as a submenu (PLAN §7.1, §12
 // p.7). The color square is duplicated by the status text.
 func BuildLeftMenu(st trayipc.Status, lang string) []Item {

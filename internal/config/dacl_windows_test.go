@@ -94,3 +94,60 @@ func secretsDACL(s string) bool {
 	_, want := splitDACL(SecretsSDDL)
 	return strings.Contains(flags, "P") && aces == want
 }
+
+// TestCHK_CFG_03_SecretsDACLAtStart — phase 6b: an existing secrets.dpapi
+// with an inherited DACL that grants Users access (written before phase 6
+// under %ProgramData%) gets exactly SY+BA, protected, from the start-up
+// call (Store.SecureSecretsFile -> SetNamedSecurityInfoW +
+// PROTECTED_DACL_SECURITY_INFORMATION); the content is untouched; a
+// missing file is left missing.
+func TestCHK_CFG_03_SecretsDACLAtStart(t *testing.T) {
+	s := NewStore(filepath.Join(t.TempDir(), "ExchangeChecker"))
+	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if present, err := s.SecureSecretsFile(); present || err != nil {
+		t.Fatalf("missing file: present=%v err=%v", present, err)
+	}
+	if _, err := os.Stat(s.Path(SecretsFile)); !os.IsNotExist(err) {
+		t.Fatalf("missing file was created: %v", err)
+	}
+	// directory like %ProgramData%\ExchangeChecker before phase 6: ACEs
+	// inherited by files, including read access for Users (BU)
+	dirSDDL := "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)(A;OICI;FR;;;BU)"
+	if err := winapi.SetFileDACL(s.Dir, dirSDDL); err != nil {
+		t.Fatalf("set directory DACL: %v", err)
+	}
+	if err := os.WriteFile(s.Path(SecretsFile), []byte("blob"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := winapi.FileDACL(s.Path(SecretsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flags, aces := splitDACL(before); strings.Contains(flags, "P") || !strings.Contains(aces, ";ID;") || !strings.Contains(aces, ";;;BU)") {
+		t.Fatalf("precondition: want an inherited DACL with Users access, got %s", before)
+	}
+	present, err := s.SecureSecretsFile()
+	if !present || err != nil {
+		t.Fatalf("SecureSecretsFile: present=%v err=%v", present, err)
+	}
+	got, err := winapi.FileDACL(s.Path(SecretsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !secretsDACL(got) {
+		t.Fatalf("secrets.dpapi DACL = %s, want exactly %s protected (was %s)", got, SecretsSDDL, before)
+	}
+	if b, err := os.ReadFile(s.Path(SecretsFile)); err != nil || string(b) != "blob" {
+		t.Fatalf("content changed: %q %v", b, err)
+	}
+	// idempotent
+	if _, err := s.SecureSecretsFile(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := winapi.FileDACL(s.Path(SecretsFile)); !secretsDACL(got) {
+		t.Fatalf("second call: %s", got)
+	}
+	t.Logf("before %s -> after %s", before, got)
+}

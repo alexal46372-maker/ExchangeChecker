@@ -43,6 +43,9 @@ type appConfig struct {
 	// Authorize overrides the pipe client check of admin commands
 	// (tests over a MemListener; nil = ImpersonateNamedPipeClient).
 	Authorize func(io.ReadWriteCloser) (ipc.Peer, error)
+	// SecureSecrets overrides the start-up DACL fix of secrets.dpapi
+	// (tests; nil = config.Store.SecureSecretsFile).
+	SecureSecrets func(*config.Store) (bool, error)
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -80,6 +83,18 @@ func runService(ctx context.Context, ac appConfig) error {
 	log.Printf("%s %s starting, config %s", model.ServiceName, version.Version, ac.Dir)
 
 	store := config.NewStore(ac.Dir)
+	// phase 6b (CHK-CFG-03): an existing secrets.dpapi (e.g. written before
+	// phase 6 with the inherited Users-read DACL) is brought to SY+BA,
+	// protected, at start; a failure is a warning, the service keeps going.
+	secure := ac.SecureSecrets
+	if secure == nil {
+		secure = (*config.Store).SecureSecretsFile
+	}
+	if present, err := secure(store); err != nil {
+		log.Printf("warning: %s: cannot set the SYSTEM+Administrators DACL: %v", config.SecretsFile, err)
+	} else if present {
+		log.Printf("%s: DACL SYSTEM+Administrators (protected)", config.SecretsFile)
+	}
 	settings, _ := store.LoadSettings()
 	lang := config.EffectiveLanguage(settings)
 

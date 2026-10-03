@@ -11,3 +11,6 @@ func replaceFile(from, to string) error { return os.Rename(from, to) }
 func createSecret(tmp string) (*os.File, error) {
 	return os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 }
+
+// secureSecretFile restricts an existing secrets file to the owner.
+func secureSecretFile(path string) error { return os.Chmod(path, 0o600) }

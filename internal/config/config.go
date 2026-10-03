@@ -61,8 +61,11 @@ type profilesDoc struct {
 	Profiles []model.Profile `json:"profiles"`
 }
 
-// readFile returns (nil, nil) when the file does not exist.
-func (s *Store) readFile(name string) ([]byte, error) {
+// ReadFileRaw returns the raw bytes of a config file (BOM included) or
+// (nil, nil) when it does not exist. The monitor reads each file once with
+// it and derives both the parsed configuration (Parse*, DecodeSecrets) and
+// the configuration revision from the same bytes (phase 6b).
+func (s *Store) ReadFileRaw(name string) ([]byte, error) {
 	b, err := os.ReadFile(s.Path(name))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -70,7 +73,26 @@ func (s *Store) readFile(name string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", name, err)
 	}
+	if b == nil {
+		b = []byte{}
+	}
+	return b, nil
+}
+
+// readFile is ReadFileRaw without the UTF-8 BOM.
+func (s *Store) readFile(name string) ([]byte, error) {
+	b, err := s.ReadFileRaw(name)
+	if b == nil || err != nil {
+		return nil, err
+	}
 	return bytes.TrimPrefix(b, utf8BOM), nil
+}
+
+func trimBOM(raw []byte) []byte {
+	if raw == nil {
+		return nil
+	}
+	return bytes.TrimPrefix(raw, utf8BOM)
 }
 
 func checkVersion(name string, v int) error {
@@ -84,10 +106,17 @@ func checkVersion(name string, v int) error {
 // Fields absent from the file keep their default values. On a validation
 // error the parsed settings are returned together with the error.
 func (s *Store) LoadSettings() (model.Settings, error) {
-	b, err := s.readFile(SettingsFile)
+	b, err := s.ReadFileRaw(SettingsFile)
 	if err != nil {
 		return model.DefaultSettings(), err
 	}
+	return ParseSettings(b)
+}
+
+// ParseSettings is LoadSettings over raw file bytes (ReadFileRaw; nil =
+// missing file -> defaults).
+func ParseSettings(raw []byte) (model.Settings, error) {
+	b := trimBOM(raw)
 	if b == nil {
 		return model.DefaultSettings(), nil
 	}
@@ -118,10 +147,17 @@ func (s *Store) SaveSettings(st model.Settings) error {
 
 // LoadProfiles reads profiles.json. Missing file -> empty list, nil error.
 func (s *Store) LoadProfiles() ([]model.Profile, error) {
-	b, err := s.readFile(ProfilesFile)
+	b, err := s.ReadFileRaw(ProfilesFile)
 	if err != nil {
 		return []model.Profile{}, err
 	}
+	return ParseProfiles(b)
+}
+
+// ParseProfiles is LoadProfiles over raw file bytes (ReadFileRaw; nil =
+// missing file -> empty list).
+func ParseProfiles(raw []byte) ([]model.Profile, error) {
+	b := trimBOM(raw)
 	if b == nil {
 		return []model.Profile{}, nil
 	}

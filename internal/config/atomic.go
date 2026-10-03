@@ -13,8 +13,9 @@ import (
 // inherited ACEs), so ordinary users cannot read the DPAPI machine-key blob
 // (which any local user could otherwise decrypt). It is applied when the
 // temp file is created, so the data is never readable under an inherited
-// DACL; an existing file with the old (inherited) DACL is replaced on the
-// next write. settings.json / profiles.json stay Users-read (§12 p.9).
+// DACL; an existing file with the old (inherited) DACL is fixed at service
+// start (Store.SecureSecretsFile, phase 6b) and replaced on the next
+// write. settings.json / profiles.json stay Users-read (§12 p.9).
 const SecretsSDDL = "D:P(A;;FA;;;SY)(A;;FA;;;BA)"
 
 // writeFileAtomic writes data to dir/name via a temp file in the same

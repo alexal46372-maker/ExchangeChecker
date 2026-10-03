@@ -110,6 +110,8 @@ var winAPIMinVersion = map[string]float64{
 	"CreateRestrictedToken": 5.0, "GetCurrentThread": 5.0, "GetNamedSecurityInfoW": 5.0,
 	"ImpersonateLoggedOnUser": 5.0, "ImpersonateNamedPipeClient": 5.0, "OpenThreadToken": 5.0,
 	"RevertToSelf": 5.0,
+	// advapi32 — phase 6b: secrets.dpapi DACL at service start (CHK-CFG-03)
+	"GetSecurityDescriptorDacl": 5.0, "SetNamedSecurityInfoW": 5.0,
 	// crypt32
 	"CryptProtectData": 5.0, "CryptUnprotectData": 5.0,
 	// user32

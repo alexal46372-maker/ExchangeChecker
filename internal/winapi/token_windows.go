@@ -66,7 +66,7 @@ func ImpersonatePipeClient(h syscall.Handle) (PipeClient, error) {
 }
 
 func impersonateOnThread(h syscall.Handle) (PipeClient, error) {
-	if r, _, e := procImpersonateNamedPipeClient.Call(uintptr(h)); r == 0 {
+	if r, _, e := callProc(procImpersonateNamedPipeClient, uintptr(h)); r == 0 {
 		return PipeClient{}, fmt.Errorf("winapi: ImpersonateNamedPipeClient: %w", e)
 	}
 	var (
@@ -77,7 +77,7 @@ func impersonateOnThread(h syscall.Handle) (PipeClient, error) {
 	)
 	func() {
 		defer func() {
-			if r, _, e := procRevertToSelf.Call(); r == 0 {
+			if r, _, e := callProc(procRevertToSelf); r == 0 {
 				// the thread stays locked and dies with the goroutine
 				err = fmt.Errorf("winapi: RevertToSelf: %w", e)
 				c = PipeClient{}
@@ -116,10 +116,10 @@ func impersonateOnThread(h syscall.Handle) (PipeClient, error) {
 }
 
 func openThreadToken() (syscall.Token, error) {
-	th, _, _ := procGetCurrentThread.Call()
+	th, _, _ := callProc(procGetCurrentThread)
 	var tok syscall.Token
 	// OpenAsSelf = TRUE: access check against the service's own token
-	r, _, e := procOpenThreadToken.Call(th, syscall.TOKEN_QUERY, 1, uintptr(unsafe.Pointer(&tok)))
+	r, _, e := callProc(procOpenThreadToken, th, syscall.TOKEN_QUERY, 1, uintptr(unsafe.Pointer(&tok)))
 	if r == 0 {
 		return 0, fmt.Errorf("winapi: OpenThreadToken: %w", e)
 	}
@@ -134,7 +134,7 @@ func TokenIsMember(tok syscall.Token, sidString string) (bool, error) {
 		return false, err
 	}
 	var member int32
-	r, _, e := procCheckTokenMembership.Call(uintptr(tok), uintptr(unsafe.Pointer(sid)), uintptr(unsafe.Pointer(&member)))
+	r, _, e := callProc(procCheckTokenMembership, uintptr(tok), uintptr(unsafe.Pointer(sid)), uintptr(unsafe.Pointer(&member)))
 	if r == 0 {
 		return false, fmt.Errorf("winapi: CheckTokenMembership: %w", e)
 	}
@@ -148,7 +148,7 @@ func ProcessIsAdmin() (bool, error) { return TokenIsMember(0, SIDAdministrators)
 
 // RevertToSelf ends the impersonation of the calling thread.
 func RevertToSelf() error {
-	if r, _, e := procRevertToSelf.Call(); r == 0 {
+	if r, _, e := callProc(procRevertToSelf); r == 0 {
 		return e
 	}
 	return nil
@@ -157,7 +157,7 @@ func RevertToSelf() error {
 // ImpersonateLoggedOnUser impersonates tok on the calling thread (tests:
 // pipe client with a restricted token). Lock the OS thread first.
 func ImpersonateLoggedOnUser(tok syscall.Token) error {
-	if r, _, e := procImpersonateLoggedOnUser.Call(uintptr(tok)); r == 0 {
+	if r, _, e := callProc(procImpersonateLoggedOnUser, uintptr(tok)); r == 0 {
 		return e
 	}
 	return nil
@@ -190,7 +190,7 @@ func DenyOnlyToken(sids ...string) (syscall.Token, error) {
 		dis[i].Sid = sid
 	}
 	var out syscall.Token
-	r, _, e := procCreateRestrictedToken.Call(uintptr(proc), 0, uintptr(len(dis)), uintptr(unsafe.Pointer(&dis[0])),
+	r, _, e := callProc(procCreateRestrictedToken, uintptr(proc), 0, uintptr(len(dis)), uintptr(unsafe.Pointer(&dis[0])),
 		0, 0, 0, 0, uintptr(unsafe.Pointer(&out)))
 	runtime.KeepAlive(dis)
 	if r == 0 {
@@ -215,18 +215,18 @@ func FileDACL(path string) (string, error) {
 		return "", err
 	}
 	var dacl, sd uintptr
-	r, _, _ := procGetNamedSecurityInfoW.Call(uintptr(unsafe.Pointer(p)), seFileObject, daclSecurityInformation,
+	r, _, _ := callProc(procGetNamedSecurityInfoW, uintptr(unsafe.Pointer(p)), seFileObject, daclSecurityInformation,
 		0, 0, uintptr(unsafe.Pointer(&dacl)), 0, uintptr(unsafe.Pointer(&sd)))
 	if r != 0 {
 		return "", &os.PathError{Op: "GetNamedSecurityInfo", Path: path, Err: syscall.Errno(r)}
 	}
-	defer procLocalFree.Call(sd)
+	defer callProc(procLocalFree, sd)
 	var str *uint16
-	r, _, e := procConvertSDToStringSDW.Call(sd, sddlRevision1, daclSecurityInformation, uintptr(unsafe.Pointer(&str)), 0)
+	r, _, e := callProc(procConvertSDToStringSDW, sd, sddlRevision1, daclSecurityInformation, uintptr(unsafe.Pointer(&str)), 0)
 	if r == 0 {
 		return "", fmt.Errorf("winapi: ConvertSecurityDescriptorToStringSecurityDescriptorW: %w", e)
 	}
-	defer procLocalFree.Call(uintptr(unsafe.Pointer(str)))
+	defer callProc(procLocalFree, uintptr(unsafe.Pointer(str)))
 	return utf16PtrToString(str), nil
 }
 

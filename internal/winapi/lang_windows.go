@@ -8,6 +8,6 @@ func UserUILanguage() string {
 	if err := procGetUserDefaultUILanguage.Find(); err != nil {
 		return "ru"
 	}
-	r, _, _ := procGetUserDefaultUILanguage.Call()
+	r, _, _ := callProc(procGetUserDefaultUILanguage)
 	return LanguageFromLANGID(uint16(r))
 }

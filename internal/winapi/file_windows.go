@@ -25,7 +25,7 @@ func MoveFileReplace(from, to string) error {
 	if err != nil {
 		return &os.LinkError{Op: "MoveFileEx", Old: from, New: to, Err: err}
 	}
-	r, _, e := procMoveFileExW.Call(
+	r, _, e := callProc(procMoveFileExW,
 		uintptr(unsafe.Pointer(f)),
 		uintptr(unsafe.Pointer(t)),
 		uintptr(moveFileReplaceExisting|moveFileWriteThrough),

@@ -20,7 +20,7 @@ var (
 func systemDirectory() (string, error) {
 	buf := make([]uint16, 260)
 	for {
-		n, _, e := procGetSystemDirectoryW.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+		n, _, e := callProc(procGetSystemDirectoryW, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 		if n == 0 {
 			return "", e
 		}
@@ -43,6 +43,15 @@ func newSystemDLL(name string) *syscall.LazyDLL {
 
 func localFree(p unsafe.Pointer) {
 	if p != nil {
-		procLocalFree.Call(uintptr(p))
+		callProc(procLocalFree, uintptr(p))
 	}
+}
+
+// callProc resolves p (LazyProc.Find) and calls it. A missing DLL or
+// export returns its error instead of panicking in Call (CHK-TRAY-10).
+func callProc(p *syscall.LazyProc, args ...uintptr) (uintptr, uintptr, error) {
+	if err := p.Find(); err != nil {
+		return 0, 0, err
+	}
+	return p.Call(args...)
 }

@@ -55,7 +55,11 @@ func CreateNamedPipe(name string, openMode, pipeMode, maxInst, outBuf, inBuf, ti
 	if err != nil {
 		return syscall.InvalidHandle, err
 	}
-	h, _, e := procCreateNamedPipeW.Call(uintptr(unsafe.Pointer(n)), uintptr(openMode), uintptr(pipeMode),
+	// failure is INVALID_HANDLE_VALUE, not 0: resolve first
+	if err := procCreateNamedPipeW.Find(); err != nil {
+		return syscall.InvalidHandle, err
+	}
+	h, _, e := callProc(procCreateNamedPipeW, uintptr(unsafe.Pointer(n)), uintptr(openMode), uintptr(pipeMode),
 		uintptr(maxInst), uintptr(outBuf), uintptr(inBuf), uintptr(timeoutMs), uintptr(unsafe.Pointer(sa)))
 	if h == invalidHandle {
 		return syscall.InvalidHandle, e
@@ -65,7 +69,7 @@ func CreateNamedPipe(name string, openMode, pipeMode, maxInst, outBuf, inBuf, ti
 
 // ConnectNamedPipe wraps ConnectNamedPipe (overlapped).
 func ConnectNamedPipe(h syscall.Handle, ov *syscall.Overlapped) error {
-	r, _, e := procConnectNamedPipe.Call(uintptr(h), uintptr(unsafe.Pointer(ov)))
+	r, _, e := callProc(procConnectNamedPipe, uintptr(h), uintptr(unsafe.Pointer(ov)))
 	if r == 0 {
 		return e
 	}
@@ -74,7 +78,7 @@ func ConnectNamedPipe(h syscall.Handle, ov *syscall.Overlapped) error {
 
 // DisconnectNamedPipe wraps DisconnectNamedPipe.
 func DisconnectNamedPipe(h syscall.Handle) error {
-	r, _, e := procDisconnectNamedPipe.Call(uintptr(h))
+	r, _, e := callProc(procDisconnectNamedPipe, uintptr(h))
 	if r == 0 {
 		return e
 	}
@@ -87,7 +91,7 @@ func WaitNamedPipe(name string, timeoutMs uint32) error {
 	if err != nil {
 		return err
 	}
-	r, _, e := procWaitNamedPipeW.Call(uintptr(unsafe.Pointer(n)), uintptr(timeoutMs))
+	r, _, e := callProc(procWaitNamedPipeW, uintptr(unsafe.Pointer(n)), uintptr(timeoutMs))
 	if r == 0 {
 		return e
 	}
@@ -103,7 +107,7 @@ func CreateEvent(manualReset, initialState bool) (syscall.Handle, error) {
 	if initialState {
 		s = 1
 	}
-	h, _, e := procCreateEventW.Call(0, m, s, 0)
+	h, _, e := callProc(procCreateEventW, 0, m, s, 0)
 	if h == 0 {
 		return 0, e
 	}
@@ -112,7 +116,7 @@ func CreateEvent(manualReset, initialState bool) (syscall.Handle, error) {
 
 // SetEvent wraps SetEvent.
 func SetEvent(h syscall.Handle) error {
-	r, _, e := procSetEvent.Call(uintptr(h))
+	r, _, e := callProc(procSetEvent, uintptr(h))
 	if r == 0 {
 		return e
 	}
@@ -121,7 +125,7 @@ func SetEvent(h syscall.Handle) error {
 
 // ResetEvent wraps ResetEvent.
 func ResetEvent(h syscall.Handle) error {
-	r, _, e := procResetEvent.Call(uintptr(h))
+	r, _, e := callProc(procResetEvent, uintptr(h))
 	if r == 0 {
 		return e
 	}
@@ -135,7 +139,7 @@ func GetOverlappedResult(h syscall.Handle, ov *syscall.Overlapped, wait bool) (u
 	if wait {
 		w = 1
 	}
-	r, _, e := procGetOverlappedResult.Call(uintptr(h), uintptr(unsafe.Pointer(ov)), uintptr(unsafe.Pointer(&n)), w)
+	r, _, e := callProc(procGetOverlappedResult, uintptr(h), uintptr(unsafe.Pointer(ov)), uintptr(unsafe.Pointer(&n)), w)
 	if r == 0 {
 		return n, e
 	}
@@ -145,7 +149,11 @@ func GetOverlappedResult(h syscall.Handle, ov *syscall.Overlapped, wait bool) (u
 // WaitAny waits (INFINITE) until one of the handles is signaled and
 // returns its index.
 func WaitAny(hs ...syscall.Handle) (int, error) {
-	r, _, e := procWaitForMultipleObjects.Call(uintptr(len(hs)), uintptr(unsafe.Pointer(&hs[0])), 0, infinite)
+	// failure is WAIT_FAILED, not 0: resolve first
+	if err := procWaitForMultipleObjects.Find(); err != nil {
+		return -1, err
+	}
+	r, _, e := callProc(procWaitForMultipleObjects, uintptr(len(hs)), uintptr(unsafe.Pointer(&hs[0])), 0, infinite)
 	if r == waitFailed {
 		return -1, e
 	}
@@ -165,11 +173,11 @@ func SecurityAttributesFromSDDL(sddl string) (*syscall.SecurityAttributes, func(
 		return nil, nil, err
 	}
 	var sd uintptr
-	r, _, e := procConvertStringSDToSDW.Call(uintptr(unsafe.Pointer(s)), sddlRevision1, uintptr(unsafe.Pointer(&sd)), 0)
+	r, _, e := callProc(procConvertStringSDToSDW, uintptr(unsafe.Pointer(s)), sddlRevision1, uintptr(unsafe.Pointer(&sd)), 0)
 	if r == 0 {
 		return nil, nil, fmt.Errorf("winapi: ConvertStringSecurityDescriptorToSecurityDescriptorW: %w", e)
 	}
 	sa := &syscall.SecurityAttributes{SecurityDescriptor: sd}
 	sa.Length = uint32(unsafe.Sizeof(*sa))
-	return sa, func() { procLocalFree.Call(sd) }, nil
+	return sa, func() { callProc(procLocalFree, sd) }, nil
 }

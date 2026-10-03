@@ -1,0 +1,573 @@
+package trayipc
+
+import (
+	"context"
+	"errors"
+	"io"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+)
+
+// State is the connection state of the session.
+type State int
+
+const (
+	// StateConnecting: dialing / waiting for hello (initial state).
+	StateConnecting State = iota
+	// StateConnected: hello received, commands can be sent.
+	StateConnected
+	// StateNotRunning: the pipe does not exist (service stopped / not
+	// installed).
+	StateNotRunning
+	// StateUnavailable: dial failed for another reason, or the
+	// connection was lost.
+	StateUnavailable
+	// StateNotResponding: connected, but no hello / pong / reply in time.
+	StateNotResponding
+	// StateUntrusted: the pipe server is not the service process (G7).
+	StateUntrusted
+)
+
+func (s State) String() string {
+	switch s {
+	case StateConnecting:
+		return "connecting"
+	case StateConnected:
+		return "connected"
+	case StateNotRunning:
+		return "not_running"
+	case StateUnavailable:
+		return "unavailable"
+	case StateNotResponding:
+		return "not_responding"
+	case StateUntrusted:
+		return "untrusted"
+	}
+	return "unknown"
+}
+
+// Errors.
+var (
+	// ErrServiceNotRunning is returned (wrapped) by a Dialer when the pipe
+	// does not exist.
+	ErrServiceNotRunning = errors.New("trayipc: service pipe not found")
+	// ErrNotConnected: no connection right now.
+	ErrNotConnected = errors.New("trayipc: not connected to the service")
+	// ErrUnsupported: the service does not support the command (protocol
+	// version 1, capability missing or unknown_command reply).
+	ErrUnsupported = errors.New("trayipc: command not supported by the service")
+)
+
+// Status is a copy of the session state.
+type Status struct {
+	State State
+	// Err is the last dial / verify / connection error (nil when
+	// connected).
+	Err error
+	// Version and Capabilities from hello (0 / nil before the first one).
+	Version      int
+	Capabilities []string
+	// Heartbeat is the latest heartbeat (hello, then every pong); nil for
+	// a version-1 service.
+	Heartbeat *model.Heartbeat
+	// ServiceStartedAt from hello.heartbeat (zero for version 1).
+	ServiceStartedAt time.Time
+	// Restarts counts detected service restarts (serviceStartedAt changed).
+	Restarts int
+	// Snapshot is the latest status snapshot (kept while disconnected:
+	// the UI shows it as last known data).
+	Snapshot *model.StatusSnapshot
+	// EverConnected: at least one hello was received.
+	EverConnected bool
+}
+
+// Has reports whether the service announced capability c.
+func (s Status) Has(c string) bool {
+	for _, x := range s.Capabilities {
+		if x == c {
+			return true
+		}
+	}
+	return false
+}
+
+// EventKind of an Event.
+type EventKind int
+
+const (
+	// EventState: Status changed (state, hello, heartbeat).
+	EventState EventKind = iota
+	// EventStatus: a new snapshot (Status.Snapshot).
+	EventStatus
+	// EventAlert: an alert push (Alert).
+	EventAlert
+)
+
+// Event is delivered to Options.OnEvent.
+type Event struct {
+	Kind   EventKind
+	Status Status
+	Alert  *model.AlertEvent
+}
+
+// Dialer opens a connection to the service.
+type Dialer func(ctx context.Context) (io.ReadWriteCloser, error)
+
+// Options configure a Session. Zero durations mean the defaults.
+type Options struct {
+	Dial Dialer
+	// Verify checks the connection before the first byte is sent (G7:
+	// pipe server PID == service PID); nil = no check (tests).
+	Verify func(io.ReadWriteCloser) error
+	// OnEvent receives events on the dispatcher goroutine (may block; the
+	// pipe reader is never blocked by it).
+	OnEvent func(Event)
+
+	Heartbeat    time.Duration // ping period, default model.IPCHeartbeat
+	PingTimeout  time.Duration // default 10 s
+	HelloTimeout time.Duration // default 5 s
+	CallTimeout  time.Duration // get_status after hello, default 10 s
+	BackoffMin   time.Duration // default 1 s
+	BackoffMax   time.Duration // default 30 s
+
+	// After is the timer source (tests inject a fake clock); nil =
+	// time.After.
+	After func(time.Duration) <-chan time.Time
+}
+
+// Defaults.
+const (
+	DefaultPingTimeout  = 10 * time.Second
+	DefaultHelloTimeout = 5 * time.Second
+	DefaultCallTimeout  = 10 * time.Second
+	DefaultBackoffMin   = 1 * time.Second
+	DefaultBackoffMax   = 30 * time.Second
+)
+
+// Session is a reconnecting connection to the service.
+type Session struct {
+	opt Options
+
+	mu       sync.Mutex
+	st       Status
+	client   *ipc.Client
+	disabled map[string]bool // commands answered unknown_command
+
+	evMu   sync.Mutex
+	evCond *sync.Cond
+	events []Event
+	closed bool
+}
+
+// New returns a session; call Run to connect.
+func New(opt Options) *Session {
+	if opt.Heartbeat <= 0 {
+		opt.Heartbeat = model.IPCHeartbeat
+	}
+	if opt.PingTimeout <= 0 {
+		opt.PingTimeout = DefaultPingTimeout
+	}
+	if opt.HelloTimeout <= 0 {
+		opt.HelloTimeout = DefaultHelloTimeout
+	}
+	if opt.CallTimeout <= 0 {
+		opt.CallTimeout = DefaultCallTimeout
+	}
+	if opt.BackoffMin <= 0 {
+		opt.BackoffMin = DefaultBackoffMin
+	}
+	if opt.BackoffMax < opt.BackoffMin {
+		opt.BackoffMax = DefaultBackoffMax
+		if opt.BackoffMax < opt.BackoffMin {
+			opt.BackoffMax = opt.BackoffMin
+		}
+	}
+	if opt.After == nil {
+		opt.After = time.After
+	}
+	s := &Session{opt: opt, disabled: map[string]bool{}}
+	s.evCond = sync.NewCond(&s.evMu)
+	return s
+}
+
+// Status returns a copy of the current state.
+func (s *Session) Status() Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.copyLocked()
+}
+
+func (s *Session) copyLocked() Status {
+	st := s.st
+	st.Capabilities = append([]string(nil), s.st.Capabilities...)
+	if s.st.Heartbeat != nil {
+		hb := *s.st.Heartbeat
+		st.Heartbeat = &hb
+	}
+	return st
+}
+
+// commandCapability maps version-2 commands to the capability that the
+// service must announce. Commands of version 1 need nothing.
+var commandCapability = map[string]string{
+	model.CmdTestProfile: model.CapTestProfile,
+	model.CmdAckAlert:    model.CapAckAlert,
+}
+
+var v1Commands = map[string]bool{
+	model.CmdPing: true, model.CmdGetStatus: true, model.CmdReloadConfig: true, model.CmdPollNow: true,
+}
+
+// Supported reports whether cmd may be sent to the connected service:
+// version-1 commands always; a version-2 command only to a service with
+// protocol >= 2, with its capability (if it has one) and not answered
+// unknown_command since the last hello.
+func (s *Session) Supported(cmd string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.supportedLocked(cmd)
+}
+
+func (s *Session) supportedLocked(cmd string) bool {
+	if s.disabled[cmd] {
+		return false
+	}
+	if v1Commands[cmd] {
+		return true
+	}
+	if s.st.Version < 2 {
+		return false
+	}
+	if c, ok := commandCapability[cmd]; ok {
+		return s.st.Has(c)
+	}
+	return true
+}
+
+// IsUnknownCommand reports whether m is the reply of a service that does
+// not know the command: code unknown_command (version 2) or the version-1
+// error text "unknown command: ..." without a code.
+func IsUnknownCommand(m model.IPCMessage) bool {
+	if m.Type != model.MsgError {
+		return false
+	}
+	if m.Code == model.ErrCodeUnknownCommand {
+		return true
+	}
+	return m.Code == "" && strings.HasPrefix(m.Error, "unknown command:")
+}
+
+// Do sends req to the service and waits for the reply until ctx is done.
+// Unsupported commands are refused locally with ErrUnsupported (nothing
+// is sent); an unknown_command reply disables the command until the next
+// hello and also returns ErrUnsupported (with the reply).
+func (s *Session) Do(ctx context.Context, req model.IPCRequest) (model.IPCMessage, error) {
+	s.mu.Lock()
+	c := s.client
+	if c == nil || s.st.State != StateConnected {
+		s.mu.Unlock()
+		return model.IPCMessage{}, ErrNotConnected
+	}
+	if !s.supportedLocked(req.Cmd) {
+		s.mu.Unlock()
+		return model.IPCMessage{}, ErrUnsupported
+	}
+	s.mu.Unlock()
+	m, err := c.Do(ctx, req)
+	if err != nil {
+		return m, err
+	}
+	if IsUnknownCommand(m) {
+		s.mu.Lock()
+		if s.client == c {
+			s.disabled[req.Cmd] = true
+		}
+		s.mu.Unlock()
+		return m, ErrUnsupported
+	}
+	return m, nil
+}
+
+// Call is Do with a bare command.
+func (s *Session) Call(ctx context.Context, cmd string) (model.IPCMessage, error) {
+	return s.Do(ctx, model.IPCRequest{Cmd: cmd})
+}
+
+// Run connects and keeps the session alive until ctx is done.
+func (s *Session) Run(ctx context.Context) {
+	done := make(chan struct{})
+	go s.dispatch(done)
+	defer func() {
+		s.evMu.Lock()
+		s.closed = true
+		s.evCond.Broadcast()
+		s.evMu.Unlock()
+		<-done
+	}()
+	var delay time.Duration
+	for ctx.Err() == nil {
+		ok := s.connectOnce(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		if ok {
+			delay = 0
+		}
+		if delay == 0 {
+			delay = s.opt.BackoffMin
+		} else if delay *= 2; delay > s.opt.BackoffMax {
+			delay = s.opt.BackoffMax
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.opt.After(delay):
+		}
+	}
+}
+
+// setState updates the state and emits EventState.
+func (s *Session) setState(state State, err error) {
+	s.mu.Lock()
+	changed := s.st.State != state || errText(s.st.Err) != errText(err)
+	s.st.State, s.st.Err = state, err
+	st := s.copyLocked()
+	s.mu.Unlock()
+	if changed {
+		s.emit(Event{Kind: EventState, Status: st})
+	}
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// connectOnce runs one connection; it reports whether a hello was
+// received (the backoff is reset then).
+func (s *Session) connectOnce(ctx context.Context) bool {
+	// the previous state (not running / unavailable / ...) is kept while
+	// reconnecting, so the UI does not flicker on every attempt
+	rw, err := s.opt.Dial(ctx)
+	if err != nil {
+		if errors.Is(err, ErrServiceNotRunning) {
+			s.setState(StateNotRunning, err)
+		} else {
+			s.setState(StateUnavailable, err)
+		}
+		return false
+	}
+	if s.opt.Verify != nil {
+		if err := s.opt.Verify(rw); err != nil {
+			_ = rw.Close()
+			s.setState(StateUntrusted, err)
+			return false
+		}
+	}
+	hello := make(chan model.IPCMessage, 1)
+	var gotHello bool
+	var hmu sync.Mutex
+	c := ipc.NewClient(rw, func(m model.IPCMessage) {
+		if m.Type == model.MsgHello {
+			hmu.Lock()
+			first := !gotHello
+			gotHello = true
+			hmu.Unlock()
+			if first {
+				hello <- m
+			}
+			return
+		}
+		s.onPush(m)
+	})
+	defer c.Close()
+
+	var h model.IPCMessage
+	select {
+	case <-ctx.Done():
+		return false
+	case h = <-hello:
+	case <-c.Done():
+		s.setState(StateUnavailable, errors.New("trayipc: connection closed before hello"))
+		return false
+	case <-s.opt.After(s.opt.HelloTimeout):
+		s.setState(StateNotResponding, errors.New("trayipc: no hello from the service"))
+		return false
+	}
+	s.onHello(c, h)
+
+	// snapshot right after hello
+	if !s.refreshStatus(ctx, c) {
+		return true
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return true
+		case <-c.Done():
+			s.dropClient(c, StateUnavailable, errors.New("trayipc: connection to the service lost"))
+			return true
+		case <-s.opt.After(s.opt.Heartbeat):
+			if !s.ping(ctx, c) {
+				return true
+			}
+		}
+	}
+}
+
+func (s *Session) onHello(c *ipc.Client, h model.IPCMessage) {
+	s.mu.Lock()
+	ver := h.Version
+	if ver <= 0 {
+		ver = 1
+	}
+	s.st.Version = ver
+	s.st.Capabilities = append([]string(nil), h.Capabilities...)
+	s.disabled = map[string]bool{}
+	if h.Heartbeat != nil {
+		hb := *h.Heartbeat
+		s.st.Heartbeat = &hb
+		if !s.st.ServiceStartedAt.IsZero() && !hb.ServiceStartedAt.Equal(s.st.ServiceStartedAt) {
+			s.st.Restarts++
+		}
+		s.st.ServiceStartedAt = hb.ServiceStartedAt
+	} else {
+		s.st.Heartbeat = nil
+	}
+	s.st.EverConnected = true
+	s.st.State, s.st.Err = StateConnected, nil
+	s.client = c
+	st := s.copyLocked()
+	s.mu.Unlock()
+	s.emit(Event{Kind: EventState, Status: st})
+}
+
+func (s *Session) dropClient(c *ipc.Client, state State, err error) {
+	s.mu.Lock()
+	if s.client == c {
+		s.client = nil
+	}
+	s.mu.Unlock()
+	s.setState(state, err)
+}
+
+// callTimeout runs one request with a timeout from the session clock.
+func (s *Session) callTimeout(ctx context.Context, c *ipc.Client, cmd string, d time.Duration) (model.IPCMessage, error) {
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	t := s.opt.After(d)
+	go func() {
+		select {
+		case <-t:
+			cancel()
+		case <-cctx.Done():
+		}
+	}()
+	return c.Call(cctx, cmd)
+}
+
+func (s *Session) refreshStatus(ctx context.Context, c *ipc.Client) bool {
+	m, err := s.callTimeout(ctx, c, model.CmdGetStatus, s.opt.CallTimeout)
+	if err != nil || m.Type != model.MsgStatus || m.Status == nil {
+		if ctx.Err() == nil {
+			if err == nil {
+				err = errors.New("trayipc: bad get_status reply: " + m.Type)
+			}
+			s.dropClient(c, StateNotResponding, err)
+		}
+		return false
+	}
+	s.applySnapshot(*m.Status, true)
+	return true
+}
+
+func (s *Session) ping(ctx context.Context, c *ipc.Client) bool {
+	m, err := s.callTimeout(ctx, c, model.CmdPing, s.opt.PingTimeout)
+	if err != nil || m.Type != model.MsgPong {
+		if ctx.Err() == nil {
+			if err == nil {
+				err = errors.New("trayipc: bad ping reply: " + m.Type)
+			}
+			s.dropClient(c, StateNotResponding, err)
+		}
+		return false
+	}
+	if m.Heartbeat != nil {
+		s.mu.Lock()
+		hb := *m.Heartbeat
+		s.st.Heartbeat = &hb
+		st := s.copyLocked()
+		s.mu.Unlock()
+		s.emit(Event{Kind: EventState, Status: st})
+	}
+	return true
+}
+
+// applySnapshot stores a snapshot: the reply of get_status always (new
+// connection, possibly a restarted service with a new sequence), pushes
+// only when not older than the current one.
+func (s *Session) applySnapshot(snap model.StatusSnapshot, force bool) {
+	s.mu.Lock()
+	if !force && s.st.Snapshot != nil && snap.Seq < s.st.Snapshot.Seq {
+		s.mu.Unlock()
+		return
+	}
+	cp := snap
+	s.st.Snapshot = &cp
+	st := s.copyLocked()
+	s.mu.Unlock()
+	s.emit(Event{Kind: EventStatus, Status: st})
+}
+
+func (s *Session) onPush(m model.IPCMessage) {
+	switch m.Type {
+	case model.MsgStatus:
+		if m.Status != nil {
+			s.applySnapshot(*m.Status, false)
+		}
+	case model.MsgAlert:
+		if m.Alert != nil {
+			a := *m.Alert
+			s.emit(Event{Kind: EventAlert, Status: s.Status(), Alert: &a})
+		}
+	}
+}
+
+// emit queues an event (never blocks).
+func (s *Session) emit(e Event) {
+	if s.opt.OnEvent == nil {
+		return
+	}
+	s.evMu.Lock()
+	if !s.closed {
+		s.events = append(s.events, e)
+		s.evCond.Signal()
+	}
+	s.evMu.Unlock()
+}
+
+func (s *Session) dispatch(done chan struct{}) {
+	defer close(done)
+	for {
+		s.evMu.Lock()
+		for len(s.events) == 0 && !s.closed {
+			s.evCond.Wait()
+		}
+		if len(s.events) == 0 && s.closed {
+			s.evMu.Unlock()
+			return
+		}
+		evs := s.events
+		s.events = nil
+		s.evMu.Unlock()
+		for _, e := range evs {
+			s.opt.OnEvent(e)
+		}
+	}
+}

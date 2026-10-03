@@ -77,7 +77,7 @@ func ProtectData(plain, entropy []byte, flags uint32) ([]byte, error) {
 		ent = blobOf(entropy)
 	}
 	var out dataBlob
-	r, _, e := procCryptProtectData.Call(
+	r, _, e := callProc(procCryptProtectData,
 		uintptr(unsafe.Pointer(in)),
 		uintptr(unsafe.Pointer(descr)),
 		uintptr(unsafe.Pointer(ent)),
@@ -111,7 +111,7 @@ func UnprotectData(blob, entropy []byte, flags uint32) ([]byte, error) {
 		ent = blobOf(entropy)
 	}
 	var out dataBlob
-	r, _, e := procCryptUnprotectData.Call(
+	r, _, e := callProc(procCryptUnprotectData,
 		uintptr(unsafe.Pointer(in)),
 		0, // ppszDataDescr: not needed
 		uintptr(unsafe.Pointer(ent)),

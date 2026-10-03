@@ -66,6 +66,9 @@ type Controller struct {
 	msg                     string
 }
 
+// SetLang switches the UI language of the texts (tray menu choice).
+func (c *Controller) SetLang(lang string) { c.lang = i18n.Normalize(lang) }
+
 // New returns a controller for the UI language lang.
 func New(lang string) *Controller {
 	return &Controller{lang: i18n.Normalize(lang), shown: map[ID]model.AlertEvent{}, suppress: map[ID]model.AlertLevel{}}

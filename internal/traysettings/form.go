@@ -182,5 +182,8 @@ func FocusField(path string, params []string) Field {
 	case "name", "port", "database", "authMode", "login", "password", "clearPassword", "encrypt", "trustServerCert", "enabled":
 		return Field(path)
 	}
+	if IsGeneral(Field(path)) {
+		return Field(path)
+	}
 	return FieldNone
 }

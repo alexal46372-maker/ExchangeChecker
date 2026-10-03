@@ -117,3 +117,12 @@ func (aw *alertWindow) bringToFront() {
 		winapi.FlashWindow(aw.hwnd)
 	}
 }
+
+// setLang switches the texts of the window to lang (the view texts follow
+// with the next apply).
+func (aw *alertWindow) setLang(lang string) {
+	aw.lang = lang
+	winapi.SetWindowText(aw.hint, i18n.T(i18n.KeyAlertCloseHint, lang))
+	winapi.SetWindowText(aw.ack, i18n.T(i18n.KeyAlertAck, lang))
+	winapi.SetWindowText(aw.close, i18n.T(i18n.KeyAlertClose, lang))
+}

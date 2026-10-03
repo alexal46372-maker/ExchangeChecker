@@ -26,7 +26,15 @@ const (
 	CmdSettings = 1001
 	CmdAbout    = 1002
 	CmdExit     = 1003
+	// language submenu (per-user tray language, phase 6e)
+	CmdLangAuto = 1011
+	CmdLangRU   = 1012
+	CmdLangEN   = 1013
 )
+
+// LangCommands maps the language commands to the stored preference
+// ("" = as in Windows).
+var LangCommands = map[int]string{CmdLangAuto: "", CmdLangRU: model.LangRU, CmdLangEN: model.LangEN}
 
 // Item is one menu item. Sub != nil makes it a submenu.
 type Item struct {
@@ -35,6 +43,7 @@ type Item struct {
 	Color     Color
 	Disabled  bool
 	Separator bool
+	Checked   bool
 	Sub       []Item
 }
 
@@ -175,11 +184,22 @@ func PointText(p model.PointStatus, lang string) string {
 }
 
 // BuildRightMenu is the right-click menu: Settings (phase 6c: read-only
-// window, «Изменить (администратор)» elevates), About, Exit.
-func BuildRightMenu(lang string) []Item {
+// window, «Изменить (администратор)» elevates), About, the language
+// submenu with the current per-user preference pref checked ("" = as in
+// Windows; phase 6e), Exit.
+func BuildRightMenu(lang, pref string) []Item {
+	sub := []Item{
+		{ID: CmdLangAuto, Text: i18n.T(i18n.KeyMenuLangAuto, lang)},
+		{ID: CmdLangRU, Text: i18n.T(i18n.KeyMenuLangRU, lang)},
+		{ID: CmdLangEN, Text: i18n.T(i18n.KeyMenuLangEN, lang)},
+	}
+	for i := range sub {
+		sub[i].Checked = LangCommands[sub[i].ID] == pref
+	}
 	return []Item{
 		{ID: CmdSettings, Text: i18n.T(i18n.KeyMenuSettings, lang)},
 		{ID: CmdAbout, Text: i18n.T(i18n.KeyMenuAbout, lang)},
+		{Text: i18n.T(i18n.KeyMenuLanguage, lang), Sub: sub},
 		{Separator: true},
 		{ID: CmdExit, Text: i18n.T(i18n.KeyMenuExit, lang)},
 	}

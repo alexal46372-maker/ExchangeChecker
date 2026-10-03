@@ -555,7 +555,8 @@ Wizard Win32 (страницы):
 - **6a ✅** — клиент `internal/trayipc` (heartbeat, переподключение, рестарт службы, v1/`unknown_command`, проверка PID G7), значок и меню (`internal/trayui` + `internal/wintray`), RU/EN (`internal/i18n`), «О программе», ресурсы exe (`.ico` + манифест + `.syso`), политика сборки трея; «Настройки» в меню неактивен до 6c
 - **6b ✅** — тревоги и звук (`CHK-TRAY-03`): окно тревоги поверх всех, бесконечный `Beep` по `settings.beep`, «Закрыть» глушит до следующего изменения, «Подтвердить» → `ack_alert`; логика — `internal/trayalert`
 - **6c ✅** — настройки баз (`CHK-TRAY-04/05/06`): «Настройки…» — окно только для чтения по `get_status`, «Изменить (администратор)» → `exchtray --settings` (`ShellExecuteExW` `runas`, своё соединение, G7); форма профиля, «Проверить подключение» (`test_profile`, отмена `cancel {ref}`), `save_profile`/`delete_profile` с `expectedRevision`, «Опросить сейчас»; логика — `internal/traysettings`
-- 6d — Discovery UI (после G2+G3); 6e — общие настройки
+- 6d — Discovery UI (после G2+G3)
+- **6e ✅** — общие настройки (`CHK-TRAY-08` финал, `CHK-TRAY-09`): страница «Общие настройки…» окна настроек (интервал опроса, пороги, `beep.*` с выключателем `beep.enabled`, язык журнала службы, `trayAutostart`) → `save_settings` с `expectedRevision` и всегда явным `beep.enabled`; звук выключен — окно тревоги показывается без `Beep`; язык трея — на пользователя (HKCU `Software\ExchangeChecker\Tray`, `Language`), подменю «Язык (Language)», применяется сразу; аудит строк i18n
 - checks: `CHK-IPC-01`, `CHK-TRAY-01` … `CHK-TRAY-10`
 
 ### Фаза 6 — служба (G5/G6 для трея; EC Service) ✅

@@ -4,7 +4,6 @@ package wintray
 
 import (
 	"context"
-	"errors"
 	"io"
 	"runtime"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
@@ -40,6 +40,8 @@ type cfgService struct {
 	polls    []string
 	tests    []model.IPCRequest
 	canceled int
+	gets     int
+	settings []model.Settings // save_settings calls
 	// saveErr: reply to the next save_profile
 	saveErr error
 	// test: "ok", "busy", "rate", "timeout", "block"
@@ -51,7 +53,8 @@ func (f *cfgService) revision() string { return "r" + strconv.Itoa(f.rev) }
 func (f *cfgService) Snapshot() model.StatusSnapshot {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	snap := model.StatusSnapshot{Seq: uint64(f.rev + 1), ConfigRevision: f.revision()}
+	set := model.DefaultSettings()
+	snap := model.StatusSnapshot{Seq: uint64(f.rev + 1), ConfigRevision: f.revision(), Settings: &set}
 	for _, p := range f.profiles {
 		snap.Profiles = append(snap.Profiles, model.ProfileSnapshot{ProfileID: p.ID, Name: p.Name, Enabled: p.Enabled,
 			Connection: &model.ProfileConnection{Server: p.Server, Port: p.Port, Database: p.Database, AuthMode: p.AuthMode,
@@ -97,6 +100,7 @@ func (f *cfgService) TestProfile(ctx context.Context, req model.IPCRequest) (mod
 func (f *cfgService) GetConfig() (model.ConfigView, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.gets++
 	return model.ConfigView{Settings: model.DefaultSettings(), Profiles: append([]model.Profile(nil), f.profiles...)}, f.revision(), nil
 }
 
@@ -154,8 +158,15 @@ func (f *cfgService) DeleteProfile(id, rev, account string) (string, error) {
 	return f.revision(), nil
 }
 
-func (f *cfgService) SaveSettings(model.Settings, string, string) (string, error) {
-	return "", errors.New("not used")
+func (f *cfgService) SaveSettings(s model.Settings, rev, account string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if rev != f.revision() {
+		return "", &model.IPCError{Code: model.ErrCodeConflict, Key: model.MsgMonitorConfigConflict, Message: "conflict"}
+	}
+	f.settings = append(f.settings, s)
+	f.rev++
+	return f.revision(), nil
 }
 
 func (f *cfgService) lastSave() saveCall {
@@ -178,6 +189,10 @@ func (f *cfgService) count(what string) int {
 		return len(f.tests)
 	case "canceled":
 		return f.canceled
+	case "get":
+		return f.gets
+	case "settings":
+		return len(f.settings)
 	}
 	return -1
 }
@@ -195,7 +210,18 @@ type fakeElevator struct {
 
 func (e *fakeElevator) Elevate(uintptr) error { e.calls++; return e.err }
 
-func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator) *App {
+// fakeConfirm answers the Yes/No questions of the settings window.
+type fakeConfirm struct {
+	no    bool
+	texts []string
+}
+
+func (c *fakeConfirm) ask(_ uintptr, text, _ string) bool {
+	c.texts = append(c.texts, text)
+	return !c.no
+}
+
+func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ...*fakeConfirm) *App {
 	t.Helper()
 	l := ipc.NewMemListener()
 	srv := ipc.NewServer(svc, nil)
@@ -203,8 +229,12 @@ func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator) *App {
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
+	c := &fakeConfirm{}
+	if len(conf) > 0 {
+		c = conf[0]
+	}
 	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenSettings: true, Beeper: &testBeeper{},
-		Elevator: el, ConfirmDelete: func(uintptr, string, string) bool { return true },
+		Elevator: el, Confirm: c.ask,
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)
@@ -399,7 +429,8 @@ func TestCHK_TRAY_06_SettingsOtherProfileInvalid(t *testing.T) {
 	bad.Name, bad.Server, bad.Database, bad.Login = "Ручной", "x", "y", "z"
 	svc.profiles = append(svc.profiles, bad)
 	svc.saveErr = &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorProfileInvalid,
-		Message: `monitor: profile "bad": mapping: point name/id column is required`, Args: []string{"mapping.pointNameColumn", model.ValRequired}}
+		Message: `monitor: profile "bad": mapping: point name/id column is required`, Args: []string{"mapping.pointNameColumn", model.ValRequired},
+		ProfileID: "bad"}
 	app := startCfgApp(t, svc, true, nil)
 	w := openAdmin(t, app)
 	w.click(t, idSetSave)
@@ -544,5 +575,285 @@ func TestCHK_TRAY_04_SettingsReadOnly(t *testing.T) {
 	w.click(t, idSetElevate)
 	if el.calls != 2 || app.settings != nil || winapi.IsWindow(w.hwnd) {
 		t.Error("read-only window must close after the elevated one started")
+	}
+}
+
+// TestCHK_TRAY_04_SettingsDiscardPrompt — unsaved edits: switching the
+// profile, «Добавить», «Перечитать» and closing ask «Отменить
+// изменения?» («Нет» keeps the edits); no question without edits.
+func TestCHK_TRAY_04_SettingsDiscardPrompt(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	p2 := model.NewProfile("p2")
+	p2.Name, p2.Server, p2.Database, p2.AuthMode = "Филиал", "h2", "d2", model.AuthWindows
+	svc.profiles = append(svc.profiles, p2)
+	conf := &fakeConfirm{}
+	app := startCfgApp(t, svc, true, nil, conf)
+	w := openAdmin(t, app)
+	sel := func(i int) {
+		winapi.SendMessage(w.ctl[idSetList], winapi.LB_SETCURSEL, uintptr(i), 0)
+		w.command(idSetList, winapi.LBN_SELCHANGE)
+	}
+	want := func(n int, what string) {
+		t.Helper()
+		if len(conf.texts) != n {
+			t.Fatalf("%s: %d questions %q", what, len(conf.texts), conf.texts)
+		}
+		if n > 0 && conf.texts[n-1] != "Отменить изменения?" {
+			t.Fatalf("%s: question %q", what, conf.texts[n-1])
+		}
+	}
+	sel(1) // no edits: no question
+	sel(0)
+	want(0, "switch without edits")
+
+	w.set(idSetName, "правка")
+	conf.no = true
+	sel(1)
+	want(1, "switch with edits")
+	if w.ed.Sel != 0 || w.text(idSetName) != "правка" || int(winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCURSEL, 0, 0)) != 0 {
+		t.Error("«Нет» must keep the edits and the selection")
+	}
+	w.click(t, idSetAdd)
+	want(2, "add with edits")
+	if w.ed.IsNew {
+		t.Error("«Нет» on «Добавить» created a profile")
+	}
+	w.click(t, idSetReload)
+	want(3, "reload with edits")
+	if w.busy || w.text(idSetName) != "правка" {
+		t.Error("«Нет» on «Перечитать» reloaded")
+	}
+	winapi.SendMessage(w.hwnd, winapi.WM_CLOSE, 0, 0)
+	want(4, "close with edits")
+	if !winapi.IsWindow(w.hwnd) {
+		t.Fatal("«Нет» on close closed the window")
+	}
+
+	conf.no = false
+	w.click(t, idSetAdd)
+	want(5, "add, yes")
+	if !w.ed.IsNew {
+		t.Fatal("«Да» on «Добавить» must start a new profile")
+	}
+	sel(1) // untouched new profile: no question
+	want(5, "untouched new profile")
+	if w.ed.Base.ID != "p2" {
+		t.Errorf("selected %q", w.ed.Base.ID)
+	}
+	w.click(t, idSetReload)
+	pumpUntil(t, "reloaded", func() bool { return !w.busy })
+	want(5, "reload without edits")
+	w.set(idSetDatabase, "d3")
+	w.click(t, idSetClose)
+	want(6, "close button with edits")
+	if winapi.IsWindow(w.hwnd) || app.settings != nil {
+		t.Error("«Да» on close must close the window")
+	}
+}
+
+// TestCHK_TRAY_06_SettingsPasswordReads — the password box is read only
+// for save / test (readPassword, wiped UTF-16 buffer); editing other
+// fields, readForm and EN_CHANGE of the password only look at its length.
+func TestCHK_TRAY_06_SettingsPasswordReads(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	app := startCfgApp(t, svc, true, &fakeElevator{})
+	w := openAdmin(t, app)
+	w.set(idSetPassword, "s1")
+	w.set(idSetHost, "srv2")
+	w.readForm()
+	w.command(idSetPassword, winapi.EN_CHANGE)
+	if w.pwReads != 0 || !w.ed.Form.PasswordTyped || !w.ed.Unsaved() {
+		t.Fatalf("password read outside save/test: reads %d typed %v", w.pwReads, w.ed.Form.PasswordTyped)
+	}
+	w.click(t, idSetSave)
+	pumpUntil(t, "saved", func() bool { return svc.count("save") == 1 && !w.busy })
+	if w.pwReads != 1 || svc.lastSave().password != "s1" {
+		t.Errorf("save: reads %d password %q", w.pwReads, svc.lastSave().password)
+	}
+	if w.ed.Form.PasswordTyped || w.text(idSetPassword) != "" {
+		t.Error("password box must be cleared after save")
+	}
+	w.set(idSetDatabase, "db3") // edit without a password (same server: reuse): no read
+	w.click(t, idSetSave)
+	pumpUntil(t, "saved 2", func() bool { return svc.count("save") == 2 && !w.busy })
+	if w.pwReads != 1 || svc.lastSave().password != "" {
+		t.Errorf("save without password: reads %d password %q", w.pwReads, svc.lastSave().password)
+	}
+
+	buf := winapi.GetWindowTextUTF16(w.ctl[idSetDatabase])
+	if string(utf16.Decode(buf)) != "db3" {
+		t.Errorf("GetWindowTextUTF16 %q", string(utf16.Decode(buf)))
+	}
+	winapi.ZeroUTF16(buf)
+	for _, c := range buf {
+		if c != 0 {
+			t.Fatal("ZeroUTF16 left data")
+		}
+	}
+}
+
+// TestCHK_TRAY_04_SettingsWindowClasses — the read-only window has its own
+// class, so FindWindow(SettingsClass) of `--settings` finds only the
+// administrator window.
+func TestCHK_TRAY_04_SettingsWindowClasses(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	app := startCfgApp(t, newCfgService(), false, &fakeElevator{})
+	app.Command(1001) // trayui.CmdSettings
+	w := app.settings
+	if w == nil || w.ed.Mode != traysettings.ReadOnly {
+		t.Fatal("read-only window not opened")
+	}
+	// (hidden windows of earlier tests may still exist in this process, so
+	// the class of each window is checked, not only the first FindWindow hit)
+	if c := winapi.GetClassName(w.hwnd); c != SettingsViewClass {
+		t.Errorf("read-only window class %q, want %q", c, SettingsViewClass)
+	}
+	if h := winapi.FindWindow(SettingsClass); h == w.hwnd {
+		t.Error("FindWindow(SettingsClass) found the read-only window")
+	}
+	if h := winapi.FindWindow(SettingsViewClass); h == 0 || winapi.GetClassName(h) != SettingsViewClass {
+		t.Errorf("FindWindow(SettingsViewClass) = %#x", h)
+	}
+	w.close()
+
+	admin := startCfgApp(t, newCfgService(), true, &fakeElevator{})
+	aw := openAdmin(t, admin)
+	if c := winapi.GetClassName(aw.hwnd); c != SettingsClass {
+		t.Errorf("admin window class %q, want %q", c, SettingsClass)
+	}
+	if h := winapi.FindWindow(SettingsClass); h == 0 || winapi.GetClassName(h) != SettingsClass {
+		t.Errorf("FindWindow(SettingsClass) = %#x", h)
+	}
+}
+
+// TestCHK_TRAY_06_SettingsReconnect — «Нет связи» while disconnected; on
+// reconnection get_config is read again: without edits the form is
+// reloaded, with edits the form and revision stay and a changed
+// configuration is reported.
+func TestCHK_TRAY_06_SettingsReconnect(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	app := startCfgApp(t, svc, true, &fakeElevator{})
+	w := openAdmin(t, app)
+	down := trayipc.Status{State: trayipc.StateUnavailable}
+	up := trayipc.Status{State: trayipc.StateConnected}
+	gets := svc.count("get")
+
+	w.onSessionState(down)
+	if w.statusText() != i18n.T(i18n.KeySetNotConnected, i18n.RU) {
+		t.Errorf("disconnected status %q", w.statusText())
+	}
+	svc.mu.Lock()
+	svc.profiles[0].Database, svc.rev = "db9", 2
+	svc.mu.Unlock()
+	w.onSessionState(up)
+	pumpUntil(t, "reloaded", func() bool { return svc.count("get") == gets+1 && !w.busy })
+	if w.statusText() != "" || w.ed.Revision != "r2" || w.text(idSetDatabase) != "db9" {
+		t.Errorf("reload after reconnect: status %q rev %q db %q", w.statusText(), w.ed.Revision, w.text(idSetDatabase))
+	}
+	w.onSessionState(up) // no transition: nothing
+	if svc.count("get") != gets+1 {
+		t.Error("get_config without a reconnection")
+	}
+
+	w.set(idSetHost, "edited")
+	w.onSessionState(down)
+	w.onSessionState(up) // same revision: the edit stays, status cleared
+	pumpUntil(t, "checked", func() bool { return svc.count("get") == gets+2 && !w.busy })
+	if w.statusText() != "" || w.text(idSetHost) != "edited" || !w.ed.Unsaved() {
+		t.Errorf("same revision: status %q host %q", w.statusText(), w.text(idSetHost))
+	}
+	w.onSessionState(down)
+	svc.mu.Lock()
+	svc.rev = 3
+	svc.mu.Unlock()
+	w.onSessionState(up)
+	pumpUntil(t, "checked 2", func() bool { return svc.count("get") == gets+3 && !w.busy })
+	if w.statusText() != i18n.T(i18n.KeySetChangedOffline, i18n.RU) || w.text(idSetHost) != "edited" || w.ed.Revision != "r2" {
+		t.Errorf("changed revision: status %q host %q rev %q", w.statusText(), w.text(idSetHost), w.ed.Revision)
+	}
+}
+
+// TestCHK_TRAY_09_SettingsGeneralPage — «Общие настройки…»: the page
+// switch, local validation focus (the page follows the field),
+// save_settings with expectedRevision and an explicit beep.enabled /
+// trayAutostart, the new revision; unsaved general edits ask before
+// Reload / close but not on a profile switch.
+func TestCHK_TRAY_09_SettingsGeneralPage(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	conf := &fakeConfirm{no: true}
+	app := startCfgApp(t, svc, true, &fakeElevator{}, conf)
+	w := openAdmin(t, app)
+	if w.page != 0 {
+		t.Fatal("initial page")
+	}
+	w.click(t, idSetPage)
+	if w.page != 1 || winapi.GetWindowText(w.ctl[idSetPage]) != "Базы данных…" {
+		t.Fatalf("page %d %q", w.page, winapi.GetWindowText(w.ctl[idSetPage]))
+	}
+	if w.text(idGenPoll) != "60" || !w.check(idGenBeep) || !w.check(idGenAutostart) || !winapi.IsWindowEnabled(w.ctl[idGenBeep]) {
+		t.Errorf("general page: poll %q beep %v autostart %v", w.text(idGenPoll), w.check(idGenBeep), w.check(idGenAutostart))
+	}
+	w.set(idGenPoll, "3")
+	w.click(t, idSetSave)
+	if svc.count("settings") != 0 || w.lastFocus != traysettings.FieldPollInterval {
+		t.Errorf("local validation: saves %d focus %q status %q", svc.count("settings"), w.lastFocus, w.statusText())
+	}
+	if conf.no, conf.texts = true, nil; w.profileDiscardOK() != true || len(conf.texts) != 0 {
+		t.Error("a profile switch must not ask about general edits")
+	}
+	if w.discardOK() || len(conf.texts) != 1 {
+		t.Error("Reload / close must ask about general edits")
+	}
+	w.set(idGenPoll, "120")
+	w.click(t, idGenBeep)      // off
+	w.click(t, idGenAutostart) // off
+	w.click(t, idSetSave)
+	pumpUntil(t, "save_settings", func() bool { return svc.count("settings") == 1 && !w.busy })
+	svc.mu.Lock()
+	s := svc.settings[0]
+	svc.mu.Unlock()
+	if s.PollIntervalSec != 120 || s.Beep.Enabled != model.OptFalse || s.TrayAutostart || s.Beep.GapMs != 700 {
+		t.Errorf("sent settings %+v", s)
+	}
+	if w.ed.Revision != "r2" || w.ed.GeneralUnsaved() || w.statusText() != "Общие настройки сохранены." {
+		t.Errorf("after save: rev %q unsaved %v status %q", w.ed.Revision, w.ed.GeneralUnsaved(), w.statusText())
+	}
+	w.setPage(0)
+	w.focus(traysettings.FieldGap) // a service error of a general field shows its page
+	if w.page != 1 {
+		t.Error("focus must switch to the general page")
+	}
+	w.focus(traysettings.FieldHost)
+	if w.page != 0 {
+		t.Error("focus must switch back to the databases page")
+	}
+}
+
+// TestCHK_TRAY_09_SettingsGeneralReadOnly — a plain user sees the general
+// settings of get_status read-only (trayAutostart included).
+func TestCHK_TRAY_09_SettingsGeneralReadOnly(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	app := startCfgApp(t, newCfgService(), false, &fakeElevator{})
+	app.Command(1001)
+	w := app.settings
+	if w == nil || w.ed.Mode != traysettings.ReadOnly {
+		t.Fatal("read-only window not opened")
+	}
+	w.click(t, idSetPage)
+	if !w.ed.HasSettings || w.text(idGenPoll) == "" || !w.check(idGenAutostart) {
+		t.Errorf("read-only general: has %v poll %q", w.ed.HasSettings, w.text(idGenPoll))
+	}
+	if winapi.IsWindowEnabled(w.ctl[idGenAutostart]) || winapi.IsWindowEnabled(w.ctl[idGenBeep]) || winapi.IsWindowEnabled(w.ctl[idGenLang]) {
+		t.Error("read-only general page is editable")
 	}
 }

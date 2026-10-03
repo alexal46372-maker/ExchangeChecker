@@ -130,7 +130,7 @@ func TestCHK_TRAY_01_NativeMenu(t *testing.T) {
 		t.Error("service status line must be a disabled item on top")
 	}
 
-	rm, err := buildMenu(trayui.BuildRightMenu(i18n.RU), &bm)
+	rm, err := buildMenu(trayui.BuildRightMenu(i18n.RU, "en"), &bm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +141,17 @@ func TestCHK_TRAY_01_NativeMenu(t *testing.T) {
 	}
 	if _, mii := menuItem(t, rm, 1); mii.ID != trayui.CmdAbout || mii.State&winapi.MFS_DISABLED != 0 {
 		t.Error("about item")
+	}
+	// language submenu (6e): the stored preference is checked
+	text, mii = menuItem(t, rm, 2)
+	if mii.SubMenu == 0 || text != "Язык (Language)" {
+		t.Fatalf("language submenu %q %#x", text, mii.SubMenu)
+	}
+	for pos, id := range []int{trayui.CmdLangAuto, trayui.CmdLangRU, trayui.CmdLangEN} {
+		_, li := menuItem(t, mii.SubMenu, pos)
+		if int(li.ID) != id || (li.State&winapi.MFS_CHECKED != 0) != (id == trayui.CmdLangEN) {
+			t.Errorf("language item %d: id %d state %#x", pos, li.ID, li.State)
+		}
 	}
 }
 
@@ -323,6 +334,7 @@ func TestCHK_TRAY_10_StructSizes(t *testing.T) {
 		{"BITMAPINFOHEADER", unsafe.Sizeof(winapi.BITMAPINFOHEADER{}), 40},
 		{"FLASHWINFO", unsafe.Sizeof(winapi.FLASHWINFO{}), 32},
 		{"ICONINFO", unsafe.Sizeof(winapi.ICONINFO{}), 32},
+		{"SHELLEXECUTEINFOW", unsafe.Sizeof(winapi.SHELLEXECUTEINFOW{}), 112},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

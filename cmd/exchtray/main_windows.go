@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray"
@@ -31,11 +30,13 @@ func run() int {
 		Dial:   trayipc.PipeDialer(model.PipeName, pipeDialTimeout),
 		Verify: trayipc.ServiceVerifier(model.ServiceName), // G7 before any command
 	}
+	// per-user tray language (HKCU, menu «Язык (Language)»), else Windows
+	langPref, lang := wintray.LoadLang(wintray.RegistryLangStore{})
 	for _, a := range os.Args[1:] {
 		if a == wintray.SettingsArg {
-			// elevated settings window (ShellExecuteW "runas" from the
+			// elevated settings window (ShellExecuteExW "runas" from the
 			// read-only window): own process, own connection
-			return wintray.RunSettings(wintray.SettingsOptions{Lang: i18n.Default(), Session: session})
+			return wintray.RunSettings(wintray.SettingsOptions{Lang: lang, Session: session})
 		}
 	}
 	release, ok, err := wintray.SingleInstance(wintray.MutexName)
@@ -49,8 +50,10 @@ func run() int {
 	defer release()
 
 	app, err := wintray.NewApp(wintray.Options{
-		Lang:    i18n.Default(),
-		Session: session,
+		Lang:      lang,
+		LangPref:  langPref,
+		LangStore: wintray.RegistryLangStore{},
+		Session:   session,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "exchtray:", err)

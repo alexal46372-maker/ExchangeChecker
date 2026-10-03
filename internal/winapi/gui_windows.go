@@ -45,6 +45,7 @@ var (
 	procGetWindowTextW         = moduser32.NewProc("GetWindowTextW")
 	procGetWindowTextLengthW   = moduser32.NewProc("GetWindowTextLengthW")
 	procFindWindowW            = moduser32.NewProc("FindWindowW")
+	procGetClassNameW          = moduser32.NewProc("GetClassNameW")
 	procLoadCursorW            = moduser32.NewProc("LoadCursorW")
 	procCreateIconIndirect     = moduser32.NewProc("CreateIconIndirect")
 	procDestroyIcon            = moduser32.NewProc("DestroyIcon")
@@ -113,6 +114,7 @@ const (
 	MFT_SEPARATOR = 0x00000800
 	MFS_ENABLED   = 0x00000000
 	MFS_DISABLED  = 0x00000003
+	MFS_CHECKED   = 0x00000008
 
 	TPM_RIGHTBUTTON = 0x0002
 	TPM_RETURNCMD   = 0x0100
@@ -416,6 +418,40 @@ func GetWindowText(hwnd uintptr) string {
 	buf := make([]uint16, n+1)
 	callProc(procGetWindowTextW, hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 	return syscall.UTF16ToString(buf)
+}
+
+// GetWindowTextLength returns the length of the text of hwnd in UTF-16
+// units, without copying the text.
+func GetWindowTextLength(hwnd uintptr) int {
+	n, _, _ := callProc(procGetWindowTextLengthW, hwnd)
+	return int(n)
+}
+
+// GetWindowTextUTF16 copies the text of hwnd into a new []uint16 (without
+// the terminating zero) so a secret can be wiped by the caller with
+// ZeroUTF16 after use.
+func GetWindowTextUTF16(hwnd uintptr) []uint16 {
+	n, _, _ := callProc(procGetWindowTextLengthW, hwnd)
+	buf := make([]uint16, n+1)
+	r, _, _ := callProc(procGetWindowTextW, hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if int(r) < len(buf) {
+		return buf[:r]
+	}
+	return buf[:n]
+}
+
+// ZeroUTF16 overwrites b with zeros.
+func ZeroUTF16(b []uint16) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// GetClassName returns the window class name of hwnd ("" on failure).
+func GetClassName(hwnd uintptr) string {
+	buf := make([]uint16, 257) // class names are at most 256 characters
+	n, _, _ := callProc(procGetClassNameW, hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return syscall.UTF16ToString(buf[:n])
 }
 
 // FindWindow finds a top-level window by class name (0 = not found).

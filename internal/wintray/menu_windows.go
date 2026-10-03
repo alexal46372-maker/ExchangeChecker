@@ -64,6 +64,9 @@ func buildMenu(items []trayui.Item, bm *bitmaps) (uintptr, error) {
 			if it.Disabled {
 				mii.State = winapi.MFS_DISABLED
 			}
+			if it.Checked {
+				mii.State |= winapi.MFS_CHECKED
+			}
 			if h := bm.get(it.Color); h != 0 {
 				mii.Mask |= winapi.MIIM_BITMAP
 				mii.BmpItem = h

@@ -129,11 +129,15 @@ var winAPIMinVersion = map[string]float64{
 	"LoadIconW": 5.0, "SetWindowPos": 5.0, "FlashWindowEx": 5.0, "GetForegroundWindow": 5.0,
 	// phase 6c settings window (CHK-TRAY-04/05/06)
 	"SetFocus": 5.0, "GetFocus": 5.0, "MessageBoxW": 5.0, "GetModuleFileNameW": 5.0,
-	"IsDialogMessageW": 5.0,
+	"IsDialogMessageW": 5.0, "AllowSetForegroundWindow": 5.0, "GetProcessId": 5.1,
+	"GetClassNameW": 5.0,
+	// advapi32 — phase 6e per-user tray language in HKCU (CHK-TRAY-08)
+	"RegCreateKeyExW": 5.0, "RegOpenKeyExW": 5.0, "RegQueryValueExW": 5.0, "RegSetValueExW": 5.0,
+	"RegDeleteValueW": 5.0, "RegDeleteKeyW": 5.0, "RegCloseKey": 5.0,
 	// gdi32
 	"CreateBitmap": 5.0, "CreateDIBSection": 5.0, "DeleteObject": 5.0, "GetStockObject": 5.0,
 	// shell32
-	"Shell_NotifyIconW": 5.0, "ShellExecuteW": 5.0,
+	"Shell_NotifyIconW": 5.0, "ShellExecuteExW": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {
@@ -200,6 +204,12 @@ func TestCHK_TRAY_10_CallsThroughFind(t *testing.T) {
 	i := strings.Index(dll, "func callProc(")
 	if i < 0 || !strings.Contains(dll[i:], "p.Find()") {
 		t.Fatal("CHK-TRAY-10: callProc must call LazyProc.Find before Call")
+	}
+	// pointers converted to uintptr in callProc arguments must stay valid
+	// (stack growth in Find, GC), like syscall.LazyProc.Call
+	// (CRLF on a Windows checkout; the compiler accepts the directive either way)
+	if !strings.Contains(strings.ReplaceAll(dll, "\r\n", "\n"), "//go:uintptrescapes\nfunc callProc(") {
+		t.Error("CHK-TRAY-10: callProc must be marked //go:uintptrescapes")
 	}
 }
 

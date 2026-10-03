@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"unicode/utf16"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -17,9 +18,14 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// SettingsClass is the window class of the settings window (FindWindow
-// of a second `exchtray --settings`).
-const SettingsClass = "ExchangeCheckerTraySettings"
+// SettingsClass is the window class of the administrator settings window
+// (FindWindow of a second `exchtray --settings`). The read-only window of
+// the tray process has its own class, SettingsViewClass, so that search
+// can never find a read-only window that is closing after «Изменить».
+const (
+	SettingsClass     = "ExchangeCheckerTraySettings"
+	SettingsViewClass = "ExchangeCheckerTraySettingsView"
+)
 
 // msgSetTask: queued results of the settings window's requests.
 const msgSetTask = winapi.WM_APP + 3
@@ -52,12 +58,25 @@ const (
 	idSetPoll
 	idSetReload
 	idSetElevate
+	idSetPage // «Общие настройки…» / «Базы данных…»
+	idGenPoll
+	idGenWarn
+	idGenError
+	idGenBeep
+	idGenWarnFreq
+	idGenWarnDur
+	idGenErrFreq
+	idGenErrDur
+	idGenGap
+	idGenLang
+	idGenAutostart
+	idGenNote
 	idSetClose = winapi.IDCANCEL
 )
 
 // Elevator starts the elevated settings process («Изменить
 // (администратор)»). The default runs this exe with --settings through
-// ShellExecuteW "runas"; tests use a fake.
+// ShellExecuteExW "runas"; tests use a fake.
 type Elevator interface {
 	Elevate(owner uintptr) error
 }
@@ -68,13 +87,25 @@ type ShellElevator struct{}
 // SettingsArg is the command line switch of the elevated settings process.
 const SettingsArg = "--settings"
 
-// Elevate implements Elevator (UAC prompt; ERROR_CANCELLED when refused).
+// Elevate implements Elevator: ShellExecuteExW "runas" with
+// SEE_MASK_NOCLOSEPROCESS (UAC refused: ERROR_CANCELLED). The started
+// process may take the foreground (AllowSetForegroundWindow), so an
+// already open settings window of another `--settings` instance, which
+// it activates, really comes to the front; the handle is closed.
 func (ShellElevator) Elevate(owner uintptr) error {
 	exe, err := winapi.ModuleFileName()
 	if err != nil {
 		return err
 	}
-	return winapi.ShellExecute(owner, "runas", exe, SettingsArg)
+	h, err := winapi.ShellExecuteEx(owner, "runas", exe, SettingsArg)
+	if err != nil {
+		return err
+	}
+	if h != 0 {
+		winapi.AllowSetForegroundWindow(winapi.GetProcessId(h))
+		syscall.CloseHandle(h)
+	}
+	return nil
 }
 
 // settingsSession is what the window needs of trayipc.Session.
@@ -92,7 +123,8 @@ type settingsConfig struct {
 	mode     traysettings.Mode
 	session  settingsSession
 	elevator Elevator
-	// confirm asks before delete; nil = MessageBoxW.
+	// confirm asks Yes/No (delete, discard changes); nil = MessageBoxW
+	// with «Нет» as the default button.
 	confirm func(owner uintptr, text, caption string) bool
 	hidden  bool
 	onClose func()
@@ -120,6 +152,12 @@ type settingsWindow struct {
 	testSeq    int
 	lastFocus  traysettings.Field
 	status     string
+	pwReads    int // readPassword calls (test hook)
+	page       int // 0 = databases, 1 = general settings
+	pageCtl    [2][]uintptr
+	cur        *[]uintptr // page of the controls being created
+	connected  bool       // service session state seen by onSessionState
+	loaded     bool       // get_config (or a snapshot) loaded at least once
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
@@ -135,7 +173,11 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	if cfg.mode == traysettings.Admin {
 		title = i18n.T(i18n.KeySetTitleAdmin, cfg.lang)
 	}
-	hwnd, err := createWindow(SettingsClass, title, 0,
+	class := SettingsViewClass
+	if cfg.mode == traysettings.Admin {
+		class = SettingsClass
+	}
+	hwnd, err := createWindow(class, title, 0,
 		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU|winapi.WS_MINIMIZEBOX, x, y, ww, wh, 0, w.wndProc)
 	if err != nil {
 		return nil, err
@@ -161,7 +203,49 @@ func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw,
 	if id != 0 {
 		w.ctl[id] = h
 	}
+	if w.cur != nil {
+		*w.cur = append(*w.cur, h)
+	}
 	return h
+}
+
+// genEdits are the number boxes of the general page and their fields.
+var genEdits = []struct {
+	id    int32
+	field traysettings.Field
+	key   string
+}{
+	{idGenPoll, traysettings.FieldPollInterval, i18n.KeyGenPoll},
+	{idGenWarn, traysettings.FieldWarnMinutes, i18n.KeyGenWarn},
+	{idGenError, traysettings.FieldErrorMinutes, i18n.KeyGenError},
+	{idGenWarnFreq, traysettings.FieldWarnFreq, i18n.KeyGenWarnFreq},
+	{idGenWarnDur, traysettings.FieldWarnDur, i18n.KeyGenWarnDur},
+	{idGenErrFreq, traysettings.FieldErrorFreq, i18n.KeyGenErrorFreq},
+	{idGenErrDur, traysettings.FieldErrorDur, i18n.KeyGenErrorDur},
+	{idGenGap, traysettings.FieldGap, i18n.KeyGenGap},
+}
+
+// genText returns the address of the GeneralForm string of an edit box.
+func genText(g *traysettings.GeneralForm, id int32) *string {
+	switch id {
+	case idGenPoll:
+		return &g.PollSec
+	case idGenWarn:
+		return &g.WarnMin
+	case idGenError:
+		return &g.ErrorMin
+	case idGenWarnFreq:
+		return &g.WarnFreq
+	case idGenWarnDur:
+		return &g.WarnDur
+	case idGenErrFreq:
+		return &g.ErrorFreq
+	case idGenErrDur:
+		return &g.ErrorDur
+	case idGenGap:
+		return &g.Gap
+	}
+	return nil
 }
 
 func (w *settingsWindow) build() {
@@ -171,10 +255,11 @@ func (w *settingsWindow) build() {
 		rh     = 27
 	)
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
+	w.cur = &w.pageCtl[0]
 	w.add("STATIC", w.t(i18n.KeySetProfiles), 0, winapi.SS_LEFT, 0, 12, 10, 200, 18)
-	w.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, 12, 30, 205, 400)
-	w.add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, 12, 436, 100, 26)
-	w.add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, 117, 436, 100, 26)
+	w.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, 12, 30, 205, 370)
+	w.add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, 12, 406, 100, 26)
+	w.add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, 117, 406, 100, 26)
 	row := int32(10)
 	line := func(label string, id int32, class string, style uint32, width int32) {
 		w.add("STATIC", label, 0, winapi.SS_LEFT, 0, lx, row+3, lw, 18)
@@ -212,6 +297,25 @@ func (w *settingsWindow) build() {
 	w.add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, lx, row+2, cx+cw-lx, 46)
 	row += 50
 	w.add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, lx, row, cx+cw-lx, 36)
+
+	// general settings page (hidden until «Общие настройки…»)
+	w.cur = &w.pageCtl[1]
+	row = 10
+	for i, g := range genEdits {
+		if i == 3 {
+			w.add("BUTTON", w.t(i18n.KeyGenBeepEnabled), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idGenBeep, cx, row+4, cw, 20)
+			row += rh + 4
+		}
+		line(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, 100)
+	}
+	row += 6
+	line(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 200)
+	w.add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idGenAutostart, cx, row+4, cw, 20)
+	row += rh + 8
+	w.add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, lx, row, cx+cw-lx, 80)
+	w.cur = nil
+
+	w.add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, 12, 440, 205, 26)
 	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idSetStatus, 12, 476, 743, 100)
 	bx := int32(12)
@@ -219,12 +323,16 @@ func (w *settingsWindow) build() {
 		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, bx, 586, width, 28)
 		bx += width + 6
 	}
+	w.cur = &w.pageCtl[0]
 	button(idSetTest, i18n.KeySetTest, 150)
 	button(idSetCancelTest, i18n.KeySetCancelTest, 120)
+	w.cur = nil
 	if w.cfg.mode == traysettings.Admin {
 		button(idSetSave, i18n.KeySetSave, 90)
 	}
+	w.cur = &w.pageCtl[0]
 	button(idSetPoll, i18n.KeySetPoll, 110)
+	w.cur = nil
 	button(idSetReload, i18n.KeySetReload, 90)
 	if w.cfg.mode == traysettings.ReadOnly {
 		button(idSetElevate, i18n.KeySetElevate, 165)
@@ -235,6 +343,12 @@ func (w *settingsWindow) build() {
 	}
 	for _, k := range []string{i18n.KeySetEncDisable, i18n.KeySetEncOptional, i18n.KeySetEncOn, i18n.KeySetEncStrict} {
 		winapi.SendMessageString(w.ctl[idSetEncrypt], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
+	for _, k := range []string{i18n.KeyGenLangAuto, i18n.KeyGenLangRU, i18n.KeyGenLangEN} {
+		winapi.SendMessageString(w.ctl[idGenLang], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
+	for _, h := range w.pageCtl[1] {
+		winapi.ShowWindow(h, winapi.SW_HIDE)
 	}
 	if w.cfg.mode == traysettings.ReadOnly {
 		winapi.ShowWindow(w.ctl[idSetAdd], winapi.SW_HIDE)
@@ -277,7 +391,7 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 		w.command(int32(wp&0xFFFF), uint32(wp>>16&0xFFFF))
 		return 0, true
 	case winapi.WM_CLOSE:
-		w.close()
+		w.userClose()
 		return 0, true
 	}
 	return 0, false
@@ -285,7 +399,27 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 
 func (w *settingsWindow) command(id int32, code uint32) {
 	switch id {
-	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetPassword:
+	case idSetPassword:
+		// Dirty tracking by a flag, not by content: only the length is asked.
+		if code == winapi.EN_CHANGE && !w.loading && w.ed.CanEdit() {
+			w.ed.Form.PasswordTyped = winapi.GetWindowTextLength(w.ctl[idSetPassword]) > 0
+			w.update()
+		}
+	case idGenPoll, idGenWarn, idGenError, idGenWarnFreq, idGenWarnDur, idGenErrFreq, idGenErrDur, idGenGap:
+		if code == winapi.EN_CHANGE && !w.loading {
+			w.readGeneral()
+		}
+	case idGenLang:
+		if code == winapi.CBN_SELCHANGE && !w.loading {
+			w.readGeneral()
+		}
+	case idGenBeep, idGenAutostart:
+		if code == winapi.BN_CLICKED && !w.loading {
+			w.readGeneral()
+		}
+	case idSetPage:
+		w.setPage(1 - w.page)
+	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin:
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readForm()
 			w.update()
@@ -317,11 +451,13 @@ func (w *settingsWindow) command(id int32, code uint32) {
 	case idSetPoll:
 		w.poll()
 	case idSetReload:
-		w.Reload()
+		if w.discardOK() {
+			w.Reload()
+		}
 	case idSetElevate:
 		w.elevate()
 	case idSetClose:
-		w.close()
+		w.userClose()
 	}
 }
 
@@ -339,6 +475,24 @@ func (w *settingsWindow) setCheck(id int32, on bool) {
 
 func (w *settingsWindow) text(id int32) string { return winapi.GetWindowText(w.ctl[id]) }
 
+// readPassword returns the password box text for one save / test request.
+// The UTF-16 copy is wiped right away; the returned string lives only as
+// long as the request (Go strings cannot be wiped).
+func (w *settingsWindow) readPassword() string {
+	if !w.ed.Form.PasswordTyped {
+		return ""
+	}
+	w.pwReads++
+	buf := winapi.GetWindowTextUTF16(w.ctl[idSetPassword])
+	defer winapi.ZeroUTF16(buf)
+	r := utf16.Decode(buf)
+	s := string(r)
+	for i := range r {
+		r[i] = 0
+	}
+	return s
+}
+
 // readForm copies the controls into the editor form (admin mode).
 func (w *settingsWindow) readForm() {
 	if !w.ed.CanEdit() {
@@ -346,7 +500,9 @@ func (w *settingsWindow) readForm() {
 	}
 	f := &w.ed.Form
 	f.Name, f.Host, f.Instance, f.Port = w.text(idSetName), w.text(idSetHost), w.text(idSetInstance), w.text(idSetPort)
-	f.Database, f.Login, f.Password = w.text(idSetDatabase), w.text(idSetLogin), w.text(idSetPassword)
+	f.Database, f.Login = w.text(idSetDatabase), w.text(idSetLogin)
+	// The password box is never read here (only its length on EN_CHANGE,
+	// see command); its text is taken by readPassword for save / test.
 	f.Auth = model.AuthSQL
 	if winapi.SendMessage(w.ctl[idSetAuth], winapi.CB_GETCURSEL, 0, 0) == 1 {
 		f.Auth = model.AuthWindows
@@ -374,10 +530,13 @@ func (w *settingsWindow) fill() {
 	winapi.SendMessage(lb, winapi.LB_SETCURSEL, uintptr(sel), 0) // -1 clears
 	f := w.ed.Form
 	for id, s := range map[int32]string{idSetName: f.Name, idSetHost: f.Host, idSetInstance: f.Instance, idSetPort: f.Port,
-		idSetDatabase: f.Database, idSetLogin: f.Login, idSetPassword: f.Password} {
+		idSetDatabase: f.Database, idSetLogin: f.Login} {
 		if w.text(id) != s {
 			winapi.SetWindowText(w.ctl[id], s)
 		}
+	}
+	if !f.PasswordTyped && winapi.GetWindowTextLength(w.ctl[idSetPassword]) > 0 {
+		winapi.SetWindowText(w.ctl[idSetPassword], "") // the box is only ever cleared
 	}
 	auth := 0
 	if f.Auth == model.AuthWindows {
@@ -396,6 +555,7 @@ func (w *settingsWindow) fill() {
 	w.setCheck(idSetTLS10, f.TLS10)
 	w.setCheck(idSetTrust, f.TrustServerCert)
 	w.setCheck(idSetEnabled, f.Enabled)
+	w.fillGeneral()
 	w.update()
 }
 
@@ -431,13 +591,24 @@ func (w *settingsWindow) update() {
 	saved := has && !ed.IsNew
 	winapi.EnableWindow(w.ctl[idSetPoll], saved && !w.busy)
 	winapi.EnableWindow(w.ctl[idSetReload], !w.busy)
+	gen := ed.CanEditSettings()
+	for _, e := range genEdits {
+		winapi.SendMessage(w.ctl[e.id], winapi.EM_SETREADONLY, boolPtr(!gen), 0)
+	}
+	for _, id := range []int32{idGenBeep, idGenAutostart, idGenLang} {
+		winapi.EnableWindow(w.ctl[id], gen)
+	}
 	if ed.Mode == traysettings.Admin {
-		winapi.EnableWindow(w.ctl[idSetSave], edit && !w.busy)
+		canSave := edit
+		if w.page == 1 {
+			canSave = gen
+		}
+		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy)
 	}
 	st := w.status
-	if !has && st == "" {
+	if !has && st == "" && w.page == 0 {
 		st = w.t(i18n.KeySetNoProfile)
 	}
 	if w.text(idSetStatus) != st {
@@ -492,20 +663,152 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldPort: idSetPort, traysettings.FieldDatabase: idSetDatabase, traysettings.FieldAuth: idSetAuth,
 	traysettings.FieldLogin: idSetLogin, traysettings.FieldPassword: idSetPassword, traysettings.FieldClearPassword: idSetClearPw,
 	traysettings.FieldEncrypt: idSetEncrypt, traysettings.FieldTLS10: idSetTLS10, traysettings.FieldTrust: idSetTrust,
-	traysettings.FieldEnabled: idSetEnabled,
+	traysettings.FieldEnabled:      idSetEnabled,
+	traysettings.FieldPollInterval: idGenPoll, traysettings.FieldWarnMinutes: idGenWarn, traysettings.FieldErrorMinutes: idGenError,
+	traysettings.FieldBeepEnabled: idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
+	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
+	traysettings.FieldLanguage: idGenLang, traysettings.FieldAutostart: idGenAutostart,
 }
 
 // focus moves the keyboard focus to the control of f (lastFocus keeps it
 // for tests: SetFocus of a hidden window is not reliable).
 func (w *settingsWindow) focus(f traysettings.Field) {
 	w.lastFocus = f
+	if page := map[bool]int{false: 0, true: 1}[traysettings.IsGeneral(f)]; page != w.page {
+		w.setPage(page)
+	}
 	if id, ok := fieldControl[f]; ok {
 		winapi.SetFocus(w.ctl[id])
 	}
 }
 
+// ask shows a Yes/No question («Нет» is the default button).
+func (w *settingsWindow) ask(text string) bool {
+	confirm := w.cfg.confirm
+	if confirm == nil {
+		confirm = func(owner uintptr, text, caption string) bool {
+			return winapi.MessageBox(owner, text, caption, winapi.MB_YESNO|winapi.MB_ICONWARNING|winapi.MB_DEFBUTTON2) == winapi.IDYES
+		}
+	}
+	return confirm(w.hwnd, text, w.t(i18n.KeyAppName))
+}
+
+// discardOK asks «Отменить изменения?» when the form (either page) has
+// unsaved edits; true = go on (no edits or the user agreed).
+func (w *settingsWindow) discardOK() bool {
+	w.readForm()
+	w.readGeneral()
+	if !w.ed.Unsaved() {
+		return true
+	}
+	return w.ask(w.t(i18n.KeySetDiscardConfirm))
+}
+
+// profileDiscardOK is discardOK for switching / adding a profile: the
+// general page keeps its edits then.
+func (w *settingsWindow) profileDiscardOK() bool {
+	w.readForm()
+	if !w.ed.ProfileUnsaved() {
+		return true
+	}
+	return w.ask(w.t(i18n.KeySetDiscardConfirm))
+}
+
+// setPage shows the databases (0) or the general settings (1) page.
+func (w *settingsWindow) setPage(p int) {
+	w.page = p
+	for i, hs := range w.pageCtl {
+		cmd := int32(winapi.SW_HIDE)
+		if i == p {
+			cmd = winapi.SW_SHOW
+		}
+		for _, h := range hs {
+			winapi.ShowWindow(h, cmd)
+		}
+	}
+	key := i18n.KeyGenPage
+	if p == 1 {
+		key = i18n.KeyGenProfilesPage
+	}
+	winapi.SetWindowText(w.ctl[idSetPage], w.t(key))
+	w.update()
+}
+
+// readGeneral copies the general page into the editor (administrator).
+func (w *settingsWindow) readGeneral() {
+	if !w.ed.CanEditSettings() {
+		return
+	}
+	g := &w.ed.General
+	for _, e := range genEdits {
+		*genText(g, e.id) = w.text(e.id)
+	}
+	g.BeepEnabled, g.Autostart = w.check(idGenBeep), w.check(idGenAutostart)
+	if i := int(winapi.SendMessage(w.ctl[idGenLang], winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(traysettings.LanguageChoices) {
+		g.Language = traysettings.LanguageChoices[i]
+	}
+}
+
+// fillGeneral shows the general page of the editor.
+func (w *settingsWindow) fillGeneral() {
+	g := w.ed.General
+	for _, e := range genEdits {
+		if s := *genText(&g, e.id); w.text(e.id) != s {
+			winapi.SetWindowText(w.ctl[e.id], s)
+		}
+	}
+	w.setCheck(idGenBeep, g.BeepEnabled)
+	w.setCheck(idGenAutostart, g.Autostart)
+	lang := traysettings.LanguageIndex(g.Language)
+	if !w.ed.HasSettings {
+		lang = -1
+	}
+	winapi.SendMessage(w.ctl[idGenLang], winapi.CB_SETCURSEL, uintptr(lang), 0)
+}
+
+// saveSettings sends save_settings of the general page.
+func (w *settingsWindow) saveSettings() {
+	if w.busy {
+		return
+	}
+	w.readGeneral()
+	req, pr := w.ed.SettingsRequest()
+	if pr != nil {
+		w.problem(pr)
+		return
+	}
+	w.status = w.t(i18n.KeySetSaving)
+	sent := *req.Settings
+	w.call(req, func(m model.IPCMessage, err error) {
+		switch {
+		case err != nil:
+			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
+		case m.Type == model.MsgError:
+			w.problem(w.ed.Reply(m))
+		default:
+			w.status = w.ed.SettingsDone(m, sent)
+			w.fill()
+		}
+	})
+}
+
+// listIndex is the list row of the edited profile (-1 = none).
+func (w *settingsWindow) listIndex() int {
+	if w.ed.IsNew {
+		return len(w.ed.Profiles)
+	}
+	return w.ed.Sel
+}
+
 func (w *settingsWindow) selectFromList() {
 	i := int(int32(winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCURSEL, 0, 0)))
+	if i == w.listIndex() {
+		return
+	}
+	if !w.profileDiscardOK() {
+		winapi.SendMessage(w.ctl[idSetList], winapi.LB_SETCURSEL, uintptr(w.listIndex()), 0)
+		return
+	}
 	if w.ed.IsNew && i == len(w.ed.Profiles) {
 		return
 	}
@@ -515,7 +818,7 @@ func (w *settingsWindow) selectFromList() {
 }
 
 func (w *settingsWindow) newProfile() {
-	if w.cfg.mode != traysettings.Admin || w.busy {
+	if w.cfg.mode != traysettings.Admin || w.busy || !w.profileDiscardOK() {
 		return
 	}
 	w.ed.New()
@@ -541,23 +844,26 @@ func (w *settingsWindow) call(req model.IPCRequest, done func(model.IPCMessage, 
 }
 
 func (w *settingsWindow) save() {
+	if w.page == 1 {
+		w.saveSettings()
+		return
+	}
 	if w.busy {
 		return
 	}
 	w.readForm()
-	req, pr := w.ed.SaveRequest()
+	req, pr := w.ed.SaveRequest(w.readPassword())
 	if pr != nil {
 		w.problem(pr)
 		return
 	}
 	w.status = w.t(i18n.KeySetSaving)
-	sent := req.Profile
 	w.call(req, func(m model.IPCMessage, err error) {
 		switch {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, sent))
+			w.problem(w.ed.Reply(m))
 		default:
 			w.status = w.ed.SaveDone(m)
 			w.fill()
@@ -574,14 +880,7 @@ func (w *settingsWindow) deleteProfile() {
 		w.problem(pr)
 		return
 	}
-	text := fmt.Sprintf(w.t(i18n.KeySetDeleteConfirm), w.ed.Base.DisplayName())
-	confirm := w.cfg.confirm
-	if confirm == nil {
-		confirm = func(owner uintptr, text, caption string) bool {
-			return winapi.MessageBox(owner, text, caption, winapi.MB_YESNO|winapi.MB_ICONWARNING|winapi.MB_DEFBUTTON2) == winapi.IDYES
-		}
-	}
-	if !confirm(w.hwnd, text, w.t(i18n.KeyAppName)) {
+	if !w.ask(fmt.Sprintf(w.t(i18n.KeySetDeleteConfirm), w.ed.Base.DisplayName())) {
 		return
 	}
 	w.status = w.t(i18n.KeySetDeleting)
@@ -590,7 +889,7 @@ func (w *settingsWindow) deleteProfile() {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, nil))
+			w.problem(w.ed.Reply(m))
 		default:
 			w.status = w.ed.DeleteDone(m)
 			w.fill()
@@ -605,7 +904,7 @@ func (w *settingsWindow) test() {
 		return
 	}
 	w.readForm()
-	req, pr := w.ed.TestRequest()
+	req, pr := w.ed.TestRequest(w.readPassword())
 	if pr != nil {
 		w.problem(pr)
 		return
@@ -647,7 +946,7 @@ func (w *settingsWindow) poll() {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, nil))
+			w.problem(w.ed.Reply(m))
 		default:
 			w.setStatus(w.ed.PollText(m))
 		}
@@ -689,13 +988,60 @@ func (w *settingsWindow) Reload() {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
 		case m.Type == model.MsgError:
-			w.problem(w.ed.Reply(m, nil))
+			w.problem(w.ed.Reply(m))
 		case m.Config == nil:
 			w.problem(&traysettings.Problem{Text: fmt.Sprintf(w.t(i18n.KeySetFailed), "get_config: "+m.Type)})
 		default:
 			w.ed.LoadConfig(*m.Config, m.Revision)
+			w.loaded = true
 			w.status = ""
 			w.fill()
+		}
+	})
+}
+
+// onSessionState follows the service connection: «Нет связи» while it is
+// lost, and on (re)connection the data is loaded again. Unsaved edits are
+// never dropped: with edits only the revision is checked in the
+// background and a changed configuration is reported (the user decides
+// with «Перечитать», which asks before discarding).
+func (w *settingsWindow) onSessionState(st trayipc.Status) {
+	up := st.State == trayipc.StateConnected
+	was := w.connected
+	w.connected = up
+	if !up {
+		if !w.busy {
+			w.setStatus(w.t(i18n.KeySetNotConnected))
+		}
+		return
+	}
+	if was {
+		return
+	}
+	if w.cfg.mode == traysettings.ReadOnly || !w.loaded || !w.ed.Unsaved() {
+		w.Reload()
+		return
+	}
+	w.checkRevision()
+}
+
+// checkRevision reads get_config without touching the form or the
+// revision of the edit (used after a reconnection with unsaved edits).
+func (w *settingsWindow) checkRevision() {
+	if w.busy {
+		return
+	}
+	rev := w.ed.Revision
+	w.call(model.IPCRequest{Cmd: model.CmdGetConfig}, func(m model.IPCMessage, err error) {
+		switch {
+		case err != nil:
+			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
+		case m.Type == model.MsgError:
+			w.problem(w.ed.Reply(m))
+		case m.Revision != rev:
+			w.setStatus(w.t(i18n.KeySetChangedOffline))
+		default:
+			w.setStatus("")
 		}
 	})
 }
@@ -704,6 +1050,7 @@ func (w *settingsWindow) Reload() {
 func (w *settingsWindow) loadSnapshot(snap *model.StatusSnapshot) {
 	if snap != nil {
 		w.ed.LoadSnapshot(*snap)
+		w.loaded = true
 	}
 	w.fill()
 }
@@ -717,6 +1064,14 @@ func (w *settingsWindow) elevate() {
 		w.setStatus(w.t(i18n.KeySetElevateCanceled))
 	default:
 		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetElevateFailed), err.Error()))
+	}
+}
+
+// userClose: the close box, «Закрыть» or Esc — asks before dropping
+// unsaved edits.
+func (w *settingsWindow) userClose() {
+	if w.discardOK() {
+		w.close()
 	}
 }
 
@@ -769,25 +1124,13 @@ func RunSettings(opt SettingsOptions) int {
 	}
 	defer release()
 	var w *settingsWindow
-	loaded := false
 	so := opt.Session
 	so.OnEvent = func(e trayipc.Event) {
 		if e.Kind != trayipc.EventState || w == nil {
 			return
 		}
 		st := e.Status
-		w.post(func() {
-			if st.State == trayipc.StateConnected {
-				if !loaded {
-					loaded = true
-					w.Reload()
-				}
-				return
-			}
-			if !w.busy {
-				w.setStatus(i18n.T(i18n.KeySetNotConnected, w.cfg.lang))
-			}
-		})
+		w.post(func() { w.onSessionState(st) })
 	}
 	s := trayipc.New(so)
 	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,

@@ -104,9 +104,9 @@ func TestCHK_TRAY_04_PasswordHints(t *testing.T) {
 	e.Form.Host = "srv"
 	e.Form.Encrypt = model.EncryptOptional // stronger: may reuse
 	want(i18n.KeySetPwKeep)
-	e.Form.Password = "x"
+	e.Form.PasswordTyped = true
 	want(i18n.KeySetPwReplace)
-	e.Form.Password, e.Form.ClearPassword = "", true
+	e.Form.PasswordTyped, e.Form.ClearPassword = false, true
 	want(i18n.KeySetPwClear)
 	e.Form.Auth = model.AuthWindows
 	want(i18n.KeySetPwWindowsDrop)
@@ -154,14 +154,14 @@ func TestCHK_TRAY_04_ReadOnlyFromSnapshot(t *testing.T) {
 	if e.CanEdit() {
 		t.Error("read-only editor can edit")
 	}
-	if _, pr := e.SaveRequest(); pr == nil {
+	if _, pr := e.SaveRequest(""); pr == nil {
 		t.Error("save in read-only mode")
 	}
 	if _, pr := e.DeleteRequest(); pr == nil {
 		t.Error("delete in read-only mode")
 	}
 	e.Form.Host = "changed"
-	req, pr := e.TestRequest()
+	req, pr := e.TestRequest("")
 	if pr != nil || req.Profile != nil || req.ProfileID != "a" {
 		t.Errorf("read-only test request %+v %v", req, pr)
 	}
@@ -175,55 +175,56 @@ func TestCHK_TRAY_04_ReadOnlyFromSnapshot(t *testing.T) {
 // size limit; SaveDone takes the new revision and the saved profile.
 func TestCHK_TRAY_06_SaveRequest(t *testing.T) {
 	e := adminEditor(savedSQL())
-	req, pr := e.SaveRequest()
+	pw := ""
+	req, pr := e.SaveRequest(pw)
 	if pr != nil || req.Cmd != model.CmdSaveProfile || req.ExpectedRevision != "rev1" || req.Password != "" || req.ClearPassword || req.Profile.ID != "p1" || req.Profile.HasPassword {
 		t.Fatalf("keep: %+v %v", req, pr)
 	}
 	e.Form.Host = "other"
-	if _, pr = e.SaveRequest(); pr == nil || pr.Field != FieldPassword {
+	if _, pr = e.SaveRequest(pw); pr == nil || pr.Field != FieldPassword {
 		t.Errorf("re-enter: %+v", pr)
 	}
-	e.Form.Password = "secret"
-	if req, pr = e.SaveRequest(); pr != nil || req.Password != "secret" {
+	pw, e.Form.PasswordTyped = "secret", true
+	if req, pr = e.SaveRequest(pw); pr != nil || req.Password != "secret" {
 		t.Errorf("password: %+v %v", req, pr)
 	}
 	e.Form.ClearPassword = true
-	if _, pr = e.SaveRequest(); pr == nil || pr.Field != FieldClearPassword {
+	if _, pr = e.SaveRequest(pw); pr == nil || pr.Field != FieldClearPassword {
 		t.Errorf("conflict: %+v", pr)
 	}
-	e.Form.Password = ""
-	if req, pr = e.SaveRequest(); pr != nil || !req.ClearPassword {
+	pw, e.Form.PasswordTyped = "", false
+	if req, pr = e.SaveRequest(pw); pr != nil || !req.ClearPassword {
 		t.Errorf("clear: %+v %v", req, pr)
 	}
 	e.Form.Auth, e.Form.ClearPassword = model.AuthWindows, false
-	if req, pr = e.SaveRequest(); pr != nil || req.Password != "" || req.Profile.Login != "" {
+	if req, pr = e.SaveRequest(pw); pr != nil || req.Password != "" || req.Profile.Login != "" {
 		t.Errorf("windows: %+v %v", req, pr)
 	}
 	e.New()
 	e.Form.Host, e.Form.Database, e.Form.Login = "h", "d", "l"
-	if _, pr = e.SaveRequest(); pr == nil || pr.Field != FieldPassword {
+	if _, pr = e.SaveRequest(pw); pr == nil || pr.Field != FieldPassword {
 		t.Errorf("new without password: %+v", pr)
 	}
-	e.Form.Password = "pw"
-	if req, pr = e.SaveRequest(); pr != nil || req.Profile.ID != "" {
+	pw, e.Form.PasswordTyped = "pw", true
+	if req, pr = e.SaveRequest(pw); pr != nil || req.Profile.ID != "" {
 		t.Fatalf("new: %+v %v", req, pr)
 	}
 	saved := *req.Profile
 	saved.ID, saved.HasPassword = "new-id", true
 	txt := e.SaveDone(model.IPCMessage{Type: model.MsgOK, Result: model.ResultSaved, Profile: &saved, Revision: "rev2", PollScheduled: true})
-	if e.Revision != "rev2" || e.IsNew || e.Sel != 1 || e.Base.ID != "new-id" || e.Form.Password != "" || txt != i18n.T(i18n.KeySetSavedPoll, i18n.RU) {
+	if e.Revision != "rev2" || e.IsNew || e.Sel != 1 || e.Base.ID != "new-id" || e.Form.PasswordTyped || txt != i18n.T(i18n.KeySetSavedPoll, i18n.RU) {
 		t.Errorf("save done: rev %s new %v sel %d %q", e.Revision, e.IsNew, e.Sel, txt)
 	}
 	if e.Dirty() {
 		t.Error("dirty after save")
 	}
 	e.Revision = ""
-	if _, pr = e.SaveRequest(); pr == nil || !pr.Reload {
+	if _, pr = e.SaveRequest(pw); pr == nil || !pr.Reload {
 		t.Errorf("no revision: %+v", pr)
 	}
 	e.Revision = "r"
 	e.Form.Name = strings.Repeat("я", model.IPCMaxRequest/2)
-	if _, pr = e.SaveRequest(); pr == nil || pr.Text != i18n.T(i18n.KeySetTooLarge, i18n.RU) {
+	if _, pr = e.SaveRequest(pw); pr == nil || pr.Text != i18n.T(i18n.KeySetTooLarge, i18n.RU) {
 		t.Errorf("too large: %+v", pr)
 	}
 }
@@ -253,12 +254,12 @@ func TestCHK_TRAY_06_DeleteRequest(t *testing.T) {
 // texts with version / compat level / category.
 func TestCHK_TRAY_05_TestRequestAndText(t *testing.T) {
 	e := adminEditor(savedSQL())
-	req, pr := e.TestRequest()
+	req, pr := e.TestRequest("")
 	if pr != nil || req.Profile != nil || req.ProfileID != "p1" {
 		t.Fatalf("unchanged: %+v", req)
 	}
-	e.Form.Database, e.Form.Password = "db2", "pw"
-	req, pr = e.TestRequest()
+	e.Form.Database, e.Form.PasswordTyped = "db2", true
+	req, pr = e.TestRequest("pw")
 	if pr != nil || req.Profile == nil || req.Password != "pw" || req.Profile.Database != "db2" || req.Profile.Mapping.Mode != "" {
 		t.Fatalf("edited: %+v %v", req, pr)
 	}
@@ -317,57 +318,64 @@ func TestCHK_TRAY_06_ReplyErrors(t *testing.T) {
 	other.ID, other.Name = "bad", "Ручной профиль"
 	e := adminEditor(savedSQL(), other)
 	sent, _ := e.Candidate()
-	pr := e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeAccessDenied, ErrorKey: model.MsgMonitorAccessDenied}, &sent)
+	pr := e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeAccessDenied, ErrorKey: model.MsgMonitorAccessDenied})
 	if !strings.Contains(pr.Text, "администратора") {
 		t.Errorf("access denied %q", pr.Text)
 	}
-	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeConflict, ErrorKey: model.MsgMonitorConfigConflict}, &sent)
+	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeConflict, ErrorKey: model.MsgMonitorConfigConflict})
 	if !pr.Reload || !strings.Contains(pr.Text, "Перечитать") {
 		t.Errorf("conflict %+v", pr)
 	}
 	bad := sent
 	bad.Database = ""
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorProfileInvalid,
-		ErrorArgs: []string{"database", model.ValRequired}, Error: `monitor: profile "p1": database is required`}, &bad)
+		ErrorArgs: []string{"database", model.ValRequired}, Error: `monitor: profile "p1": database is required`})
 	if pr.Field != FieldDatabase || !strings.Contains(pr.Text, "«База данных»") {
 		t.Errorf("field error %+v", pr)
 	}
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorProfileInvalid,
-		ErrorArgs: []string{"server", model.ValServerFormat, "empty_instance"}}, &bad)
+		ErrorArgs: []string{"server", model.ValServerFormat, "empty_instance"}})
 	if pr.Field != FieldInstance {
 		t.Errorf("server field %+v", pr)
 	}
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorBadRequest,
-		ErrorArgs: []string{"expectedRevision", model.ValRequired}}, &sent)
+		ErrorArgs: []string{"expectedRevision", model.ValRequired}})
 	if !pr.Reload {
 		t.Errorf("revision %+v", pr)
 	}
+	// another profile of the file: profileId (errorArgs[0] is its field)
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorProfileInvalid,
-		ErrorArgs: []string{"mapping.lastSendColumn", model.ValRequired}, Error: `monitor: profile "bad": mapping: at least one column`}, &sent)
+		ErrorArgs: []string{"mapping.lastSendColumn", model.ValRequired}, ProfileID: "bad", Error: `monitor: profile "bad": mapping: at least one column`})
 	if pr.Field != FieldNone || !strings.Contains(pr.Text, "Ручной профиль") || !strings.Contains(pr.Text, "mapping.lastSendColumn") {
 		t.Errorf("other profile %+v", pr)
 	}
-	// our (valid) profile named in the error: our field, not another profile
+	// unknown id (e.g. duplicate id): named by the id itself
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorProfileInvalid,
-		ErrorArgs: []string{"port", model.ValRange, "0", "65535", "99999"}, Error: `monitor: profile "p1": port 99999 out of range`}, &sent)
-	if pr.Field != FieldPort {
+		ErrorArgs: []string{"id", model.ValDuplicate}, ProfileID: "dup"})
+	if pr.Field != FieldNone || !strings.Contains(pr.Text, "dup") {
+		t.Errorf("other profile by id %+v", pr)
+	}
+	// no profileId: always the current profile, even when the text names
+	// another one (the text is not parsed any more)
+	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorProfileInvalid,
+		ErrorArgs: []string{"port", model.ValRange, "0", "65535", "99999"}, Error: `monitor: profile "bad": port 99999 out of range`})
+	if pr.Field != FieldPort || strings.Contains(pr.Text, "Ручной профиль") {
 		t.Errorf("own field error %+v", pr)
 	}
-	// no id in the text: our profile is valid -> another one
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorProfileInvalid,
-		ErrorArgs: []string{"mapping.table", model.ValRequired}}, &sent)
-	if pr.Field != FieldNone || !strings.Contains(pr.Text, "?") {
-		t.Errorf("other profile without id %+v", pr)
+		ErrorArgs: []string{"mapping.table", model.ValRequired}})
+	if pr.Field == FieldNone && strings.Contains(pr.Text, "Ручной профиль") {
+		t.Errorf("no profileId must not be another profile %+v", pr)
 	}
-	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeSaveFailed, Error: "disk full"}, &sent)
+	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeSaveFailed, Error: "disk full"})
 	if !strings.Contains(pr.Text, "disk full") {
 		t.Errorf("fallback %q", pr.Text)
 	}
-	if e.Reply(model.IPCMessage{Type: model.MsgOK}, nil) != nil {
+	if e.Reply(model.IPCMessage{Type: model.MsgOK}) != nil {
 		t.Error("ok is not an error")
 	}
 	r := NewEditor(i18n.RU, ReadOnly)
-	pr = r.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeAccessDenied, ErrorKey: model.MsgMonitorAccessDenied}, nil)
+	pr = r.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeAccessDenied, ErrorKey: model.MsgMonitorAccessDenied})
 	if !strings.Contains(pr.Text, "Изменить (администратор)") {
 		t.Errorf("read-only access denied %q", pr.Text)
 	}
@@ -395,5 +403,33 @@ func TestCHK_TRAY_04_SelectionAndReload(t *testing.T) {
 	e.LoadConfig(model.ConfigView{}, "rev6")
 	if e.HasProfile() {
 		t.Error("empty config has a profile")
+	}
+}
+
+// TestCHK_TRAY_04_Unsaved — unsaved edits (asks «Отменить изменения?»):
+// an edited saved profile, a typed-in new profile; not an untouched new
+// one, not read-only mode.
+func TestCHK_TRAY_04_Unsaved(t *testing.T) {
+	e := adminEditor(savedSQL())
+	if e.Unsaved() {
+		t.Error("loaded profile is unsaved")
+	}
+	e.Form.PasswordTyped = true
+	if !e.Unsaved() {
+		t.Error("typed password is not an edit")
+	}
+	e.New()
+	if e.Unsaved() || !e.Dirty() {
+		t.Error("untouched new profile: not unsaved, but sent as a form")
+	}
+	e.Form.Host = "h"
+	if !e.Unsaved() {
+		t.Error("typed new profile")
+	}
+	r := NewEditor(i18n.RU, ReadOnly)
+	r.LoadSnapshot(model.StatusSnapshot{Profiles: []model.ProfileSnapshot{{ProfileID: "a"}}})
+	r.Form.Host = "x"
+	if r.Unsaved() {
+		t.Error("read-only mode has no edits")
 	}
 }

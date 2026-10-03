@@ -29,8 +29,13 @@ const (
 
 // Options configure the tray application.
 type Options struct {
-	Lang    string
-	Session trayipc.Options // Dial and Verify; OnEvent is set by the App
+	Lang string
+	// LangPref is the per-user language preference Lang was resolved from
+	// ("" = as in Windows); LangStore keeps a new choice of the menu
+	// (nil = not stored, tests).
+	LangPref  string
+	LangStore LangStore
+	Session   trayipc.Options // Dial and Verify; OnEvent is set by the App
 	// NoNotifyIcon skips Shell_NotifyIconW (tests without Explorer).
 	NoNotifyIcon bool
 	// Beeper plays the alert sound; nil = kernel32 Beep (tests: a fake).
@@ -39,12 +44,14 @@ type Options struct {
 	// still maintained.
 	HiddenAlerts bool
 	// Elevator starts `exchtray --settings` elevated; nil =
-	// ShellExecuteW "runas" (tests: a fake).
+	// ShellExecuteExW "runas" (tests: a fake).
 	Elevator Elevator
 	// HiddenSettings keeps the settings window hidden (tests).
 	HiddenSettings bool
-	// ConfirmDelete asks before delete_profile; nil = MessageBoxW (tests).
-	ConfirmDelete func(owner uintptr, text, caption string) bool
+	// Confirm asks the Yes/No questions of the settings window (delete,
+	// «Отменить изменения?»); nil = MessageBoxW, default «Нет» (tests: a
+	// fake).
+	Confirm func(owner uintptr, text, caption string) bool
 }
 
 // ackTimeout bounds one ack_alert request.
@@ -306,6 +313,13 @@ func (a *App) drain() {
 	// events are followed by a status push; the active alerts of the
 	// snapshot drive the alert window (trayalert).
 	a.status = q[len(q)-1].Status
+	if w := a.settings; w != nil {
+		for _, e := range q { // every transition, not only the last state
+			if e.Kind == trayipc.EventState {
+				w.onSessionState(e.Status)
+			}
+		}
+	}
 	a.applyAlert(a.alerts.Update(a.status, a.session.Supported(model.CmdAckAlert)))
 	old := a.ind
 	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
@@ -335,7 +349,7 @@ func (a *App) onNotify(ev uint32) {
 
 // LeftMenu / RightMenu are the current menu models.
 func (a *App) LeftMenu() []trayui.Item  { return trayui.BuildLeftMenu(a.status, a.opt.Lang) }
-func (a *App) RightMenu() []trayui.Item { return trayui.BuildRightMenu(a.opt.Lang) }
+func (a *App) RightMenu() []trayui.Item { return trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref) }
 
 // ShowLeftMenu shows the databases menu at the cursor.
 func (a *App) ShowLeftMenu() { a.Command(trackMenu(a.hwnd, a.LeftMenu(), &a.squares)) }
@@ -352,7 +366,33 @@ func (a *App) Command(cmd int) {
 		a.ShowAbout(true)
 	case trayui.CmdExit:
 		a.Exit()
+	case trayui.CmdLangAuto, trayui.CmdLangRU, trayui.CmdLangEN:
+		a.SetLanguage(trayui.LangCommands[cmd])
 	}
+}
+
+// SetLanguage applies a per-user language preference at once to the
+// menus, the icon tooltip and the alert window, and stores it (HKCU).
+// Already open settings / About windows take it when opened next time.
+func (a *App) SetLanguage(pref string) error {
+	pref = NormalizePref(pref)
+	var err error
+	if a.opt.LangStore != nil {
+		err = a.opt.LangStore.Save(pref)
+	}
+	a.opt.LangPref = pref
+	a.opt.Lang = ResolveLang(pref)
+	a.alerts.SetLang(a.opt.Lang)
+	if a.awin != nil {
+		a.awin.setLang(a.opt.Lang)
+		a.awin.apply(a.alerts.View(), !a.opt.HiddenAlerts)
+	}
+	old := a.ind
+	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
+	if a.nidAdded && old.Tooltip != a.ind.Tooltip {
+		a.modifyIcon()
+	}
+	return err
 }
 
 // OpenSettings opens (or focuses) the settings window and returns its
@@ -374,7 +414,7 @@ func (a *App) OpenSettings() uintptr {
 	}
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
-		confirm: a.opt.ConfirmDelete, hidden: a.opt.HiddenSettings,
+		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onClose: func() {
 			if a.settings == w {
 				a.settings = nil
@@ -384,6 +424,7 @@ func (a *App) OpenSettings() uintptr {
 		return 0
 	}
 	a.settings = w
+	w.connected = a.status.State == trayipc.StateConnected
 	if mode == traysettings.Admin {
 		w.Reload()
 	} else {

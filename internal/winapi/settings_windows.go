@@ -9,12 +9,15 @@ import (
 )
 
 // WinAPI for the tray settings window (phase 6c, CHK-TRAY-04/05/06):
-// elevation through ShellExecuteW "runas" (no os/exec), focus, the delete
-// confirmation. All exports exist since Windows 2000 (NT 5.0), called
-// through callProc (LazyProc.Find first), CHK-TRAY-10.
+// elevation through ShellExecuteExW "runas" (no os/exec), focus, the
+// confirmations. All exports exist since Windows 2000 (NT 5.0), except
+// GetProcessId (NT 5.1); called through callProc (LazyProc.Find first),
+// CHK-TRAY-10.
 
 var (
-	procShellExecuteW      = modshell32.NewProc("ShellExecuteW")
+	procShellExecuteExW    = modshell32.NewProc("ShellExecuteExW")
+	procGetProcessId       = modkernel32.NewProc("GetProcessId")
+	procAllowSetFgWindow   = moduser32.NewProc("AllowSetForegroundWindow")
 	procGetModuleFileNameW = modkernel32.NewProc("GetModuleFileNameW")
 	procSetFocus           = moduser32.NewProc("SetFocus")
 	procGetFocus           = moduser32.NewProc("GetFocus")
@@ -28,6 +31,7 @@ const (
 
 	ES_MULTILINE   = 0x0004
 	ES_PASSWORD    = 0x0020
+	ES_NUMBER      = 0x2000
 	ES_AUTOVSCROLL = 0x0040
 	ES_AUTOHSCROLL = 0x0080
 	ES_READONLY    = 0x0800
@@ -69,18 +73,56 @@ const (
 	ERROR_CANCELLED = 1223
 )
 
-// ShellExecute runs file with params through ShellExecuteW (verb "runas"
-// asks for elevation via UAC). A refused UAC prompt is ERROR_CANCELLED.
-func ShellExecute(hwnd uintptr, verb, file, params string) error {
-	r, _, e := callProc(procShellExecuteW, hwnd, uintptr(unsafe.Pointer(UTF16Ptr(verb))),
-		uintptr(unsafe.Pointer(UTF16Ptr(file))), uintptr(unsafe.Pointer(UTF16Ptr(params))), 0, SW_SHOWNORMAL)
-	if r > 32 {
-		return nil
+// SHELLEXECUTEINFOW is the Win32 SHELLEXECUTEINFOW (112 bytes on x64).
+type SHELLEXECUTEINFOW struct {
+	Size       uint32
+	Mask       uint32
+	Hwnd       uintptr
+	Verb       *uint16
+	File       *uint16
+	Parameters *uint16
+	Directory  *uint16
+	Show       int32
+	InstApp    uintptr
+	IDList     uintptr
+	Class      *uint16
+	KeyClass   uintptr
+	HotKey     uint32
+	Icon       uintptr // union hIcon / hMonitor
+	Process    uintptr
+}
+
+// SEE_MASK_NOCLOSEPROCESS: ShellExecuteExW returns the process handle.
+const SEE_MASK_NOCLOSEPROCESS = 0x00000040
+
+// ShellExecuteEx runs file with params through ShellExecuteExW (verb
+// "runas" asks for elevation via UAC) and returns the process handle
+// (may be 0; the caller closes it). A refused UAC prompt is FALSE with
+// GetLastError() == ERROR_CANCELLED.
+func ShellExecuteEx(hwnd uintptr, verb, file, params string) (process syscall.Handle, err error) {
+	sei := SHELLEXECUTEINFOW{Mask: SEE_MASK_NOCLOSEPROCESS, Hwnd: hwnd, Verb: UTF16Ptr(verb), File: UTF16Ptr(file),
+		Parameters: UTF16Ptr(params), Show: SW_SHOWNORMAL}
+	sei.Size = uint32(unsafe.Sizeof(sei))
+	r, _, e := callProc(procShellExecuteExW, uintptr(unsafe.Pointer(&sei)))
+	runtime.KeepAlive(&sei)
+	if r == 0 {
+		return 0, lastErr(e)
 	}
-	if en, ok := e.(syscall.Errno); ok && en != 0 {
-		return en
+	return syscall.Handle(sei.Process), nil
+}
+
+// GetProcessId returns the id of a process handle (0 on failure).
+func GetProcessId(h syscall.Handle) uint32 {
+	r, _, _ := callProc(procGetProcessId, uintptr(h))
+	return uint32(r)
+}
+
+// AllowSetForegroundWindow lets process pid take the foreground (the
+// caller must be the foreground process); pid 0 does nothing.
+func AllowSetForegroundWindow(pid uint32) {
+	if pid != 0 {
+		callProc(procAllowSetFgWindow, uintptr(pid))
 	}
-	return syscall.Errno(r) // SE_ERR_* (values of the matching Win32 errors)
 }
 
 // ModuleFileName is the path of the running exe (GetModuleFileNameW).

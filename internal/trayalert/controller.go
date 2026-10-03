@@ -32,6 +32,10 @@ type View struct {
 	Pending bool
 	// Message is the info / error line under the list ("" = none).
 	Message string
+	// Raise: this update brought a new alert or a worse level — the UI
+	// brings the window to the front even when it is already visible
+	// (one-shot, only in the View returned by Update).
+	Raise bool
 }
 
 // AckRequest is one ack_alert request and the alerts it covers.
@@ -61,6 +65,9 @@ type Controller struct {
 	visible, sound, pending bool
 	msg                     string
 }
+
+// SetLang switches the UI language of the texts (tray menu choice).
+func (c *Controller) SetLang(lang string) { c.lang = i18n.Normalize(lang) }
 
 // New returns a controller for the UI language lang.
 func New(lang string) *Controller {
@@ -110,7 +117,9 @@ func (c *Controller) Update(st trayipc.Status, ackable bool) View {
 	case changed:
 		c.visible, c.sound, c.msg = true, true, ""
 	}
-	return c.View()
+	v := c.View()
+	v.Raise = changed && len(cur) > 0
+	return v
 }
 
 // Close is the user closing the window: hide and mute until the next
@@ -259,9 +268,11 @@ func (c *Controller) sorted() []model.AlertEvent {
 	return out
 }
 
-// View is the current view.
+// View is the current view. beep.enabled = false (PLAN §12 p.65) mutes the
+// sound only; the window is shown as usual.
 func (c *Controller) View() View {
-	v := View{Visible: c.visible && len(c.shown) > 0, Sound: c.sound && len(c.shown) > 0,
+	muted := c.settings != nil && !c.settings.Beep.BeepEnabled()
+	v := View{Visible: c.visible && len(c.shown) > 0, Sound: c.sound && len(c.shown) > 0 && !muted,
 		Alerts: c.sorted(), CanAck: c.canAck(), Pending: c.pending, Message: c.msg}
 	for _, a := range v.Alerts {
 		if a.To > v.Level {

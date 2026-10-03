@@ -118,6 +118,29 @@ const (
 	KeySetDeleting        = "set.deleting"
 	KeySetDeleted         = "set.deleted"
 	KeySetDeleteConfirm   = "set.delete_confirm"
+	KeySetDiscardConfirm  = "set.discard_confirm"
+	KeyGenPage            = "gen.page"
+	KeyGenProfilesPage    = "gen.profiles_page"
+	KeyGenPoll            = "gen.poll"
+	KeyGenWarn            = "gen.warn"
+	KeyGenError           = "gen.error"
+	KeyGenBeepEnabled     = "gen.beep_enabled"
+	KeyGenWarnFreq        = "gen.warn_freq"
+	KeyGenWarnDur         = "gen.warn_dur"
+	KeyGenErrorFreq       = "gen.error_freq"
+	KeyGenErrorDur        = "gen.error_dur"
+	KeyGenGap             = "gen.gap"
+	KeyGenLanguage        = "gen.language"
+	KeyGenLangAuto        = "gen.lang_auto"
+	KeyGenLangRU          = "gen.lang_ru"
+	KeyGenLangEN          = "gen.lang_en"
+	KeyGenAutostart       = "gen.autostart"
+	KeyGenNote            = "gen.note"
+	KeyGenSaved           = "gen.saved"
+	KeyMenuLanguage       = "menu.language"
+	KeyMenuLangAuto       = "menu.lang_auto"
+	KeyMenuLangRU         = "menu.lang_ru"
+	KeyMenuLangEN         = "menu.lang_en"
 	KeySetTesting         = "set.testing"
 	KeySetTestCanceled    = "set.test_canceled"
 	KeySetTestOK          = "set.test_ok"
@@ -129,6 +152,7 @@ const (
 	KeySetPolled          = "set.polled"
 	KeySetPollCoalesced   = "set.poll_coalesced"
 	KeySetNotConnected    = "set.not_connected"
+	KeySetChangedOffline  = "set.changed_offline"
 	KeySetUnsupported     = "set.unsupported"
 	KeySetTooLarge        = "set.too_large"
 	KeySetNoRevision      = "set.no_revision"
@@ -258,6 +282,29 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetDeleting:        {"Удаление…", "Deleting…"},
 	KeySetDeleted:         {"База удалена из настроек.", "The database was removed from the settings."},
 	KeySetDeleteConfirm:   {"Удалить базу «%s» из настроек? Пароль, состояние и тревоги этой базы тоже будут удалены.", "Remove the database \"%s\" from the settings? Its password, state and alarms are removed too."},
+	KeySetDiscardConfirm:  {"Отменить изменения?", "Discard changes?"},
+	KeyGenPage:            {"Общие настройки…", "General settings…"},
+	KeyGenProfilesPage:    {"Базы данных…", "Databases…"},
+	KeyGenPoll:            {"Интервал опроса, с:", "Poll interval, s:"},
+	KeyGenWarn:            {"Предупреждение через, мин:", "Warning after, min:"},
+	KeyGenError:           {"Ошибка через, мин:", "Error after, min:"},
+	KeyGenBeepEnabled:     {"Звуковой сигнал тревоги", "Alert sound"},
+	KeyGenWarnFreq:        {"Предупреждение: частота, Гц:", "Warning: frequency, Hz:"},
+	KeyGenWarnDur:         {"Предупреждение: длительность, мс:", "Warning: duration, ms:"},
+	KeyGenErrorFreq:       {"Ошибка: частота, Гц:", "Error: frequency, Hz:"},
+	KeyGenErrorDur:        {"Ошибка: длительность, мс:", "Error: duration, ms:"},
+	KeyGenGap:             {"Пауза между сигналами, мс:", "Pause between beeps, ms:"},
+	KeyGenLanguage:        {"Язык журнала службы:", "Service log language:"},
+	KeyGenLangAuto:        {"Как в Windows", "Windows default"},
+	KeyGenLangRU:          {"Русский", "Русский (Russian)"},
+	KeyGenLangEN:          {"English (английский)", "English"},
+	KeyGenAutostart:       {"Запускать значок в трее при входе в Windows (для всех пользователей)", "Start the tray icon at Windows logon (all users)"},
+	KeyGenNote:            {"Общие настройки действуют на весь компьютер и применяются службой. Звук выключает только сигнал: окно тревоги показывается всегда. Язык значка в трее выбирается в его меню у каждого пользователя.", "General settings apply to the whole computer and are used by the service. Turning the sound off mutes only the beep: the alert window is always shown. The tray icon language is chosen in its menu by each user."},
+	KeyGenSaved:           {"Общие настройки сохранены.", "General settings saved."},
+	KeyMenuLanguage:       {"Язык (Language)", "Language (Язык)"},
+	KeyMenuLangAuto:       {"Как в Windows", "Windows default"},
+	KeyMenuLangRU:         {"Русский", "Русский"},
+	KeyMenuLangEN:         {"English", "English"},
 	KeySetTesting:         {"Проверка подключения… (до 15 с)", "Testing the connection… (up to 15 s)"},
 	KeySetTestCanceled:    {"Проверка отменена.", "The test was canceled."},
 	KeySetTestOK:          {"Подключение успешно (%d мс).", "Connected successfully (%d ms)."},
@@ -269,6 +316,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetPolled:          {"Опрос запущен.", "Poll started."},
 	KeySetPollCoalesced:   {"Опрос уже запланирован.", "A poll is already scheduled."},
 	KeySetNotConnected:    {"Нет связи со службой Exchange Checker.", "No connection to the Exchange Checker service."},
+	KeySetChangedOffline:  {"Настройки изменились, пока не было связи со службой. Нажмите «Перечитать» (несохранённые правки будут потеряны).", "The settings were changed while the service was not connected. Click Reload (unsaved changes will be lost)."},
 	KeySetUnsupported:     {"Эта версия службы не поддерживает эту команду.", "This service version does not support this command."},
 	KeySetTooLarge:        {"Запрос больше 64 КиБ — сократите данные профиля.", "The request is larger than 64 KiB — shorten the profile data."},
 	KeySetNoRevision:      {"Неизвестна версия настроек — нажмите «Перечитать».", "The settings version is unknown — press Reload."},

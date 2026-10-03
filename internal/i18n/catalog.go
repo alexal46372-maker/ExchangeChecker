@@ -118,6 +118,7 @@ const (
 	KeySetDeleting        = "set.deleting"
 	KeySetDeleted         = "set.deleted"
 	KeySetDeleteConfirm   = "set.delete_confirm"
+	KeySetDiscardConfirm  = "set.discard_confirm"
 	KeySetTesting         = "set.testing"
 	KeySetTestCanceled    = "set.test_canceled"
 	KeySetTestOK          = "set.test_ok"
@@ -258,6 +259,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetDeleting:        {"Удаление…", "Deleting…"},
 	KeySetDeleted:         {"База удалена из настроек.", "The database was removed from the settings."},
 	KeySetDeleteConfirm:   {"Удалить базу «%s» из настроек? Пароль, состояние и тревоги этой базы тоже будут удалены.", "Remove the database \"%s\" from the settings? Its password, state and alarms are removed too."},
+	KeySetDiscardConfirm:  {"Отменить изменения?", "Discard changes?"},
 	KeySetTesting:         {"Проверка подключения… (до 15 с)", "Testing the connection… (up to 15 s)"},
 	KeySetTestCanceled:    {"Проверка отменена.", "The test was canceled."},
 	KeySetTestOK:          {"Подключение успешно (%d мс).", "Connected successfully (%d ms)."},

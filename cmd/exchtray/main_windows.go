@@ -33,7 +33,7 @@ func run() int {
 	}
 	for _, a := range os.Args[1:] {
 		if a == wintray.SettingsArg {
-			// elevated settings window (ShellExecuteW "runas" from the
+			// elevated settings window (ShellExecuteExW "runas" from the
 			// read-only window): own process, own connection
 			return wintray.RunSettings(wintray.SettingsOptions{Lang: i18n.Default(), Session: session})
 		}

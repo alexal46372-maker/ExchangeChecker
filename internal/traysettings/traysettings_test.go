@@ -397,3 +397,31 @@ func TestCHK_TRAY_04_SelectionAndReload(t *testing.T) {
 		t.Error("empty config has a profile")
 	}
 }
+
+// TestCHK_TRAY_04_Unsaved — unsaved edits (asks «Отменить изменения?»):
+// an edited saved profile, a typed-in new profile; not an untouched new
+// one, not read-only mode.
+func TestCHK_TRAY_04_Unsaved(t *testing.T) {
+	e := adminEditor(savedSQL())
+	if e.Unsaved() {
+		t.Error("loaded profile is unsaved")
+	}
+	e.Form.Password = "x"
+	if !e.Unsaved() {
+		t.Error("typed password is not an edit")
+	}
+	e.New()
+	if e.Unsaved() || !e.Dirty() {
+		t.Error("untouched new profile: not unsaved, but sent as a form")
+	}
+	e.Form.Host = "h"
+	if !e.Unsaved() {
+		t.Error("typed new profile")
+	}
+	r := NewEditor(i18n.RU, ReadOnly)
+	r.LoadSnapshot(model.StatusSnapshot{Profiles: []model.ProfileSnapshot{{ProfileID: "a"}}})
+	r.Form.Host = "x"
+	if r.Unsaved() {
+		t.Error("read-only mode has no edits")
+	}
+}

@@ -147,6 +147,19 @@ func (e *Editor) Dirty() bool {
 	return f != saved
 }
 
+// Unsaved reports edits that would be lost on switching the profile,
+// «Добавить», «Перечитать» or closing: a changed form (a new profile
+// counts only once something was typed).
+func (e *Editor) Unsaved() bool {
+	if e.Mode != Admin || !e.HasProfile() {
+		return false
+	}
+	if e.IsNew {
+		return e.Form != FromProfile(e.Base)
+	}
+	return e.Dirty()
+}
+
 // Candidate is the profile the form would save (nil field error = valid).
 func (e *Editor) Candidate() (model.Profile, *model.FieldError) {
 	return e.Form.Apply(e.Base)

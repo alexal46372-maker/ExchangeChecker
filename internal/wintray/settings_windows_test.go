@@ -195,7 +195,18 @@ type fakeElevator struct {
 
 func (e *fakeElevator) Elevate(uintptr) error { e.calls++; return e.err }
 
-func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator) *App {
+// fakeConfirm answers the Yes/No questions of the settings window.
+type fakeConfirm struct {
+	no    bool
+	texts []string
+}
+
+func (c *fakeConfirm) ask(_ uintptr, text, _ string) bool {
+	c.texts = append(c.texts, text)
+	return !c.no
+}
+
+func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ...*fakeConfirm) *App {
 	t.Helper()
 	l := ipc.NewMemListener()
 	srv := ipc.NewServer(svc, nil)
@@ -203,8 +214,12 @@ func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator) *App {
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
+	c := &fakeConfirm{}
+	if len(conf) > 0 {
+		c = conf[0]
+	}
 	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenSettings: true, Beeper: &testBeeper{},
-		Elevator: el, ConfirmDelete: func(uintptr, string, string) bool { return true },
+		Elevator: el, Confirm: c.ask,
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)
@@ -544,5 +559,80 @@ func TestCHK_TRAY_04_SettingsReadOnly(t *testing.T) {
 	w.click(t, idSetElevate)
 	if el.calls != 2 || app.settings != nil || winapi.IsWindow(w.hwnd) {
 		t.Error("read-only window must close after the elevated one started")
+	}
+}
+
+// TestCHK_TRAY_04_SettingsDiscardPrompt — unsaved edits: switching the
+// profile, «Добавить», «Перечитать» and closing ask «Отменить
+// изменения?» («Нет» keeps the edits); no question without edits.
+func TestCHK_TRAY_04_SettingsDiscardPrompt(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	p2 := model.NewProfile("p2")
+	p2.Name, p2.Server, p2.Database, p2.AuthMode = "Филиал", "h2", "d2", model.AuthWindows
+	svc.profiles = append(svc.profiles, p2)
+	conf := &fakeConfirm{}
+	app := startCfgApp(t, svc, true, nil, conf)
+	w := openAdmin(t, app)
+	sel := func(i int) {
+		winapi.SendMessage(w.ctl[idSetList], winapi.LB_SETCURSEL, uintptr(i), 0)
+		w.command(idSetList, winapi.LBN_SELCHANGE)
+	}
+	want := func(n int, what string) {
+		t.Helper()
+		if len(conf.texts) != n {
+			t.Fatalf("%s: %d questions %q", what, len(conf.texts), conf.texts)
+		}
+		if n > 0 && conf.texts[n-1] != "Отменить изменения?" {
+			t.Fatalf("%s: question %q", what, conf.texts[n-1])
+		}
+	}
+	sel(1) // no edits: no question
+	sel(0)
+	want(0, "switch without edits")
+
+	w.set(idSetName, "правка")
+	conf.no = true
+	sel(1)
+	want(1, "switch with edits")
+	if w.ed.Sel != 0 || w.text(idSetName) != "правка" || int(winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCURSEL, 0, 0)) != 0 {
+		t.Error("«Нет» must keep the edits and the selection")
+	}
+	w.click(t, idSetAdd)
+	want(2, "add with edits")
+	if w.ed.IsNew {
+		t.Error("«Нет» on «Добавить» created a profile")
+	}
+	w.click(t, idSetReload)
+	want(3, "reload with edits")
+	if w.busy || w.text(idSetName) != "правка" {
+		t.Error("«Нет» on «Перечитать» reloaded")
+	}
+	winapi.SendMessage(w.hwnd, winapi.WM_CLOSE, 0, 0)
+	want(4, "close with edits")
+	if !winapi.IsWindow(w.hwnd) {
+		t.Fatal("«Нет» on close closed the window")
+	}
+
+	conf.no = false
+	w.click(t, idSetAdd)
+	want(5, "add, yes")
+	if !w.ed.IsNew {
+		t.Fatal("«Да» on «Добавить» must start a new profile")
+	}
+	sel(1) // untouched new profile: no question
+	want(5, "untouched new profile")
+	if w.ed.Base.ID != "p2" {
+		t.Errorf("selected %q", w.ed.Base.ID)
+	}
+	w.click(t, idSetReload)
+	pumpUntil(t, "reloaded", func() bool { return !w.busy })
+	want(5, "reload without edits")
+	w.set(idSetDatabase, "d3")
+	w.click(t, idSetClose)
+	want(6, "close button with edits")
+	if winapi.IsWindow(w.hwnd) || app.settings != nil {
+		t.Error("«Да» on close must close the window")
 	}
 }

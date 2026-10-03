@@ -57,7 +57,7 @@ const (
 
 // Elevator starts the elevated settings process («Изменить
 // (администратор)»). The default runs this exe with --settings through
-// ShellExecuteW "runas"; tests use a fake.
+// ShellExecuteExW "runas"; tests use a fake.
 type Elevator interface {
 	Elevate(owner uintptr) error
 }
@@ -68,13 +68,25 @@ type ShellElevator struct{}
 // SettingsArg is the command line switch of the elevated settings process.
 const SettingsArg = "--settings"
 
-// Elevate implements Elevator (UAC prompt; ERROR_CANCELLED when refused).
+// Elevate implements Elevator: ShellExecuteExW "runas" with
+// SEE_MASK_NOCLOSEPROCESS (UAC refused: ERROR_CANCELLED). The started
+// process may take the foreground (AllowSetForegroundWindow), so an
+// already open settings window of another `--settings` instance, which
+// it activates, really comes to the front; the handle is closed.
 func (ShellElevator) Elevate(owner uintptr) error {
 	exe, err := winapi.ModuleFileName()
 	if err != nil {
 		return err
 	}
-	return winapi.ShellExecute(owner, "runas", exe, SettingsArg)
+	h, err := winapi.ShellExecuteEx(owner, "runas", exe, SettingsArg)
+	if err != nil {
+		return err
+	}
+	if h != 0 {
+		winapi.AllowSetForegroundWindow(winapi.GetProcessId(h))
+		syscall.CloseHandle(h)
+	}
+	return nil
 }
 
 // settingsSession is what the window needs of trayipc.Session.
@@ -92,7 +104,8 @@ type settingsConfig struct {
 	mode     traysettings.Mode
 	session  settingsSession
 	elevator Elevator
-	// confirm asks before delete; nil = MessageBoxW.
+	// confirm asks Yes/No (delete, discard changes); nil = MessageBoxW
+	// with «Нет» as the default button.
 	confirm func(owner uintptr, text, caption string) bool
 	hidden  bool
 	onClose func()
@@ -277,7 +290,7 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 		w.command(int32(wp&0xFFFF), uint32(wp>>16&0xFFFF))
 		return 0, true
 	case winapi.WM_CLOSE:
-		w.close()
+		w.userClose()
 		return 0, true
 	}
 	return 0, false
@@ -317,11 +330,13 @@ func (w *settingsWindow) command(id int32, code uint32) {
 	case idSetPoll:
 		w.poll()
 	case idSetReload:
-		w.Reload()
+		if w.discardOK() {
+			w.Reload()
+		}
 	case idSetElevate:
 		w.elevate()
 	case idSetClose:
-		w.close()
+		w.userClose()
 	}
 }
 
@@ -504,8 +519,44 @@ func (w *settingsWindow) focus(f traysettings.Field) {
 	}
 }
 
+// ask shows a Yes/No question («Нет» is the default button).
+func (w *settingsWindow) ask(text string) bool {
+	confirm := w.cfg.confirm
+	if confirm == nil {
+		confirm = func(owner uintptr, text, caption string) bool {
+			return winapi.MessageBox(owner, text, caption, winapi.MB_YESNO|winapi.MB_ICONWARNING|winapi.MB_DEFBUTTON2) == winapi.IDYES
+		}
+	}
+	return confirm(w.hwnd, text, w.t(i18n.KeyAppName))
+}
+
+// discardOK asks «Отменить изменения?» when the form has unsaved edits;
+// true = go on (no edits or the user agreed).
+func (w *settingsWindow) discardOK() bool {
+	w.readForm()
+	if !w.ed.Unsaved() {
+		return true
+	}
+	return w.ask(w.t(i18n.KeySetDiscardConfirm))
+}
+
+// listIndex is the list row of the edited profile (-1 = none).
+func (w *settingsWindow) listIndex() int {
+	if w.ed.IsNew {
+		return len(w.ed.Profiles)
+	}
+	return w.ed.Sel
+}
+
 func (w *settingsWindow) selectFromList() {
 	i := int(int32(winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCURSEL, 0, 0)))
+	if i == w.listIndex() {
+		return
+	}
+	if !w.discardOK() {
+		winapi.SendMessage(w.ctl[idSetList], winapi.LB_SETCURSEL, uintptr(w.listIndex()), 0)
+		return
+	}
 	if w.ed.IsNew && i == len(w.ed.Profiles) {
 		return
 	}
@@ -515,7 +566,7 @@ func (w *settingsWindow) selectFromList() {
 }
 
 func (w *settingsWindow) newProfile() {
-	if w.cfg.mode != traysettings.Admin || w.busy {
+	if w.cfg.mode != traysettings.Admin || w.busy || !w.discardOK() {
 		return
 	}
 	w.ed.New()
@@ -574,14 +625,7 @@ func (w *settingsWindow) deleteProfile() {
 		w.problem(pr)
 		return
 	}
-	text := fmt.Sprintf(w.t(i18n.KeySetDeleteConfirm), w.ed.Base.DisplayName())
-	confirm := w.cfg.confirm
-	if confirm == nil {
-		confirm = func(owner uintptr, text, caption string) bool {
-			return winapi.MessageBox(owner, text, caption, winapi.MB_YESNO|winapi.MB_ICONWARNING|winapi.MB_DEFBUTTON2) == winapi.IDYES
-		}
-	}
-	if !confirm(w.hwnd, text, w.t(i18n.KeyAppName)) {
+	if !w.ask(fmt.Sprintf(w.t(i18n.KeySetDeleteConfirm), w.ed.Base.DisplayName())) {
 		return
 	}
 	w.status = w.t(i18n.KeySetDeleting)
@@ -717,6 +761,14 @@ func (w *settingsWindow) elevate() {
 		w.setStatus(w.t(i18n.KeySetElevateCanceled))
 	default:
 		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetElevateFailed), err.Error()))
+	}
+}
+
+// userClose: the close box, «Закрыть» or Esc — asks before dropping
+// unsaved edits.
+func (w *settingsWindow) userClose() {
+	if w.discardOK() {
+		w.close()
 	}
 }
 

@@ -323,6 +323,7 @@ func TestCHK_TRAY_10_StructSizes(t *testing.T) {
 		{"BITMAPINFOHEADER", unsafe.Sizeof(winapi.BITMAPINFOHEADER{}), 40},
 		{"FLASHWINFO", unsafe.Sizeof(winapi.FLASHWINFO{}), 32},
 		{"ICONINFO", unsafe.Sizeof(winapi.ICONINFO{}), 32},
+		{"SHELLEXECUTEINFOW", unsafe.Sizeof(winapi.SHELLEXECUTEINFOW{}), 112},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

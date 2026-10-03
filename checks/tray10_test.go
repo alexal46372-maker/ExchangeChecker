@@ -129,11 +129,11 @@ var winAPIMinVersion = map[string]float64{
 	"LoadIconW": 5.0, "SetWindowPos": 5.0, "FlashWindowEx": 5.0, "GetForegroundWindow": 5.0,
 	// phase 6c settings window (CHK-TRAY-04/05/06)
 	"SetFocus": 5.0, "GetFocus": 5.0, "MessageBoxW": 5.0, "GetModuleFileNameW": 5.0,
-	"IsDialogMessageW": 5.0,
+	"IsDialogMessageW": 5.0, "AllowSetForegroundWindow": 5.0, "GetProcessId": 5.1,
 	// gdi32
 	"CreateBitmap": 5.0, "CreateDIBSection": 5.0, "DeleteObject": 5.0, "GetStockObject": 5.0,
 	// shell32
-	"Shell_NotifyIconW": 5.0, "ShellExecuteW": 5.0,
+	"Shell_NotifyIconW": 5.0, "ShellExecuteExW": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

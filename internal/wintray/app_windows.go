@@ -39,12 +39,14 @@ type Options struct {
 	// still maintained.
 	HiddenAlerts bool
 	// Elevator starts `exchtray --settings` elevated; nil =
-	// ShellExecuteW "runas" (tests: a fake).
+	// ShellExecuteExW "runas" (tests: a fake).
 	Elevator Elevator
 	// HiddenSettings keeps the settings window hidden (tests).
 	HiddenSettings bool
-	// ConfirmDelete asks before delete_profile; nil = MessageBoxW (tests).
-	ConfirmDelete func(owner uintptr, text, caption string) bool
+	// Confirm asks the Yes/No questions of the settings window (delete,
+	// «Отменить изменения?»); nil = MessageBoxW, default «Нет» (tests: a
+	// fake).
+	Confirm func(owner uintptr, text, caption string) bool
 }
 
 // ackTimeout bounds one ack_alert request.
@@ -374,7 +376,7 @@ func (a *App) OpenSettings() uintptr {
 	}
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
-		confirm: a.opt.ConfirmDelete, hidden: a.opt.HiddenSettings,
+		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onClose: func() {
 			if a.settings == w {
 				a.settings = nil

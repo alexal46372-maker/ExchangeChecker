@@ -81,6 +81,19 @@ func (c *Client) CallTimeout(cmd string, timeout time.Duration) (model.IPCMessag
 // Do sends req (its ID is assigned here) and waits for the reply until ctx
 // is done. Requests above model.IPCMaxRequest are refused (ErrTooLarge).
 func (c *Client) Do(ctx context.Context, req model.IPCRequest) (model.IPCMessage, error) {
+	return c.do(ctx, req, false)
+}
+
+// DoCancel is Do for an asynchronous request (test_profile; protocol 2
+// with capability cancel, CHK-IPC-07): when ctx ends first, the service is
+// told to stop the request with cancel {ref: id} (fire and forget: the
+// cancel reply and the request's canceled error are discarded as late
+// replies) and ctx.Err() is returned. The connection stays open.
+func (c *Client) DoCancel(ctx context.Context, req model.IPCRequest) (model.IPCMessage, error) {
+	return c.do(ctx, req, true)
+}
+
+func (c *Client) do(ctx context.Context, req model.IPCRequest, cancelOnDone bool) (model.IPCMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return model.IPCMessage{}, err
 	}
@@ -115,8 +128,42 @@ func (c *Client) Do(ctx context.Context, req model.IPCRequest) (model.IPCMessage
 		return m, nil
 	case <-ctx.Done():
 		forget()
+		if cancelOnDone {
+			c.mu.Lock()
+			c.nextID++
+			cid := c.nextID
+			c.mu.Unlock()
+			c.wmu.Lock()
+			_ = WriteRequest(c.rw, model.IPCRequest{ID: cid, Cmd: model.CmdCancel, Ref: id})
+			c.wmu.Unlock()
+		}
 		return model.IPCMessage{}, ctx.Err()
 	}
+}
+
+// GetConfig sends get_config (admin only, capability config_read): reply
+// MsgConfig (Config, Revision) or MsgError access_denied / save_failed.
+func (c *Client) GetConfig(ctx context.Context) (model.IPCMessage, error) {
+	return c.Do(ctx, model.IPCRequest{Cmd: model.CmdGetConfig})
+}
+
+// SaveProfile sends save_profile (admin only, capability config_write).
+// password "" keeps the saved one when the server identity is unchanged
+// (CanReuseSavedPassword); clearPassword deletes it; expectedRevision ""
+// = last writer wins.
+func (c *Client) SaveProfile(ctx context.Context, p model.Profile, password string, clearPassword bool, expectedRevision string) (model.IPCMessage, error) {
+	return c.Do(ctx, model.IPCRequest{Cmd: model.CmdSaveProfile, Profile: &p, Password: password, ClearPassword: clearPassword,
+		ExpectedRevision: expectedRevision})
+}
+
+// DeleteProfile sends delete_profile (admin only).
+func (c *Client) DeleteProfile(ctx context.Context, profileID, expectedRevision string) (model.IPCMessage, error) {
+	return c.Do(ctx, model.IPCRequest{Cmd: model.CmdDeleteProfile, ProfileID: profileID, ExpectedRevision: expectedRevision})
+}
+
+// SaveSettings sends save_settings (admin only).
+func (c *Client) SaveSettings(ctx context.Context, st model.Settings, expectedRevision string) (model.IPCMessage, error) {
+	return c.Do(ctx, model.IPCRequest{Cmd: model.CmdSaveSettings, Settings: &st, ExpectedRevision: expectedRevision})
 }
 
 // Done is closed when the connection ends.

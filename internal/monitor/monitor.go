@@ -87,6 +87,14 @@ type Options struct {
 	// warning (default 15 min).
 	ConfigWarnEvery time.Duration
 
+	// ConfigStore is written by save_profile / delete_profile /
+	// save_settings and read by get_config (phase 6); nil = the store of
+	// a FileConfig Source.
+	ConfigStore ConfigWriter
+	// OnConfigChange is called after every configuration change made
+	// through IPC (the service writes event 105, CHK-MON-05).
+	OnConfigChange func(model.ConfigChange)
+
 	// Acks keeps the alarm acknowledgements (FileAckStore in the
 	// service); nil = in-memory (CHK-IPC-02).
 	Acks AckStore
@@ -285,6 +293,11 @@ type Monitor struct {
 	tester *Tester
 
 	cLocks keyedLocks // per-profile counters locks (reference counted)
+
+	// cfgMu serializes configuration writes (phase 6) and reloads, so a
+	// write, its synchronous reload and the revision are consistent
+	cfgMu    sync.Mutex
+	revision string // configuration revision of the applied config (mu)
 
 	cmdMu   sync.Mutex
 	cmdLast map[string]time.Time // rate limiter of IPC commands
@@ -646,6 +659,13 @@ func profileSig(p model.Profile, pw string, s model.Settings) string {
 // snapshot's config error (CHK-MON-10). It returns true when a new
 // configuration was applied.
 func (m *Monitor) reloadConfig(force bool) bool {
+	m.cfgMu.Lock()
+	defer m.cfgMu.Unlock()
+	return m.reloadConfigLocked(force)
+}
+
+// reloadConfigLocked is reloadConfig with cfgMu held.
+func (m *Monitor) reloadConfigLocked(force bool) bool {
 	stamp := m.opt.Source.Stamp()
 	m.mu.Lock()
 	same := m.good && stamp == m.stamp && !m.retry
@@ -683,6 +703,10 @@ func (m *Monitor) reloadConfig(force bool) bool {
 	if cfg.Settings.WarnMinutes == 0 && cfg.Settings.ErrorMinutes == 0 {
 		cfg.Settings = model.DefaultSettings()
 	}
+	rev, rerr := configRevision(m.configWriter())
+	if rerr != nil {
+		m.opt.Log.Printf("config: revision: %v", rerr)
+	}
 	var retired []*entry
 	m.mu.Lock()
 	next := make(map[string]*entry, len(cfg.Profiles))
@@ -706,6 +730,7 @@ func (m *Monitor) reloadConfig(force bool) bool {
 	}
 	recovered := m.retry && settingsErr == nil
 	m.entries, m.cfg, m.stamp, m.loaded, m.good = next, cfg, stamp, true, true
+	m.revision = rev
 	if settingsErr == nil {
 		m.retry, m.cfgFatal, m.stale, m.warnMsg = false, nil, false, ""
 	} else {
@@ -1087,6 +1112,10 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		}
 		model.SortPoints(ps.Points)
 		ps.Warnings = sqlcheck.Warnings(p)
+		// read-only settings view (phase 6): no password, no SQL
+		ps.Connection = model.ConnectionOf(p, cfg.Passwords[p.ID] != "")
+		ps.ThresholdOverride = &model.ThresholdOverride{WarnMinutes: p.WarnMinutes, ErrorMinutes: p.ErrorMinutes}
+		ps.MappingSummary = model.MappingSummaryOf(p)
 		profiles = append(profiles, ps)
 		if ok && p.Enabled && polled[p.ID] {
 			events = append(events, m.observe(ps, now)...)
@@ -1107,7 +1136,11 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	snap := model.StatusSnapshot{
 		Seq: m.seq, Now: now, Level: model.WorstProfileLevel(profiles), Profiles: profiles,
 		Alerts: alerts, PollIntervalSec: int(m.intervalLocked() / time.Second),
-		LastPollAt: m.lastPoll,
+		LastPollAt: m.lastPoll, ConfigRevision: m.revision,
+	}
+	if m.loaded {
+		st := cfg.Settings
+		snap.Settings = &st
 	}
 	m.heartbeatLocked(now).apply(&snap)
 	if cfg.Err != nil {

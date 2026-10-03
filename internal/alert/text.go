@@ -34,6 +34,36 @@ func FormatAck(e model.AlertEvent, lang string) string {
 	return b.String()
 }
 
+// FormatConfigChange renders event 105 (phase 6): "Конфигурация
+// изменена: действие save_profile, профиль «id», учётная запись
+// DOMAIN\user". Only the account, the action and the profile id — never a
+// password or a connection string.
+func FormatConfigChange(c model.ConfigChange, lang string) string {
+	var b strings.Builder
+	b.WriteString(model.MonitorMessage(model.MsgMonitorConfigChanged, lang))
+	acc := c.Account
+	if lang == model.LangEN {
+		if acc == "" {
+			acc = "unknown"
+		}
+		fmt.Fprintf(&b, " Action %s", c.Action)
+		if c.ProfileID != "" {
+			fmt.Fprintf(&b, ", profile %q", c.ProfileID)
+		}
+		fmt.Fprintf(&b, ", account %s.", acc)
+	} else {
+		if acc == "" {
+			acc = "неизвестна"
+		}
+		fmt.Fprintf(&b, " Действие %s", c.Action)
+		if c.ProfileID != "" {
+			fmt.Fprintf(&b, ", профиль «%s»", c.ProfileID)
+		}
+		fmt.Fprintf(&b, ", учётная запись %s.", acc)
+	}
+	return b.String()
+}
+
 // subject is "База «X»[, точка «Y»]" in lang.
 func subject(e model.AlertEvent, lang string) string {
 	en := lang == model.LangEN

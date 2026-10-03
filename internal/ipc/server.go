@@ -53,6 +53,36 @@ type HeartbeatSource interface {
 	Heartbeat() model.Heartbeat
 }
 
+// ConfigManager runs the admin-only configuration commands (phase 6,
+// CHK-IPC-06): the service is the only writer of the configuration. The
+// server checks the client (Authorize) before every call; account is the
+// client's DOMAIN\user for the log / event 105. Errors of type
+// *model.IPCError carry the reply code, key and args.
+type ConfigManager interface {
+	GetConfig() (model.ConfigView, string, error)
+	SaveProfile(p model.Profile, password string, clearPassword bool, expectedRevision, account string) (model.SavedProfile, error)
+	DeleteProfile(profileID, expectedRevision, account string) (revision string, err error)
+	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
+}
+
+// Peer is the identity of a connected client (phase 6).
+type Peer struct {
+	// Admin: elevated member of BUILTIN\Administrators.
+	Admin bool
+	// Account: DOMAIN\user ("" if unknown).
+	Account string
+}
+
+// clientIdentifier is implemented by transports that can identify the
+// client (the Windows pipe: ImpersonateNamedPipeClient).
+type clientIdentifier interface {
+	ClientIdentity() (Peer, error)
+}
+
+// ErrAccessDenied: admin command from a non-elevated client.
+var ErrAccessDenied = &model.IPCError{Code: model.ErrCodeAccessDenied, Key: model.MsgMonitorAccessDenied,
+	Message: "ipc: administrator rights required"}
+
 // Logger is the line logger.
 type Logger interface {
 	Printf(format string, args ...interface{})
@@ -96,6 +126,12 @@ type Server struct {
 	// ctx is canceled by Close (running test_profile calls end)
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Authorize identifies the client of a connection for admin commands
+	// and clientElevated (phase 6). nil = the transport's own
+	// ClientIdentity (Windows pipe), else "not an administrator". An
+	// error means "not an administrator".
+	Authorize func(rw io.ReadWriteCloser) (Peer, error)
 }
 
 type conn struct {
@@ -105,6 +141,20 @@ type conn struct {
 	done    chan struct{}
 	relOnce sync.Once
 	release func()
+
+	// asynchronous requests of this connection by request ID (G6 cancel,
+	// CHK-IPC-07)
+	opsMu sync.Mutex
+	ops   map[uint64]*asyncOp
+	// clientElevated of get_status / ping replies (display only; computed
+	// once per connection, admin commands re-check every time)
+	elevOnce sync.Once
+	elev     bool
+}
+
+type asyncOp struct {
+	cancel   context.CancelFunc
+	canceled bool // set by cancel {ref} (guarded by conn.opsMu)
 }
 
 func (c *conn) close() {
@@ -188,6 +238,12 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(HeartbeatSource); ok {
 		caps = append(caps, model.CapHeartbeat)
 	}
+	if _, ok := s.H.(Tester); ok {
+		caps = append(caps, model.CapCancel)
+	}
+	if _, ok := s.H.(ConfigManager); ok {
+		caps = append(caps, model.CapConfigRead, model.CapConfigWrite)
+	}
 	return caps
 }
 
@@ -199,14 +255,64 @@ func (s *Server) heartbeat() *model.Heartbeat {
 	return nil
 }
 
-// errorReply builds MsgError; *model.IPCError supplies Code / ErrorKey.
+// errorReply builds MsgError; *model.IPCError supplies Code / ErrorKey /
+// ErrorArgs. Every error reply carries a code and an errorKey (phase 6).
 func errorReply(id uint64, err error, code string) model.IPCMessage {
 	m := model.IPCMessage{ID: id, Type: model.MsgError, Error: err.Error(), Code: code}
 	var ie *model.IPCError
 	if errors.As(err, &ie) {
-		m.Code, m.ErrorKey = ie.Code, ie.Key
+		m.Code, m.ErrorKey, m.ErrorArgs = ie.Code, ie.Key, ie.Args
+	}
+	if m.Code == "" {
+		m.Code = model.ErrCodeInvalidRequest
+	}
+	if m.ErrorKey == "" {
+		switch m.Code {
+		case model.ErrCodeUnknownCommand:
+			m.ErrorKey = model.MsgMonitorUnknownCommand
+		case model.ErrCodeAccessDenied:
+			m.ErrorKey = model.MsgMonitorAccessDenied
+		case model.ErrCodeCanceled:
+			m.ErrorKey = model.MsgMonitorCanceled
+		case model.ErrCodeRateLimited:
+			m.ErrorKey = model.MsgMonitorRateLimited
+		case model.ErrCodeNotFound:
+			m.ErrorKey = model.MsgMonitorUnknownProfile
+		case model.ErrCodeSaveFailed:
+			m.ErrorKey = model.MsgMonitorConfigSaveFailed
+		case model.ErrCodeConflict:
+			m.ErrorKey = model.MsgMonitorConfigConflict
+		case model.ErrCodeBusy:
+			m.ErrorKey = model.MsgTestBusy
+		default:
+			m.ErrorKey = model.MsgMonitorBadRequest
+		}
 	}
 	return m
+}
+
+// identify returns the client of c (Authorize, else the transport's
+// ClientIdentity, else not an administrator).
+func (s *Server) identify(c *conn) (Peer, error) {
+	if s.Authorize != nil {
+		return s.Authorize(c.rw)
+	}
+	if ci, ok := c.rw.(clientIdentifier); ok {
+		return ci.ClientIdentity()
+	}
+	return Peer{}, errors.New("ipc: transport cannot identify the client")
+}
+
+// elevated is clientElevated of c (computed on the first get_status /
+// ping: ImpersonateNamedPipeClient fails before the server has read data
+// from the client, so it cannot be in hello).
+func (c *conn) elevated(s *Server) *bool {
+	c.elevOnce.Do(func() {
+		cl, err := s.identify(c)
+		c.elev = err == nil && cl.Admin
+	})
+	v := c.elev
+	return &v
 }
 
 // Serve accepts clients until Close; it returns nil after Close.
@@ -411,7 +517,19 @@ func (s *Server) readLoop(c *conn) {
 			s.startTest(c, t, req)
 			continue
 		}
-		if !c.send(s.handle(req)) {
+		var reply model.IPCMessage
+		switch {
+		case req.Cmd == model.CmdCancel:
+			reply = s.cancelOp(c, req)
+		case model.AdminCommand(req.Cmd):
+			reply = s.handleAdmin(c, req)
+		default:
+			reply = s.handle(req)
+			if req.Cmd == model.CmdGetStatus || req.Cmd == model.CmdPing {
+				reply.ClientElevated = c.elevated(s)
+			}
+		}
+		if !c.send(reply) {
 			s.Log.Printf("ipc: client too slow, disconnected")
 			return
 		}
@@ -427,12 +545,26 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 		s.mu.Unlock()
 		return
 	}
-	ctx := s.ctx
+	ctx, cancel := context.WithCancel(s.ctx)
+	c.opsMu.Lock()
+	if c.ops == nil {
+		c.ops = map[uint64]*asyncOp{}
+	}
+	if _, dup := c.ops[req.ID]; dup {
+		c.opsMu.Unlock()
+		s.mu.Unlock()
+		cancel()
+		c.send(errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+			Message: "ipc: a request with this id is still running", Args: []string{"id"}}, ""))
+		return
+	}
+	op := &asyncOp{cancel: cancel}
+	c.ops[req.ID] = op
+	c.opsMu.Unlock()
 	s.wg.Add(1)
 	s.mu.Unlock()
 	go func() {
 		defer s.wg.Done()
-		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		go func() {
 			select {
@@ -442,8 +574,16 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 			}
 		}()
 		res, err := t.TestProfile(ctx, req)
+		c.opsMu.Lock()
+		canceled := op.canceled
+		delete(c.ops, req.ID)
+		c.opsMu.Unlock()
 		var m model.IPCMessage
-		if err != nil {
+		if canceled {
+			// the client canceled it: whatever the test returned, the
+			// answer is canceled (cancel already replied ok)
+			m = errorReply(req.ID, errCanceled, "")
+		} else if err != nil {
 			m = errorReply(req.ID, err, "")
 		} else {
 			m = model.IPCMessage{ID: req.ID, Type: model.MsgTestResult, Test: &res}
@@ -457,6 +597,84 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 			}
 		}
 	}()
+}
+
+var errCanceled = &model.IPCError{Code: model.ErrCodeCanceled, Key: model.MsgMonitorCanceled, Message: "ipc: request canceled"}
+
+// cancelOp handles cancel {ref}: only a running asynchronous request of
+// the same connection (G6, CHK-IPC-07). The connection stays open.
+func (s *Server) cancelOp(c *conn, req model.IPCRequest) model.IPCMessage {
+	c.opsMu.Lock()
+	op := c.ops[req.Ref]
+	if op != nil && !op.canceled {
+		op.canceled = true
+		op.cancel()
+	} else {
+		op = nil
+	}
+	c.opsMu.Unlock()
+	if op == nil {
+		return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownRequest,
+			Message: "ipc: no running request with this id"}, "")
+	}
+	return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultCanceled}
+}
+
+// handleAdmin runs an admin-only command after checking the client on
+// every call (no cache): ImpersonateNamedPipeClient + CheckTokenMembership
+// (BUILTIN\Administrators) on Windows (CHK-IPC-06).
+func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
+	cm, ok := s.H.(ConfigManager)
+	if !ok {
+		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
+	}
+	cl, err := s.identify(c)
+	if err != nil || !cl.Admin {
+		why := "not an elevated administrator"
+		if err != nil {
+			why = err.Error()
+		}
+		s.Log.Printf("ipc: %s refused for %q: %s", req.Cmd, cl.Account, why)
+		return errorReply(req.ID, ErrAccessDenied, "")
+	}
+	switch req.Cmd {
+	case model.CmdGetConfig:
+		cfg, rev, err := cm.GetConfig()
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		return model.IPCMessage{ID: req.ID, Type: model.MsgConfig, Config: &cfg, Revision: rev}
+	case model.CmdSaveProfile:
+		if req.Profile == nil {
+			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorProfileInvalid,
+				Message: "ipc: save_profile without profile", Args: []string{"profile", model.ValRequired}}, "")
+		}
+		res, err := cm.SaveProfile(*req.Profile, req.Password, req.ClearPassword, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		p := res.Profile
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSaved, ProfileID: p.ID, Profile: &p,
+			Reloaded: true, PollScheduled: res.PollScheduled, Revision: res.Revision}
+	case model.CmdDeleteProfile:
+		rev, err := cm.DeleteProfile(req.ProfileID, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultDeleted, ProfileID: req.ProfileID,
+			Reloaded: true, Revision: rev}
+	case model.CmdSaveSettings:
+		if req.Settings == nil {
+			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorSettingsInvalid,
+				Message: "ipc: save_settings without settings", Args: []string{"settings", model.ValRequired}}, "")
+		}
+		rev, err := cm.SaveSettings(*req.Settings, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSaved, Reloaded: true, Revision: rev}
+	}
+	return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 }
 
 // handle executes one command.

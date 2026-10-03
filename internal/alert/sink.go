@@ -49,11 +49,15 @@ func (s LogSink) Alert(e model.AlertEvent) {
 
 // Event Log event IDs of the service (all <= 1000).
 const (
-	EventIDService  uint32 = 100 // service started / stopped (information)
-	EventIDRecover  uint32 = 101 // level decreased (information)
-	EventIDWarning  uint32 = 102 // level raised to warning
-	EventIDError    uint32 = 103 // level raised to error
-	EventIDAck      uint32 = 104 // alarm acknowledged from the tray (information)
+	EventIDService uint32 = 100 // service started / stopped (information)
+	EventIDRecover uint32 = 101 // level decreased (information)
+	EventIDWarning uint32 = 102 // level raised to warning
+	EventIDError   uint32 = 103 // level raised to error
+	EventIDAck     uint32 = 104 // alarm acknowledged from the tray (information)
+	// EventIDConfig: configuration changed through IPC by an administrator
+	// (information; account, action, profile id — never a password or a
+	// connection string; phase 6, CHK-MON-05 extension)
+	EventIDConfig   uint32 = 105
 	EventIDInternal uint32 = 110 // configuration / internal error
 )
 

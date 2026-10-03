@@ -184,11 +184,14 @@ func ConnCategory(err error) string {
 			}
 		}
 	}
+	// a canceled operation is "other" even when the socket error it left
+	// behind is a timeout (sessionHold expires the socket deadline on
+	// cancel, so a write in flight fails with an i/o timeout)
+	if (e != nil && e.Kind == KindCanceled) || errors.Is(err, context.Canceled) {
+		return ConnCategoryOther
+	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || (e != nil && e.Kind == KindTimeout) {
 		return ConnCategoryTimeout
-	}
-	if errors.Is(err, context.Canceled) {
-		return ConnCategoryOther
 	}
 	if tlsKey(err) != "" {
 		return ConnCategoryTLS

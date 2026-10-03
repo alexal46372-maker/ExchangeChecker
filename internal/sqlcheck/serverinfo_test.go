@@ -240,6 +240,13 @@ func TestCHK_SQL_01_ConnCategory(t *testing.T) {
 		{"config wrapped", fmt.Errorf("ipc: %w", &Error{Kind: KindConfig, Op: "open", Err: errors.New("x")}), "config"},
 		{"config text", errors.New(`unknown encrypt mode "maybe"`), "config"},
 		{"canceled", context.Canceled, "other"},
+		// sessionHold cancel while a write is in flight: the socket error is
+		// an i/o timeout (expired deadline), the operation was canceled
+		{"canceled hold write timeout", holdError("connect", classify("connect",
+			&net.OpError{Op: "write", Net: "tcp", Err: os.ErrDeadlineExceeded}, true), cancelledHold()), "other"},
+		{"canceled kind net timeout", &Error{Kind: KindCanceled, Op: "connect", Err: ciNetErr{timeout: true}}, "other"},
+		{"timeout hold", holdError("server_info", classify("server_info",
+			&net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}, false), expiredHold()), "timeout"},
 		{"query", mssql.Error{Number: 208, Message: "Invalid object name"}, "other"},
 		{"plain", errors.New("something else"), "other"},
 	}
@@ -296,4 +303,30 @@ func TestCHK_SQL_01_ConnCategory(t *testing.T) {
 		t.Errorf("silent server: %v -> %q", err, ConnCategory(err))
 	}
 
+}
+
+func cancelledHold() *sessionHold {
+	h := &sessionHold{}
+	ctx, cancel := context.WithCancel(context.Background())
+	end := h.op(ctx)
+	cancel()
+	waitKilled(h)
+	end()
+	return h
+}
+
+func expiredHold() *sessionHold {
+	h := &sessionHold{}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	end := h.op(ctx)
+	waitKilled(h)
+	end()
+	return h
+}
+
+func waitKilled(h *sessionHold) {
+	for i := 0; i < 2000 && h.killed() == nil; i++ {
+		time.Sleep(time.Millisecond)
+	}
 }

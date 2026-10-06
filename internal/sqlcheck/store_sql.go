@@ -284,10 +284,26 @@ func (s *SQLStore) Counters(ctx context.Context, m model.Mapping, limit int) ([]
 // connection would stay READ UNCOMMITTED (phase 2c).
 const restoreIsolationSQL = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
 
+// restoreRowCountSQL removes the server-side row limit of a manual query
+// (manualRowCountSQL); sent with restoreIsolationSQL in one batch
+// (restoreSessionSQL). Both are session SETs, paired on the dedicated
+// connection of ManualPoints only (phase 6 review, PLAN §12 p. 80).
+const restoreRowCountSQL = "SET ROWCOUNT 0"
+
+// restoreSessionSQL resets the session after a manual query.
+const restoreSessionSQL = restoreIsolationSQL + ";\n" + restoreRowCountSQL
+
+// manualRowCountSQL limits the rows the server returns for the manual
+// query (SET ROWCOUNT, valid on SQL Server 2005/2008 for SELECT); the
+// client still stops reading at limit. limit is an int, never user text.
+func manualRowCountSQL(limit int) string { return "SET ROWCOUNT " + strconv.Itoa(limit) }
+
 // ManualPoints implements Store. The query runs on a dedicated pooled
-// connection in a READ UNCOMMITTED transaction that is always rolled back;
-// afterwards the session is set back to READ COMMITTED, and if that fails
-// the connection is discarded instead of being returned to the pool.
+// connection, limited on the server with SET ROWCOUNT limit, in a READ
+// UNCOMMITTED transaction that is always rolled back; afterwards the
+// session is set back to READ COMMITTED and ROWCOUNT 0 (restoreSessionSQL),
+// and if that fails the connection is discarded instead of being returned
+// to the pool.
 func (s *SQLStore) ManualPoints(ctx context.Context, query string, limit int) (out []RawPoint, err error) {
 	if err := ValidateManualSQL(query); err != nil {
 		return nil, &Error{Kind: KindMapping, Op: "manual sql", Err: err}
@@ -304,19 +320,26 @@ func (s *SQLStore) ManualPoints(ctx context.Context, query string, limit int) (o
 	return out, err
 }
 
-// restoreIsolation runs restoreIsolationSQL on conn (own short context:
-// the caller's may be expired) and discards conn if it fails.
+// restoreIsolation runs restoreSessionSQL (isolation READ COMMITTED,
+// ROWCOUNT 0) on conn (own short context: the caller's may be expired)
+// and discards conn if it fails.
 func restoreIsolation(conn *sql.Conn, timeout time.Duration) {
 	rctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if _, err := conn.ExecContext(rctx, restoreIsolationSQL); err != nil {
+	if _, err := conn.ExecContext(rctx, restoreSessionSQL); err != nil {
 		_ = conn.Raw(func(interface{}) error { return driver.ErrBadConn })
 	}
 }
 
 // manualOnConn runs a validated manual query on conn inside a rolled-back
-// READ UNCOMMITTED transaction.
+// READ UNCOMMITTED transaction, with SET ROWCOUNT limit (limit > 0) set on
+// the session first; the caller restores the session (restoreIsolation).
 func manualOnConn(ctx context.Context, conn *sql.Conn, query string, limit int) (out []RawPoint, err error) {
+	if limit > 0 {
+		if _, err := conn.ExecContext(ctx, manualRowCountSQL(limit)); err != nil {
+			return nil, classify("manual sql", err, false)
+		}
+	}
 	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadUncommitted})
 	if err != nil {
 		return nil, classify("manual sql", err, false)

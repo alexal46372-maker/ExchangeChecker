@@ -47,8 +47,8 @@ func TestCHK_SQL_04_ManualSQLBypassWithoutSemicolon(t *testing.T) {
 		"SELECT 1,2,3 USE master":                                       ErrManualForbidden,
 		"select 1,2,3 dElEtE from t":                                    ErrManualForbidden,
 		"WITH q AS (SELECT 1 AS a) DELETE FROM t":                       ErrManualForbidden,
-		"SELECT 1,2,3 /* c */ DELETE /* c */ FROM t":                    ErrManualForbidden,
-		"SELECT 1,2,3 -- c\nDELETE FROM t":                              ErrManualForbidden,
+		"SELECT 1,2,3 /* c */ DELETE /* c */ FROM t":                    ErrManualComment, // phase 6 review
+		"SELECT 1,2,3 -- c\nDELETE FROM t":                              ErrManualComment,
 		"SELECT 1,2,3 IF 1=1 SELECT 4":                                  ErrManualForbidden,
 		"SELECT 1,2,3 RECONFIGURE":                                      ErrManualForbidden,
 		"SELECT 1,2,3 SELECT 4,5,6":                                     ErrManualMulti,
@@ -81,8 +81,6 @@ func TestCHK_SQL_04_ManualSQLNoFalsePositives(t *testing.T) {
 		"SELECT 'DELETE FROM t; COMMIT', N'INSERT INTO', 1 FROM t",
 		"SELECT [Update], [Delete], [Set] FROM [dbo].[Insert] AS [Into]",
 		"SELECT \"Update\", \"Begin\", 1 FROM \"Exec\"",
-		"SELECT a, b, c FROM t -- DELETE FROM t\n",
-		"SELECT a, b, c /* COMMIT; DROP TABLE t; EXEC x */ FROM t",
 		"SELECT a AS updated_at, b AS set_id, c AS begin_date FROM t WHERE deleted = 0 AND is_open = 1",
 		"SELECT @@SERVERNAME, 1, 2",
 		"SELECT _Description, _Fld1, _Fld2 FROM _Reference1 WITH (NOLOCK)",
@@ -110,19 +108,33 @@ func TestCHK_SQL_04_ManualSQLNoFalsePositives(t *testing.T) {
 
 func TestCHK_SQL_04_NoSessionSetInProductSQL(t *testing.T) {
 	// every query the service sends (recorded like CHK-SQL-05) is free of
-	// session-level SET / isolation changes, except the explicit restore
-	// after a manual query
+	// session-level SET / isolation changes, except the paired SETs of the
+	// manual path on its dedicated connection: SET ROWCOUNT n before the
+	// manual query and the restore (READ COMMITTED + ROWCOUNT 0) after it
+	// (phase 6 review, PLAN §12 p. 80)
 	for q, kind := range allRecordedSQL(t) {
-		if strings.HasPrefix(kind, "manual") || strings.HasPrefix(kind, "template") || kind == "restore_isolation" {
+		switch {
+		case kind == "manual_rowcount":
+			if q != "SET ROWCOUNT 100" {
+				t.Errorf("manual_rowcount %q", q)
+			}
+			continue
+		case kind == "restore_isolation":
+			if q != restoreIsolationSQL+";\n"+restoreRowCountSQL {
+				t.Errorf("restore %q", q)
+			}
+			continue
+		case strings.HasPrefix(kind, "manual") || strings.HasPrefix(kind, "template"):
 			continue
 		}
 		for _, tk := range sqlTokens(blankSQL(q, false)) {
-			if tk == "ISOLATION" || manualForbidden[tk] {
+			if tk == "ISOLATION" || tk == "ROWCOUNT" || manualForbidden[tk] {
 				t.Errorf("%s: %s in\n%s", kind, tk, q)
 			}
 		}
 	}
-	if restoreIsolationSQL != "SET TRANSACTION ISOLATION LEVEL READ COMMITTED" || len(Compat2008Violations(restoreIsolationSQL)) != 0 {
-		t.Error(restoreIsolationSQL)
+	if restoreIsolationSQL != "SET TRANSACTION ISOLATION LEVEL READ COMMITTED" || restoreRowCountSQL != "SET ROWCOUNT 0" ||
+		len(Compat2008Violations(restoreSessionSQL)) != 0 {
+		t.Error(restoreSessionSQL)
 	}
 }

@@ -434,7 +434,7 @@ func TestCHK_SQL_03_IntegrationCounters(t *testing.T) {
 
 func TestCHK_SQL_04_IntegrationManualMapping(t *testing.T) {
 	p, pw := itProfile(t, "ec_1c_custom")
-	const q = "-- manual; mapping\nSELECT d._Description, t._Fld90, t._Fld91 FROM _Reference77 d JOIN _InfoRg88 t ON t._Fld89RRef = d._IDRRef;"
+	const q = "SELECT d._Description, t._Fld90, t._Fld91 FROM _Reference77 d JOIN _InfoRg88 t ON t._Fld89RRef = d._IDRRef;"
 	p.Mapping = model.Mapping{Mode: model.MappingManual, ManualSQL: q, YearOffset: 2000}
 	r, err := NewReader(p, pw, fixOpt())
 	if err != nil {

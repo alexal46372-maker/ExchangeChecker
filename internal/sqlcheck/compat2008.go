@@ -143,7 +143,31 @@ func closeParen(s string, open int) int {
 	return -1
 }
 
-// blankSQL removes comments and replaces string literals ('...', N'...')
+// commentEnd returns the index after the /* ... */ comment that starts at
+// q[i] (len(q) if it is not terminated). SQL Server nests block comments:
+// "/* /* */ x */" is one comment, so the depth is tracked (phase 6 review;
+// quotes inside a comment have no meaning).
+func commentEnd(q string, i int) int {
+	depth := 0
+	for i < len(q) {
+		switch {
+		case q[i] == '/' && i+1 < len(q) && q[i+1] == '*':
+			depth++
+			i += 2
+		case q[i] == '*' && i+1 < len(q) && q[i+1] == '/':
+			depth--
+			i += 2
+			if depth == 0 {
+				return i
+			}
+		default:
+			i++
+		}
+	}
+	return len(q)
+}
+
+// blankSQL removes comments (nested /* */ like SQL Server) and replaces string literals ('...', N'...')
 // and quoted identifiers ([...], "...") by empty ones, so names such as
 // [Format] or 'IIF(' in data never match a rule. keepIdents keeps the
 // identifier contents without the quotes (string literals stay blank).
@@ -158,12 +182,7 @@ func blankSQL(q string, keepIdents bool) string {
 			}
 			b.WriteByte(' ')
 		case c == '/' && i+1 < len(q) && q[i+1] == '*':
-			end := strings.Index(q[i+2:], "*/")
-			if end < 0 {
-				i = len(q)
-			} else {
-				i += end + 4
-			}
+			i = commentEnd(q, i)
 			b.WriteByte(' ')
 		case c == '\'' || c == '"' || c == '[':
 			closeCh := c

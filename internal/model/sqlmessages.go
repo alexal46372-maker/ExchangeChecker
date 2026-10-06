@@ -68,7 +68,15 @@ const (
 	// ValSQLNoTimestamp: neither lastSendColumn nor lastRecvColumn is set.
 	ValSQLNoTimestamp = "validation.sql_no_timestamp"
 	// ValSQLIdentifier: {2} = invalid_utf8 | nul | too_long, {3} = max length.
-	ValSQLIdentifier = "validation.sql_identifier"
+	ValSQLIdentifier = "validation.sql_identifier" // ValSQLComment: the manual SQL contains a comment (-- or /* */);
+	// comments are not allowed in manual SQL (SQL Server nests /* */, a
+	// validator that does not would see a different query, phase 6 review).
+	ValSQLComment = "validation.sql_comment"
+	// ValSQLManualHint: {2} = the table / join hint (only NOLOCK,
+	// READUNCOMMITTED and NOWAIT are allowed).
+	ValSQLManualHint = "validation.sql_manual_hint"
+	// ValSQLManualOption: OPTION (...) query hints are not allowed.
+	ValSQLManualOption = "validation.sql_manual_option"
 )
 
 // Accepted column types ({5} of ValSQLColumnType).
@@ -104,7 +112,7 @@ var sqlMessages = map[string]LocalizedText{
 	ValSQLManualEmpty:     {"Поле «{0}»: ручной SQL пуст.", "Field \"{0}\": the manual SQL is empty."},
 	ValSQLManualNotSelect: {"Поле «{0}»: нужен один запрос SELECT (или WITH … SELECT).", "Field \"{0}\": a single SELECT (or WITH ... SELECT) statement is required."},
 	ValSQLManualMulti:     {"Поле «{0}»: допускается только один запрос.", "Field \"{0}\": only one statement is allowed."},
-	ValSQLManualLiteral:   {"Поле «{0}»: не закрыта строка, [имя] или комментарий.", "Field \"{0}\": unterminated string, [identifier] or comment."},
+	ValSQLManualLiteral:   {"Поле «{0}»: не закрыта строка, [имя] или \"имя\".", "Field \"{0}\": unterminated string, [identifier] or \"identifier\"."},
 	ValSQLManualForbidden: {"Поле «{0}»: запрос должен только читать данные; недопустимое слово {2}.", "Field \"{0}\": the query must be read-only; forbidden keyword {2}."},
 	ValSQLManualCompat2008: {"Поле «{0}»: конструкции новее SQL Server 2008 (уровень совместимости 100): {2}. Используйте TOP, ROW_NUMBER() OVER (PARTITION BY … ORDER BY …), CASE, CONVERT, + для строк.",
 		"Field \"{0}\": T-SQL newer than SQL Server 2008 (compatibility level 100): {2}. Use TOP, ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...), CASE, CONVERT, + for strings."},
@@ -117,6 +125,11 @@ var sqlMessages = map[string]LocalizedText{
 	ValSQLLinkTypeMismatch: {"Поле «{0}»: типы столбцов связи различаются: {2} — {3}, {4} — {5}.", "Field \"{0}\": the link columns have different types: {2} is {3}, {4} is {5}."},
 	ValSQLNoTimestamp:      {"Поле «{0}»: укажите столбец времени отправки или приёма.", "Field \"{0}\": set the last send or last recv column."},
 	ValSQLIdentifier:       {"Поле «{0}»: недопустимое имя ({2}; не длиннее {3} символов, без NUL).", "Field \"{0}\": invalid name ({2}; at most {3} characters, no NUL)."},
+	ValSQLComment: {"Поле «{0}»: комментарии (-- и /* */) в ручном SQL не допускаются, удалите их.",
+		"Field \"{0}\": comments (-- and /* */) are not allowed in manual SQL, remove them."},
+	ValSQLManualHint: {"Поле «{0}»: недопустимая подсказка {2}; разрешены только WITH (NOLOCK), READUNCOMMITTED, NOWAIT (подсказки блокировок мешают работе 1С).",
+		"Field \"{0}\": hint {2} is not allowed; only WITH (NOLOCK), READUNCOMMITTED, NOWAIT are allowed (locking hints would block 1C users)."},
+	ValSQLManualOption: {"Поле «{0}»: OPTION (…) в ручном SQL не допускается.", "Field \"{0}\": OPTION (...) is not allowed in manual SQL."},
 }
 
 // SQLMessageKeys lists the sql.* UI text keys.
@@ -128,7 +141,8 @@ func SQLMessageKeys() []string {
 func SQLValidationKeys() []string {
 	return []string{ValSQLManualEmpty, ValSQLManualNotSelect, ValSQLManualMulti, ValSQLManualLiteral, ValSQLManualForbidden,
 		ValSQLManualCompat2008, ValSQLManualColumns, ValSQLManualValueType, ValSQLTableNotFound, ValSQLTableAmbiguous,
-		ValSQLColumnNotFound, ValSQLColumnType, ValSQLLinkTypeMismatch, ValSQLNoTimestamp, ValSQLIdentifier}
+		ValSQLColumnNotFound, ValSQLColumnType, ValSQLLinkTypeMismatch, ValSQLNoTimestamp, ValSQLIdentifier,
+		ValSQLComment, ValSQLManualHint, ValSQLManualOption}
 }
 
 // SQLMessages returns a copy of the SQL texts: sql.* and validation.sql_*

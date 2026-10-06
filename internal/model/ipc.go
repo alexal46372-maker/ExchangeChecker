@@ -156,6 +156,13 @@ type IPCRequest struct {
 	ExpectedRevision string `json:"expectedRevision,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
+	// Query of discover_by_value (phase 6, G2).
+	Query *ValueQuery `json:"query,omitempty"`
+	// Mapping checked by check_mapping (phase 6, G3).
+	Mapping *Mapping `json:"mapping,omitempty"`
+	// Limit: preview rows of check_mapping (1..20, 0 = 5), points of
+	// list_node_points (0 = all read).
+	Limit int `json:"limit,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -168,8 +175,10 @@ func (r IPCRequest) String() string {
 	if r.Profile != nil {
 		prof = r.Profile.ID + "@" + r.Profile.Server + "/" + r.Profile.Database
 	}
-	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t}",
-		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey, r.ClearPassword, r.ExpectedRevision, r.Ref, r.Settings != nil)
+	// query / mapping only as present (no point names, no manual SQL)
+	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t query:%t mapping:%t limit:%d}",
+		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey, r.ClearPassword, r.ExpectedRevision, r.Ref, r.Settings != nil,
+		r.Query != nil, r.Mapping != nil, r.Limit)
 }
 
 // GoString masks the password (fmt %#v).
@@ -246,4 +255,18 @@ type IPCMessage struct {
 	Revision string `json:"revision,omitempty"`
 	// Config is the get_config reply (MsgConfig).
 	Config *ConfigView `json:"config,omitempty"`
+
+	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
+	// node_points, check_mapping; CHK-IPC-08/09):
+	// Candidates of a MsgDiscovery reply, best first (omitted when none).
+	Candidates []DiscoveryCandidate `json:"candidates,omitempty"`
+	// Truncated (MsgDiscovery, MsgNodePoints): the result is partial —
+	// the discovery time budget ran out (candidates then also carry
+	// HintTruncated) or the tail was dropped to fit
+	// IPCMaxInteractiveReply.
+	Truncated bool `json:"truncated,omitempty"`
+	// NodePoints of a MsgNodePoints reply (omitted when none).
+	NodePoints []NodePoint `json:"nodePoints,omitempty"`
+	// MappingCheck of a MsgMappingCheck reply.
+	MappingCheck *MappingCheck `json:"mappingCheck,omitempty"`
 }

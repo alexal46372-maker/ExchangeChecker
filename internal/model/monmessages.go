@@ -94,6 +94,27 @@ const (
 	MsgMonitorBadRequest = "monitor.bad_request"
 	// MsgMonitorConfigChanged: event 105 text.
 	MsgMonitorConfigChanged = "monitor.config_changed"
+
+	// Phase 6, G2/G3 (CHK-IPC-08/09): discover, discover_by_value,
+	// list_node_points, check_mapping.
+	// MsgDiscoverBusy: the service runs its one discovery (discover /
+	// discover_by_value) or two lighter operations (list_node_points /
+	// check_mapping) already, or abandoned operations are still pending.
+	MsgDiscoverBusy = "monitor.discover_busy"
+	// MsgDiscoverProfileBusy: an interactive operation of the same
+	// profile is running (one per profile).
+	MsgDiscoverProfileBusy = "monitor.discover_profile_busy"
+	// MsgDiscoverTimeout: the operation did not finish in time (the
+	// service limit or the profile's time budget).
+	MsgDiscoverTimeout = "monitor.discover_timeout"
+	// MsgDiscoverFailed: the operation failed (no more specific key).
+	MsgDiscoverFailed = "monitor.discover_failed"
+	// MsgDiscoverPointNameEmpty: discover_by_value without a point name
+	// (and without a point picked from list_node_points).
+	MsgDiscoverPointNameEmpty = "monitor.discover_point_name_empty"
+	// MsgDiscoverMappingInvalid: check_mapping found a problem;
+	// ErrorArgs = [mapping.<field>, validation.* reason, params...].
+	MsgDiscoverMappingInvalid = "monitor.discover_mapping_invalid"
 )
 
 var monitorMessages = map[string][2]string{ // key -> {ru, en}
@@ -137,6 +158,12 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgMonitorUnknownCommand:   {"Служба не знает этой команды (обновите службу).", "The service does not know this command (update the service)."},
 	MsgMonitorBadRequest:       {"Неверный запрос.", "Malformed request."},
 	MsgMonitorConfigChanged:    {"Конфигурация изменена.", "Configuration changed."},
+	MsgDiscoverBusy:            {"Служба уже ищет таблицы обмена или проверяет настройки, повторите позже.", "The service is already searching for exchange tables or checking a mapping, try again later."},
+	MsgDiscoverProfileBusy:     {"Для этой базы уже выполняется операция, дождитесь её окончания.", "An operation for this database is already running, wait for it to finish."},
+	MsgDiscoverTimeout:         {"Операция с базой не уложилась в отведённое время.", "The database operation timed out."},
+	MsgDiscoverFailed:          {"Операция с базой не выполнена.", "The database operation failed."},
+	MsgDiscoverPointNameEmpty:  {"Укажите имя или код точки обмена.", "Enter the exchange point name or code."},
+	MsgDiscoverMappingInvalid:  {"Таблицы обмена не прошли проверку.", "The exchange tables did not pass the check."},
 	ValRequired:                {"Поле «{0}» обязательно.", "Field \"{0}\" is required."},
 	ValRange:                   {"Поле «{0}»: значение {4} вне диапазона {2}…{3}.", "Field \"{0}\": value {4} is out of range {2}..{3}."},
 	ValEnum:                    {"Поле «{0}»: недопустимое значение «{2}».", "Field \"{0}\": unsupported value \"{2}\"."},
@@ -172,5 +199,7 @@ func MonitorMessageKeys() []string {
 		MsgTestBusy, MsgTestPasswordRequired, MsgTestWindowsUnsaved, MsgTestInvalidProfile,
 		MsgMonitorAccessDenied, MsgMonitorConfigSaveFailed, MsgMonitorConfigConflict, MsgMonitorProfileInvalid,
 		MsgMonitorSettingsInvalid, MsgMonitorCanceled, MsgMonitorUnknownRequest, MsgMonitorUnknownCommand,
-		MsgMonitorBadRequest, MsgMonitorConfigChanged}
+		MsgMonitorBadRequest, MsgMonitorConfigChanged,
+		MsgDiscoverBusy, MsgDiscoverProfileBusy, MsgDiscoverTimeout, MsgDiscoverFailed, MsgDiscoverPointNameEmpty,
+		MsgDiscoverMappingInvalid}
 }

@@ -22,9 +22,10 @@ const (
 	// ResultSaved, Reloaded, Revision.
 	CmdSaveSettings = "save_settings"
 	// CmdCancel cancels the caller's own running asynchronous request
-	// IPCRequest.Ref on the same connection (test_profile now; discovery
-	// later). Reply MsgOK with Result ResultCanceled, or MsgError
-	// not_found + MsgMonitorUnknownRequest. The canceled request answers
+	// IPCRequest.Ref on the same connection (test_profile, discover,
+	// discover_by_value, list_node_points, check_mapping). Reply MsgOK
+	// with Result ResultCanceled, or MsgError not_found +
+	// MsgMonitorUnknownRequest. The canceled request answers
 	// MsgError {id: Ref, code: canceled, errorKey: monitor.canceled}.
 	CmdCancel = "cancel"
 )
@@ -85,7 +86,8 @@ const (
 // AdminCommand reports whether cmd requires an elevated administrator.
 func AdminCommand(cmd string) bool {
 	switch cmd {
-	case CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdSaveSettings:
+	case CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdSaveSettings,
+		CmdDiscover, CmdDiscoverByValue, CmdListNodePoints, CmdCheckMapping:
 		return true
 	}
 	return false

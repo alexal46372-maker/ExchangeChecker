@@ -120,6 +120,16 @@ type Options struct {
 	TestTimeout     time.Duration
 	TestMax         int
 	TestWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+
+	// Interactive commands discover / discover_by_value /
+	// list_node_points / check_mapping (phase 6, CHK-IPC-08/09):
+	// Interactive (default SQLInteractive = sqlcheck.NewInteractiveReader),
+	// DiscoverTimeout (default 90 s), InteractiveLimit (hard limit,
+	// default 100 s), InteractiveWithTimeout (tests).
+	Interactive            InteractiveFactory
+	DiscoverTimeout        time.Duration
+	InteractiveLimit       time.Duration
+	InteractiveWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 }
 
 // entry is the per-profile runtime state.
@@ -305,7 +315,8 @@ type Monitor struct {
 	acks    map[string]AckRecord
 	ackSave sync.Mutex
 
-	tester *Tester
+	tester   *Tester
+	explorer *Explorer // interactive commands (G2/G3)
 
 	cLocks keyedLocks // per-profile counters locks (reference counted)
 
@@ -366,7 +377,10 @@ func New(opt Options) *Monitor {
 		started: opt.Now().In(model.DBZone), acks: map[string]AckRecord{},
 		tester: &Tester{Test: opt.Test, Category: opt.TestCategory, Timeout: opt.TestTimeout,
 			Max: opt.TestMax, Now: opt.Now, WithTimeout: opt.TestWithTimeout},
+		explorer: &Explorer{New: opt.Interactive, DiscoverTimeout: opt.DiscoverTimeout, HardTimeout: opt.InteractiveLimit,
+			WithTimeout: opt.InteractiveWithTimeout},
 	}
+	m.explorer.defaults()
 	m.loadAcks()
 	return m
 }

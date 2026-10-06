@@ -137,8 +137,10 @@ func TestCHK_IPC_02_ServiceAckAndTest(t *testing.T) {
 	ev := &fakeEvents{}
 	s := startSvc(t, dir, 40, test, ev)
 	hello := s.waitPush(t, func(m model.IPCMessage) bool { return m.Type == model.MsgHello })
-	// phase 6 adds cancel, config_read, config_write
-	if hello.Version != 2 || len(hello.Capabilities) != 6 || hello.Heartbeat == nil {
+	// phase 6 adds cancel, config_read, config_write and (G2/G3,
+	// CHK-IPC-08/09) discover, discover_by_value, node_points,
+	// check_mapping
+	if hello.Version != 2 || len(hello.Capabilities) != 10 || hello.Heartbeat == nil {
 		t.Fatalf("hello %+v", hello)
 	}
 	snap := s.polled(t)

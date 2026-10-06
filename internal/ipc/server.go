@@ -3,6 +3,7 @@ package ipc
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"sync"
@@ -63,6 +64,30 @@ type ConfigManager interface {
 	SaveProfile(p model.Profile, password string, clearPassword bool, expectedRevision, account string) (model.SavedProfile, error)
 	DeleteProfile(profileID, expectedRevision, account string) (revision string, err error)
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
+}
+
+// Discoverer runs the admin-only interactive SQL commands (phase 6,
+// G2/G3; CHK-IPC-08 discover / discover_by_value / list_node_points,
+// CHK-IPC-09 check_mapping). The server checks the client (admin) before
+// every call and runs it on its own goroutine like test_profile (ping of
+// the same client is not blocked; cancel {ref} and a disconnect cancel
+// ctx). The bool results are "truncated". Errors of type *model.IPCError
+// carry the reply code, key and args.
+type Discoverer interface {
+	Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error)
+	DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error)
+	ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, bool, error)
+	CheckMapping(ctx context.Context, req model.IPCRequest) (model.MappingCheck, error)
+}
+
+// interactiveCommand reports whether cmd is one of the Discoverer
+// commands.
+func interactiveCommand(cmd string) bool {
+	switch cmd {
+	case model.CmdDiscover, model.CmdDiscoverByValue, model.CmdListNodePoints, model.CmdCheckMapping:
+		return true
+	}
+	return false
 }
 
 // Peer is the identity of a connected client (phase 6).
@@ -246,11 +271,16 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(HeartbeatSource); ok {
 		caps = append(caps, model.CapHeartbeat)
 	}
-	if _, ok := s.H.(Tester); ok {
+	_, tester := s.H.(Tester)
+	_, disc := s.H.(Discoverer)
+	if tester || disc {
 		caps = append(caps, model.CapCancel)
 	}
 	if _, ok := s.H.(ConfigManager); ok {
 		caps = append(caps, model.CapConfigRead, model.CapConfigWrite)
+	}
+	if disc {
+		caps = append(caps, model.CapDiscover, model.CapDiscoverByValue, model.CapNodePoints, model.CapCheckMapping)
 	}
 	if s.TrayAutostartError != nil {
 		caps = append(caps, model.CapTrayAutostartStatus)
@@ -531,8 +561,17 @@ func (s *Server) readLoop(c *conn) {
 			s.startTest(c, t, req)
 			continue
 		}
+		if d, ok := s.H.(Discoverer); ok && interactiveCommand(req.Cmd) {
+			if !s.startInteractive(c, d, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
+		}
 		var reply model.IPCMessage
 		switch {
+		case interactiveCommand(req.Cmd): // the handler has no Discoverer
+			reply = errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 		case req.Cmd == model.CmdCancel:
 			reply = s.cancelOp(c, req)
 		case model.AdminCommand(req.Cmd):
@@ -554,6 +593,114 @@ func (s *Server) readLoop(c *conn) {
 // by ID (the client may send ping meanwhile). The test ends at its
 // timeout, when the client disconnects or when the server closes.
 func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
+	s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
+		res, err := t.TestProfile(ctx, req)
+		return model.IPCMessage{Type: model.MsgTestResult, Test: &res}, err
+	})
+}
+
+// startInteractive checks the client (admin, on every request, no cache;
+// CHK-IPC-06) and runs a Discoverer command on its own goroutine like
+// test_profile. The reply is cut to model.IPCMaxInteractiveReply
+// (fitInteractiveReply). false: the access_denied reply could not be
+// queued (client too slow).
+func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) bool {
+	cl, err := s.identify(c)
+	if err != nil || !cl.Admin {
+		why := "not an elevated administrator"
+		if err != nil {
+			why = err.Error()
+		}
+		s.Log.Printf("ipc: %s refused for %q: %s", req.Cmd, cl.Account, why)
+		return c.send(errorReply(req.ID, ErrAccessDenied, ""))
+	}
+	s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
+		var m model.IPCMessage
+		var err error
+		switch req.Cmd {
+		case model.CmdDiscover, model.CmdDiscoverByValue:
+			f := d.Discover
+			if req.Cmd == model.CmdDiscoverByValue {
+				f = d.DiscoverByValue
+			}
+			m.Type = model.MsgDiscovery
+			m.Candidates, m.Truncated, err = f(ctx, req)
+		case model.CmdListNodePoints:
+			m.Type = model.MsgNodePoints
+			m.NodePoints, m.Truncated, err = d.ListNodePoints(ctx, req)
+		case model.CmdCheckMapping:
+			var res model.MappingCheck
+			res, err = d.CheckMapping(ctx, req)
+			m.Type, m.MappingCheck = model.MsgMappingCheck, &res
+		}
+		if err == nil {
+			m.ID = req.ID
+			fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
+		}
+		return m, err
+	})
+	return true
+}
+
+// fitInteractiveReply keeps the serialized reply within max bytes
+// (Вика, 06.10): the tail of Candidates / NodePoints /
+// MappingCheck.SampleRows is dropped (the longest prefix that fits) and
+// Truncated / MappingCheck.Truncated is set.
+func fitInteractiveReply(m *model.IPCMessage, max int) {
+	size := func() int {
+		b, err := json.Marshal(m)
+		if err != nil {
+			return 0
+		}
+		return len(b)
+	}
+	if size() <= max {
+		return
+	}
+	// cut sets the longest prefix (n items do not fit) that fits
+	cut := func(n int, set func(k int)) {
+		lo, hi := 0, n-1
+		for lo < hi {
+			mid := (lo + hi + 1) / 2
+			set(mid)
+			if size() <= max {
+				lo = mid
+			} else {
+				hi = mid - 1
+			}
+		}
+		set(lo)
+	}
+	switch {
+	case len(m.Candidates) > 0:
+		all := m.Candidates
+		m.Truncated = true
+		cut(len(all), func(k int) { m.Candidates = all[:k] })
+	case len(m.NodePoints) > 0:
+		all := m.NodePoints
+		m.Truncated = true
+		cut(len(all), func(k int) { m.NodePoints = all[:k] })
+	case m.MappingCheck != nil:
+		mc := *m.MappingCheck
+		m.MappingCheck = &mc
+		if len(mc.SampleRows) > 0 {
+			all := mc.SampleRows
+			mc.Truncated = true
+			cut(len(all), func(k int) { mc.SampleRows = all[:k] })
+		}
+		if size() > max { // a huge error text (defense in depth)
+			if r := []rune(mc.Error); len(r) > 1024 {
+				mc.Error = string(r[:1024])
+			}
+		}
+	}
+}
+
+// startAsync runs one asynchronous request of c (test_profile, the
+// Discoverer commands) on its own goroutine, registered for cancel {ref}
+// (G6, CHK-IPC-07). ctx ends when the client disconnects, cancels the
+// request or the server closes. The reply is matched by ID.
+func (s *Server) startAsync(c *conn, req model.IPCRequest, run func(ctx context.Context) (model.IPCMessage, error)) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -588,7 +735,7 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 			case <-ctx.Done():
 			}
 		}()
-		res, err := t.TestProfile(ctx, req)
+		res, err := run(ctx)
 		c.opsMu.Lock()
 		canceled := op.canceled
 		delete(c.ops, req.ID)
@@ -601,13 +748,14 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 		}
 		var m model.IPCMessage
 		if canceled {
-			// the client canceled it: whatever the test returned, the
+			// the client canceled it: whatever the request returned, the
 			// answer is canceled (cancel already replied ok)
 			m = errorReply(req.ID, errCanceled, "")
 		} else if err != nil {
 			m = errorReply(req.ID, err, "")
 		} else {
-			m = model.IPCMessage{ID: req.ID, Type: model.MsgTestResult, Test: &res}
+			m = res
+			m.ID = req.ID
 		}
 		if !c.send(m) {
 			select {

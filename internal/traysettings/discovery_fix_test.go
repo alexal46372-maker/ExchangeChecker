@@ -216,8 +216,9 @@ func TestCHK_TRAY_07_ManualColumns(t *testing.T) {
 	if d2.Unapplied() || d2.Map.Mapping() != own {
 		t.Errorf("own mapping %+v", d2.Map.Mapping())
 	}
-	if KindOf(model.Mapping{Mode: model.MappingManual, Table: "_T", ManualSQL: "SELECT 1"}) != KindTables {
-		t.Error("table + SQL is a table mapping")
+	if KindOf(model.Mapping{Mode: model.MappingManual, Table: "_T", ManualSQL: "SELECT 1"}) != KindSQL ||
+		KindOf(model.Mapping{Mode: model.MappingAuto, Table: "_T", ManualSQL: " SELECT 1 "}) != KindSQL {
+		t.Error("table + SQL is a manual SQL mapping (the service polls the SQL)")
 	}
 }
 
@@ -259,5 +260,73 @@ func TestCHK_TRAY_07_ToleranceAndTexts(t *testing.T) {
 	e.Lang = i18n.RU
 	if pr := e.InteractiveProblem(model.IPCMessage{}, context.DeadlineExceeded); pr == nil || pr.Text != i18n.Message(model.MsgDiscoverTimeout, i18n.RU) {
 		t.Errorf("timeout %+v", pr)
+	}
+}
+
+// usesSQL is what the service polls (sqlcheck usesManualSQL / ReaderFor).
+func usesSQL(m model.Mapping) bool { return strings.TrimSpace(m.ManualSQL) != "" }
+
+// TestCHK_TRAY_07_MappingRoundTrip — FromMapping -> Mapping() keeps every
+// kind (tables with hidden link fields, manual SQL, counters); a table +
+// manual SQL mapping opens as manual SQL with its SQL; Apply without
+// edits returns the profile's own mapping unchanged (the service's
+// effective mode never changes, no edit is made).
+func TestCHK_TRAY_07_MappingRoundTrip(t *testing.T) {
+	tables := cand("_Node10", "_Node10", 9).Mapping()
+	tables.PlanLabel, tables.KeepUnlinkedPoints = "Магазины", true
+	hand := model.Mapping{Mode: model.MappingManual, Schema: "s1", Table: "_T", PointNameColumn: "_Description", PointIDColumn: "_Code",
+		LastSendColumn: "_Fld1", LastRecvColumn: "_Fld2"}
+	sql := model.Mapping{Mode: model.MappingManual, ManualSQL: "SELECT a, b, c FROM t", YearOffset: model.YearOffset1C, PlanLabel: "SQL"}
+	counters := model.Mapping{Mode: model.MappingCounters, Schema: "dbo", Table: "_Node10", PointNameColumn: "_Description",
+		PointKeyColumn: "_IDRRef", SentNoColumn: "_SentNo", ReceivedNoColumn: "_ReceivedNo", PlanLabel: "Счётчики"}
+	for name, m := range map[string]model.Mapping{"tables": tables, "hand": hand, "sql": sql, "counters": counters} {
+		f := FromMapping(m)
+		if got := f.Mapping(); got != m {
+			t.Errorf("%s round trip:\n got %+v\nwant %+v", name, got, m)
+		}
+		if KindOf(m) != f.Kind {
+			t.Errorf("%s kind", name)
+		}
+	}
+	if FromMapping(sql).Kind != KindSQL || FromMapping(counters).Kind != KindCounters || FromMapping(tables).Kind != KindTables {
+		t.Error("kinds")
+	}
+
+	// table + manual SQL: the service polls the SQL
+	both := hand
+	both.ManualSQL, both.YearOffset = "SELECT a, b, c FROM t", model.YearOffset1C
+	f := FromMapping(both)
+	if f.Kind != KindSQL || f.ManualSQL != both.ManualSQL {
+		t.Fatalf("table + SQL opens as %d with SQL %q", f.Kind, f.ManualSQL)
+	}
+	if got := f.Mapping(); !usesSQL(got) || got.ManualSQL != both.ManualSQL || got.YearOffset != both.YearOffset {
+		t.Errorf("table + SQL form keeps the SQL: %+v", got)
+	}
+	for name, m := range map[string]model.Mapping{"tables": tables, "hand": hand, "sql": sql, "counters": counters, "both": both, "none": {}} {
+		d := NewDiscovery(i18n.RU, m)
+		if d.Unapplied() {
+			t.Errorf("%s: unapplied without edits", name)
+		}
+		r, edited := d.Result()
+		if edited || r != m || usesSQL(r) != usesSQL(m) {
+			t.Errorf("%s: Apply without edits changed the mapping: %+v", name, r)
+		}
+	}
+	// switching table + SQL to tables brings its table part back; the SQL goes
+	f.SetKind(KindTables)
+	if got := f.Mapping(); usesSQL(got) || got.Table != "_T" || got.LastSendColumn != "_Fld1" || got.Mode != model.MappingManual {
+		t.Errorf("table + SQL switched to tables: %+v", got)
+	}
+	// an edited SQL is an edit (SQL kind: no hidden table part)
+	d := NewDiscovery(i18n.RU, both)
+	d.Map.ManualSQL = "SELECT x, y, z FROM t"
+	if r, edited := d.Result(); !edited || r.ManualSQL != "SELECT x, y, z FROM t" || r.Table != "" {
+		t.Errorf("edited SQL: %+v", r)
+	}
+	// a new candidate list bumps the generation
+	g := d.Gen
+	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery})
+	if d.Gen != g+1 {
+		t.Error("Gen")
 	}
 }

@@ -193,6 +193,8 @@ const (
 	KeyDiscSourceCounters   = "disc.source_counters"
 	KeyDiscSourceNone       = "disc.source_none"
 	KeyDiscBusy             = "disc.busy"
+	KeyDiscConfigChanged    = "disc.config_changed"
+	KeyDiscListChanged      = "disc.list_changed"
 	KeyAutostartErrAccess   = "autostart.err_access"
 	KeyAutostartErrRegistry = "autostart.err_registry"
 	KeyAutostartErrPath     = "autostart.err_path"
@@ -434,6 +436,8 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyDiscSourceAuto:         {"Источник: найдено поиском (auto)", "Source: found by the search (auto)"},
 	KeyDiscSourceManual:       {"Источник: задано вручную (manual)", "Source: set by hand (manual)"},
 	KeyDiscSourceCounters:     {"Источник: счётчики (counters)", "Source: counters"},
+	KeyDiscConfigChanged:      {"Настройки профиля изменились, пока был открыт вопрос; ничего не применено — проверьте и нажмите «Применить» ещё раз.", "The profile settings changed while the question was open; nothing was applied. Check and press Apply again."},
+	KeyDiscListChanged:        {"Список кандидатов обновился, пока был открыт вопрос — выберите кандидата ещё раз.", "The candidate list was updated while the question was open; select the candidate again."},
 	KeyDiscBusy:               {"Окно настроек ждёт ответа сервиса — нажмите «Применить» ещё раз через несколько секунд.", "The settings window is waiting for the service; press Apply again in a few seconds."},
 	KeyDiscSourceNone:         {"Таблицы обмена не заданы", "Exchange tables not set"},
 	"hint.linked":             {"Точки и времена в разных таблицах, связаны ключом", "Points and times are in linked tables"},

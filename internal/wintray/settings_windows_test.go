@@ -227,10 +227,17 @@ func (e *fakeElevator) Elevate(uintptr) error { e.calls++; return e.err }
 type fakeConfirm struct {
 	no    bool
 	texts []string
+	// hook runs while the question is "open" (a modal MessageBox pumps
+	// messages: replies may arrive meanwhile); it runs once.
+	hook func()
 }
 
 func (c *fakeConfirm) ask(_ uintptr, text, _ string) bool {
 	c.texts = append(c.texts, text)
+	if h := c.hook; h != nil {
+		c.hook = nil
+		h()
+	}
 	return !c.no
 }
 

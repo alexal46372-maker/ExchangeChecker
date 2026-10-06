@@ -657,13 +657,23 @@ func (dd *discoveryDialog) byValue() {
 }
 
 // selectCandidate takes candidate i into the form (asks over hand edits;
-// «Нет» restores the list selection).
+// «Нет» restores the list selection). A list replaced by a search reply
+// while the question was open voids the choice (Discovery.Gen).
 func (dd *discoveryDialog) selectCandidate(i int) {
 	if i == dd.d.Sel {
 		return
 	}
+	gen := dd.d.Gen
 	if !dd.overwriteOK() {
 		winapi.SendMessage(dd.ctl[idDiscList], winapi.LB_SETCURSEL, uintptr(dd.d.Sel), 0)
+		return
+	}
+	if dd.closed {
+		return
+	}
+	if gen != dd.d.Gen { // a search reply replaced the list during the question
+		dd.result = dd.t(i18n.KeyDiscListChanged)
+		dd.fill()
 		return
 	}
 	dd.d.Select(i)
@@ -746,20 +756,35 @@ func (dd *discoveryDialog) apply() {
 		return
 	}
 	dd.readMap()
-	m := dd.d.Map.Mapping()
+	// no edits: the profile's own mapping as it is (Apply never changes
+	// what the service polls without an edit, e.g. table + manual SQL)
+	m, _ := dd.d.Result()
 	var sugg []model.Mapping
 	if dd.checked(idDiscAllPlans) {
 		sugg = dd.d.PlanMappings(m)
 	}
-	merged, removed := traysettings.MergeMappings(ed.EffectiveMapping(), ed.EffectiveMappings(), m, sugg)
+	oldMain, oldMaps, rev := ed.EffectiveMapping(), ed.EffectiveMappings(), ed.Revision
+	merged, removed := traysettings.MergeMappings(oldMain, oldMaps, m, sugg)
 	if fe := traysettings.ValidateMappings(m, merged); fe != nil {
 		dd.problem(dd.d.ValidationProblem(fe))
 		return
 	}
-	if len(removed) > 0 && !dd.ask(fmt.Sprintf(dd.t(i18n.KeyDiscConfirmRemove), strings.Join(removed, ", "))) {
-		return
+	if len(removed) > 0 {
+		if !dd.ask(fmt.Sprintf(dd.t(i18n.KeyDiscConfirmRemove), strings.Join(removed, ", "))) {
+			return
+		}
+		// the question pumps messages: a get_config / save reply may have
+		// replaced the profile meanwhile — merged would overwrite it
+		if dd.closed {
+			return
+		}
+		if w.busy || ed.Revision != rev || !ed.HasProfile() || ed.IsNew != dd.isNew || (!dd.isNew && ed.Base.ID != dd.profileID) ||
+			ed.EffectiveMapping() != oldMain || !sameMappings(ed.EffectiveMappings(), oldMaps) {
+			dd.problem(&traysettings.Problem{Text: dd.t(i18n.KeyDiscConfigChanged)})
+			return
+		}
 	}
-	changed := m != ed.EffectiveMapping() || !sameMappings(merged, ed.EffectiveMappings())
+	changed := m != oldMain || !sameMappings(merged, oldMaps)
 	if changed {
 		ed.SetMapping(m, merged)
 	}

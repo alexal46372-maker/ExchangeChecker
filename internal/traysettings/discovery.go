@@ -145,18 +145,33 @@ type Discovery struct {
 	PointsReason    string
 	Map             MappingForm
 	Check           *model.MappingCheck
-	// initial: the mapping of the profile at opening; loaded: the mapping
-	// last put into the form (opening or a candidate). Unapplied / Edited
-	// compare the form with them (questions on close / a new search).
-	initial, loaded model.Mapping
+	// Gen counts the candidate lists (DiscoveryDone): a question asked
+	// about candidate i is void when the list changed meanwhile.
+	Gen int
+	// orig: the profile's mapping as given; initial: the form built from
+	// it; loaded: the mapping last put into the form (opening or a
+	// candidate). Unapplied / Edited compare the form with them
+	// (questions on close / a new search).
+	orig, initial, loaded model.Mapping
 }
 
 // NewDiscovery starts with the mapping m of the profile.
 func NewDiscovery(lang string, m model.Mapping) *Discovery {
-	d := &Discovery{Lang: i18n.Normalize(lang), Sel: -1, Map: FromMapping(m)}
+	d := &Discovery{Lang: i18n.Normalize(lang), Sel: -1, Map: FromMapping(m), orig: m}
 	d.initial = d.Map.Mapping()
 	d.loaded = d.initial
 	return d
+}
+
+// Result is the mapping «Применить» puts into the profile: the profile's
+// own mapping, untouched, while the form was not changed (so Apply
+// without edits never changes what the service polls, nor its hidden
+// fields); else the mapping of the form. edited reports which.
+func (d *Discovery) Result() (m model.Mapping, edited bool) {
+	if !d.Unapplied() {
+		return d.orig, false
+	}
+	return d.Map.Mapping(), true
 }
 
 // Unapplied: the form differs from the profile's mapping (closing the
@@ -179,6 +194,7 @@ func (d *Discovery) t(key string) string { return i18n.T(key, d.Lang) }
 // selected).
 func (d *Discovery) DiscoveryDone(m model.IPCMessage) {
 	edited := d.Edited()
+	d.Gen++
 	d.Candidates = append([]model.DiscoveryCandidate{}, m.Candidates...)
 	d.Truncated, d.Reason = m.Truncated, m.TruncatedReason
 	d.Sel = -1
@@ -345,13 +361,16 @@ const (
 // MappingKinds are the items of the mode box.
 var MappingKinds = []MappingKind{KindTables, KindSQL, KindCounters}
 
-// KindOf is the editor kind of a mapping.
+// KindOf is the editor kind of a mapping, matching what the service
+// polls: a non-empty manual SQL wins over a table part (sqlcheck
+// usesManualSQL / ReaderFor → QueryReader), so a mapping with both table
+// and manualSql is a manual SQL mapping.
 func KindOf(m model.Mapping) MappingKind {
 	switch {
+	case strings.TrimSpace(m.ManualSQL) != "":
+		return KindSQL
 	case m.Mode == model.MappingCounters:
 		return KindCounters
-	case strings.TrimSpace(m.ManualSQL) != "" && strings.TrimSpace(m.Table) == "":
-		return KindSQL
 	}
 	return KindTables
 }
@@ -404,6 +423,13 @@ func (f *MappingForm) SetKind(k MappingKind) {
 		f.Send, f.Recv = "", ""
 	default:
 		f.ManualSQL = ""
+		// a table + manual SQL mapping switched to tables: its table part
+		// comes back (the hidden link fields stay with it, Mapping)
+		if b := f.base; f.Table == "" && strings.TrimSpace(b.Table) != "" && b.Mode != model.MappingCounters {
+			f.Schema, f.Table, f.PointName, f.PointID, f.PointKey = b.Schema, b.Table, b.PointNameColumn, b.PointIDColumn, b.PointKeyColumn
+			f.TimesTable, f.TimesLink, f.Send, f.Recv = b.TimesTable, b.TimesLinkColumn, b.LastSendColumn, b.LastRecvColumn
+			f.KeepUnlinked = b.KeepUnlinkedPoints
+		}
 	}
 }
 

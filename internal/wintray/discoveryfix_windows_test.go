@@ -372,3 +372,120 @@ func TestCHK_TRAY_07_SecondSettingsAndLayout(t *testing.T) {
 		}
 	}
 }
+
+// TestCHK_TRAY_07_ApplyKeepsManualSQL — a mapping with both a table and a
+// manual SQL (the service polls the SQL) opens as «Ручной SQL» with its
+// SQL; Apply without edits makes no edit at all, so Save cannot switch
+// the service from the SQL to the tables.
+func TestCHK_TRAY_07_ApplyKeepsManualSQL(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	ds := newDiscService()
+	both := model.Mapping{Mode: model.MappingManual, Table: "_T", PointNameColumn: "_Description", LastSendColumn: "_Fld1",
+		ManualSQL: "SELECT a, b, c FROM t", YearOffset: model.YearOffset1C}
+	ds.profiles[0].Mapping = both
+	app := startCfgApp(t, ds.cfgService, true, nil)
+	w := openAdmin(t, app)
+	dd := openDisc(t, w)
+	if dd.d.Map.Kind != traysettings.KindSQL || winapi.SendMessage(dd.ctl[idDiscMode], winapi.CB_GETCURSEL, 0, 0) != 1 ||
+		dd.text(idDiscSQL) != both.ManualSQL || dd.text(idDiscTable) != "" {
+		t.Fatalf("table + SQL shown as kind %d, SQL %q, table %q", dd.d.Map.Kind, dd.text(idDiscSQL), dd.text(idDiscTable))
+	}
+	dd.click(t, idDiscApply)
+	if w.disc != nil || w.ed.MapEdit != nil || w.ed.Unsaved() {
+		t.Fatalf("Apply without edits made an edit: %+v", w.ed.MapEdit)
+	}
+	if got := w.ed.EffectiveMapping(); got != both {
+		t.Errorf("effective mapping changed: %+v", got)
+	}
+	// the same with «Закрыть»: nothing to ask, nothing changed
+	dd = openDisc(t, w)
+	dd.click(t, idDiscClose)
+	if w.disc != nil || w.ed.MapEdit != nil {
+		t.Error("close without edits")
+	}
+}
+
+// TestCHK_TRAY_07_SelectRace — a search reply that replaces the list
+// while «заменить ручные правки?» is open voids the choice: «Да» does not
+// load a candidate of the new list by the old index.
+func TestCHK_TRAY_07_SelectRace(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	ds := newDiscService()
+	conf := &fakeConfirm{}
+	app := startCfgApp(t, ds.cfgService, true, nil, conf)
+	w := openAdmin(t, app)
+	dd := openDisc(t, w)
+	dd.click(t, idDiscFind)
+	pumpUntil(t, "discover", func() bool { n, _ := ds.n(); return n == 1 && dd.cancel == nil })
+	dd.set(idDiscPlanLabel, "hand edit")
+	conf.hook = func() { // the reply of a search arrives during the question
+		dd.discovered(model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{testCandidate("_Node77"), testCandidate("_Node88")}})
+	}
+	winapi.SendMessage(dd.ctl[idDiscList], winapi.LB_SETCURSEL, 1, 0)
+	dd.command(idDiscList, winapi.LBN_SELCHANGE) // «Да»
+	if len(conf.texts) != 1 || conf.texts[0] != i18n.T(i18n.KeyDiscConfirmOverwrite, i18n.RU) {
+		t.Fatalf("questions %q", conf.texts)
+	}
+	if dd.d.Sel != -1 || dd.text(idDiscTable) == "_Node88" || dd.text(idDiscPlanLabel) != "hand edit" ||
+		dd.text(idDiscResult) != i18n.T(i18n.KeyDiscListChanged, i18n.RU) {
+		t.Errorf("stale choice applied: sel %d table %q label %q result %q", dd.d.Sel, dd.text(idDiscTable), dd.text(idDiscPlanLabel), dd.text(idDiscResult))
+	}
+	if n := winapi.SendMessage(dd.ctl[idDiscList], winapi.LB_GETCOUNT, 0, 0); n != 2 || dd.d.Candidates[1].Table != "_Node88" {
+		t.Errorf("new list not shown: %d", n)
+	}
+	// choosing again works
+	winapi.SendMessage(dd.ctl[idDiscList], winapi.LB_SETCURSEL, 1, 0)
+	dd.command(idDiscList, winapi.LBN_SELCHANGE)
+	if dd.d.Sel != 1 || dd.text(idDiscTable) != "_Node88" {
+		t.Errorf("second choice: sel %d table %q", dd.d.Sel, dd.text(idDiscTable))
+	}
+	dd.close()
+}
+
+// TestCHK_TRAY_07_ApplyRaceConfig — a get_config reply that replaces the
+// profile (new revision) while the removal question is open: nothing is
+// applied (the merge was built on the old profile), the dialog says so;
+// a second Apply works on the new revision.
+func TestCHK_TRAY_07_ApplyRaceConfig(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	ds := newDiscService()
+	old := model.Mapping{Mode: model.MappingManual, Table: "_NODE40", PointNameColumn: "_Description", LastSendColumn: "_Fld1", PlanLabel: "Старый"}
+	ds.profiles[0].Mapping = old
+	conf := &fakeConfirm{}
+	app := startCfgApp(t, ds.cfgService, true, nil, conf)
+	w := openAdmin(t, app)
+	dd := openDisc(t, w)
+	dd.click(t, idDiscFind)
+	pumpUntil(t, "discover", func() bool { n, _ := ds.n(); return n == 1 && dd.cancel == nil })
+
+	other := model.Mapping{Mode: model.MappingManual, Table: "_NODE50", PointNameColumn: "_Description", LastSendColumn: "_Fld5", PlanLabel: "Чужая правка"}
+	conf.hook = func() { // someone else saved the profile; the window reloaded it
+		ds.mu.Lock()
+		ds.profiles[0].Mapping, ds.rev = other, 7
+		ps := append([]model.Profile(nil), ds.profiles...)
+		ds.mu.Unlock()
+		w.ed.LoadConfig(model.ConfigView{Settings: model.DefaultSettings(), Profiles: ps}, "r7")
+	}
+	dd.click(t, idDiscApply) // asks about removing «Старый», «Да»
+	if len(conf.texts) != 1 || !strings.Contains(conf.texts[0], "Старый") {
+		t.Fatalf("questions %q", conf.texts)
+	}
+	if w.disc == nil || w.ed.MapEdit != nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscConfigChanged, i18n.RU) {
+		t.Fatalf("applied over a changed profile: open %v mapEdit %v result %q", w.disc != nil, w.ed.MapEdit != nil, dd.text(idDiscResult))
+	}
+	if w.ed.Revision != "r7" || w.ed.EffectiveMapping() != other {
+		t.Fatalf("premise: the new profile is loaded (rev %q)", w.ed.Revision)
+	}
+	dd.click(t, idDiscApply) // now names the new main mapping
+	if len(conf.texts) != 2 || !strings.Contains(conf.texts[1], "Чужая правка") || w.disc != nil || w.ed.MapEdit == nil {
+		t.Fatalf("second apply: %q", conf.texts)
+	}
+	w.click(t, idSetSave)
+	pumpUntil(t, "saved", func() bool { return ds.count("save") == 1 && !w.busy })
+	if sc := ds.lastSave(); sc.rev != "r7" || sc.p.Mapping.Table != "_Node10" {
+		t.Errorf("save_profile rev %q mapping %+v", sc.rev, sc.p.Mapping)
+	}
+}

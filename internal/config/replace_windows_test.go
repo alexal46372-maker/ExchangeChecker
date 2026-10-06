@@ -17,37 +17,51 @@ import (
 // antivirus / indexer / os.Open): MoveFileEx fails with
 // ERROR_ACCESS_DENIED / SHARING_VIOLATION and is retried with backoff
 // until the holder closes (windows CI 37124067521).
+//
+// Deterministic (windows CI run 37424283107, #119: "MoveFileEx called 1
+// times" — the holder was closed by a 150 ms timer that started before
+// WriteFileAtomic, and the temp write + fsync took longer, so the first
+// attempt already found the file free): the holder is closed by the hook
+// right after the first, failed attempt, so the second one succeeds; the
+// backoff sleeps are recorded, not slept.
 func TestCHK_MON_02_ReplaceRetriesWhileHeld(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	var calls int32
-	orig := moveFileReplace
-	moveFileReplace = func(from, to string) error {
-		atomic.AddInt32(&calls, 1)
-		return orig(from, to)
-	}
-	defer func() { moveFileReplace = orig }()
 	f, err := os.Open(filepath.Join(dir, "state.json")) // no FILE_SHARE_DELETE
 	if err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		f.Close()
-	}()
+	defer f.Close()
+	var sleeps []time.Duration
+	origSleep := replaceSleep
+	replaceSleep = func(d time.Duration) { sleeps = append(sleeps, d) }
+	defer func() { replaceSleep = origSleep }()
+	var calls int
+	var first error
+	orig := moveFileReplace
+	moveFileReplace = func(from, to string) error {
+		err := orig(from, to)
+		if calls++; calls == 1 {
+			first = err
+			f.Close() // the holder lets go only after the first attempt
+		}
+		return err
+	}
+	defer func() { moveFileReplace = orig }()
 	if err := WriteFileAtomic(dir, "state.json", []byte("new"), 0o644); err != nil {
 		t.Fatalf("write while held: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "state.json")); string(b) != "new" {
 		t.Fatalf("content %q", b)
 	}
-	n := atomic.LoadInt32(&calls)
-	if n < 2 {
-		t.Fatalf("MoveFileEx called %d times: the held file did not block the first attempt", n)
+	if first == nil || !replaceRetryable(first) {
+		t.Fatalf("first MoveFileEx while held: %v (want ERROR_ACCESS_DENIED / SHARING_VIOLATION)", first)
 	}
-	t.Logf("MoveFileEx attempts while held: %d", n)
+	if calls != 2 || len(sleeps) != 1 || sleeps[0] != replaceBackoff[0] {
+		t.Fatalf("attempts %d, sleeps %v; want 2 attempts and one %v sleep", calls, sleeps, replaceBackoff[0])
+	}
 }
 
 // TestCHK_MON_02_ReplaceGivesUp — a file held for good: the write fails
@@ -101,7 +115,10 @@ func TestCHK_MON_02_ReplaceGivesUp(t *testing.T) {
 // FILE_SHARE_DELETE blocks MOVEFILE_REPLACE_EXISTING on Windows (CI run
 // 37126745802: ERROR_ACCESS_DENIED for the whole retry budget), so the
 // guarantee is the retry: once the reader closes within the budget, the
-// write lands. The first attempt's outcome is logged.
+// write lands. The first attempt's outcome is logged. The reader is
+// closed by the hook right after the first attempt (not by a timer, which
+// could fire before the first attempt on a slow runner — #119 logged
+// "attempts 1"); backoff sleeps are skipped.
 func TestCHK_MON_02_ReplaceAfterSharedReaderCloses(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "state.json")
@@ -114,26 +131,29 @@ func TestCHK_MON_02_ReplaceAfterSharedReaderCloses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var calls int32
+	origSleep := replaceSleep
+	replaceSleep = func(time.Duration) {}
+	defer func() { replaceSleep = origSleep }()
+	var calls int
 	var first error
 	orig := moveFileReplace
 	moveFileReplace = func(from, to string) error {
 		err := orig(from, to)
-		if atomic.AddInt32(&calls, 1) == 1 {
+		if calls++; calls == 1 {
 			first = err
+			syscall.CloseHandle(h) // the reader closes after the first attempt
 		}
 		return err
 	}
 	defer func() { moveFileReplace = orig }()
-	go func() {
-		time.Sleep(150 * time.Millisecond)
-		syscall.CloseHandle(h)
-	}()
 	if err := WriteFileAtomic(dir, "state.json", []byte("new"), 0o644); err != nil {
 		t.Fatalf("write after the reader closed: %v", err)
 	}
 	if b, _ := os.ReadFile(target); string(b) != "new" {
 		t.Fatalf("content %q", b)
 	}
-	t.Logf("first MoveFileEx with a FILE_SHARE_DELETE reader open: %v; attempts %d", first, atomic.LoadInt32(&calls))
+	if calls > 2 || (first == nil) != (calls == 1) {
+		t.Fatalf("attempts %d, first %v: the write must land at most one attempt after the reader closed", calls, first)
+	}
+	t.Logf("first MoveFileEx with a FILE_SHARE_DELETE reader open: %v; attempts %d", first, calls)
 }

@@ -159,6 +159,14 @@ func (x *Explorer) Busy() (heavy, light, abandoned int) {
 // comes when f returns, when ctx ends (canceled: the context error) or at
 // the hard limit (errDiscoverTimeout); in the last two cases a goroutine
 // still in the driver is counted as abandoned until it returns.
+//
+// The goroutine sends at most once and never blocks (Вика 06.10): the
+// caller may have left on cctx.Done() with the result already in ch and
+// a panic in the deferred Close must not send again — a blocked
+// goroutine would keep its abandoned slot forever. Whatever the outcome
+// (result, error, panic in f or in Close) the abandoned count is
+// decremented exactly once; the heavy/light/profile slots are released
+// by the caller (end) on every path.
 func exploreRun[T any](x *Explorer, ctx context.Context, heavy bool, key string, p model.Profile, password string,
 	f func(ctx context.Context, r InteractiveReader) (T, error)) (T, error) {
 	var zero T
@@ -191,25 +199,37 @@ func exploreRun[T any](x *Explorer, ctx context.Context, heavy bool, key string,
 	ch := make(chan out, 1)
 	run := &testRun{}
 	go func() {
+		sent := false
+		send := func(o out) { // once, non-blocking (the caller reads at most one)
+			if sent {
+				return
+			}
+			sent = true
+			select {
+			case ch <- o:
+			default:
+			}
+		}
 		defer func() {
 			if r := recover(); r != nil {
-				ch <- out{err: fmt.Errorf("internal error: %v", r)}
+				send(out{err: fmt.Errorf("internal error: %v", r)})
 			}
 			x.mu.Lock()
 			run.finished = true
 			if run.abandoned {
+				run.abandoned = false
 				x.abandoned--
 			}
 			x.mu.Unlock()
 		}()
 		r, err := newReader(p, password, opt)
 		if err != nil {
-			ch <- out{err: err}
+			send(out{err: err})
 			return
 		}
 		defer r.Close()
 		v, err := f(cctx, r)
-		ch <- out{v, err}
+		send(out{v, err})
 	}()
 	end := func(abandon bool) {
 		x.mu.Lock()

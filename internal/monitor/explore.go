@@ -159,6 +159,14 @@ func (x *Explorer) Busy() (heavy, light, abandoned int) {
 // comes when f returns, when ctx ends (canceled: the context error) or at
 // the hard limit (errDiscoverTimeout); in the last two cases a goroutine
 // still in the driver is counted as abandoned until it returns.
+//
+// The goroutine sends at most once and never blocks (Вика 06.10): the
+// caller may have left on cctx.Done() with the result already in ch and
+// a panic in the deferred Close must not send again — a blocked
+// goroutine would keep its abandoned slot forever. Whatever the outcome
+// (result, error, panic in f or in Close) the abandoned count is
+// decremented exactly once; the heavy/light/profile slots are released
+// by the caller (end) on every path.
 func exploreRun[T any](x *Explorer, ctx context.Context, heavy bool, key string, p model.Profile, password string,
 	f func(ctx context.Context, r InteractiveReader) (T, error)) (T, error) {
 	var zero T
@@ -191,25 +199,37 @@ func exploreRun[T any](x *Explorer, ctx context.Context, heavy bool, key string,
 	ch := make(chan out, 1)
 	run := &testRun{}
 	go func() {
+		sent := false
+		send := func(o out) { // once, non-blocking (the caller reads at most one)
+			if sent {
+				return
+			}
+			sent = true
+			select {
+			case ch <- o:
+			default:
+			}
+		}
 		defer func() {
 			if r := recover(); r != nil {
-				ch <- out{err: fmt.Errorf("internal error: %v", r)}
+				send(out{err: fmt.Errorf("internal error: %v", r)})
 			}
 			x.mu.Lock()
 			run.finished = true
 			if run.abandoned {
+				run.abandoned = false
 				x.abandoned--
 			}
 			x.mu.Unlock()
 		}()
 		r, err := newReader(p, password, opt)
 		if err != nil {
-			ch <- out{err: err}
+			send(out{err: err})
 			return
 		}
 		defer r.Close()
 		v, err := f(cctx, r)
-		ch <- out{v, err}
+		send(out{v, err})
 	}()
 	end := func(abandon bool) {
 		x.mu.Lock()
@@ -331,24 +351,25 @@ func (m *Monitor) logInteractive(cmd string, p model.Profile, start time.Time, e
 	m.opt.Log.Printf("%s %s (%s/%s): "+format+" in %d ms", append(append([]interface{}{cmd, p.ID, p.Server, p.Database}, args...), ms)...)
 }
 
-// discoveryTruncated: the budget ran out (a candidate carries
-// HintTruncated, or the call took the whole budget — also with no
-// candidate at all).
-func discoveryTruncated(cands []model.DiscoveryCandidate, elapsed, budget time.Duration) bool {
+// discoveryTruncated: model.TruncatedBudget when the budget ran out (a
+// candidate carries HintTruncated, or the call took the whole budget —
+// also with no candidate at all), else "".
+func discoveryTruncated(cands []model.DiscoveryCandidate, elapsed, budget time.Duration) string {
 	if elapsed >= budget {
-		return true
+		return model.TruncatedBudget
 	}
 	for _, c := range cands {
 		if c.HasHint(model.HintTruncated) {
-			return true
+			return model.TruncatedBudget
 		}
 	}
-	return false
+	return ""
 }
 
 // Discover runs IPC "discover" (CHK-IPC-08): candidates (best first) and
-// truncated when the 90 s budget ran out (partial result, not an error).
-func (m *Monitor) Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error) {
+// the truncated reason model.TruncatedBudget when the 90 s budget ran out
+// (partial result, not an error); "" = complete.
+func (m *Monitor) Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error) {
 	return m.discover(ctx, model.CmdDiscover, req, nil)
 }
 
@@ -356,7 +377,7 @@ func (m *Monitor) Discover(ctx context.Context, req model.IPCRequest) ([]model.D
 // point name (and no point ref) is invalid_request +
 // monitor.discover_point_name_empty, errorArgs ["query.pointName",
 // "validation.required"].
-func (m *Monitor) DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error) {
+func (m *Monitor) DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error) {
 	var q model.ValueQuery
 	if req.Query != nil {
 		q = *req.Query
@@ -364,13 +385,13 @@ func (m *Monitor) DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]
 	return m.discover(ctx, model.CmdDiscoverByValue, req, &q)
 }
 
-func (m *Monitor) discover(ctx context.Context, cmd string, req model.IPCRequest, q *model.ValueQuery) ([]model.DiscoveryCandidate, bool, error) {
+func (m *Monitor) discover(ctx context.Context, cmd string, req model.IPCRequest, q *model.ValueQuery) ([]model.DiscoveryCandidate, string, error) {
 	p, pw, key, err := m.interactiveBegin(cmdKeyDiscover, req)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	if q != nil && strings.TrimSpace(q.PointName) == "" && strings.TrimSpace(q.PointRef) == "" {
-		return nil, false, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgDiscoverPointNameEmpty,
+		return nil, "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgDiscoverPointNameEmpty,
 			Message: "discover_by_value: point name is empty", Args: []string{"query.pointName", model.ValRequired}}
 	}
 	x := m.explorer
@@ -384,26 +405,27 @@ func (m *Monitor) discover(ctx context.Context, cmd string, req model.IPCRequest
 	if err != nil {
 		err = interactiveError(err, pw)
 		m.logInteractive(cmd, p, start, err, pw, "")
-		return nil, false, err
+		return nil, "", err
 	}
 	model.TruncateCandidates(cands) // cells <= MaxSampleCellRunes (sqlcheck does it too)
-	truncated := discoveryTruncated(cands, x.Now().Sub(start), x.DiscoverTimeout)
-	m.logInteractive(cmd, p, start, nil, pw, "%d candidates, truncated %t", len(cands), truncated)
-	return cands, truncated, nil
+	reason := discoveryTruncated(cands, x.Now().Sub(start), x.DiscoverTimeout)
+	m.logInteractive(cmd, p, start, nil, pw, "%d candidates, truncated %q", len(cands), reason)
+	return cands, reason, nil
 }
 
 // ListNodePoints runs IPC "list_node_points" (CHK-IPC-08): the
 // exchange-plan points for the point picker; req.Limit (0 = all read,
-// 1..MaxNodePointsLimit) caps them (truncated). Names and codes are cut
+// 1..MaxNodePointsLimit) caps them (truncated, reason
+// model.TruncatedLimit). Names and codes are cut
 // to MaxSampleCellRunes characters (display only; the point is picked by
 // its ref).
-func (m *Monitor) ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, bool, error) {
+func (m *Monitor) ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, string, error) {
 	p, pw, key, err := m.interactiveBegin(cmdKeyNodePoints, req)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	if req.Limit < 0 || req.Limit > model.MaxNodePointsLimit {
-		return nil, false, limitError(req.Limit, model.MaxNodePointsLimit)
+		return nil, "", limitError(req.Limit, model.MaxNodePointsLimit)
 	}
 	x := m.explorer
 	start := x.Now()
@@ -413,18 +435,18 @@ func (m *Monitor) ListNodePoints(ctx context.Context, req model.IPCRequest) ([]m
 	if err != nil {
 		err = interactiveError(err, pw)
 		m.logInteractive(model.CmdListNodePoints, p, start, err, pw, "")
-		return nil, false, err
+		return nil, "", err
 	}
-	truncated := false
+	reason := ""
 	if req.Limit > 0 && len(pts) > req.Limit {
-		pts, truncated = pts[:req.Limit], true
+		pts, reason = pts[:req.Limit], model.TruncatedLimit
 	}
 	for i := range pts {
 		pts[i].Name, _ = model.TruncateSampleCell(pts[i].Name)
 		pts[i].Code, _ = model.TruncateSampleCell(pts[i].Code)
 	}
-	m.logInteractive(model.CmdListNodePoints, p, start, nil, pw, "%d points, truncated %t", len(pts), truncated)
-	return pts, truncated, nil
+	m.logInteractive(model.CmdListNodePoints, p, start, nil, pw, "%d points, truncated %q", len(pts), reason)
+	return pts, reason, nil
 }
 
 // limitError: invalid_request + monitor.bad_request, errorArgs ["limit",

@@ -260,11 +260,14 @@ type IPCMessage struct {
 	// node_points, check_mapping; CHK-IPC-08/09):
 	// Candidates of a MsgDiscovery reply, best first (omitted when none).
 	Candidates []DiscoveryCandidate `json:"candidates,omitempty"`
-	// Truncated (MsgDiscovery, MsgNodePoints): the result is partial —
+	// Truncated (MsgDiscovery, MsgNodePoints): the result is partial;
+	// TruncatedReason (present iff Truncated) says why: TruncatedBudget —
 	// the discovery time budget ran out (candidates then also carry
-	// HintTruncated) or the tail was dropped to fit
-	// IPCMaxInteractiveReply.
-	Truncated bool `json:"truncated,omitempty"`
+	// HintTruncated), TruncatedSize — the tail was dropped to fit
+	// IPCMaxInteractiveReply, TruncatedLimit — list_node_points kept
+	// IPCRequest.Limit points. Precedence: budget > size > limit.
+	Truncated       bool   `json:"truncated,omitempty"`
+	TruncatedReason string `json:"truncatedReason,omitempty"`
 	// NodePoints of a MsgNodePoints reply (omitted when none).
 	NodePoints []NodePoint `json:"nodePoints,omitempty"`
 	// MappingCheck of a MsgMappingCheck reply.

@@ -25,6 +25,8 @@ type discHandler struct {
 	pts     []model.NodePoint
 	check   model.MappingCheck
 	err     error
+	reasonD string // truncated reason of discover (discover_by_value: budget)
+	reasonN string // of list_node_points
 }
 
 func (h *discHandler) rec(c string, ctx context.Context) error {
@@ -52,25 +54,25 @@ func (h *discHandler) Calls() []string {
 	return append([]string(nil), h.calls...)
 }
 
-func (h *discHandler) Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error) {
+func (h *discHandler) Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error) {
 	if err := h.rec("discover:"+req.ProfileID, ctx); err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
-	return h.cands, false, nil
+	return h.cands, h.reasonD, nil
 }
 
-func (h *discHandler) DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error) {
+func (h *discHandler) DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error) {
 	if err := h.rec("discover_by_value:"+req.Query.PointName, ctx); err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
-	return h.cands, true, nil
+	return h.cands, model.TruncatedBudget, nil
 }
 
-func (h *discHandler) ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, bool, error) {
+func (h *discHandler) ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, string, error) {
 	if err := h.rec("list_node_points", ctx); err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
-	return h.pts, false, nil
+	return h.pts, h.reasonN, nil
 }
 
 func (h *discHandler) CheckMapping(ctx context.Context, req model.IPCRequest) (model.MappingCheck, error) {
@@ -148,11 +150,12 @@ func TestCHK_IPC_08_ServerAdminAndCapabilities(t *testing.T) {
 		}
 		switch m.Type {
 		case model.MsgDiscovery:
-			if len(m.Candidates) != 1 || m.Truncated != (r.Cmd == model.CmdDiscoverByValue) {
+			byValue := r.Cmd == model.CmdDiscoverByValue
+			if len(m.Candidates) != 1 || m.Truncated != byValue || (m.TruncatedReason == model.TruncatedBudget) != byValue {
 				t.Errorf("%s: %+v", r.Cmd, m)
 			}
 		case model.MsgNodePoints:
-			if len(m.NodePoints) != 1 || m.Truncated {
+			if len(m.NodePoints) != 1 || m.Truncated || m.TruncatedReason != "" {
 				t.Errorf("node points: %+v", m)
 			}
 		case model.MsgMappingCheck:
@@ -281,12 +284,12 @@ func TestCHK_IPC_08_ReplySizeLimit(t *testing.T) {
 		more := c.m
 		switch {
 		case more.Candidates != nil:
-			more.Candidates, more.Truncated = cands[:len(m.Candidates)+1], true
+			more.Candidates, more.Truncated, more.TruncatedReason = cands[:len(m.Candidates)+1], true, model.TruncatedSize
 		case more.NodePoints != nil:
-			more.NodePoints, more.Truncated = pts[:len(m.NodePoints)+1], true
+			more.NodePoints, more.Truncated, more.TruncatedReason = pts[:len(m.NodePoints)+1], true, model.TruncatedSize
 		default:
 			mc := *more.MappingCheck
-			mc.SampleRows, mc.Truncated = rows4[:len(m.MappingCheck.SampleRows)+1], true
+			mc.SampleRows, mc.Truncated, mc.TruncatedReason = rows4[:len(m.MappingCheck.SampleRows)+1], true, model.TruncatedSize
 			more.MappingCheck = &mc
 		}
 		if size(more) <= model.IPCMaxInteractiveReply {
@@ -333,7 +336,7 @@ func TestCHK_IPC_08_ReplySizeLimit(t *testing.T) {
 // discovery reply (unknown fields ignored).
 func TestCHK_IPC_05_InteractiveFieldsOmitEmpty(t *testing.T) {
 	b, _ := json.Marshal(model.IPCMessage{ID: 1, Type: model.MsgPong, Version: 2})
-	for _, f := range []string{"candidates", "truncated", "nodePoints", "mappingCheck"} {
+	for _, f := range []string{"candidates", "truncated", "truncatedReason", "nodePoints", "mappingCheck"} {
 		if strings.Contains(string(b), f) {
 			t.Errorf("pong carries %s: %s", f, b)
 		}
@@ -354,5 +357,81 @@ func TestCHK_IPC_05_InteractiveFieldsOmitEmpty(t *testing.T) {
 	s := model.IPCRequest{Cmd: model.CmdCheckMapping, Mapping: &mp, Query: &model.ValueQuery{PointName: "Склад-7"}, Password: "pw!"}.String()
 	if strings.Contains(s, "secret_column") || strings.Contains(s, "Склад-7") || strings.Contains(s, "pw!") || !strings.Contains(s, "mapping:true") {
 		t.Fatalf("String: %s", s)
+	}
+}
+
+// TestCHK_IPC_08_TruncatedReason — truncatedReason (Вика 06.10) is
+// present if and only if truncated: "budget" (discovery budget ran out),
+// "size" (cut to 64 KiB), "limit" (list_node_points limit); budget wins
+// over size, size over limit; no cut — neither field in the JSON
+// (discovery, node_points, mappingCheck; CHK-IPC-05).
+func TestCHK_IPC_08_TruncatedReason(t *testing.T) {
+	big := strings.Repeat("\U0001F600", model.MaxSampleCellRunes)
+	var cands []model.DiscoveryCandidate
+	var rows []model.SampleRow
+	for i := 0; i < model.MaxSampleRows; i++ {
+		rows = append(rows, model.SampleRow{Point: big})
+	}
+	for i := 0; i < 40; i++ {
+		cands = append(cands, model.DiscoveryCandidate{Table: "_Node1", SampleRows: rows[:5]})
+	}
+	var pts []model.NodePoint
+	for i := 0; i < 3000; i++ {
+		pts = append(pts, model.NodePoint{PlanTable: "_Node1", Ref: "0123456789abcdef0123456789abcdef", Name: "Точка обмена"})
+	}
+	// as the server builds the reply: Truncated = reason != "", then fit
+	fit := func(m model.IPCMessage) model.IPCMessage {
+		m.Truncated = m.TruncatedReason != ""
+		fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
+		return m
+	}
+	for _, c := range []struct {
+		name   string
+		m      model.IPCMessage
+		reason string
+	}{
+		{"discovery budget", model.IPCMessage{Type: model.MsgDiscovery, Candidates: cands[:2], TruncatedReason: model.TruncatedBudget}, model.TruncatedBudget},
+		{"discovery size", model.IPCMessage{Type: model.MsgDiscovery, Candidates: cands}, model.TruncatedSize},
+		{"discovery budget + size", model.IPCMessage{Type: model.MsgDiscovery, Candidates: cands, TruncatedReason: model.TruncatedBudget}, model.TruncatedBudget},
+		{"discovery complete", model.IPCMessage{Type: model.MsgDiscovery, Candidates: cands[:2]}, ""},
+		{"node points limit", model.IPCMessage{Type: model.MsgNodePoints, NodePoints: pts[:10], TruncatedReason: model.TruncatedLimit}, model.TruncatedLimit},
+		{"node points size", model.IPCMessage{Type: model.MsgNodePoints, NodePoints: pts}, model.TruncatedSize},
+		{"node points limit + size", model.IPCMessage{Type: model.MsgNodePoints, NodePoints: pts, TruncatedReason: model.TruncatedLimit}, model.TruncatedSize},
+		{"node points complete", model.IPCMessage{Type: model.MsgNodePoints, NodePoints: pts[:10]}, ""},
+	} {
+		m := fit(c.m)
+		b, _ := json.Marshal(m)
+		if m.TruncatedReason != c.reason || m.Truncated != (c.reason != "") || len(b) > model.IPCMaxInteractiveReply {
+			t.Errorf("%s: truncated %v reason %q (%d bytes)", c.name, m.Truncated, m.TruncatedReason, len(b))
+		}
+		if c.reason == "" && (strings.Contains(string(b), `"truncated"`) || strings.Contains(string(b), "truncatedReason")) {
+			t.Errorf("%s: %s", c.name, b)
+		}
+	}
+	mc := fit(model.IPCMessage{Type: model.MsgMappingCheck, MappingCheck: &model.MappingCheck{OK: true, SampleRows: rows}})
+	if !mc.MappingCheck.Truncated || mc.MappingCheck.TruncatedReason != model.TruncatedSize || mc.Truncated || mc.TruncatedReason != "" {
+		t.Errorf("mapping check size: %+v / %v %q", mc.MappingCheck.Truncated, mc.Truncated, mc.MappingCheck.TruncatedReason)
+	}
+	small := fit(model.IPCMessage{Type: model.MsgMappingCheck, MappingCheck: &model.MappingCheck{OK: true, SampleRows: rows[:3]}})
+	if b, _ := json.Marshal(small); strings.Contains(string(b), "truncated") {
+		t.Errorf("mapping check complete: %s", b)
+	}
+
+	// over the pipe: the handler's reason, Truncated set by the server
+	admin := int32(1)
+	h, l, _ := newDiscServer(t, &admin)
+	h.cands, h.reasonD, h.pts, h.reasonN = cands[:1], model.TruncatedBudget, pts, model.TruncatedLimit
+	c := dialRaw(t, l)
+	if m := c.call(model.IPCRequest{ID: 1, Cmd: model.CmdDiscover}); !m.Truncated || m.TruncatedReason != model.TruncatedBudget {
+		t.Fatalf("discover budget: %v %q", m.Truncated, m.TruncatedReason)
+	}
+	if m := c.call(model.IPCRequest{ID: 2, Cmd: model.CmdListNodePoints, Limit: 3000}); !m.Truncated || m.TruncatedReason != model.TruncatedSize {
+		t.Fatalf("node points limit + size: %v %q", m.Truncated, m.TruncatedReason)
+	}
+	h.mu.Lock()
+	h.reasonD = ""
+	h.mu.Unlock()
+	if m := c.call(model.IPCRequest{ID: 3, Cmd: model.CmdDiscover}); m.Truncated || m.TruncatedReason != "" {
+		t.Fatalf("discover complete: %v %q", m.Truncated, m.TruncatedReason)
 	}
 }

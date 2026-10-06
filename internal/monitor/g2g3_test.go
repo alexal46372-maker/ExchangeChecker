@@ -184,7 +184,7 @@ func TestCHK_IPC_08_DiscoverProfileRules(t *testing.T) {
 	ctx := context.Background()
 
 	cands, tr, err := e.m.Discover(ctx, model.IPCRequest{ProfileID: "p1"})
-	if err != nil || len(cands) != 1 || tr {
+	if err != nil || len(cands) != 1 || tr != "" {
 		t.Fatalf("saved: %v %v %v", cands, tr, err)
 	}
 	if o := e.fi.last(); o.p.ID != "p1" || o.pw != savedPW || o.opt.Discover.Timeout != DefaultDiscoverTimeout || e.fi.closes() != 1 {
@@ -429,25 +429,26 @@ func TestCHK_IPC_08_CancelAndAbandoned(t *testing.T) {
 }
 
 // TestCHK_IPC_08_TruncatedByBudget — when the discovery budget runs out
-// the partial result is a result with truncated (not an error): also with
-// no candidate at all, and when a candidate carries HintTruncated.
+// the partial result is a result with the truncated reason "budget" (not
+// an error): also with no candidate at all, and when a candidate carries
+// HintTruncated; a complete result has no reason.
 func TestCHK_IPC_08_TruncatedByBudget(t *testing.T) {
 	e := newIEnv(t, []model.Profile{sqlProf("p1")}, -1, func(o *Options) { o.DiscoverTimeout = 40 * time.Millisecond })
 	ctx := context.Background()
 	e.fi.set(func(f *fakeIR) { f.sleep = true })
 	cands, tr, err := e.m.Discover(ctx, model.IPCRequest{ProfileID: "p1"})
-	if err != nil || !tr || len(cands) != 0 || e.fi.last().opt.Discover.Timeout != 40*time.Millisecond {
+	if err != nil || tr != model.TruncatedBudget || len(cands) != 0 || e.fi.last().opt.Discover.Timeout != 40*time.Millisecond {
 		t.Fatalf("budget: %v %v %v", cands, tr, err)
 	}
 	e.fi.set(func(f *fakeIR) {
 		f.sleep = false
 		f.cands = []model.DiscoveryCandidate{{Table: "_Node1", Hints: []string{model.HintTruncated}}}
 	})
-	if _, tr, err := e.m.DiscoverByValue(ctx, model.IPCRequest{ProfileID: "p1", Query: &model.ValueQuery{PointName: "A"}}); err != nil || !tr {
+	if _, tr, err := e.m.DiscoverByValue(ctx, model.IPCRequest{ProfileID: "p1", Query: &model.ValueQuery{PointName: "A"}}); err != nil || tr != model.TruncatedBudget {
 		t.Fatalf("hint: %v %v", tr, err)
 	}
 	e.fi.set(func(f *fakeIR) { f.cands[0].Hints = nil })
-	if _, tr, err := e.m.Discover(ctx, model.IPCRequest{ProfileID: "p1"}); err != nil || tr {
+	if _, tr, err := e.m.Discover(ctx, model.IPCRequest{ProfileID: "p1"}); err != nil || tr != "" {
 		t.Fatalf("complete: %v %v", tr, err)
 	}
 }
@@ -456,7 +457,7 @@ func TestCHK_IPC_08_TruncatedByBudget(t *testing.T) {
 // name (and ref) is invalid_request + monitor.discover_point_name_empty
 // (errorArgs [query.pointName, validation.required]) without a
 // connection; the query reaches the reader; list_node_points: limit cuts
-// (truncated), long names are cut to 256 characters, a bad limit is
+// (truncated reason "limit"), long names are cut to 256 characters, a bad limit is
 // invalid_request + validation.range.
 func TestCHK_IPC_08_ByValueAndNodePoints(t *testing.T) {
 	e := newIEnv(t, []model.Profile{sqlProf("p1")}, -1, nil)
@@ -487,10 +488,10 @@ func TestCHK_IPC_08_ByValueAndNodePoints(t *testing.T) {
 		f.pts = []model.NodePoint{{PlanTable: "_Node1", Name: long, Code: "1"}, {PlanTable: "_Node1", Name: "B"}, {PlanTable: "_Node2", Name: "C"}}
 	})
 	pts, tr, err := e.m.ListNodePoints(ctx, model.IPCRequest{ProfileID: "p1"})
-	if err != nil || tr || len(pts) != 3 || utf8.RuneCountInString(pts[0].Name) != model.MaxSampleCellRunes {
+	if err != nil || tr != "" || len(pts) != 3 || utf8.RuneCountInString(pts[0].Name) != model.MaxSampleCellRunes {
 		t.Fatalf("points: %d %v %v", len(pts), tr, err)
 	}
-	if pts, tr, err = e.m.ListNodePoints(ctx, model.IPCRequest{ProfileID: "p1", Limit: 2}); err != nil || !tr || len(pts) != 2 {
+	if pts, tr, err = e.m.ListNodePoints(ctx, model.IPCRequest{ProfileID: "p1", Limit: 2}); err != nil || tr != model.TruncatedLimit || len(pts) != 2 {
 		t.Fatalf("limit 2: %d %v %v", len(pts), tr, err)
 	}
 	for _, l := range []int{-1, model.MaxNodePointsLimit + 1} {

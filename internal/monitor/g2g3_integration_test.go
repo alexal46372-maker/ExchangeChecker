@@ -28,14 +28,14 @@ func TestCHK_IPC_08_IntegrationInteractive(t *testing.T) {
 	req := model.IPCRequest{ProfileID: p.ID}
 
 	pts, tr, err := m.ListNodePoints(ctx, req)
-	if err != nil || tr || len(pts) != 3 {
+	if err != nil || tr != "" || len(pts) != 3 {
 		t.Fatalf("node points: %+v %v %v", pts, tr, err)
 	}
 	cands, tr, err := m.Discover(ctx, req)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
-	t.Logf("discover: %d candidates, truncated %v", len(cands), tr)
+	t.Logf("discover: %d candidates, truncated %q", len(cands), tr)
 	q := req
 	q.Query = &model.ValueQuery{PointName: "Магазин 1"}
 	if _, _, err := m.DiscoverByValue(ctx, q); err != nil {

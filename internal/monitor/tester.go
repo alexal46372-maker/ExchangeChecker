@@ -147,19 +147,33 @@ func (t *Tester) Run(ctx context.Context, p model.Profile, password string) (mod
 	ch := make(chan out, 1)
 	run := &testRun{}
 	go func() {
+		// as exploreRun: one non-blocking send, the abandoned count is
+		// decremented exactly once whatever the outcome (also a panic)
+		sent := false
+		send := func(o out) {
+			if sent {
+				return
+			}
+			sent = true
+			select {
+			case ch <- o:
+			default:
+			}
+		}
 		defer func() {
 			if r := recover(); r != nil {
-				ch <- out{err: fmt.Errorf("internal error: %v", r)}
+				send(out{err: fmt.Errorf("internal error: %v", r)})
 			}
 			t.mu.Lock()
 			run.finished = true
 			if run.abandoned {
+				run.abandoned = false
 				t.abandoned--
 			}
 			t.mu.Unlock()
 		}()
 		info, err := test(cctx, p, password)
-		ch <- out{info, err}
+		send(out{info, err})
 	}()
 	end := func(abandon bool) {
 		t.mu.Lock()

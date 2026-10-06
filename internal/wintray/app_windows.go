@@ -241,6 +241,9 @@ func (a *App) Loop() int {
 		if r == 0 || r == -1 {
 			break
 		}
+		if w := a.settings; w != nil && w.disc != nil && winapi.IsWindow(w.disc.hwnd) && winapi.IsDialogMessage(w.disc.hwnd, &m) {
+			continue
+		}
 		if w := a.settings; w != nil && winapi.IsWindow(w.hwnd) && winapi.IsDialogMessage(w.hwnd, &m) {
 			continue
 		}

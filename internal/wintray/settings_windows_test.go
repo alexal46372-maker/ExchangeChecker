@@ -42,10 +42,15 @@ type cfgService struct {
 	canceled int
 	gets     int
 	settings []model.Settings // save_settings calls
+	// autostart: trayAutostartError of get_status (nil = capability off)
+	autostart *string
 	// saveErr: reply to the next save_profile
 	saveErr error
 	// test: "ok", "busy", "rate", "timeout", "block"
 	test string
+	// handler served instead of the service itself (a wrapper with more
+	// optional interfaces, e.g. ipc.Discoverer)
+	handler ipc.Handler
 }
 
 func (f *cfgService) revision() string { return "r" + strconv.Itoa(f.rev) }
@@ -224,8 +229,19 @@ func (c *fakeConfirm) ask(_ uintptr, text, _ string) bool {
 func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ...*fakeConfirm) *App {
 	t.Helper()
 	l := ipc.NewMemListener()
-	srv := ipc.NewServer(svc, nil)
+	var h ipc.Handler = svc
+	if svc.handler != nil {
+		h = svc.handler
+	}
+	srv := ipc.NewServer(h, nil)
 	srv.Authorize = func(io.ReadWriteCloser) (ipc.Peer, error) { return ipc.Peer{Admin: admin, Account: `PC\admin`}, nil }
+	if svc.autostart != nil {
+		srv.TrayAutostartError = func() string {
+			svc.mu.Lock()
+			defer svc.mu.Unlock()
+			return *svc.autostart
+		}
+	}
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
@@ -855,5 +871,37 @@ func TestCHK_TRAY_09_SettingsGeneralReadOnly(t *testing.T) {
 	}
 	if winapi.IsWindowEnabled(w.ctl[idGenAutostart]) || winapi.IsWindowEnabled(w.ctl[idGenBeep]) || winapi.IsWindowEnabled(w.ctl[idGenLang]) {
 		t.Error("read-only general page is editable")
+	}
+}
+
+// TestCHK_TRAY_09_AutostartError — trayAutostartError of get_status is
+// shown next to the autostart switch; get_status is read again after a
+// successful save_settings.
+func TestCHK_TRAY_09_AutostartError(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	code := model.AutostartErrAccessDenied
+	svc.autostart = &code
+	app := startCfgApp(t, svc, true, &fakeElevator{})
+	w := openAdmin(t, app)
+	w.setPage(1)
+	if got := w.text(idGenAutostartErr); got != i18n.T(i18n.KeyAutostartErrAccess, i18n.RU) {
+		t.Errorf("autostart error %q", got)
+	}
+	svc.mu.Lock()
+	code = ""
+	svc.mu.Unlock()
+	w.click(t, idGenAutostart)
+	w.click(t, idSetSave)
+	pumpUntil(t, "save_settings + get_status", func() bool {
+		return svc.count("settings") == 1 && w.statusRefreshes == 1 && w.statusRefreshed == 1
+	})
+	if got := w.text(idGenAutostartErr); got != "" {
+		t.Errorf("after save: %q", got)
+	}
+	if traysettings.AutostartErrorText("weird", i18n.EN) != i18n.T(i18n.KeyAutostartErrUnknown, i18n.EN)+" (weird)" ||
+		traysettings.AutostartErrorText(model.AutostartErrSettings, i18n.EN) == "" {
+		t.Error("autostart error texts")
 	}
 }

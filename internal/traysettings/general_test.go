@@ -94,3 +94,39 @@ func TestCHK_TRAY_09_GeneralSettings(t *testing.T) {
 		t.Error("language index")
 	}
 }
+
+// TestCHK_TRAY_09_NoSettingsInvalidConfig — get_status without settings
+// (configError / monitor.config_invalid, empty revision): no general
+// settings to show or save, also after an earlier valid snapshot.
+func TestCHK_TRAY_09_NoSettingsInvalidConfig(t *testing.T) {
+	bad := model.StatusSnapshot{ConfigError: "settings.json: bad", ConfigErrorKey: model.MsgMonitorConfigInvalid}
+	e := NewEditor(i18n.RU, ReadOnly)
+	e.LoadSnapshot(bad)
+	if e.HasSettings || e.CanEditSettings() || e.Revision != "" || e.General != (GeneralForm{}) {
+		t.Errorf("invalid config: has %v rev %q general %+v", e.HasSettings, e.Revision, e.General)
+	}
+	r := generalEditor(ReadOnly)
+	r.LoadSnapshot(bad)
+	if r.HasSettings || r.General.PollSec != "" {
+		t.Errorf("stale settings kept: %+v", r.General)
+	}
+	a := NewEditor(i18n.RU, Admin)
+	a.LoadSnapshot(bad)
+	if _, pr := a.SettingsRequest(); pr == nil || !pr.Reload || a.GeneralUnsaved() {
+		t.Errorf("admin without settings: %+v", pr)
+	}
+}
+
+// TestCHK_TRAY_09_AutostartErrorTexts — every trayAutostartError code
+// has RU and EN text; no error = "".
+func TestCHK_TRAY_09_AutostartErrorTexts(t *testing.T) {
+	for _, c := range []string{model.AutostartErrAccessDenied, model.AutostartErrRegistry, model.AutostartErrTrayPath, model.AutostartErrSettings} {
+		ru, en := AutostartErrorText(c, i18n.RU), AutostartErrorText(c, i18n.EN)
+		if ru == "" || en == "" || ru == en || strings.Contains(ru, c) {
+			t.Errorf("%s: %q / %q", c, ru, en)
+		}
+	}
+	if AutostartErrorText("", i18n.RU) != "" || !strings.Contains(AutostartErrorText("x", i18n.RU), "(x)") {
+		t.Error("empty / unknown code")
+	}
+}

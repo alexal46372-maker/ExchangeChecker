@@ -59,6 +59,10 @@ type Player struct {
 	stop   chan struct{}
 	closed bool
 	beepMu sync.Mutex // one Beep at a time across loop restarts
+	// lastEnd: when the last Beep returned (under beepMu). minWait is
+	// counted from it, also across a retune (Set with a new tone starts a
+	// new loop while the old one may just have beeped).
+	lastEnd time.Time
 }
 
 // NewPlayer returns a stopped player.
@@ -112,8 +116,20 @@ func (p *Player) loop(t Tone, stop chan struct{}) {
 			return
 		default:
 		}
+		if !p.lastEnd.IsZero() {
+			if d := minWait - time.Since(p.lastEnd); d > 0 {
+				p.beepMu.Unlock()
+				select {
+				case <-stop:
+					return
+				case <-time.After(d):
+				}
+				continue
+			}
+		}
 		start := time.Now()
 		err := p.b.Beep(t.FreqHz, t.DurMs)
+		p.lastEnd = time.Now()
 		p.beepMu.Unlock()
 		wait := time.Duration(t.GapMs) * time.Millisecond
 		if err != nil {

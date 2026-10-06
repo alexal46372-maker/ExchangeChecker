@@ -80,6 +80,9 @@ func Message(key, lang string) string {
 	if s := model.MonitorMessage(key, Normalize(lang)); s != "" {
 		return s
 	}
+	if s := model.SQLMessage(key, Normalize(lang)); s != "" { // sql.* (G1)
+		return s
+	}
 	if Has(key) {
 		return T(key, lang)
 	}

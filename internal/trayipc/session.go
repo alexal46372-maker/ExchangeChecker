@@ -88,6 +88,10 @@ type Status struct {
 	// process runs as an elevated administrator. Admin commands are
 	// re-checked by the service every time.
 	ClientElevated *bool
+	// TrayAutostartError: trayAutostartError of the last get_status reply
+	// of this connection (capability tray_autostart_status, CHK-CFG-04;
+	// "" = applied or not reported). Not carried by status_update / pong.
+	TrayAutostartError string
 }
 
 // Elevated reports ClientElevated == true.
@@ -335,6 +339,7 @@ func (s *Session) Refresh(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.setElevatedLocked(m.ClientElevated)
+	s.st.TrayAutostartError = m.TrayAutostartError // get_status only
 	s.mu.Unlock()
 	s.applySnapshot(*m.Status, true)
 	return nil
@@ -508,6 +513,7 @@ func (s *Session) onHello(c *ipc.Client, h model.IPCMessage) {
 	s.st.Version = ver
 	s.st.Capabilities = append([]string(nil), h.Capabilities...)
 	s.st.ClientElevated = nil // per connection, from get_status / ping
+	s.st.TrayAutostartError = ""
 	s.disabled = map[string]bool{}
 	if h.Heartbeat != nil {
 		hb := *h.Heartbeat
@@ -564,6 +570,7 @@ func (s *Session) refreshStatus(ctx context.Context, c *ipc.Client) bool {
 	}
 	s.mu.Lock()
 	s.setElevatedLocked(m.ClientElevated)
+	s.st.TrayAutostartError = m.TrayAutostartError // get_status only
 	s.mu.Unlock()
 	s.applySnapshot(*m.Status, true)
 	return true

@@ -162,3 +162,22 @@ func (e *Editor) SettingsDone(m model.IPCMessage, sent model.Settings) string {
 	e.LoadSettings(sent)
 	return e.t(i18n.KeyGenSaved)
 }
+
+// AutostartErrorText is the text of a trayAutostartError code of
+// get_status (CHK-CFG-04): "" for no error, an unknown code is shown with
+// a generic text.
+func AutostartErrorText(code, lang string) string {
+	key := map[string]string{
+		model.AutostartErrAccessDenied: i18n.KeyAutostartErrAccess,
+		model.AutostartErrRegistry:     i18n.KeyAutostartErrRegistry,
+		model.AutostartErrTrayPath:     i18n.KeyAutostartErrPath,
+		model.AutostartErrSettings:     i18n.KeyAutostartErrSettings,
+	}[code]
+	switch {
+	case code == "":
+		return ""
+	case key == "":
+		return i18n.T(i18n.KeyAutostartErrUnknown, lang) + " (" + code + ")"
+	}
+	return i18n.T(key, lang)
+}

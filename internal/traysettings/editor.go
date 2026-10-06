@@ -57,6 +57,12 @@ type Editor struct {
 	Settings    model.Settings
 	General     GeneralForm
 	HasSettings bool
+	// MapEdit / MapsEdit: mapping chosen in the Discovery dialog (6d,
+	// CHK-TRAY-07), not saved yet; nil = the profile's own mapping.
+	// MapsEdit replaces Profile.Mappings when MapsSet.
+	MapEdit  *model.Mapping
+	MapsEdit []model.Mapping
+	MapsSet  bool
 }
 
 // NewEditor returns an empty editor.
@@ -80,6 +86,10 @@ func (e *Editor) LoadSnapshot(snap model.StatusSnapshot) {
 	e.Revision = snap.ConfigRevision
 	if snap.Settings != nil {
 		e.LoadSettings(*snap.Settings)
+	} else {
+		// no settings (e.g. configError monitor.config_invalid): nothing
+		// to show or save, also when an earlier snapshot had them
+		e.Settings, e.General, e.HasSettings = model.Settings{}, GeneralForm{}, false
 	}
 	ps := make([]model.Profile, 0, len(snap.Profiles))
 	e.MapSummary = map[string]*model.MappingSummary{}
@@ -112,6 +122,7 @@ func (e *Editor) load(ps []model.Profile) {
 // Select edits profile i (-1 = none). Unsaved edits are dropped.
 func (e *Editor) Select(i int) {
 	e.IsNew = false
+	e.clearMapping()
 	if i < 0 || i >= len(e.Profiles) {
 		e.Sel = -1
 		e.Base = model.Profile{}
@@ -126,6 +137,7 @@ func (e *Editor) Select(i int) {
 // New starts a new profile with the defaults of model.NewProfile (SQL
 // authentication, no encryption, TLS 1.0 preset of SQL Server 2008).
 func (e *Editor) New() {
+	e.clearMapping()
 	e.Sel = -1
 	e.IsNew = true
 	e.Base = model.NewProfile("")
@@ -146,6 +158,9 @@ func (e *Editor) Dirty() bool {
 	}
 	if !e.HasProfile() {
 		return false
+	}
+	if e.MapEdit != nil {
+		return true
 	}
 	saved := FromProfile(e.Base)
 	f := e.Form
@@ -168,14 +183,39 @@ func (e *Editor) ProfileUnsaved() bool {
 		return false
 	}
 	if e.IsNew {
-		return e.Form != FromProfile(e.Base)
+		return e.Form != FromProfile(e.Base) || e.MapEdit != nil
 	}
 	return e.Dirty()
 }
 
 // Candidate is the profile the form would save (nil field error = valid).
 func (e *Editor) Candidate() (model.Profile, *model.FieldError) {
-	return e.Form.Apply(e.Base)
+	base := e.Base
+	if e.MapEdit != nil {
+		base.Mapping = *e.MapEdit
+		if e.MapsSet {
+			base.Mappings = append([]model.Mapping(nil), e.MapsEdit...)
+		}
+	}
+	return e.Form.Apply(base)
+}
+
+// SetMapping takes the mapping chosen in the Discovery dialog into the
+// edited profile (saved with save_profile like any other edit); others,
+// when set, replace Profile.Mappings («все планы обмена»).
+func (e *Editor) SetMapping(m model.Mapping, others []model.Mapping, setOthers bool) {
+	e.MapEdit = &m
+	e.MapsEdit, e.MapsSet = append([]model.Mapping(nil), others...), setOthers
+}
+
+func (e *Editor) clearMapping() { e.MapEdit, e.MapsEdit, e.MapsSet = nil, nil, false }
+
+// EffectiveMapping is the mapping the profile would be saved with.
+func (e *Editor) EffectiveMapping() model.Mapping {
+	if e.MapEdit != nil {
+		return *e.MapEdit
+	}
+	return e.Base.Mapping
 }
 
 // PasswordHint is the text next to the password box.

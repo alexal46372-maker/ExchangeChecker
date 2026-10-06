@@ -71,7 +71,9 @@ const (
 	idGenLang
 	idGenAutostart
 	idGenNote
-	idSetClose = winapi.IDCANCEL
+	idGenAutostartErr
+	idSetDiscover // «Таблицы обмена…» (phase 6d, administrator only)
+	idSetClose    = winapi.IDCANCEL
 )
 
 // Elevator starts the elevated settings process («Изменить
@@ -153,11 +155,15 @@ type settingsWindow struct {
 	lastFocus  traysettings.Field
 	status     string
 	pwReads    int // readPassword calls (test hook)
-	page       int // 0 = databases, 1 = general settings
-	pageCtl    [2][]uintptr
-	cur        *[]uintptr // page of the controls being created
-	connected  bool       // service session state seen by onSessionState
-	loaded     bool       // get_config (or a snapshot) loaded at least once
+	// statusRefreshes / statusRefreshed: get_status re-reads started /
+	// done after save_settings (test hook)
+	statusRefreshes, statusRefreshed int
+	page                             int // 0 = databases, 1 = general settings
+	pageCtl                          [2][]uintptr
+	cur                              *[]uintptr // page of the controls being created
+	connected                        bool       // service session state seen by onSessionState
+	loaded                           bool       // get_config (or a snapshot) loaded at least once
+	disc                             *discoveryDialog
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
@@ -257,9 +263,12 @@ func (w *settingsWindow) build() {
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
 	w.cur = &w.pageCtl[0]
 	w.add("STATIC", w.t(i18n.KeySetProfiles), 0, winapi.SS_LEFT, 0, 12, 10, 200, 18)
-	w.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, 12, 30, 205, 370)
-	w.add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, 12, 406, 100, 26)
-	w.add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, 117, 406, 100, 26)
+	w.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, 12, 30, 205, 340)
+	w.add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, 12, 376, 100, 26)
+	w.add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, 117, 376, 100, 26)
+	if w.cfg.mode == traysettings.Admin {
+		w.add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, 12, 408, 205, 26)
+	}
 	row := int32(10)
 	line := func(label string, id int32, class string, style uint32, width int32) {
 		w.add("STATIC", label, 0, winapi.SS_LEFT, 0, lx, row+3, lw, 18)
@@ -311,7 +320,9 @@ func (w *settingsWindow) build() {
 	row += 6
 	line(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 200)
 	w.add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idGenAutostart, cx, row+4, cw, 20)
-	row += rh + 8
+	row += rh
+	w.add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, cx, row, cw, 32)
+	row += 38
 	w.add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, lx, row, cx+cw-lx, 80)
 	w.cur = nil
 
@@ -456,6 +467,8 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idSetElevate:
 		w.elevate()
+	case idSetDiscover:
+		w.openDiscovery()
 	case idSetClose:
 		w.userClose()
 	}
@@ -591,6 +604,9 @@ func (w *settingsWindow) update() {
 	saved := has && !ed.IsNew
 	winapi.EnableWindow(w.ctl[idSetPoll], saved && !w.busy)
 	winapi.EnableWindow(w.ctl[idSetReload], !w.busy)
+	if t := w.autostartError(); w.text(idGenAutostartErr) != t {
+		winapi.SetWindowText(w.ctl[idGenAutostartErr], t)
+	}
 	gen := ed.CanEditSettings()
 	for _, e := range genEdits {
 		winapi.SendMessage(w.ctl[e.id], winapi.EM_SETREADONLY, boolPtr(!gen), 0)
@@ -606,6 +622,7 @@ func (w *settingsWindow) update() {
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy)
+		winapi.EnableWindow(w.ctl[idSetDiscover], has && !w.busy && w.disc == nil && w.discoveryAvailable())
 	}
 	st := w.status
 	if !has && st == "" && w.page == 0 {
@@ -633,6 +650,9 @@ func (w *settingsWindow) info() string {
 	configured := ed.Base.Mapping.Configured()
 	if s, ok := ed.MapSummary[ed.Base.ID]; ok && s != nil {
 		configured = s.Configured
+	}
+	if ed.MapEdit != nil {
+		configured = ed.MapEdit.Configured()
 	}
 	if configured {
 		parts = append(parts, w.t(i18n.KeySetMapYes))
@@ -788,8 +808,36 @@ func (w *settingsWindow) saveSettings() {
 		default:
 			w.status = w.ed.SettingsDone(m, sent)
 			w.fill()
+			w.refreshStatus() // trayAutostartError of the new value
 		}
 	})
+}
+
+// refreshStatus re-reads get_status in the background (the service
+// applies trayAutostart on save_settings; the result comes only with
+// get_status) and shows it.
+func (w *settingsWindow) refreshStatus() {
+	s := w.cfg.session
+	w.statusRefreshes++
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), traysettings.CallTimeout)
+		s.Refresh(ctx)
+		cancel()
+		w.post(func() {
+			w.statusRefreshed++
+			w.update()
+		})
+	}()
+}
+
+// autostartError is the text of trayAutostartError of the last get_status
+// ("" = applied, not reported or not supported by the service).
+func (w *settingsWindow) autostartError() string {
+	st := w.cfg.session.Status()
+	if !st.Has(model.CapTrayAutostartStatus) {
+		return ""
+	}
+	return traysettings.AutostartErrorText(st.TrayAutostartError, w.cfg.lang)
 }
 
 // listIndex is the list row of the edited profile (-1 = none).
@@ -1016,6 +1064,7 @@ func (w *settingsWindow) onSessionState(st trayipc.Status) {
 		return
 	}
 	if was {
+		w.update() // e.g. trayAutostartError of a new get_status
 		return
 	}
 	if w.cfg.mode == traysettings.ReadOnly || !w.loaded || !w.ed.Unsaved() {
@@ -1084,6 +1133,9 @@ func (w *settingsWindow) close() {
 	w.qmu.Unlock()
 	if already {
 		return
+	}
+	if w.disc != nil {
+		w.disc.close()
 	}
 	if w.testCancel != nil {
 		w.testCancel()
@@ -1157,6 +1209,9 @@ func (w *settingsWindow) loop() int {
 		r := winapi.GetMessage(&m)
 		if r == 0 || r == -1 {
 			break
+		}
+		if d := w.disc; d != nil && winapi.IsWindow(d.hwnd) && winapi.IsDialogMessage(d.hwnd, &m) {
+			continue
 		}
 		if winapi.IsWindow(w.hwnd) && winapi.IsDialogMessage(w.hwnd, &m) {
 			continue

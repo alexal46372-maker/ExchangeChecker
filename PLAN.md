@@ -575,7 +575,7 @@ Wizard Win32 (страницы):
 - **6a ✅** — клиент `internal/trayipc` (heartbeat, переподключение, рестарт службы, v1/`unknown_command`, проверка PID G7), значок и меню (`internal/trayui` + `internal/wintray`), RU/EN (`internal/i18n`), «О программе», ресурсы exe (`.ico` + манифест + `.syso`), политика сборки трея; «Настройки» в меню неактивен до 6c
 - **6b ✅** — тревоги и звук (`CHK-TRAY-03`): окно тревоги поверх всех, бесконечный `Beep` по `settings.beep`, «Закрыть» глушит до следующего изменения, «Подтвердить» → `ack_alert`; логика — `internal/trayalert`
 - **6c ✅** — настройки баз (`CHK-TRAY-04/05/06`): «Настройки…» — окно только для чтения по `get_status`, «Изменить (администратор)» → `exchtray --settings` (`ShellExecuteExW` `runas`, своё соединение, G7); форма профиля, «Проверить подключение» (`test_profile`, отмена `cancel {ref}`), `save_profile`/`delete_profile` с `expectedRevision`, «Опросить сейчас»; логика — `internal/traysettings`
-- 6d — Discovery UI (после G2+G3)
+- **6d ✅** — Discovery UI (`CHK-TRAY-07`): «Таблицы обмена…» окна администратора (только при capabilities `discover`, `discover_by_value`, `node_points`, `check_mapping`) → диалог: `discover`, `list_node_points`, `discover_by_value`, редактор mapping и шаблоны ручного SQL, `check_mapping` (поле `errorArgs[0]`, `violations`, предпросмотр), «Поиск… N с» + «Отменить» (`cancel {ref}`), «Результат неполный» с причиной `truncatedReason`, «Применить» → несохранённая правка профиля → `save_profile` с `expectedRevision`; заодно: пауза `Beep` от конца последнего вызова (`CHK-TRAY-03`), `trayAutostartError` рядом с переключателем автозапуска (`CHK-TRAY-09`), тексты `sql.*` через `model.SQLMessage`
 - **6e ✅** — общие настройки (`CHK-TRAY-08` финал, `CHK-TRAY-09`): страница «Общие настройки…» окна настроек (интервал опроса, пороги, `beep.*` с выключателем `beep.enabled`, язык журнала службы, `trayAutostart`) → `save_settings` с `expectedRevision` и всегда явным `beep.enabled`; звук выключен — окно тревоги показывается без `Beep`; язык трея — на пользователя (HKCU `Software\ExchangeChecker\Tray`, `Language`), подменю «Язык (Language)», применяется сразу; аудит строк i18n
 - checks: `CHK-IPC-01`, `CHK-TRAY-01` … `CHK-TRAY-10`
 
@@ -593,7 +593,7 @@ Wizard Win32 (страницы):
 - **служба: G1/G4 и `trayAutostartError` (CHK-SQL-04, CHK-CFG-04) ✅:** предупреждения `get_status` — `model.SQLWarnings`, `errorKey` SQL — только известные `model`; `get_status.trayAutostartError` + capability `tray_autostart_status` (§6.2)
 - **замечания Вики к 49d54ea..c163d0f ✅:** запись `counters-state.json` вне блокировки состояния с номером поколения (CHK-MON-02); снимок без нулевых настроек при неудачной первой загрузке (CHK-MON-10); уборка тестового ключа реестра через `RegDeleteKeyExW` + `KEY_WOW64_64KEY` с проверкой самого ключа (CHK-CFG-04, CHK-TRAY-10); `ERROR_LOCK_VIOLATION` в повторах `MoveFileEx` оставлен
 - **G2/G3 в службе (CHK-IPC-08, CHK-IPC-09; §6.2, §12 п. 74) ✅:** `discover`, `discover_by_value`, `list_node_points`, `check_mapping` — только админ, асинхронно с `cancel`, лимиты (1 тяжёлая, пул 2, одна на профиль, брошенные ≤ 2), жёсткий предел 100 с, ответы ≤ 64 КиБ, ручной SQL — `Compat2008Violations` до `PreviewMapping`
-- далее: EC Tray 6d (Discovery UI по capabilities); прогресс `discover_progress` — по запросу
+- EC Tray 6d (Discovery UI по capabilities) — ✅ (фаза 6 трея); прогресс `discover_progress` — по запросу
 
 ### Фаза 7 — Инсталлятор
 

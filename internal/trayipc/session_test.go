@@ -481,3 +481,38 @@ func TestCHK_TRAY_06_ConfigCapabilitiesAndElevation(t *testing.T) {
 		t.Error("clientElevated from get_status")
 	}
 }
+
+// TestCHK_TRAY_09_AutostartErrorFromGetStatus — trayAutostartError is
+// taken from get_status replies only (initial one of the connection and
+// Refresh); "" clears it.
+func TestCHK_TRAY_09_AutostartErrorFromGetStatus(t *testing.T) {
+	var mu sync.Mutex
+	code := model.AutostartErrAccessDenied
+	ms := &manualServer{}
+	dial := ms.dialer(model.IPCMessage{Type: model.MsgHello, Version: 2, Capabilities: []string{model.CapTrayAutostartStatus},
+		Heartbeat: &model.Heartbeat{Protocol: 2}}, func(r model.IPCRequest) *model.IPCMessage {
+		if r.Cmd == model.CmdGetStatus {
+			mu.Lock()
+			defer mu.Unlock()
+			return &model.IPCMessage{Type: model.MsgStatus, Status: &model.StatusSnapshot{}, TrayAutostartError: code}
+		}
+		return &model.IPCMessage{Type: model.MsgOK}
+	})
+	clk := newFakeClock()
+	s := New(testOptions(clk, dial))
+	runSession(t, s)
+	waitFor(t, "connected", connected(s))
+	waitFor(t, "initial get_status", func() bool { return s.Status().TrayAutostartError == model.AutostartErrAccessDenied })
+	if !s.Status().Has(model.CapTrayAutostartStatus) {
+		t.Error("capability")
+	}
+	mu.Lock()
+	code = ""
+	mu.Unlock()
+	if err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if e := s.Status().TrayAutostartError; e != "" {
+		t.Errorf("after refresh: %q", e)
+	}
+}

@@ -120,7 +120,8 @@ func TestCHK_TRAY_01_ErrorAndWarnings(t *testing.T) {
 	if len(sub) != 2 || !sub[0].Disabled || !strings.Contains(sub[0].Text, model.MonitorMessage(model.MsgMonitorConnError, i18n.RU)) {
 		t.Fatalf("error line: %+v", sub)
 	}
-	if !strings.Contains(sub[1].Text, "sql.warn_plaintext_login") {
+	// sql.* warnings are localized by model.SQLMessage (phase 6d)
+	if !strings.Contains(sub[1].Text, model.SQLMessage("sql.warn_plaintext_login", i18n.RU)) {
 		t.Errorf("warning line %q", sub[1].Text)
 	}
 	if s := items[2].Sub; len(s) != 1 || s[0].Text != "Нет точек обмена" || !s[0].Disabled {

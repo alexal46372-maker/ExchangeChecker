@@ -402,3 +402,49 @@ func TestCHK_TRAY_03_BeepDisabled(t *testing.T) {
 		}
 	}
 }
+
+// timedBeeper records when each Beep started and ended.
+type timedBeeper struct {
+	mu         sync.Mutex
+	starts     []time.Time
+	ends       []time.Time
+	dur        time.Duration
+	firstEnded chan struct{}
+}
+
+func (b *timedBeeper) Beep(freq, dur int) error {
+	b.mu.Lock()
+	b.starts = append(b.starts, time.Now())
+	b.mu.Unlock()
+	time.Sleep(b.dur)
+	b.mu.Lock()
+	b.ends = append(b.ends, time.Now())
+	if len(b.ends) == 1 {
+		close(b.firstEnded)
+	}
+	b.mu.Unlock()
+	return nil
+}
+
+// TestCHK_TRAY_03_PlayerRetuneMinGap — a tone change (warning -> error)
+// starts a new loop; its first Beep still waits minWait after the end of
+// the old loop's last Beep.
+func TestCHK_TRAY_03_PlayerRetuneMinGap(t *testing.T) {
+	for i := 0; i < 5; i++ {
+		b := &timedBeeper{dur: 20 * time.Millisecond, firstEnded: make(chan struct{})}
+		p := NewPlayer(b)
+		p.Set(true, Tone{800, 20, 700})
+		<-b.firstEnded
+		p.Set(true, Tone{1500, 20, 700}) // retune right after the Beep
+		time.Sleep(150 * time.Millisecond)
+		p.Close()
+		b.mu.Lock()
+		if len(b.starts) < 2 {
+			t.Fatalf("retune did not beep: %d", len(b.starts))
+		}
+		if gap := b.starts[1].Sub(b.ends[0]); gap < minWait {
+			t.Errorf("run %d: %v between Beeps after a retune, want >= %v", i, gap, minWait)
+		}
+		b.mu.Unlock()
+	}
+}

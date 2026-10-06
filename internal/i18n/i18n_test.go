@@ -103,8 +103,14 @@ func TestCHK_TRAY_08_ServiceKeys(t *testing.T) {
 			t.Errorf("%s: ru %q en %q", k, ru, en)
 		}
 	}
-	if got := Message("sql.tls_enable_tls10", RU); !strings.Contains(got, "sql.tls_enable_tls10") {
+	if got := Message("sql.no_such_key", RU); !strings.Contains(got, "sql.no_such_key") {
 		t.Errorf("unknown key text %q must name the key", got)
+	}
+	// sql.* texts come from model.SQLMessage (G1, phase 6d: failed / test errors)
+	for _, k := range model.SQLMessageKeys() {
+		if ru, en := Message(k, RU), Message(k, EN); ru != model.SQLMessage(k, RU) || en != model.SQLMessage(k, EN) || ru == "" {
+			t.Errorf("%s: %q / %q", k, ru, en)
+		}
 	}
 	if Message("", RU) != "" {
 		t.Error("empty key -> empty text")

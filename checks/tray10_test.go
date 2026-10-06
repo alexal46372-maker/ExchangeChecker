@@ -131,7 +131,8 @@ var winAPIMinVersion = map[string]float64{
 	"SetFocus": 5.0, "GetFocus": 5.0, "MessageBoxW": 5.0, "GetModuleFileNameW": 5.0,
 	"IsDialogMessageW": 5.0, "AllowSetForegroundWindow": 5.0, "GetProcessId": 5.1,
 	"GetClassNameW": 5.0,
-	// advapi32 — phase 6e per-user tray language in HKCU (CHK-TRAY-08)
+	// advapi32 — phase 6e per-user tray language in HKCU (CHK-TRAY-08); the same
+	// exports serve the service's HKLM Run tray autostart (CHK-CFG-04, regview_windows.go)
 	"RegCreateKeyExW": 5.0, "RegOpenKeyExW": 5.0, "RegQueryValueExW": 5.0, "RegSetValueExW": 5.0,
 	"RegDeleteValueW": 5.0, "RegDeleteKeyW": 5.0, "RegCloseKey": 5.0,
 	// gdi32

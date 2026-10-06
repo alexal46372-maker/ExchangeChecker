@@ -62,6 +62,7 @@ EXEC sp_addrolemember N'db_datareader', N'ec_monitor';
 
 - Источник Event Log `ExchangeChecker`: зарегистрировать `EventMessageFile` с событиями 100–104, **105** («Конфигурация изменена», фаза 6) и 110.
 - `secrets.dpapi` служба создаёт сама с DACL SYSTEM + Administrators без наследования (файл, оставшийся от старой версии, служба приводит к этому DACL при старте); инсталлятор не должен давать на него Users-read (каталог `%ProgramData%\ExchangeChecker\` — по-прежнему Administrators+SYSTEM+Users-read для `profiles.json`/`settings.json`).
+- Автозапуск трея (PLAN.md §12 п. 72, решение Вики от 03.10, `CHK-CFG-04`): при установке записать в `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` (64-битное представление) стартовое значение `ExchangeCheckerTray` = `"<папка установки>\ExchangeCheckerTray.exe"` (REG_SZ, в кавычках); при деинсталляции — удалить его. Дальше значение ведёт служба по настройке `trayAutostart` (при старте и после сохранения общих настроек).
 - Не-администраторам (Interactive Users / Authenticated Users) — право `SERVICE_QUERY_STATUS` в DACL службы (трей сверяет PID сервера канала с PID службы, G7).
 
 ## Когда собирать

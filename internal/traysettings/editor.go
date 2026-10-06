@@ -59,10 +59,10 @@ type Editor struct {
 	HasSettings bool
 	// MapEdit / MapsEdit: mapping chosen in the Discovery dialog (6d,
 	// CHK-TRAY-07), not saved yet; nil = the profile's own mapping.
-	// MapsEdit replaces Profile.Mappings when MapsSet.
+	// MapsEdit (the merged additional mappings, MergeMappings) replaces
+	// Profile.Mappings while MapEdit is set.
 	MapEdit  *model.Mapping
 	MapsEdit []model.Mapping
-	MapsSet  bool
 }
 
 // NewEditor returns an empty editor.
@@ -162,6 +162,18 @@ func (e *Editor) Dirty() bool {
 	if e.MapEdit != nil {
 		return true
 	}
+	return e.formDirty()
+}
+
+// formDirty: the connection form differs from the saved profile (the
+// mapping edit of the Discovery dialog does not count).
+func (e *Editor) formDirty() bool {
+	if e.IsNew {
+		return true
+	}
+	if !e.HasProfile() {
+		return false
+	}
 	saved := FromProfile(e.Base)
 	f := e.Form
 	if f.Auth == model.AuthWindows && saved.Auth == model.AuthWindows {
@@ -193,22 +205,39 @@ func (e *Editor) Candidate() (model.Profile, *model.FieldError) {
 	base := e.Base
 	if e.MapEdit != nil {
 		base.Mapping = *e.MapEdit
-		if e.MapsSet {
-			base.Mappings = append([]model.Mapping(nil), e.MapsEdit...)
-		}
+		base.Mappings = append([]model.Mapping(nil), e.MapsEdit...)
 	}
 	return e.Form.Apply(base)
 }
 
-// SetMapping takes the mapping chosen in the Discovery dialog into the
-// edited profile (saved with save_profile like any other edit); others,
-// when set, replace Profile.Mappings («все планы обмена»).
-func (e *Editor) SetMapping(m model.Mapping, others []model.Mapping, setOthers bool) {
-	e.MapEdit = &m
-	e.MapsEdit, e.MapsSet = append([]model.Mapping(nil), others...), setOthers
+// connCandidate is the profile of the connection form without any
+// mapping: test_profile and the Discovery commands need only the
+// connection, so an invalid mapping edit never blocks them.
+func (e *Editor) connCandidate() (model.Profile, *model.FieldError) {
+	base := e.Base
+	base.Mapping, base.Mappings = model.Mapping{}, nil
+	return e.Form.Apply(base)
 }
 
-func (e *Editor) clearMapping() { e.MapEdit, e.MapsEdit, e.MapsSet = nil, nil, false }
+// SetMapping takes the mapping chosen in the Discovery dialog into the
+// edited profile (saved with save_profile like any other edit); maps are
+// the merged additional mappings (MergeMappings), they replace
+// Profile.Mappings.
+func (e *Editor) SetMapping(m model.Mapping, maps []model.Mapping) {
+	e.MapEdit = &m
+	e.MapsEdit = append([]model.Mapping(nil), maps...)
+}
+
+// EffectiveMappings are the additional mappings the profile would be
+// saved with.
+func (e *Editor) EffectiveMappings() []model.Mapping {
+	if e.MapEdit != nil {
+		return e.MapsEdit
+	}
+	return e.Base.Mappings
+}
+
+func (e *Editor) clearMapping() { e.MapEdit, e.MapsEdit = nil, nil }
 
 // EffectiveMapping is the mapping the profile would be saved with.
 func (e *Editor) EffectiveMapping() model.Mapping {
@@ -282,6 +311,9 @@ type Problem struct {
 // fieldLabel is the localized name of a JSON path ({0} of validation
 // texts); unknown paths are returned unchanged.
 func (e *Editor) fieldLabel(path string) string {
+	if l, ok := discoveryFieldLabel(path, e.Lang); ok {
+		return l
+	}
 	key := map[string]string{
 		"name": i18n.KeySetName, "server": i18n.KeySetHost, "port": i18n.KeySetPort, "database": i18n.KeySetDatabase,
 		"authMode": i18n.KeySetAuth, "login": i18n.KeySetLogin, "password": i18n.KeySetPassword,
@@ -443,14 +475,13 @@ func (e *Editor) TestRequest(password string) (model.IPCRequest, *Problem) {
 	if !e.HasProfile() {
 		return model.IPCRequest{}, &Problem{Text: e.t(i18n.KeySetNoProfile)}
 	}
-	if e.Mode == ReadOnly || !e.Dirty() {
+	if e.Mode == ReadOnly || !e.formDirty() {
 		return model.IPCRequest{Cmd: model.CmdTestProfile, ProfileID: e.Base.ID}, nil
 	}
-	p, fe := e.Candidate()
+	p, fe := e.connCandidate() // the mapping is not needed to connect
 	if fe != nil {
 		return model.IPCRequest{}, e.fieldProblem(fe)
 	}
-	p.Mapping, p.Mappings = model.Mapping{}, nil // not needed to connect
 	p.HasPassword = false
 	req := model.IPCRequest{Cmd: model.CmdTestProfile, ProfileID: e.Base.ID, Profile: &p}
 	if p.AuthMode == model.AuthSQL && e.Form.PasswordTyped {

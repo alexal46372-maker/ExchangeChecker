@@ -51,6 +51,8 @@ type cfgService struct {
 	// handler served instead of the service itself (a wrapper with more
 	// optional interfaces, e.g. ipc.Discoverer)
 	handler ipc.Handler
+	// getHold: get_config waits for it (a reply in flight)
+	getHold chan struct{}
 }
 
 func (f *cfgService) revision() string { return "r" + strconv.Itoa(f.rev) }
@@ -103,6 +105,12 @@ func (f *cfgService) TestProfile(ctx context.Context, req model.IPCRequest) (mod
 }
 
 func (f *cfgService) GetConfig() (model.ConfigView, string, error) {
+	f.mu.Lock()
+	hold := f.getHold
+	f.mu.Unlock()
+	if hold != nil {
+		<-hold
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.gets++

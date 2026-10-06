@@ -172,9 +172,6 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	if w.cfg.elevator == nil {
 		w.cfg.elevator = ShellElevator{}
 	}
-	const ww, wh = 780, 660
-	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - ww) / 2
-	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - wh) / 3
 	title := i18n.T(i18n.KeySetTitleRead, cfg.lang)
 	if cfg.mode == traysettings.Admin {
 		title = i18n.T(i18n.KeySetTitleAdmin, cfg.lang)
@@ -183,8 +180,10 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	if cfg.mode == traysettings.Admin {
 		class = SettingsClass
 	}
-	hwnd, err := createWindow(class, title, 0,
-		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU|winapi.WS_MINIMIZEBOX, x, y, ww, wh, 0, w.wndProc)
+	// client 774×626 (controls up to 755 / 614), clamped to the work area
+	const style = winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | winapi.WS_MINIMIZEBOX
+	x, y, ww, wh := windowRect(774, 626, style, 0)
+	hwnd, err := createWindow(class, title, 0, style, x, y, ww, wh, 0, w.wndProc)
 	if err != nil {
 		return nil, err
 	}
@@ -688,6 +687,7 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldBeepEnabled: idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
 	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
 	traysettings.FieldLanguage: idGenLang, traysettings.FieldAutostart: idGenAutostart,
+	traysettings.FieldDiscoverButton: idSetDiscover, // mapping.* / mappings[i].*
 }
 
 // focus moves the keyboard focus to the control of f (lastFocus keeps it
@@ -1002,8 +1002,13 @@ func (w *settingsWindow) poll() {
 }
 
 // Reload re-reads the configuration: get_config (admin) or get_status
-// (read-only). Unsaved edits are dropped.
-func (w *settingsWindow) Reload() {
+// (read-only). Unsaved edits are dropped («Перечитать» asks first).
+func (w *settingsWindow) Reload() { w.reload(false) }
+
+// reload: keep = an automatic re-read (reconnection): edits made while
+// get_config was in flight (e.g. a mapping applied in the Discovery
+// dialog) are kept; only the revision is compared then (checkRevision).
+func (w *settingsWindow) reload(keep bool) {
 	if w.busy {
 		return
 	}
@@ -1039,6 +1044,12 @@ func (w *settingsWindow) Reload() {
 			w.problem(w.ed.Reply(m))
 		case m.Config == nil:
 			w.problem(&traysettings.Problem{Text: fmt.Sprintf(w.t(i18n.KeySetFailed), "get_config: "+m.Type)})
+		case keep && w.loaded && w.unsavedNow():
+			if m.Revision != w.ed.Revision {
+				w.setStatus(w.t(i18n.KeySetChangedOffline))
+			} else {
+				w.setStatus("")
+			}
 		default:
 			w.ed.LoadConfig(*m.Config, m.Revision)
 			w.loaded = true
@@ -1067,11 +1078,26 @@ func (w *settingsWindow) onSessionState(st trayipc.Status) {
 		w.update() // e.g. trayAutostartError of a new get_status
 		return
 	}
-	if w.cfg.mode == traysettings.ReadOnly || !w.loaded || !w.ed.Unsaved() {
-		w.Reload()
+	if w.cfg.mode == traysettings.ReadOnly || !w.loaded || !w.unsavedNow() {
+		w.reload(true)
 		return
 	}
 	w.checkRevision()
+}
+
+// unsavedNow: the editor (with the boxes read now) has unsaved edits.
+func (w *settingsWindow) unsavedNow() bool {
+	w.readForm()
+	w.readGeneral()
+	return w.ed.Unsaved()
+}
+
+// onSessionStatus follows get_status pushes: e.g. trayAutostartError of
+// the get_status that follows a reconnection (EventState comes before it).
+func (w *settingsWindow) onSessionStatus() {
+	if winapi.IsWindow(w.hwnd) {
+		w.update()
+	}
 }
 
 // checkRevision reads get_config without touching the form or the
@@ -1167,10 +1193,11 @@ func RunSettings(opt SettingsOptions) int {
 	if err != nil {
 		return 1
 	}
-	if !ok {
-		if h := winapi.FindWindow(SettingsClass); h != 0 {
-			winapi.ShowWindow(h, winapi.SW_SHOWNORMAL)
-			winapi.SetForegroundWindow(h)
+	if !ok { // the open Discovery dialog first (its owner is disabled)
+		if h := winapi.FindWindow(DiscoveryClass); h != 0 {
+			frontWindow(h)
+		} else if h := winapi.FindWindow(SettingsClass); h != 0 {
+			frontWindow(h)
 		}
 		return 0
 	}
@@ -1178,11 +1205,15 @@ func RunSettings(opt SettingsOptions) int {
 	var w *settingsWindow
 	so := opt.Session
 	so.OnEvent = func(e trayipc.Event) {
-		if e.Kind != trayipc.EventState || w == nil {
+		if w == nil {
 			return
 		}
-		st := e.Status
-		w.post(func() { w.onSessionState(st) })
+		switch st := e.Status; e.Kind {
+		case trayipc.EventState:
+			w.post(func() { w.onSessionState(st) })
+		case trayipc.EventStatus:
+			w.post(w.onSessionStatus)
+		}
 	}
 	s := trayipc.New(so)
 	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,

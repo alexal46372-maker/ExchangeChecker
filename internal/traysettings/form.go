@@ -168,8 +168,8 @@ func (f Form) Apply(base model.Profile) (model.Profile, *model.FieldError) {
 }
 
 // FocusField maps the JSON path of a service / model validation error to
-// the control to focus (FieldNone when the form has no such control, e.g.
-// mapping fields).
+// the control to focus (FieldNone when the form has no such control;
+// mapping fields focus «Таблицы обмена…», FieldDiscoverButton).
 func FocusField(path string, params []string) Field {
 	switch path {
 	case "server":
@@ -184,6 +184,9 @@ func FocusField(path string, params []string) Field {
 	}
 	if IsGeneral(Field(path)) {
 		return Field(path)
+	}
+	if f, ok := discoveryFocus(path); ok {
+		return f // mapping.* / mappings[i].*: «Таблицы обмена…»; query.*, limit: the dialog
 	}
 	return FieldNone
 }

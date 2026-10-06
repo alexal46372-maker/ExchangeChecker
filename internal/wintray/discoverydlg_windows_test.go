@@ -4,6 +4,7 @@ package wintray
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strings"
 	"sync"
@@ -25,6 +26,10 @@ type discService struct {
 	block    bool
 	canceled int
 	check    model.MappingCheck
+	// hold: requests wait for it ignoring ctx (a late reply); failErr:
+	// the error of the next Discover
+	hold    chan struct{}
+	failErr error
 }
 
 func newDiscService() *discService {
@@ -36,8 +41,12 @@ func newDiscService() *discService {
 func (d *discService) record(ctx context.Context, req model.IPCRequest) error {
 	d.dmu.Lock()
 	d.reqs = append(d.reqs, req)
-	block := d.block
+	block, hold := d.block, d.hold
 	d.dmu.Unlock()
+	if hold != nil {
+		<-hold
+		return nil
+	}
 	if !block {
 		return nil
 	}
@@ -76,6 +85,13 @@ func testCandidate(table string) model.DiscoveryCandidate {
 
 func (d *discService) Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error) {
 	if err := d.record(ctx, req); err != nil {
+		return nil, "", err
+	}
+	d.dmu.Lock()
+	err := d.failErr
+	d.failErr = nil
+	d.dmu.Unlock()
+	if err != nil {
 		return nil, "", err
 	}
 	return []model.DiscoveryCandidate{testCandidate("_Node10"), testCandidate("_Node20")}, model.TruncatedBudget, nil
@@ -163,7 +179,8 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	ds := newDiscService()
-	app := startCfgApp(t, ds.cfgService, true, nil)
+	conf := &fakeConfirm{}
+	app := startCfgApp(t, ds.cfgService, true, nil, conf)
 	w := openAdmin(t, app)
 	pumpUntil(t, "discovery button enabled", func() bool {
 		w.update()
@@ -193,8 +210,12 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	if dd.text(idDiscTable) != "_Node10" || dd.text(idDiscTimesTable) != "_InfoRg88" || !dd.checked(idDiscYear) {
 		t.Errorf("mapping editor: table %q times %q", dd.text(idDiscTable), dd.text(idDiscTimesTable))
 	}
-	if st := dd.text(idDiscState); !strings.Contains(st, i18n.T(i18n.KeyDiscReasonBudget, i18n.RU)) {
-		t.Errorf("truncated status %q", st)
+	if st, res := dd.text(idDiscState), dd.text(idDiscResult); st != fmt.Sprintf(i18n.T(i18n.KeyDiscFound, i18n.RU), 2) ||
+		!strings.Contains(res, i18n.T(i18n.KeyDiscReasonBudget, i18n.RU)) {
+		t.Errorf("count %q / truncated note %q", st, res)
+	}
+	if l := dd.d.CandidateLine(dd.d.Candidates[0]); !strings.Contains(l, "[связанные таблицы]") || !strings.Contains(l, "оценка 50") {
+		t.Errorf("candidate line not translated: %q", dd.d.CandidateLine(dd.d.Candidates[0]))
 	}
 	if !strings.Contains(dd.text(idDiscDetails), traysettings.HintText(model.HintLinked, i18n.RU)) {
 		t.Errorf("details %q", dd.text(idDiscDetails))
@@ -213,8 +234,8 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	dd.click(t, idDiscByValue)
 	PumpPending()
 	if n, _ := ds.n(); n != 2 || dd.lastField != string(traysettings.FieldDiscPoint) ||
-		dd.text(idDiscState) != i18n.Message(model.MsgDiscoverPointNameEmpty, i18n.RU) {
-		t.Errorf("empty point: reqs %d field %q state %q", n, dd.lastField, dd.text(idDiscState))
+		dd.text(idDiscResult) != i18n.Message(model.MsgDiscoverPointNameEmpty, i18n.RU) {
+		t.Errorf("empty point: reqs %d field %q result %q", n, dd.lastField, dd.text(idDiscResult))
 	}
 	winapi.SendMessage(dd.ctl[idDiscPoint], winapi.CB_SETCURSEL, 0, 0)
 	dd.set(idDiscTime, "06.10.2026 09:30")
@@ -237,8 +258,8 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	}
 	dd.click(t, idDiscCancel)
 	pumpUntil(t, "canceled", func() bool { _, c := ds.n(); return c == 1 && dd.cancel == nil })
-	if dd.text(idDiscState) != i18n.T(i18n.KeyDiscCanceled, i18n.RU) {
-		t.Errorf("canceled state %q", dd.text(idDiscState))
+	if dd.text(idDiscResult) != i18n.T(i18n.KeyDiscCanceled, i18n.RU) {
+		t.Errorf("canceled result %q", dd.text(idDiscResult))
 	}
 	ds.setBlock(false)
 
@@ -255,9 +276,11 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 		t.Errorf("failed check: field %q result %q", dd.lastField, dd.text(idDiscResult))
 	}
 	// manual SQL template, ok with preview rows
-	dd.template(0)
-	if dd.d.Map.Mode != model.MappingManual || dd.text(idDiscSQL) == "" || strings.Contains(strings.ReplaceAll(dd.text(idDiscSQL), "\r\n", ""), "\n") {
-		t.Errorf("template: mode %q sql %q", dd.d.Map.Mode, dd.text(idDiscSQL))
+	winapi.SendMessage(dd.ctl[idDiscTemplate], winapi.CB_SETCURSEL, 0, 0)
+	dd.command(idDiscTemplate, winapi.CBN_SELCHANGE)
+	if dd.d.Map.Kind != traysettings.KindSQL || dd.text(idDiscSQL) == "" || strings.Contains(strings.ReplaceAll(dd.text(idDiscSQL), "\r\n", ""), "\n") ||
+		dd.text(idDiscTable) != "" || winapi.SendMessage(dd.ctl[idDiscMode], winapi.CB_GETCURSEL, 0, 0) != 1 {
+		t.Errorf("template: kind %d sql %q table %q", dd.d.Map.Kind, dd.text(idDiscSQL), dd.text(idDiscTable))
 	}
 	at := time.Date(2026, 10, 6, 9, 0, 0, 0, model.DBZone)
 	ds.dmu.Lock()
@@ -265,7 +288,8 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	ds.dmu.Unlock()
 	dd.click(t, idDiscCheck)
 	wait("check_mapping ok", 6)
-	if r := ds.last(); r.Mapping == nil || r.Mapping.Mode != model.MappingManual || r.Mapping.ManualSQL != strings.TrimSpace(model.SQLManualTemplates()[0].SQL) {
+	if r := ds.last(); r.Mapping == nil || r.Mapping.Mode != model.MappingManual || r.Mapping.ManualSQL != strings.TrimSpace(model.SQLManualTemplates()[0].SQL) ||
+		r.Mapping.Table != "" || r.Mapping.TimesTable != "" {
 		t.Errorf("manual check request %+v", r.Mapping)
 	}
 	if !strings.HasPrefix(dd.text(idDiscResult), i18n.T(i18n.KeyDiscCheckOK, i18n.RU)) || !strings.Contains(dd.text(idDiscResult), "A: 06.10.2026 09:00") {
@@ -273,10 +297,18 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	}
 
 	// closing the dialog cancels a running request and enables the owner
+	// (the template is an edit: the search and the close box ask first)
 	ds.setBlock(true)
+	asked := len(conf.texts)
 	dd.click(t, idDiscFind)
+	if len(conf.texts) != asked+1 || conf.texts[asked] != i18n.T(i18n.KeyDiscConfirmOverwrite, i18n.RU) {
+		t.Errorf("search over edits must ask: %q", conf.texts[asked:])
+	}
 	pumpUntil(t, "discover running 2", func() bool { n, _ := ds.n(); return n == 7 })
 	winapi.SendMessage(dd.hwnd, winapi.WM_CLOSE, 0, 0)
+	if conf.texts[len(conf.texts)-1] != i18n.T(i18n.KeyDiscConfirmClose, i18n.RU) {
+		t.Errorf("close with unapplied changes must ask: %q", conf.texts)
+	}
 	pumpUntil(t, "canceled on close", func() bool { _, c := ds.n(); return c == 2 })
 	if w.disc != nil || !winapi.IsWindowEnabled(w.hwnd) || winapi.IsWindow(dd.hwnd) {
 		t.Fatal("dialog not closed / owner disabled")
@@ -298,8 +330,8 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	winapi.SendMessage(dd.ctl[idDiscAllPlans], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
 	dd.profileID = "other"
 	dd.click(t, idDiscApply)
-	if w.disc == nil || dd.text(idDiscState) != i18n.T(i18n.KeyDiscProfileChanged, i18n.RU) {
-		t.Fatalf("apply to another profile: %q", dd.text(idDiscState))
+	if w.disc == nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscProfileChanged, i18n.RU) {
+		t.Fatalf("apply to another profile: %q", dd.text(idDiscResult))
 	}
 	dd.profileID = "p1"
 	dd.click(t, idDiscApply)

@@ -35,8 +35,9 @@ func DiscoveryAvailable(mode Mode, has func(string) bool) bool {
 }
 
 // DiscoveryTimeout bounds one interactive request: the service answers
-// within 100 s (hard limit, then failed + monitor.discover_timeout).
-const DiscoveryTimeout = 110 * time.Second
+// within 100 s (hard limit, then failed + monitor.discover_timeout). A
+// variable so that tests can shorten it.
+var DiscoveryTimeout = 110 * time.Second
 
 // DefaultNodePointsLimit is the limit of list_node_points (rows to pick
 // from; 0 would be "everything").
@@ -47,11 +48,82 @@ const (
 	FieldDiscPoint     Field = "query.pointName"
 	FieldDiscTime      Field = "query.approxTime"
 	FieldDiscTolerance Field = "query.toleranceMin"
+	// FieldDiscLimit: limit of list_node_points / check_mapping (set by
+	// the tray, no input box: the dialog focuses the button of the request).
+	FieldDiscLimit Field = "limit"
+	// FieldDiscoverButton: «Таблицы обмена…» of the settings window, the
+	// focus target of mapping.* / mappings[i].* errors (the mapping is
+	// edited only in the dialog).
+	FieldDiscoverButton Field = "discoverButton"
 )
 
+// discoveryFocus maps a JSON path of the Discovery commands / the mapping
+// to its focus target; ok = the path belongs to Discovery.
+func discoveryFocus(path string) (Field, bool) {
+	switch {
+	case path == "mapping" || path == "mappings" || strings.HasPrefix(path, "mapping.") || strings.HasPrefix(path, "mappings["):
+		return FieldDiscoverButton, true
+	case path == "query" || path == "query.pointName" || path == "query.pointRef" || path == "query.planTable":
+		return FieldDiscPoint, true
+	case path == "query.approxTime":
+		return FieldDiscTime, true
+	case path == "query.toleranceMin":
+		return FieldDiscTolerance, true
+	case path == "limit":
+		return FieldDiscLimit, true
+	}
+	return FieldNone, false
+}
+
+// mappingLabel is the localized name of a mapping field ("table",
+// "timesLinkRTRef", ...; "" for an unknown one).
+func mappingLabel(field, lang string) string {
+	k := mappingLabels["mapping."+field]
+	if k == "" {
+		return ""
+	}
+	return strings.TrimSuffix(i18n.T(k, lang), ":")
+}
+
+// discoveryFieldLabel is the label of a Discovery path for validation
+// texts of the settings window: «Таблицы обмена — Ручной SQL»,
+// «Доп. план обмена 2 — Таблица точек», «Точка», «Число строк (limit)».
+func discoveryFieldLabel(path, lang string) (string, bool) {
+	sub := func(rest string) string {
+		if l := mappingLabel(rest, lang); l != "" {
+			return l
+		}
+		return rest
+	}
+	switch {
+	case path == "mapping":
+		return i18n.T(i18n.KeyDiscTitle, lang), true
+	case path == "mappings":
+		return i18n.T(i18n.KeyDiscExtraPlans, lang), true
+	case strings.HasPrefix(path, "mapping."):
+		return fmt.Sprintf(i18n.T(i18n.KeyDiscFieldMain, lang), sub(strings.TrimPrefix(path, "mapping."))), true
+	case strings.HasPrefix(path, "mappings["):
+		rest := strings.TrimPrefix(path, "mappings[")
+		if j := strings.Index(rest, "]."); j > 0 {
+			if n, err := strconv.Atoi(rest[:j]); err == nil {
+				return fmt.Sprintf(i18n.T(i18n.KeyDiscFieldExtra, lang), n+1, sub(rest[j+2:])), true
+			}
+		}
+		return path, true
+	}
+	key := map[string]string{"query": i18n.KeyDiscPoint, "query.pointName": i18n.KeyDiscPoint, "query.pointRef": i18n.KeyDiscPoint,
+		"query.planTable": i18n.KeyDiscPoint, "query.approxTime": i18n.KeyDiscTime, "query.toleranceMin": i18n.KeyDiscTolerance,
+		"limit": i18n.KeyDiscLimit}[path]
+	if key == "" {
+		return "", false
+	}
+	return strings.TrimSuffix(i18n.T(key, lang), ":"), true
+}
+
 // InteractiveRequest is the profile part of the four commands, with the
-// test_profile rules: the saved profile by id when nothing was edited,
-// else the form (+ typed password).
+// test_profile rules: the saved profile by id when the connection form
+// was not edited, else the form (+ typed password). The mapping edit of
+// the dialog is not part of it and never blocks a request (TestRequest).
 func (e *Editor) InteractiveRequest(cmd, password string) (model.IPCRequest, *Problem) {
 	req, pr := e.TestRequest(password)
 	if pr != nil {
@@ -73,23 +145,45 @@ type Discovery struct {
 	PointsReason    string
 	Map             MappingForm
 	Check           *model.MappingCheck
+	// initial: the mapping of the profile at opening; loaded: the mapping
+	// last put into the form (opening or a candidate). Unapplied / Edited
+	// compare the form with them (questions on close / a new search).
+	initial, loaded model.Mapping
 }
 
 // NewDiscovery starts with the mapping m of the profile.
 func NewDiscovery(lang string, m model.Mapping) *Discovery {
-	return &Discovery{Lang: i18n.Normalize(lang), Sel: -1, Map: FromMapping(m)}
+	d := &Discovery{Lang: i18n.Normalize(lang), Sel: -1, Map: FromMapping(m)}
+	d.initial = d.Map.Mapping()
+	d.loaded = d.initial
+	return d
 }
+
+// Unapplied: the form differs from the profile's mapping (closing the
+// dialog would lose it — ask, like the settings window, §12 p.67).
+func (d *Discovery) Unapplied() bool { return d.Map.Mapping() != d.initial }
+
+// Edited: the form was changed by hand since it was last loaded (a new
+// search or another candidate would overwrite it — ask).
+func (d *Discovery) Edited() bool { return d.Map.Mapping() != d.loaded }
+
+// AcceptOverwrite: the user agreed to replace the hand edits (a new
+// search); the next result fills the form again.
+func (d *Discovery) AcceptOverwrite() { d.loaded = d.Map.Mapping() }
 
 func (d *Discovery) t(key string) string { return i18n.T(key, d.Lang) }
 
 // DiscoveryDone takes a discovery reply (discover / discover_by_value):
-// a missing list is an empty one; the best candidate is selected.
+// a missing list is an empty one; the best candidate is selected unless
+// the form was edited by hand meanwhile (the edits are kept, nothing is
+// selected).
 func (d *Discovery) DiscoveryDone(m model.IPCMessage) {
+	edited := d.Edited()
 	d.Candidates = append([]model.DiscoveryCandidate{}, m.Candidates...)
 	d.Truncated, d.Reason = m.Truncated, m.TruncatedReason
 	d.Sel = -1
 	d.Check = nil
-	if len(d.Candidates) > 0 {
+	if len(d.Candidates) > 0 && !edited {
 		d.Select(0)
 	}
 }
@@ -108,7 +202,33 @@ func (d *Discovery) Select(i int) {
 	}
 	d.Sel = i
 	d.Map = FromMapping(d.Candidates[i].Mapping())
+	d.loaded = d.Map.Mapping()
 	d.Check = nil
+}
+
+// CountText is the short result line of discovery (count only).
+func (d *Discovery) CountText() string {
+	if len(d.Candidates) == 0 {
+		return d.t(i18n.KeyDiscNone)
+	}
+	return fmt.Sprintf(d.t(i18n.KeyDiscFound), len(d.Candidates))
+}
+
+// IncompleteNote is the truncatedReason text of the last discovery ("" =
+// complete).
+func (d *Discovery) IncompleteNote() string {
+	if !d.Truncated {
+		return ""
+	}
+	return IncompleteText(ReplyDiscovery, d.Reason, d.Lang)
+}
+
+// PointsNote is the truncatedReason text of the last node_points reply.
+func (d *Discovery) PointsNote() string {
+	if !d.PointsTruncated {
+		return ""
+	}
+	return IncompleteText(ReplyNodePoints, d.PointsReason, d.Lang)
 }
 
 // Status is the line under the result lists: count, partial result.
@@ -210,11 +330,40 @@ func (d *Discovery) Query(f ValueForm) (*model.ValueQuery, *Problem) {
 	return q, nil
 }
 
+// MappingKind is what the mapping editor edits: tables (a Discovery
+// candidate or columns typed by hand), a manual SQL query, or the message
+// counters of an exchange plan.
+type MappingKind int
+
+// Mapping kinds (items of the mode box).
+const (
+	KindTables MappingKind = iota
+	KindSQL
+	KindCounters
+)
+
+// MappingKinds are the items of the mode box.
+var MappingKinds = []MappingKind{KindTables, KindSQL, KindCounters}
+
+// KindOf is the editor kind of a mapping.
+func KindOf(m model.Mapping) MappingKind {
+	switch {
+	case m.Mode == model.MappingCounters:
+		return KindCounters
+	case strings.TrimSpace(m.ManualSQL) != "" && strings.TrimSpace(m.Table) == "":
+		return KindSQL
+	}
+	return KindTables
+}
+
 // MappingForm is the editable mapping of the dialog. Send/Recv edit the
-// counter columns in counters mode; hidden link fields of a candidate
-// (times schema, composite reference) are kept from the base mapping.
+// counter columns in counters mode. The mapping is always built from the
+// visible fields only (Mapping), so no hidden field of another kind is
+// validated or checked; the hidden link fields of a candidate (times
+// schema, composite reference _TYPE/_RTRef) are kept only while the
+// tables they belong to are unchanged.
 type MappingForm struct {
-	Mode                              model.MappingMode
+	Kind                              MappingKind
 	Schema, Table, PointName, PointID string
 	PointKey, TimesTable, TimesLink   string
 	Send, Recv, PlanLabel, ManualSQL  string
@@ -222,66 +371,261 @@ type MappingForm struct {
 	base                              model.Mapping
 }
 
-// MappingModes are the items of the mode box.
-var MappingModes = []model.MappingMode{model.MappingAuto, model.MappingManual, model.MappingCounters}
-
-// MappingModeIndex is the index of m in MappingModes (none = auto).
-func MappingModeIndex(m model.MappingMode) int {
-	for i, x := range MappingModes {
-		if x == m {
-			return i
-		}
-	}
-	return 0
-}
-
 // FromMapping fills the form.
 func FromMapping(m model.Mapping) MappingForm {
-	f := MappingForm{Mode: m.Mode, Schema: m.Schema, Table: m.Table, PointName: m.PointNameColumn, PointID: m.PointIDColumn,
-		PointKey: m.PointKeyColumn, TimesTable: m.TimesTable, TimesLink: m.TimesLinkColumn, Send: m.LastSendColumn,
-		Recv: m.LastRecvColumn, PlanLabel: m.PlanLabel, ManualSQL: m.ManualSQL, YearOffset2000: m.YearOffset == model.YearOffset1C,
-		KeepUnlinked: m.KeepUnlinkedPoints, base: m}
-	if f.Mode == "" {
-		f.Mode = model.MappingAuto
-	}
-	if m.Mode == model.MappingCounters {
-		f.Send, f.Recv = m.SentNoColumn, m.ReceivedNoColumn
+	f := MappingForm{Kind: KindOf(m), PlanLabel: m.PlanLabel, YearOffset2000: m.YearOffset == model.YearOffset1C, base: m}
+	switch f.Kind {
+	case KindSQL:
+		f.ManualSQL = m.ManualSQL
+	case KindCounters:
+		f.Schema, f.Table, f.PointName, f.PointID, f.PointKey = m.Schema, m.Table, m.PointNameColumn, m.PointIDColumn, m.PointKeyColumn
+		f.Send, f.Recv, f.YearOffset2000 = m.SentNoColumn, m.ReceivedNoColumn, false
+	default:
+		f.Schema, f.Table, f.PointName, f.PointID, f.PointKey = m.Schema, m.Table, m.PointNameColumn, m.PointIDColumn, m.PointKeyColumn
+		f.TimesTable, f.TimesLink, f.Send, f.Recv = m.TimesTable, m.TimesLinkColumn, m.LastSendColumn, m.LastRecvColumn
+		f.KeepUnlinked = m.KeepUnlinkedPoints
 	}
 	return f
 }
 
-// Mapping is the mapping of the form.
+// SetKind switches the editor kind and clears the fields the new kind
+// does not use (they could not be edited, but would be validated).
+func (f *MappingForm) SetKind(k MappingKind) {
+	if f.Kind == k {
+		return
+	}
+	f.Kind = k
+	switch k {
+	case KindSQL:
+		f.Schema, f.Table, f.PointName, f.PointID, f.PointKey = "", "", "", "", ""
+		f.TimesTable, f.TimesLink, f.Send, f.Recv, f.KeepUnlinked = "", "", "", "", false
+	case KindCounters:
+		f.TimesTable, f.TimesLink, f.ManualSQL, f.YearOffset2000, f.KeepUnlinked = "", "", "", false, false
+		f.Send, f.Recv = "", ""
+	default:
+		f.ManualSQL = ""
+	}
+}
+
+// FieldEditable tells whether a mapping field (JSON name) has an enabled
+// box in kind k.
+func FieldEditable(k MappingKind, field string) bool {
+	switch field {
+	case "planLabel":
+		return true
+	case "manualSql":
+		return k == KindSQL
+	case "yearOffset":
+		return k != KindCounters
+	case "timesTable", "timesLinkColumn", "keepUnlinkedPoints":
+		return k == KindTables
+	}
+	return k != KindSQL
+}
+
+// SchemaKey normalizes a schema name for comparisons ("" = dbo,
+// case-insensitive).
+func SchemaKey(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return "dbo"
+	}
+	return s
+}
+
+func sameName(a, b string) bool { return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) }
+
+// sameTables: the points and times tables of a and b are the same (the
+// hidden link fields of b still apply to a).
+func sameTables(a, b model.Mapping) bool {
+	return SchemaKey(a.Schema) == SchemaKey(b.Schema) && sameName(a.Table, b.Table) && sameName(a.TimesTable, b.TimesTable) &&
+		sameName(a.TimesLinkColumn, b.TimesLinkColumn)
+}
+
+// sameColumns: a table mapping a has the tables and columns of b.
+func sameColumns(a, b model.Mapping) bool {
+	return sameTables(a, b) && sameName(a.PointNameColumn, b.PointNameColumn) && sameName(a.PointIDColumn, b.PointIDColumn) &&
+		sameName(a.PointKeyColumn, b.PointKeyColumn) && sameName(a.LastSendColumn, b.LastSendColumn) &&
+		sameName(a.LastRecvColumn, b.LastRecvColumn) && a.YearOffset == b.YearOffset
+}
+
+// Mapping is the mapping of the form, built from the fields of its kind
+// only. Source label (model.Mapping.Mode, profile.go): counters; manual
+// for a manual SQL and for columns edited by hand; auto only while the
+// tables and columns of a confirmed Discovery candidate are unchanged.
 func (f MappingForm) Mapping() model.Mapping {
-	m := f.base
 	tr := strings.TrimSpace
-	m.Mode = f.Mode
-	m.Schema, m.Table, m.PointNameColumn, m.PointIDColumn = tr(f.Schema), tr(f.Table), tr(f.PointName), tr(f.PointID)
-	m.PointKeyColumn, m.TimesTable, m.TimesLinkColumn = tr(f.PointKey), tr(f.TimesTable), tr(f.TimesLink)
-	m.PlanLabel, m.KeepUnlinkedPoints = tr(f.PlanLabel), f.KeepUnlinked
-	m.LastSendColumn, m.LastRecvColumn, m.SentNoColumn, m.ReceivedNoColumn = tr(f.Send), tr(f.Recv), "", ""
-	m.YearOffset = 0
+	b := f.base
+	m := model.Mapping{PlanLabel: tr(f.PlanLabel)}
+	switch f.Kind {
+	case KindSQL:
+		m.Mode, m.ManualSQL = model.MappingManual, tr(f.ManualSQL)
+		if f.YearOffset2000 {
+			m.YearOffset = model.YearOffset1C
+		}
+		return m
+	case KindCounters:
+		m.Mode = model.MappingCounters
+		m.Schema, m.Table, m.PointNameColumn, m.PointIDColumn, m.PointKeyColumn = tr(f.Schema), tr(f.Table), tr(f.PointName), tr(f.PointID), tr(f.PointKey)
+		m.SentNoColumn, m.ReceivedNoColumn = tr(f.Send), tr(f.Recv)
+		return m
+	}
+	m.Schema, m.Table, m.PointNameColumn, m.PointIDColumn, m.PointKeyColumn = tr(f.Schema), tr(f.Table), tr(f.PointName), tr(f.PointID), tr(f.PointKey)
+	m.TimesTable, m.TimesLinkColumn, m.LastSendColumn, m.LastRecvColumn = tr(f.TimesTable), tr(f.TimesLink), tr(f.Send), tr(f.Recv)
+	m.KeepUnlinkedPoints = f.KeepUnlinked
 	if f.YearOffset2000 {
 		m.YearOffset = model.YearOffset1C
 	}
-	m.ManualSQL = ""
-	switch f.Mode {
-	case model.MappingCounters:
-		m.SentNoColumn, m.ReceivedNoColumn = m.LastSendColumn, m.LastRecvColumn
-		m.LastSendColumn, m.LastRecvColumn, m.YearOffset = "", "", 0
-	case model.MappingManual:
-		m.ManualSQL = strings.TrimSpace(f.ManualSQL)
+	if m.TimesTable != "" && sameTables(m, b) {
+		m.TimesSchema, m.TimesLinkTypeColumn, m.TimesLinkRTRefColumn, m.TimesLinkRTRef = b.TimesSchema, b.TimesLinkTypeColumn, b.TimesLinkRTRefColumn, b.TimesLinkRTRef
 	}
-	if m.TimesTable == "" {
-		m.TimesSchema, m.TimesLinkTypeColumn, m.TimesLinkRTRefColumn, m.TimesLinkRTRef = "", "", "", 0
+	switch {
+	case !m.Configured() && m.PointNameColumn == "" && m.PointIDColumn == "" && m.LastSendColumn == "" && m.LastRecvColumn == "":
+		m.Mode = model.MappingNone
+	case (b.Mode == model.MappingAuto || b.Mode == model.MappingManual) && KindOf(b) == KindTables && sameColumns(m, b):
+		m.Mode = b.Mode
+	default:
+		m.Mode = model.MappingManual
 	}
 	return m
+}
+
+// ValidateMappings checks the mapping and the additional mappings the
+// dialog would apply (model rules of Profile.Validate); the field path is
+// "mapping.<field>" / "mappings[i].<field>".
+func ValidateMappings(m model.Mapping, extra []model.Mapping) *model.FieldError {
+	prefix := func(err error, pre string) *model.FieldError {
+		fe := model.AsFieldError(err)
+		if fe == nil {
+			return &model.FieldError{Field: "", Key: model.ValMapping, Msg: err.Error()}
+		}
+		cp := *fe
+		cp.Field = pre + cp.Field
+		return &cp
+	}
+	if err := m.Validate(); err != nil {
+		return prefix(err, "mapping.")
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	if !m.Configured() {
+		return &model.FieldError{Field: "mapping.table", Key: model.ValRequired}
+	}
+	if len(extra)+1 > model.MaxMappings {
+		return &model.FieldError{Field: "mappings", Key: model.ValTooMany, Args: []string{strconv.Itoa(model.MaxMappings)}}
+	}
+	for i, x := range extra {
+		pre := fmt.Sprintf("mappings[%d].", i)
+		if !x.Configured() {
+			return &model.FieldError{Field: pre + "table", Key: model.ValRequired}
+		}
+		if err := x.Validate(); err != nil {
+			return prefix(err, pre)
+		}
+	}
+	return nil
+}
+
+// ValidationProblem renders a mapping validation error in the dialog: the
+// text with the dialog's field label and the mapping field to highlight;
+// a field the current kind cannot edit is moved to the box that causes it
+// (manual SQL / the points table).
+func (d *Discovery) ValidationProblem(fe *model.FieldError) *Problem {
+	if fe.Field == "" {
+		return &Problem{Text: fmt.Sprintf(d.t(i18n.KeySetFailed), fe.Msg)}
+	}
+	field := fe.Field
+	args := fe.IPCArgs()
+	if strings.HasPrefix(field, "mapping.") {
+		f := strings.TrimPrefix(field, "mapping.")
+		if l := mappingLabel(f, d.Lang); l != "" {
+			args[0] = l
+		}
+		if !FieldEditable(d.Map.Kind, f) {
+			f = "table"
+			if d.Map.Kind == KindSQL {
+				f = "manualSql"
+			}
+			field = "mapping." + f
+		}
+	} else if l, ok := discoveryFieldLabel(field, d.Lang); ok {
+		args[0] = l
+	}
+	return &Problem{Text: model.FormatMessage(fe.Key, args, d.Lang), Field: Field(field)}
+}
+
+// PlanKey identifies the exchange plan of a mapping for merging:
+// normalized schema ("" = dbo, case-insensitive) + plan table (else the
+// points table); "" when it has no table (manual SQL) — never merged.
+func PlanKey(m model.Mapping) string {
+	t := m.PlanTable()
+	if t == "" {
+		t = strings.TrimSpace(m.Table)
+	}
+	if t == "" {
+		return ""
+	}
+	return SchemaKey(m.Schema) + "." + strings.ToLower(t)
+}
+
+// MappingName is a mapping for messages: label, schema.table or «SQL».
+func MappingName(m model.Mapping) string {
+	name := strings.TrimSpace(m.Table)
+	if name == "" {
+		name = "SQL"
+	} else if SchemaKey(m.Schema) != "dbo" {
+		name = strings.TrimSpace(m.Schema) + "." + name
+	}
+	if l := strings.TrimSpace(m.PlanLabel); l != "" {
+		name = l + " (" + name + ")"
+	}
+	return name
+}
+
+// MergeMappings merges the profile's additional mappings with the chosen
+// main mapping and (with «все планы обмена») the suggested plans: existing
+// mappings are kept, a suggestion joins only when its plan is not there
+// yet, nothing is duplicated (PlanKey). removed lists what would be lost
+// and needs a confirmation: an additional mapping of the chosen plan
+// (it would duplicate the main one) and the old main table mapping of
+// another plan (it is replaced; editing a manual SQL is no removal).
+func MergeMappings(oldMain model.Mapping, existing []model.Mapping, chosen model.Mapping, suggested []model.Mapping) (merged []model.Mapping, removed []string) {
+	ck := PlanKey(chosen)
+	seen := map[string]bool{}
+	if ck != "" {
+		seen[ck] = true
+	}
+	if ok := PlanKey(oldMain); ok != "" && ok != ck {
+		removed = append(removed, MappingName(oldMain))
+	}
+	for _, x := range existing {
+		k := PlanKey(x)
+		if k != "" && seen[k] {
+			removed = append(removed, MappingName(x))
+			continue
+		}
+		if k != "" {
+			seen[k] = true
+		}
+		merged = append(merged, x)
+	}
+	for _, x := range suggested {
+		k := PlanKey(x)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		merged = append(merged, x)
+	}
+	return merged, removed
 }
 
 // CheckRequest is check_mapping of the form (limit 0 = service default 5).
 func (e *Editor) CheckRequest(m model.Mapping, password string, limit int) (model.IPCRequest, *Problem) {
 	if limit < 0 || limit > model.MaxCheckMappingLimit {
-		return model.IPCRequest{}, &Problem{Text: model.FormatMessage(model.ValRange,
-			[]string{"limit", "1", strconv.Itoa(model.MaxCheckMappingLimit), strconv.Itoa(limit)}, e.Lang)}
+		return model.IPCRequest{}, &Problem{Text: e.validationText([]string{"limit", model.ValRange, "1",
+			strconv.Itoa(model.MaxCheckMappingLimit), strconv.Itoa(limit)}), Field: FieldDiscLimit}
 	}
 	req, pr := e.InteractiveRequest(model.CmdCheckMapping, password)
 	if pr != nil {
@@ -303,7 +647,9 @@ var mappingLabels = map[string]string{
 	"mapping.lastRecvColumn": i18n.KeyDiscRecv, "mapping.sentNoColumn": i18n.KeyDiscSend,
 	"mapping.receivedNoColumn": i18n.KeyDiscRecv, "mapping.planLabel": i18n.KeyDiscPlanLabel,
 	"mapping.manualSql": i18n.KeyDiscManualSQL, "mapping.yearOffset": i18n.KeyDiscYearOffset,
-	"mapping.keepUnlinkedPoints": i18n.KeyDiscKeepUnlinked,
+	"mapping.keepUnlinkedPoints": i18n.KeyDiscKeepUnlinked, "mapping.timesSchema": i18n.KeyDiscTimesSchema,
+	"mapping.timesLinkTypeColumn": i18n.KeyDiscLinkType, "mapping.timesLinkRTRefColumn": i18n.KeyDiscLinkRTRefCol,
+	"mapping.timesLinkRTRef": i18n.KeyDiscLinkRTRef,
 }
 
 // CheckResult renders a mapping_check result: the text and the mapping.*
@@ -367,7 +713,7 @@ func (d *Discovery) CandidateLine(c model.DiscoveryCandidate) string {
 	if c.TimesTable != "" {
 		tbl += " → " + c.TimesTable
 	}
-	s := fmt.Sprintf("%s  [%s]  %d", tbl, c.Mode, c.Score)
+	s := tbl + "  [" + CandidateModeText(c.Mode, d.Lang) + "]  " + fmt.Sprintf(d.t(i18n.KeyDiscScore), c.Score)
 	if c.Points > 0 {
 		s += "  " + fmt.Sprintf(d.t(i18n.KeyDiscPoints), c.Points)
 	}
@@ -375,6 +721,16 @@ func (d *Discovery) CandidateLine(c model.DiscoveryCandidate) string {
 		s += "  " + model.InDBZone(*c.FreshestAt).Format("02.01.2006 15:04")
 	}
 	return s
+}
+
+// CandidateModeText localizes a candidate mode (unknown: as is).
+func CandidateModeText(m model.CandidateMode, lang string) string {
+	key := map[model.CandidateMode]string{model.CandidateSingle: i18n.KeyDiscCandSingle, model.CandidateLinked: i18n.KeyDiscCandLinked,
+		model.CandidateCounters: i18n.KeyDiscCandCounters}[m]
+	if key == "" {
+		return string(m)
+	}
+	return i18n.T(key, lang)
 }
 
 // HintText localizes a discovery hint (unknown hints are shown as is).
@@ -416,10 +772,14 @@ func (d *Discovery) CandidateDetails(c model.DiscoveryCandidate) string {
 // candidates without the plan table of the chosen mapping (Profile.Mappings).
 func (d *Discovery) PlanMappings(chosen model.Mapping) []model.Mapping {
 	var out []model.Mapping
+	ck := PlanKey(chosen)
+	seen := map[string]bool{}
 	for _, m := range model.SuggestPlanMappings(d.Candidates) {
-		if strings.EqualFold(m.Schema+"."+m.PlanTable(), chosen.Schema+"."+chosen.PlanTable()) {
+		k := PlanKey(m)
+		if k == "" || k == ck || seen[k] {
 			continue
 		}
+		seen[k] = true
 		out = append(out, m)
 	}
 	return out
@@ -457,7 +817,7 @@ func (e *Editor) InteractiveProblem(m model.IPCMessage, err error) *Problem {
 			return &Problem{Text: i18n.Message(m.ErrorKey, e.Lang), Field: FieldDiscPoint}
 		}
 	}
-	return e.Reply(m)
+	return e.Reply(m) // invalid_request query.* / limit: label + field (fieldLabel, FocusField)
 }
 
 // TemplateTitles are the manual SQL template names in lang.

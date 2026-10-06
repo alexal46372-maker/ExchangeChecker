@@ -96,7 +96,11 @@ func TestCHK_TRAY_07_CandidateToMapping(t *testing.T) {
 	}
 
 	e := adminEditor(savedSQL())
-	e.SetMapping(m, others, true)
+	merged, removed := MergeMappings(e.Base.Mapping, e.Base.Mappings, m, others)
+	if len(removed) != 0 {
+		t.Errorf("nothing to remove: %v", removed)
+	}
+	e.SetMapping(m, merged)
 	if !e.Unsaved() || e.EffectiveMapping().PlanLabel != "Магазины" {
 		t.Error("applied mapping must be an unsaved edit")
 	}
@@ -110,12 +114,15 @@ func TestCHK_TRAY_07_CandidateToMapping(t *testing.T) {
 	}
 
 	// manual SQL and counters modes
-	d.Map.Mode, d.Map.ManualSQL = model.MappingManual, " SELECT 1 "
-	if mm := d.Map.Mapping(); mm.Mode != model.MappingManual || mm.ManualSQL != "SELECT 1" {
+	d.Map.SetKind(KindSQL)
+	d.Map.ManualSQL = " SELECT 1 "
+	if mm := d.Map.Mapping(); mm.Mode != model.MappingManual || mm.ManualSQL != "SELECT 1" || mm.Table != "" || mm.TimesLinkRTRef != 0 {
 		t.Errorf("manual %+v", mm)
 	}
-	d.Map.Mode = model.MappingCounters
-	if mc := d.Map.Mapping(); mc.SentNoColumn != "_Fld90" || mc.LastSendColumn != "" || mc.YearOffset != 0 || mc.ManualSQL != "" {
+	d.Select(0)
+	d.Map.SetKind(KindCounters)
+	d.Map.Send, d.Map.Recv = "_Fld90", "_Fld91"
+	if mc := d.Map.Mapping(); mc.SentNoColumn != "_Fld90" || mc.LastSendColumn != "" || mc.YearOffset != 0 || mc.ManualSQL != "" || mc.TimesTable != "" {
 		t.Errorf("counters %+v", mc)
 	}
 	if len(TemplateTitles(i18n.EN)) == 0 || len(TemplateTitles(i18n.EN)) != len(model.SQLManualTemplates()) {
@@ -309,7 +316,8 @@ func TestCHK_TRAY_07_FailedKeys(t *testing.T) {
 	d := NewDiscovery(i18n.RU, model.Mapping{})
 	keys := []string{"monitor.test_network", "monitor.test_login", "monitor.test_database", "monitor.test_tls",
 		"monitor.conn_error", "monitor.query_error", "monitor.mapping", "monitor.discover_timeout", "monitor.discover_failed",
-		model.SQLMessageKeys()[0]}
+	}
+	keys = append(keys, model.SQLMessageKeys()...) // every sql.* key (PLAN §6.2)
 	for _, k := range keys {
 		for _, lang := range []string{i18n.RU, i18n.EN} {
 			want := i18n.Message(k, lang)

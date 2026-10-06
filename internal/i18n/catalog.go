@@ -172,6 +172,27 @@ const (
 	KeyDiscCanceled         = "disc.canceled"
 	KeyDiscApplied          = "disc.applied"
 	KeyDiscProfileChanged   = "disc.profile_changed"
+	KeyDiscExtraPlans       = "disc.extra_plans"
+	KeyDiscFieldMain        = "disc.field_main"
+	KeyDiscFieldExtra       = "disc.field_extra"
+	KeyDiscLimit            = "disc.limit"
+	KeyDiscTimesSchema      = "disc.times_schema"
+	KeyDiscLinkType         = "disc.link_type"
+	KeyDiscLinkRTRefCol     = "disc.link_rtref_col"
+	KeyDiscLinkRTRef        = "disc.link_rtref"
+	KeyDiscScore            = "disc.score"
+	KeyDiscCandSingle       = "disc.cand_single"
+	KeyDiscCandLinked       = "disc.cand_linked"
+	KeyDiscCandCounters     = "disc.cand_counters"
+	KeyDiscToleranceHint    = "disc.tolerance_hint"
+	KeyDiscConfirmClose     = "disc.confirm_close"
+	KeyDiscConfirmOverwrite = "disc.confirm_overwrite"
+	KeyDiscConfirmRemove    = "disc.confirm_remove"
+	KeyDiscSourceAuto       = "disc.source_auto"
+	KeyDiscSourceManual     = "disc.source_manual"
+	KeyDiscSourceCounters   = "disc.source_counters"
+	KeyDiscSourceNone       = "disc.source_none"
+	KeyDiscBusy             = "disc.busy"
 	KeyAutostartErrAccess   = "autostart.err_access"
 	KeyAutostartErrRegistry = "autostart.err_registry"
 	KeyAutostartErrPath     = "autostart.err_path"
@@ -394,6 +415,27 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyDiscCanceled:           {"Операция отменена.", "The operation was canceled."},
 	KeyDiscApplied:            {"Таблицы обмена перенесены в профиль. Нажмите «Сохранить».", "The exchange tables were taken into the profile. Click Save."},
 	KeyDiscProfileChanged:     {"В окне настроек выбран другой профиль — откройте «Таблицы обмена» заново.", "Another profile is selected in the settings window; open Exchange tables again."},
+	KeyDiscExtraPlans:         {"Доп. планы обмена", "Additional exchange plans"},
+	KeyDiscFieldMain:          {"Таблицы обмена — %s", "Exchange tables — %s"},
+	KeyDiscFieldExtra:         {"Доп. план обмена %d — %s", "Additional exchange plan %d — %s"},
+	KeyDiscLimit:              {"Число строк (limit)", "Number of rows (limit)"},
+	KeyDiscTimesSchema:        {"Схема таблицы времён", "Times table schema"},
+	KeyDiscLinkType:           {"Колонка типа ссылки (_TYPE)", "Reference type column (_TYPE)"},
+	KeyDiscLinkRTRefCol:       {"Колонка номера таблицы (_RTRef)", "Table number column (_RTRef)"},
+	KeyDiscLinkRTRef:          {"Номер таблицы плана обмена", "Exchange plan table number"},
+	KeyDiscScore:              {"оценка %d", "score %d"},
+	KeyDiscCandSingle:         {"одна таблица", "single table"},
+	KeyDiscCandLinked:         {"связанные таблицы", "linked tables"},
+	KeyDiscCandCounters:       {"счётчики", "counters"},
+	KeyDiscToleranceHint:      {"0 или пусто — 1 сутки (1440 мин)", "0 or empty = 1 day (1440 min)"},
+	KeyDiscConfirmClose:       {"Изменения таблиц обмена не применены. Закрыть без применения?", "The exchange table changes were not applied. Close without applying?"},
+	KeyDiscConfirmOverwrite:   {"Поля таблиц обмена изменены вручную и будут заменены. Продолжить?", "The exchange table fields were edited by hand and will be replaced. Continue?"},
+	KeyDiscConfirmRemove:      {"При применении из профиля будут убраны: %s. Продолжить?", "Applying removes from the profile: %s. Continue?"},
+	KeyDiscSourceAuto:         {"Источник: найдено поиском (auto)", "Source: found by the search (auto)"},
+	KeyDiscSourceManual:       {"Источник: задано вручную (manual)", "Source: set by hand (manual)"},
+	KeyDiscSourceCounters:     {"Источник: счётчики (counters)", "Source: counters"},
+	KeyDiscBusy:               {"Окно настроек ждёт ответа сервиса — нажмите «Применить» ещё раз через несколько секунд.", "The settings window is waiting for the service; press Apply again in a few seconds."},
+	KeyDiscSourceNone:         {"Таблицы обмена не заданы", "Exchange tables not set"},
 	"hint.linked":             {"Точки и времена в разных таблицах, связаны ключом", "Points and times are in linked tables"},
 	"hint.same_table":         {"Времена — колонки таблицы точек", "Times are columns of the points table"},
 	"hint.node_table":         {"Таблица точек — план обмена 1С (_Node)", "The points table is a 1C exchange plan (_Node)"},

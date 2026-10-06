@@ -318,8 +318,11 @@ func (a *App) drain() {
 	a.status = q[len(q)-1].Status
 	if w := a.settings; w != nil {
 		for _, e := range q { // every transition, not only the last state
-			if e.Kind == trayipc.EventState {
+			switch e.Kind {
+			case trayipc.EventState:
 				w.onSessionState(e.Status)
+			case trayipc.EventStatus: // e.g. trayAutostartError after a reconnection
+				w.onSessionStatus()
 			}
 		}
 	}
@@ -399,15 +402,25 @@ func (a *App) SetLanguage(pref string) error {
 }
 
 // OpenSettings opens (or focuses) the settings window and returns its
-// handle: the administrator mode in this process when the service reports
+// handle (the open Discovery dialog's when there is one, brought to the
+// front): the administrator mode in this process when the service reports
 // it elevated (clientElevated) and accepts config writes, otherwise the
 // read-only mode from the last get_status, with «Изменить
 // (администратор)» starting `exchtray --settings` elevated.
 func (a *App) OpenSettings() uintptr {
 	if w := a.settings; w != nil && winapi.IsWindow(w.hwnd) {
 		if !a.opt.HiddenSettings {
-			winapi.ShowWindow(w.hwnd, winapi.SW_SHOWNORMAL)
-			winapi.SetForegroundWindow(w.hwnd)
+			// the open Discovery dialog comes to the front (its owner is
+			// disabled until it is closed)
+			frontWindow(w.hwnd)
+		}
+		if d := w.disc; d != nil && winapi.IsWindow(d.hwnd) {
+			// the open Discovery dialog comes to the front (its owner is
+			// disabled until it is closed); its handle is returned
+			if !a.opt.HiddenSettings {
+				frontWindow(d.hwnd)
+			}
+			return d.hwnd
 		}
 		return w.hwnd
 	}

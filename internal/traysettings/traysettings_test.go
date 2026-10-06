@@ -83,7 +83,7 @@ func TestCHK_TRAY_04_FormValidation(t *testing.T) {
 	if _, fe := ok.Apply(base); fe != nil {
 		t.Errorf("valid form: %v", fe)
 	}
-	if FocusField("server", []string{"empty_instance"}) != FieldInstance || FocusField("mapping.table", nil) != FieldNone {
+	if FocusField("server", []string{"empty_instance"}) != FieldInstance || FocusField("mapping.table", nil) != FieldDiscoverButton {
 		t.Error("FocusField")
 	}
 }
@@ -346,7 +346,7 @@ func TestCHK_TRAY_06_ReplyErrors(t *testing.T) {
 	// another profile of the file: profileId (errorArgs[0] is its field)
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorProfileInvalid,
 		ErrorArgs: []string{"mapping.lastSendColumn", model.ValRequired}, ProfileID: "bad", Error: `monitor: profile "bad": mapping: at least one column`})
-	if pr.Field != FieldNone || !strings.Contains(pr.Text, "Ручной профиль") || !strings.Contains(pr.Text, "mapping.lastSendColumn") {
+	if pr.Field != FieldNone || !strings.Contains(pr.Text, "Ручной профиль") || !strings.Contains(pr.Text, "Таблицы обмена — Колонка отправки") {
 		t.Errorf("other profile %+v", pr)
 	}
 	// unknown id (e.g. duplicate id): named by the id itself

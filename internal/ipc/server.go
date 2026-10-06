@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -329,6 +332,8 @@ func errorReply(id uint64, err error, code string) model.IPCMessage {
 			m.ErrorKey = model.MsgMonitorConfigConflict
 		case model.ErrCodeBusy:
 			m.ErrorKey = model.MsgTestBusy
+		case model.ErrCodeInternal:
+			m.ErrorKey = model.MsgMonitorInternal
 		default:
 			m.ErrorKey = model.MsgMonitorBadRequest
 		}
@@ -745,7 +750,7 @@ func (s *Server) startAsync(c *conn, req model.IPCRequest, run func(ctx context.
 			case <-ctx.Done():
 			}
 		}()
-		res, err := run(ctx)
+		res, err := s.runRecovered(ctx, req, run)
 		c.opsMu.Lock()
 		canceled := op.canceled
 		delete(c.ops, req.ID)
@@ -776,6 +781,46 @@ func (s *Server) startAsync(c *conn, req model.IPCRequest, run func(ctx context.
 			}
 		}
 	}()
+}
+
+// errInternal answers a request whose handler panicked (CHK-IPC-08): no
+// panic text, no stack.
+var errInternal = &model.IPCError{Code: model.ErrCodeInternal, Key: model.MsgMonitorInternal, Message: "ipc: internal service error"}
+
+// runRecovered runs the handler of an asynchronous request; a panic is
+// recovered (the service keeps running, the request's record for cancel
+// {ref} is removed by the caller as after any return) and logged with
+// the stack — the password and the manual SQL of the request are scrubbed
+// from the panic text, the request itself is not logged — and the reply
+// is errInternal.
+func (s *Server) runRecovered(ctx context.Context, req model.IPCRequest, run func(ctx context.Context) (model.IPCMessage, error)) (m model.IPCMessage, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.Log.Printf("ipc: %s id %d: internal error (recovered panic): %s\n%s", req.Cmd, req.ID, scrubRequest(fmt.Sprint(r), req), debug.Stack())
+			m, err = model.IPCMessage{}, errInternal
+		}
+	}()
+	return run(ctx)
+}
+
+// scrubRequest removes the password and manual SQL texts of req from msg.
+func scrubRequest(msg string, req model.IPCRequest) string {
+	secrets := []string{req.Password}
+	if req.Mapping != nil {
+		secrets = append(secrets, req.Mapping.ManualSQL)
+	}
+	if req.Profile != nil {
+		secrets = append(secrets, req.Profile.Mapping.ManualSQL)
+		for _, mp := range req.Profile.Mappings {
+			secrets = append(secrets, mp.ManualSQL)
+		}
+	}
+	for _, sec := range secrets {
+		if strings.TrimSpace(sec) != "" {
+			msg = strings.ReplaceAll(msg, sec, "***")
+		}
+	}
+	return msg
 }
 
 var errCanceled = &model.IPCError{Code: model.ErrCodeCanceled, Key: model.MsgMonitorCanceled, Message: "ipc: request canceled"}

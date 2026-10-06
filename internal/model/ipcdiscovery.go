@@ -45,6 +45,13 @@ const (
 // sql.*, monitor.discover_*), Error is the technical text.
 const ErrCodeFailed = "failed"
 
+// ErrCodeInternal: the service handler of an asynchronous request
+// (test_profile, discover*, list_node_points, check_mapping) panicked; the
+// panic was recovered and logged with its stack (CHK-IPC-08). ErrorKey is
+// MsgMonitorInternal; the reply carries neither the panic text nor the
+// stack.
+const ErrCodeInternal = "internal"
+
 // Values of IPCMessage.TruncatedReason / MappingCheck.TruncatedReason
 // (Вика 06.10): present if and only if Truncated is true. Precedence
 // when several apply: budget > size > limit.

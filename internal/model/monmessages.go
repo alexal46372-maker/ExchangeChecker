@@ -115,6 +115,9 @@ const (
 	// MsgDiscoverMappingInvalid: check_mapping found a problem;
 	// ErrorArgs = [mapping.<field>, validation.* reason, params...].
 	MsgDiscoverMappingInvalid = "monitor.discover_mapping_invalid"
+	// MsgMonitorInternal: internal error of the service while handling a
+	// request (a recovered panic; code internal, CHK-IPC-08).
+	MsgMonitorInternal = "monitor.internal"
 )
 
 var monitorMessages = map[string][2]string{ // key -> {ru, en}
@@ -164,6 +167,7 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgDiscoverFailed:          {"Операция с базой не выполнена.", "The database operation failed."},
 	MsgDiscoverPointNameEmpty:  {"Укажите имя или код точки обмена.", "Enter the exchange point name or code."},
 	MsgDiscoverMappingInvalid:  {"Таблицы обмена не прошли проверку.", "The exchange tables did not pass the check."},
+	MsgMonitorInternal:         {"Внутренняя ошибка службы при выполнении запроса. Подробности — в журнале службы.", "Internal service error while handling the request. See the service log for details."},
 	ValRequired:                {"Поле «{0}» обязательно.", "Field \"{0}\" is required."},
 	ValRange:                   {"Поле «{0}»: значение {4} вне диапазона {2}…{3}.", "Field \"{0}\": value {4} is out of range {2}..{3}."},
 	ValEnum:                    {"Поле «{0}»: недопустимое значение «{2}».", "Field \"{0}\": unsupported value \"{2}\"."},
@@ -201,5 +205,5 @@ func MonitorMessageKeys() []string {
 		MsgMonitorSettingsInvalid, MsgMonitorCanceled, MsgMonitorUnknownRequest, MsgMonitorUnknownCommand,
 		MsgMonitorBadRequest, MsgMonitorConfigChanged,
 		MsgDiscoverBusy, MsgDiscoverProfileBusy, MsgDiscoverTimeout, MsgDiscoverFailed, MsgDiscoverPointNameEmpty,
-		MsgDiscoverMappingInvalid}
+		MsgDiscoverMappingInvalid, MsgMonitorInternal}
 }

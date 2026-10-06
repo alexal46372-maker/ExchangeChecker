@@ -135,6 +135,9 @@ var winAPIMinVersion = map[string]float64{
 	// exports serve the service's HKLM Run tray autostart (CHK-CFG-04, regview_windows.go)
 	"RegCreateKeyExW": 5.0, "RegOpenKeyExW": 5.0, "RegQueryValueExW": 5.0, "RegSetValueExW": 5.0,
 	"RegDeleteValueW": 5.0, "RegDeleteKeyW": 5.0, "RegCloseKey": 5.0,
+	// advapi32 — service: delete a key in an explicit registry view (CHK-CFG-04 test
+	// cleanup); Vista / XP x64 (present on Windows 7 x64)
+	"RegDeleteKeyExW": 6.0,
 	// gdi32
 	"CreateBitmap": 5.0, "CreateDIBSection": 5.0, "DeleteObject": 5.0, "GetStockObject": 5.0,
 	// shell32

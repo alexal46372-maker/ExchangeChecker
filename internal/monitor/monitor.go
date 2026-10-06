@@ -279,13 +279,18 @@ type Monitor struct {
 	cfgFatal error // last load failure while the last good config is used
 	stale    bool  // cfgFatal set and a last good config/settings is in use
 	setGood  bool  // settings.json was loaded successfully at least once
-	warnMsg  string
-	warnAt   time.Time
-	entries  map[string]*entry
-	results  map[string]model.ProfileSnapshot
-	seq      uint64
-	lastPoll time.Time
-	snap     model.StatusSnapshot
+	// failSettings: settings.json as parsed by a failed FIRST load
+	// (profiles.json / secrets broken, no good configuration yet); nil when
+	// settings.json itself failed too. Shown in get_status instead of zero
+	// settings (Вика, 49d54ea..c163d0f).
+	failSettings *model.Settings
+	warnMsg      string
+	warnAt       time.Time
+	entries      map[string]*entry
+	results      map[string]model.ProfileSnapshot
+	seq          uint64
+	lastPoll     time.Time
+	snap         model.StatusSnapshot
 	// retired entries whose poll was still running when they were
 	// retired; reaped (abandonHung) like live entries (CHK-MON-13)
 	retired []*entry
@@ -700,7 +705,28 @@ func (m *Monitor) reloadConfigLocked(force bool) bool {
 	}
 	cfg := m.opt.Source.Load()
 	if cfg.Fatal != nil {
+		m.mu.Lock()
+		changed := false
+		if !m.good {
+			// no configuration applied yet: get_status shows settings.json
+			// if that file itself is fine, otherwise no settings at all
+			var fs *model.Settings
+			if cfg.SettingsFatal == nil {
+				st := cfg.Settings
+				if st.WarnMinutes == 0 && st.ErrorMinutes == 0 {
+					st = model.DefaultSettings()
+				}
+				st = st.Normalized()
+				fs = &st
+			}
+			changed = m.loaded && (fs == nil) != (m.failSettings == nil) || fs != nil && m.failSettings != nil && *fs != *m.failSettings
+			m.failSettings = fs
+		}
+		m.mu.Unlock()
 		m.configFailed(cfg.Fatal, false)
+		if changed {
+			m.publish(nil) // settings.json changed while profiles.json is still broken
+		}
 		return false
 	}
 	// settings.json unreadable / unparsable (CHK-MON-10): keep the last
@@ -1175,8 +1201,14 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		Alerts: alerts, PollIntervalSec: int(m.intervalLocked() / time.Second),
 		LastPollAt: m.lastPoll, ConfigRevision: m.revision,
 	}
-	if m.loaded {
+	switch {
+	case m.good: // a configuration has been applied
 		st := cfg.Settings.Normalized() // beep.enabled always explicit
+		snap.Settings = &st
+	case m.failSettings != nil:
+		// the first load failed (profiles.json / secrets): the real
+		// settings.json, never zero thresholds / trayAutostart=false
+		st := *m.failSettings
 		snap.Settings = &st
 	}
 	m.heartbeatLocked(now).apply(&snap)

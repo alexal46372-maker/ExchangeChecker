@@ -17,30 +17,62 @@ import (
 // testRunKey creates a unique test key standing in for HKLM Run (the real
 // Run key is never touched on the runner): HKLM\Software\<unique> when the
 // test can write HKLM (GitHub runner: administrator), else
-// HKCU\Software\<unique>. The key is removed by t.Cleanup.
+// HKCU\Software\<unique>. t.Cleanup deletes the key in the 64-bit view
+// (RegDeleteKeyExW + KEY_WOW64_64KEY) and checks with RegOpenKeyExW that
+// the key itself is gone (Вика: checking a value proved nothing).
 func testRunKey(t *testing.T) (root uintptr, path string, hklm bool) {
 	t.Helper()
+	const view = winapi.KEY_WOW64_64KEY
 	path = fmt.Sprintf(`Software\ExchangeCheckerTest-CFG04-%d-%d`, os.Getpid(), time.Now().UnixNano())
 	root, hklm = winapi.HKEY_LOCAL_MACHINE, true
-	if err := winapi.RegSetStringView(root, path, "probe", "1", winapi.KEY_WOW64_64KEY); err != nil {
+	if err := winapi.RegSetStringView(root, path, "probe", "1", view); err != nil {
 		t.Logf("HKLM not writable (%v): using HKCU", err)
 		root, hklm = winapi.HKEY_CURRENT_USER, false
-		if err := winapi.RegSetStringView(root, path, "probe", "1", winapi.KEY_WOW64_64KEY); err != nil {
+		if err := winapi.RegSetStringView(root, path, "probe", "1", view); err != nil {
 			t.Fatalf("create test key: %v", err)
 		}
 	}
 	t.Cleanup(func() {
-		if err := winapi.RegDeleteKey(root, path); err != nil {
+		if err := winapi.RegDeleteKeyView(root, path, view); err != nil {
 			t.Errorf("cleanup %s: %v", path, err)
 		}
-		if _, ok, _ := winapi.RegGetStringView(root, path, "probe", winapi.KEY_WOW64_64KEY); ok {
-			t.Errorf("cleanup: %s still exists", path)
+		if ok, err := winapi.RegKeyExistsView(root, path, view); err != nil || ok {
+			t.Errorf("cleanup: key %s still exists (%v, %v)", path, ok, err)
 		}
 	})
-	if err := winapi.RegDeleteValueView(root, path, "probe", winapi.KEY_WOW64_64KEY); err != nil {
+	// the existence check sees the key (so the cleanup check can fail)
+	if ok, err := winapi.RegKeyExistsView(root, path, view); err != nil || !ok {
+		t.Fatalf("test key not found right after creation: %v %v", ok, err)
+	}
+	if err := winapi.RegDeleteValueView(root, path, "probe", view); err != nil {
 		t.Fatal(err)
 	}
 	return root, path, hklm
+}
+
+// TestCHK_CFG_04_RegDeleteKeyView — RegDeleteKeyExW with KEY_WOW64_64KEY
+// removes the key (RegOpenKeyExW no longer finds it); a missing key is
+// not an error.
+func TestCHK_CFG_04_RegDeleteKeyView(t *testing.T) {
+	const view = winapi.KEY_WOW64_64KEY
+	root := uintptr(winapi.HKEY_CURRENT_USER)
+	path := fmt.Sprintf(`Software\ExchangeCheckerTest-CFG04-del-%d-%d`, os.Getpid(), time.Now().UnixNano())
+	t.Cleanup(func() { winapi.RegDeleteKeyView(root, path, view) })
+	if err := winapi.RegSetStringView(root, path, "v", "1", view); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := winapi.RegKeyExistsView(root, path, view); err != nil || !ok {
+		t.Fatalf("created key not found: %v %v", ok, err)
+	}
+	if err := winapi.RegDeleteKeyView(root, path, view); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := winapi.RegKeyExistsView(root, path, view); err != nil || ok {
+		t.Fatalf("key still exists after RegDeleteKeyExW: %v %v", ok, err)
+	}
+	if err := winapi.RegDeleteKeyView(root, path, view); err != nil {
+		t.Fatalf("delete a missing key: %v", err)
+	}
 }
 
 // TestCHK_CFG_04_RegistryRunWindows — RegistryRun (advapi32 through

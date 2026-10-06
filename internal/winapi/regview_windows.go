@@ -112,3 +112,34 @@ func RegDeleteValueView(root uintptr, path, name string, view uint32) error {
 	}
 	return regErr(r)
 }
+
+// RegDeleteKeyExW (advapi32; Vista / XP x64+, present on Windows 7 x64,
+// CHK-TRAY-10 allowlist 6.0) deletes a key in an explicit registry view.
+var procRegDeleteKeyExW = modadvapi32.NewProc("RegDeleteKeyExW")
+
+// RegDeleteKeyView removes the key root\path (without subkeys) from the
+// registry view (KEY_WOW64_64KEY / KEY_WOW64_32KEY); a missing key is not
+// an error.
+func RegDeleteKeyView(root uintptr, path string, view uint32) error {
+	r, _, _ := callProc(procRegDeleteKeyExW, root, uintptr(unsafe.Pointer(UTF16Ptr(path))), uintptr(view), 0)
+	if r == ERROR_FILE_NOT_FOUND {
+		return nil
+	}
+	return regErr(r)
+}
+
+// RegKeyExistsView reports whether the key root\path exists in the
+// registry view (RegOpenKeyExW with KEY_QUERY_VALUE|view).
+func RegKeyExistsView(root uintptr, path string, view uint32) (bool, error) {
+	var k uintptr
+	r, _, _ := callProc(procRegOpenKeyExW, root, uintptr(unsafe.Pointer(UTF16Ptr(path))), 0,
+		uintptr(KEY_QUERY_VALUE|view), uintptr(unsafe.Pointer(&k)))
+	if r == ERROR_FILE_NOT_FOUND {
+		return false, nil
+	}
+	if err := regErr(r); err != nil {
+		return false, err
+	}
+	callProc(procRegCloseKey, k)
+	return true, nil
+}

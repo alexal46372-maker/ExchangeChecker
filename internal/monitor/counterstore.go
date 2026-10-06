@@ -46,9 +46,19 @@ type FileCounterStore struct {
 	dir, name string
 	log       Logger
 
+	// mu guards the in-memory state only; it is never held while the file
+	// is written (a MoveFileEx retry can take ~1.9 s, CHK-MON-02), so Load
+	// and the polls of other profiles do not wait for the disk.
 	mu      sync.Mutex
 	data    map[string]model.CounterState
 	lastErr error
+	errGen  uint64 // generation lastErr belongs to
+	gen     uint64 // generation of the last snapshot taken (under mu)
+	// wmu serializes the file writes; written is the generation on disk.
+	// A snapshot older than the one already written is skipped, so an
+	// older state never overwrites a newer one.
+	wmu     sync.Mutex
+	written uint64
 	// locks: per-profile Update / Save / Retain locks, reference counted
 	// (an entry exists only while held or waited for, phase 4b)
 	locks keyedLocks
@@ -56,6 +66,9 @@ type FileCounterStore struct {
 	// retainHook is called by Retain with the IDs it is about to lock
 	// (tests).
 	retainHook func(ids []string)
+	// beforeWrite is called with the snapshot generation after the state
+	// was serialized (s.mu released) and before the write lock (tests).
+	beforeWrite func(gen uint64)
 }
 
 // OpenFileCounterStore loads dir/CountersFile (missing file = empty).
@@ -149,9 +162,50 @@ func (s *FileCounterStore) Save(profileID string, st model.CounterState) error {
 
 func (s *FileCounterStore) save(profileID string, st model.CounterState) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.data[profileID] = copyState(st)
-	s.lastErr = s.flushLocked()
+	gen, b, err := s.snapshotLocked()
+	s.mu.Unlock()
+	s.flush(gen, b, err)
+	return nil
+}
+
+// snapshotLocked serializes the whole state as a new generation (s.mu
+// held).
+func (s *FileCounterStore) snapshotLocked() (uint64, []byte, error) {
+	s.gen++
+	b, err := json.MarshalIndent(countersDoc{Version: countersFileVersion, Profiles: s.data}, "", " ")
+	return s.gen, b, err
+}
+
+// flush writes the snapshot gen without s.mu (writes serialized by wmu;
+// skipped when a newer or the same generation is already on disk) and
+// records the result as LastError unless a newer generation already did.
+func (s *FileCounterStore) flush(gen uint64, b []byte, err error) error {
+	if err == nil {
+		if s.beforeWrite != nil {
+			s.beforeWrite(gen)
+		}
+		err = s.writeGen(gen, b)
+	}
+	s.mu.Lock()
+	if gen >= s.errGen {
+		s.errGen, s.lastErr = gen, err
+	}
+	s.mu.Unlock()
+	return err
+}
+
+func (s *FileCounterStore) writeGen(gen uint64, b []byte) error {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	if gen <= s.written {
+		return nil // a newer state is already on disk
+	}
+	if err := s.write(s.dir, s.name, b, 0o644); err != nil {
+		s.log.Printf("counters state: save %s: %v", s.Path(), err)
+		return err
+	}
+	s.written = gen
 	return nil
 }
 
@@ -202,7 +256,6 @@ func (s *FileCounterStore) Retain(ids map[string]bool) error {
 		defer s.locks.lock(id)()
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	changed := false
 	for _, id := range drop {
 		if _, ok := s.data[id]; ok {
@@ -211,9 +264,14 @@ func (s *FileCounterStore) Retain(ids map[string]bool) error {
 		}
 	}
 	if !changed {
+		s.mu.Unlock()
 		return nil
 	}
-	return s.flushLocked()
+	gen, b, err := s.snapshotLocked()
+	s.mu.Unlock()
+	// the profile locks of the dropped IDs stay held until the write is
+	// done; s.mu does not
+	return s.flush(gen, b, err)
 }
 
 // ProfileIDs lists the stored profiles (sorted).
@@ -226,16 +284,4 @@ func (s *FileCounterStore) ProfileIDs() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func (s *FileCounterStore) flushLocked() error {
-	b, err := json.MarshalIndent(countersDoc{Version: countersFileVersion, Profiles: s.data}, "", " ")
-	if err != nil {
-		return err
-	}
-	if err := s.write(s.dir, s.name, b, 0o644); err != nil {
-		s.log.Printf("counters state: save %s: %v", s.Path(), err)
-		return err
-	}
-	return nil
 }

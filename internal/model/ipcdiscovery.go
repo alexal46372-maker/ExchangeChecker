@@ -45,6 +45,21 @@ const (
 // sql.*, monitor.discover_*), Error is the technical text.
 const ErrCodeFailed = "failed"
 
+// Values of IPCMessage.TruncatedReason / MappingCheck.TruncatedReason
+// (Вика 06.10): present if and only if Truncated is true. Precedence
+// when several apply: budget > size > limit.
+const (
+	// TruncatedBudget: the discovery time budget (90 s) ran out; the
+	// result is partial (discover / discover_by_value).
+	TruncatedBudget = "budget"
+	// TruncatedSize: the tail was dropped to fit IPCMaxInteractiveReply
+	// (discovery, node_points, mapping_check).
+	TruncatedSize = "size"
+	// TruncatedLimit: list_node_points returned only IPCRequest.Limit of
+	// the points read.
+	TruncatedLimit = "limit"
+)
+
 // Limits of the interactive commands.
 const (
 	// IPCMaxInteractiveReply caps the serialized JSON of a discovery /
@@ -79,6 +94,8 @@ type MappingCheck struct {
 	// SampleRows: the preview (at most Limit rows, point names cut to
 	// MaxSampleCellRunes).
 	SampleRows []SampleRow `json:"sampleRows,omitempty"`
-	// Truncated: SampleRows were cut to fit IPCMaxInteractiveReply.
-	Truncated bool `json:"truncated,omitempty"`
+	// Truncated: SampleRows were cut to fit IPCMaxInteractiveReply;
+	// TruncatedReason is then TruncatedSize (present iff Truncated).
+	Truncated       bool   `json:"truncated,omitempty"`
+	TruncatedReason string `json:"truncatedReason,omitempty"`
 }

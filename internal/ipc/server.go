@@ -71,12 +71,13 @@ type ConfigManager interface {
 // CHK-IPC-09 check_mapping). The server checks the client (admin) before
 // every call and runs it on its own goroutine like test_profile (ping of
 // the same client is not blocked; cancel {ref} and a disconnect cancel
-// ctx). The bool results are "truncated". Errors of type *model.IPCError
-// carry the reply code, key and args.
+// ctx). The string results are the truncated reason (model.Truncated*,
+// "" = complete). Errors of type *model.IPCError carry the reply code,
+// key and args.
 type Discoverer interface {
-	Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error)
-	DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, bool, error)
-	ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, bool, error)
+	Discover(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error)
+	DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error)
+	ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, string, error)
 	CheckMapping(ctx context.Context, req model.IPCRequest) (model.MappingCheck, error)
 }
 
@@ -624,10 +625,10 @@ func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) b
 				f = d.DiscoverByValue
 			}
 			m.Type = model.MsgDiscovery
-			m.Candidates, m.Truncated, err = f(ctx, req)
+			m.Candidates, m.TruncatedReason, err = f(ctx, req)
 		case model.CmdListNodePoints:
 			m.Type = model.MsgNodePoints
-			m.NodePoints, m.Truncated, err = d.ListNodePoints(ctx, req)
+			m.NodePoints, m.TruncatedReason, err = d.ListNodePoints(ctx, req)
 		case model.CmdCheckMapping:
 			var res model.MappingCheck
 			res, err = d.CheckMapping(ctx, req)
@@ -635,6 +636,7 @@ func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) b
 		}
 		if err == nil {
 			m.ID = req.ID
+			m.Truncated = m.TruncatedReason != ""
 			fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
 		}
 		return m, err
@@ -645,7 +647,9 @@ func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) b
 // fitInteractiveReply keeps the serialized reply within max bytes
 // (Вика, 06.10): the tail of Candidates / NodePoints /
 // MappingCheck.SampleRows is dropped (the longest prefix that fits) and
-// Truncated / MappingCheck.Truncated is set.
+// Truncated / MappingCheck.Truncated is set with the reason
+// model.TruncatedSize (an earlier budget reason is kept: budget > size >
+// limit).
 func fitInteractiveReply(m *model.IPCMessage, max int) {
 	size := func() int {
 		b, err := json.Marshal(m)
@@ -671,21 +675,27 @@ func fitInteractiveReply(m *model.IPCMessage, max int) {
 		}
 		set(lo)
 	}
+	sizeReason := func(r string) string {
+		if r == model.TruncatedBudget {
+			return r
+		}
+		return model.TruncatedSize
+	}
 	switch {
 	case len(m.Candidates) > 0:
 		all := m.Candidates
-		m.Truncated = true
+		m.Truncated, m.TruncatedReason = true, sizeReason(m.TruncatedReason)
 		cut(len(all), func(k int) { m.Candidates = all[:k] })
 	case len(m.NodePoints) > 0:
 		all := m.NodePoints
-		m.Truncated = true
+		m.Truncated, m.TruncatedReason = true, sizeReason(m.TruncatedReason)
 		cut(len(all), func(k int) { m.NodePoints = all[:k] })
 	case m.MappingCheck != nil:
 		mc := *m.MappingCheck
 		m.MappingCheck = &mc
 		if len(mc.SampleRows) > 0 {
 			all := mc.SampleRows
-			mc.Truncated = true
+			mc.Truncated, mc.TruncatedReason = true, sizeReason(mc.TruncatedReason)
 			cut(len(all), func(k int) { mc.SampleRows = all[:k] })
 		}
 		if size() > max { // a huge error text (defense in depth)

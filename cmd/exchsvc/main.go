@@ -8,7 +8,7 @@
 //
 // Flags: -config <dir> (default %ProgramData%\ExchangeChecker).
 //
-// Check ID: CHK-MON-07.
+// Check ID: CHK-MON-07; tray autostart in HKLM Run: CHK-CFG-04.
 package main
 
 import (
@@ -32,10 +32,14 @@ func main() {
 	if ac.Dir == "" {
 		ac.Dir = config.DefaultDir()
 	}
+	// the SCM-started service keeps HKLM Run in line with
+	// settings.trayAutostart (CHK-CFG-04); a console run does not touch it
+	ac.Autostart = config.MachineRunRegistry()
 	err := winsvc.Run(model.ServiceName, func(ctx context.Context) error { return runService(ctx, ac) })
 	if errors.Is(err, winsvc.ErrNotService) {
 		fmt.Fprintf(os.Stderr, "%s %s: console mode, config %s (Ctrl+C to stop)\n", model.ServiceName, version.Version, ac.Dir)
 		ac.Console = true
+		ac.Autostart = nil
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
 		err = runService(ctx, ac)

@@ -423,6 +423,17 @@ func (m *Monitor) SaveSettings(st model.Settings, expectedRevision, account stri
 		return "", saveFailed(fmt.Errorf("save settings: %w", err))
 	}
 	rev := m.afterWriteLocked(w)
+	if m.opt.ApplySettings != nil {
+		// the settings are saved; a failure here (e.g. the HKLM Run
+		// value) is a warning only (CHK-CFG-04, PLAN §6.2)
+		if err := m.opt.ApplySettings(st); err != nil {
+			msg := fmt.Sprintf("warning: save_settings: settings saved, but applying them failed: %v", err)
+			m.opt.Log.Printf("%s", msg)
+			if m.opt.Warn != nil {
+				m.opt.Warn(msg)
+			}
+		}
+	}
 	m.configChanged(model.ConfigChange{Account: account, Action: model.CmdSaveSettings})
 	return rev, nil
 }

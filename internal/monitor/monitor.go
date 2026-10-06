@@ -95,6 +95,12 @@ type Options struct {
 	// OnConfigChange is called after every configuration change made
 	// through IPC (the service writes event 105, CHK-MON-05).
 	OnConfigChange func(model.ConfigChange)
+	// ApplySettings is called after save_settings has written
+	// settings.json, under the configuration write lock (two saves are
+	// applied in order): the service applies trayAutostart to HKLM Run
+	// (CHK-CFG-04). An error does not undo the save and is not sent to
+	// the client: it goes to the log and to Warn (PLAN §6.2).
+	ApplySettings func(model.Settings) error
 
 	// Acks keeps the alarm acknowledgements (FileAckStore in the
 	// service); nil = in-memory (CHK-IPC-02).

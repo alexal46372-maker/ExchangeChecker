@@ -46,6 +46,13 @@ type appConfig struct {
 	// SecureSecrets overrides the start-up DACL fix of secrets.dpapi
 	// (tests; nil = config.Store.SecureSecretsFile).
 	SecureSecrets func(*config.Store) (bool, error)
+	// Autostart is the Run key of the tray autostart (CHK-CFG-04): main
+	// sets config.MachineRunRegistry() (HKLM Run, 64-bit view) when the
+	// SCM starts the service; nil = not managed (console mode, tests).
+	Autostart config.RunRegistry
+	// TrayCommand overrides the Run value (tests); "" = the quoted full
+	// path of ExchangeCheckerTray.exe next to the service executable.
+	TrayCommand string
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -95,7 +102,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	} else if present {
 		log.Printf("%s: DACL SYSTEM+Administrators (protected)", config.SecretsFile)
 	}
-	settings, _ := store.LoadSettings()
+	settings, settingsErr := store.LoadSettings()
 	lang := config.EffectiveLanguage(settings)
 
 	events := ac.Events
@@ -112,6 +119,27 @@ func runService(ctx context.Context, ac appConfig) error {
 			if err := events.Report(typ, id, msg); err != nil {
 				log.Printf("event log: %v", err)
 			}
+		}
+	}
+
+	// tray autostart (CHK-CFG-04): HKLM Run brought in line with
+	// settings.trayAutostart at start; a registry error is a warning, the
+	// service keeps going
+	autostart := trayAutostart(ac, log)
+	switch {
+	case autostart == nil:
+		if ac.Console {
+			log.Printf("console mode: the tray autostart (HKLM Run) is not managed")
+		}
+	case settingsErr != nil:
+		msg := fmt.Sprintf("warning: autostart: %s not loaded (%v): HKLM Run %s left unchanged", config.SettingsFile, settingsErr, config.TrayRunValue)
+		log.Printf("%s", msg)
+		report(alert.EventTypeWarning, alert.EventIDInternal, msg)
+	default:
+		if err := autostart(settings); err != nil {
+			msg := fmt.Sprintf("warning: autostart at start: %v", err)
+			log.Printf("%s", msg)
+			report(alert.EventTypeWarning, alert.EventIDInternal, msg)
 		}
 	}
 
@@ -138,6 +166,9 @@ func runService(ctx context.Context, ac appConfig) error {
 		OnConfigChange: func(c model.ConfigChange) {
 			report(alert.EventTypeInformation, alert.EventIDConfig, alert.FormatConfigChange(c, lang))
 		},
+		// save_settings -> HKLM Run (CHK-CFG-04); an error is logged and
+		// sent to Warn, the settings stay saved
+		ApplySettings: autostart,
 		// test_profile: sqlcheck.TestConnectionInfo + ConnCategory
 		// (CHK-IPC-03); tests inject a fake
 		Test:            test,
@@ -195,4 +226,42 @@ func runService(ctx context.Context, ac appConfig) error {
 	report(alert.EventTypeInformation, alert.EventIDService, fmt.Sprintf("%s stopped", model.ServiceName))
 	log.Printf("%s stopped", model.ServiceName)
 	return err
+}
+
+// trayAutostart returns the function applying settings.trayAutostart to
+// the Run value config.TrayRunValue (CHK-CFG-04), nil when the service
+// does not manage it (ac.Autostart nil). Enabled: the quoted full path of
+// config.TrayExeName in the folder of the service executable (REG_SZ,
+// written when missing or different); disabled: the value is removed
+// (missing is fine).
+func trayAutostart(ac appConfig, log alert.Logger) func(model.Settings) error {
+	if ac.Autostart == nil {
+		return nil
+	}
+	cmd, cmdErr := ac.TrayCommand, error(nil)
+	if cmd == "" {
+		exe, err := os.Executable()
+		if err == nil {
+			cmd, err = config.TrayRunCommand(exe)
+		}
+		if err != nil {
+			cmd, cmdErr = "", fmt.Errorf("autostart: tray path: %w", err)
+		}
+	}
+	return func(st model.Settings) error {
+		if st.TrayAutostart && cmdErr != nil {
+			return cmdErr
+		}
+		act, err := config.ApplyTrayAutostart(ac.Autostart, st.TrayAutostart, cmd)
+		if err != nil {
+			return err
+		}
+		switch act {
+		case config.AutostartWritten:
+			log.Printf("autostart: HKLM Run %s = %s", config.TrayRunValue, cmd)
+		case config.AutostartDeleted:
+			log.Printf("autostart: HKLM Run %s removed (trayAutostart off)", config.TrayRunValue)
+		}
+		return nil
+	}
 }

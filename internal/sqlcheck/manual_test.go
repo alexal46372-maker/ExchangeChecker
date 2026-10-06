@@ -14,8 +14,8 @@ func TestCHK_SQL_04_ValidateManualSQL(t *testing.T) {
 	ok := []string{
 		"SELECT n._Description, MAX(t._Fld90), MAX(t._Fld91) FROM _Reference77 n JOIN _InfoRg88 t ON t._Fld89RRef = n._IDRRef GROUP BY n._Description",
 		"  select name, s, r from x;  ",
-		"-- comment; with semicolon\nSELECT 'a;b', [c;d], \"e;f\" FROM t",
-		"/* header; */ WITH q AS (SELECT 1 AS a) SELECT a, NULL, NULL FROM q; -- trailing",
+		"SELECT 'a;b', [c;d], \"e;f\" FROM t",
+		"WITH q AS (SELECT 1 AS a) SELECT a, NULL, NULL FROM q;",
 		"SELECT N'it''s', 1, 2",
 	}
 	for _, q := range ok {
@@ -25,14 +25,14 @@ func TestCHK_SQL_04_ValidateManualSQL(t *testing.T) {
 	}
 	bad := map[string]error{
 		"":                        ErrManualEmpty,
-		"  -- only a comment":     ErrManualEmpty,
+		"  -- only a comment":     ErrManualComment, // phase 6 review: no comments at all
 		"UPDATE t SET a = 1":      ErrManualNotSelect,
 		"EXEC sp_who":             ErrManualNotSelect,
 		"SELECT 1; DELETE FROM t": ErrManualMulti,
 		"SELECT 1;SELECT 2":       ErrManualMulti,
 		"SELECT 'unterminated":    ErrManualLiteral,
 		"SELECT [x FROM t":        ErrManualLiteral,
-		"SELECT 1 /* open":        ErrManualLiteral,
+		"SELECT 1 /* open":        ErrManualComment,
 		"SELECTX 1":               ErrManualNotSelect,
 		"; SELECT 1":              ErrManualMulti,
 	}

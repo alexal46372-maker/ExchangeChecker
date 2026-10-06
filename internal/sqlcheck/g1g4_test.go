@@ -102,7 +102,7 @@ func TestCHK_SQL_04_TypedManualErrors(t *testing.T) {
 		text     string
 	}{
 		{"   ", ErrManualEmpty, model.ValSQLManualEmpty, nil, "manual SQL is empty"},
-		{"-- only a comment", ErrManualEmpty, model.ValSQLManualEmpty, nil, "manual SQL is empty"},
+		{"-- only a comment", ErrManualComment, model.ValSQLComment, nil, "must not contain comments"},
 		{"UPDATE t SET a = 1", ErrManualNotSelect, model.ValSQLManualNotSelect, nil, "must be a single SELECT"},
 		{"SELECT a, b, c FROM t; SELECT 1", ErrManualMulti, model.ValSQLManualMulti, nil, "single statement"},
 		{"SELECT a, b, c FROM t SELECT 1, 2, 3", ErrManualMulti, model.ValSQLManualMulti, nil, "single statement"},

@@ -187,6 +187,7 @@ func TestCHK_IPC_08_DiscoverProfileRules(t *testing.T) {
 	if err != nil || len(cands) != 1 || tr != "" {
 		t.Fatalf("saved: %v %v %v", cands, tr, err)
 	}
+	waitCloses(t, e.fi, 1) // Close runs after the reply was handed over
 	if o := e.fi.last(); o.p.ID != "p1" || o.pw != savedPW || o.opt.Discover.Timeout != DefaultDiscoverTimeout || e.fi.closes() != 1 {
 		t.Fatalf("saved open %+v closes %d", o, e.fi.closes())
 	}
@@ -345,8 +346,20 @@ func TestCHK_IPC_08_Busy(t *testing.T) {
 	if _, _, err := e.m.ListNodePoints(ctx, model.IPCRequest{ProfileID: "p4"}); err != nil {
 		t.Fatal(err)
 	}
-	if e.fi.closes() != e.fi.n() {
-		t.Fatalf("readers %d closed %d", e.fi.n(), e.fi.closes())
+	waitCloses(t, e.fi, e.fi.n())
+}
+
+// waitCloses waits until n readers are closed: the operation's goroutine
+// closes its reader after the reply was handed over (exploreRun: send,
+// then the deferred Close), so the count may lag behind the reply.
+func waitCloses(t *testing.T, f *fakeIR, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.closes() != n && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if f.closes() != n {
+		t.Fatalf("readers %d closed %d, want %d", f.n(), f.closes(), n)
 	}
 }
 

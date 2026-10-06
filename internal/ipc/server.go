@@ -135,6 +135,11 @@ type Server struct {
 	// ClientIdentity (Windows pipe), else "not an administrator". An
 	// error means "not an administrator".
 	Authorize func(rw io.ReadWriteCloser) (Peer, error)
+	// TrayAutostartError returns the model.AutostartErr* code of the last
+	// application of trayAutostart to HKLM Run ("" = ok) for get_status
+	// replies (CHK-CFG-04); set only when the service manages the Run
+	// value, which also announces CapTrayAutostartStatus.
+	TrayAutostartError func() string
 }
 
 type conn struct {
@@ -246,6 +251,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ConfigManager); ok {
 		caps = append(caps, model.CapConfigRead, model.CapConfigWrite)
+	}
+	if s.TrayAutostartError != nil {
+		caps = append(caps, model.CapTrayAutostartStatus)
 	}
 	return caps
 }
@@ -697,7 +705,11 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 		return model.IPCMessage{ID: req.ID, Type: model.MsgPong, Version: model.IPCVersion, Heartbeat: s.heartbeat()}
 	case model.CmdGetStatus:
 		snap := s.H.Snapshot()
-		return model.IPCMessage{ID: req.ID, Type: model.MsgStatus, Status: &snap}
+		reply := model.IPCMessage{ID: req.ID, Type: model.MsgStatus, Status: &snap}
+		if s.TrayAutostartError != nil {
+			reply.TrayAutostartError = s.TrayAutostartError()
+		}
+		return reply
 	case model.CmdReloadConfig:
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: result(s.H.ReloadConfig())}
 	case model.CmdPollNow:

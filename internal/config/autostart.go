@@ -1,8 +1,12 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
 // Tray autostart in HKLM Run (phase 6, CHK-CFG-04, решение Вики 03.10, PLAN
@@ -19,6 +23,24 @@ const (
 	// service executable (PLAN §2, DELIVERY.md).
 	TrayExeName = "ExchangeCheckerTray.exe"
 )
+
+// ErrTrayPath: the tray path cannot be built from the service path.
+var ErrTrayPath = errors.New("autostart: tray path")
+
+// AutostartErrorCode maps an error of ApplyTrayAutostart / TrayRunCommand
+// to a model.AutostartErr* code for get_status.trayAutostartError ("" for
+// nil).
+func AutostartErrorCode(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrTrayPath):
+		return model.AutostartErrTrayPath
+	case errors.Is(err, os.ErrPermission): // ERROR_ACCESS_DENIED (syscall.Errno 5)
+		return model.AutostartErrAccessDenied
+	}
+	return model.AutostartErrRegistry
+}
 
 // RunRegistry is the Run key as the service needs it: one REG_SZ value
 // per name. The Windows implementation is RegistryRun (advapi32 through
@@ -39,7 +61,7 @@ type RunRegistry interface {
 func TrayRunCommand(serviceExe string) (string, error) {
 	i := strings.LastIndexAny(serviceExe, `\/`)
 	if i <= 0 {
-		return "", fmt.Errorf("autostart: no folder in the service path %q", serviceExe)
+		return "", fmt.Errorf("%w: no folder in the service path %q", ErrTrayPath, serviceExe)
 	}
 	return `"` + serviceExe[:i+1] + TrayExeName + `"`, nil
 }

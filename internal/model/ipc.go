@@ -226,6 +226,11 @@ type IPCMessage struct {
 	// the client token is an elevated administrator. Admin commands
 	// re-check it every time.
 	ClientElevated *bool `json:"clientElevated,omitempty"`
+	// TrayAutostartError (get_status replies only, capability
+	// tray_autostart_status, CHK-CFG-04): AutostartErr* code of the last
+	// failed application of trayAutostart to HKLM Run; omitted after a
+	// successful one.
+	TrayAutostartError string `json:"trayAutostartError,omitempty"`
 	// ProfileID / Profile of save_profile / delete_profile replies
 	// (Profile with HasPassword, never a password). In an error reply
 	// (invalid_request + monitor.profile_invalid) ProfileID names ANOTHER

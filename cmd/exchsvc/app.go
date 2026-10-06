@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/alert"
@@ -132,15 +133,21 @@ func runService(ctx context.Context, ac appConfig) error {
 			log.Printf("console mode: the tray autostart (HKLM Run) is not managed")
 		}
 	case settingsErr != nil:
+		autostart.setCode(model.AutostartErrSettings)
 		msg := fmt.Sprintf("warning: autostart: %s not loaded (%v): HKLM Run %s left unchanged", config.SettingsFile, settingsErr, config.TrayRunValue)
 		log.Printf("%s", msg)
 		report(alert.EventTypeWarning, alert.EventIDInternal, msg)
 	default:
-		if err := autostart(settings); err != nil {
+		if err := autostart.Apply(settings); err != nil {
 			msg := fmt.Sprintf("warning: autostart at start: %v", err)
 			log.Printf("%s", msg)
 			report(alert.EventTypeWarning, alert.EventIDInternal, msg)
 		}
+	}
+
+	var applySettings func(model.Settings) error
+	if autostart != nil {
+		applySettings = autostart.Apply
 	}
 
 	test := ac.Test
@@ -168,7 +175,7 @@ func runService(ctx context.Context, ac appConfig) error {
 		},
 		// save_settings -> HKLM Run (CHK-CFG-04); an error is logged and
 		// sent to Warn, the settings stay saved
-		ApplySettings: autostart,
+		ApplySettings: applySettings,
 		// test_profile: sqlcheck.TestConnectionInfo + ConnCategory
 		// (CHK-IPC-03); tests inject a fake
 		Test:            test,
@@ -189,6 +196,10 @@ func runService(ctx context.Context, ac appConfig) error {
 	})
 	srv = ipc.NewServer(mon, log)
 	srv.Authorize = ac.Authorize
+	if autostart != nil {
+		// get_status.trayAutostartError + capability tray_autostart_status
+		srv.TrayAutostartError = autostart.ErrorCode
+	}
 	// first configuration load before the pipe accepts clients: a tray
 	// connecting at service start never sees a snapshot without settings /
 	// configRevision / profiles (windows CI 37123714167)
@@ -228,40 +239,78 @@ func runService(ctx context.Context, ac appConfig) error {
 	return err
 }
 
-// trayAutostart returns the function applying settings.trayAutostart to
-// the Run value config.TrayRunValue (CHK-CFG-04), nil when the service
-// does not manage it (ac.Autostart nil). Enabled: the quoted full path of
-// config.TrayExeName in the folder of the service executable (REG_SZ,
-// written when missing or different); disabled: the value is removed
-// (missing is fine).
-func trayAutostart(ac appConfig, log alert.Logger) func(model.Settings) error {
+// trayAutostarter applies settings.trayAutostart to the Run value
+// config.TrayRunValue (CHK-CFG-04) and keeps the code of the last failed
+// application for get_status.trayAutostartError. Enabled: the quoted full
+// path of config.TrayExeName in the folder of the service executable
+// (REG_SZ, written when missing or different); disabled: the value is
+// removed (missing is fine).
+type trayAutostarter struct {
+	reg    config.RunRegistry
+	cmd    string
+	cmdErr error
+	log    alert.Logger
+
+	mu   sync.Mutex
+	code string // model.AutostartErr* of the last application, "" = ok
+}
+
+// trayAutostart returns the autostarter, nil when the service does not
+// manage the Run value (ac.Autostart nil: console mode, tests).
+func trayAutostart(ac appConfig, log alert.Logger) *trayAutostarter {
 	if ac.Autostart == nil {
 		return nil
 	}
-	cmd, cmdErr := ac.TrayCommand, error(nil)
-	if cmd == "" {
+	a := &trayAutostarter{reg: ac.Autostart, cmd: ac.TrayCommand, log: log}
+	if a.cmd == "" {
 		exe, err := os.Executable()
-		if err == nil {
-			cmd, err = config.TrayRunCommand(exe)
+		if err != nil {
+			err = fmt.Errorf("%w: %v", config.ErrTrayPath, err)
+		} else {
+			a.cmd, err = config.TrayRunCommand(exe)
 		}
 		if err != nil {
-			cmd, cmdErr = "", fmt.Errorf("autostart: tray path: %w", err)
+			a.cmd, a.cmdErr = "", err
 		}
 	}
-	return func(st model.Settings) error {
-		if st.TrayAutostart && cmdErr != nil {
-			return cmdErr
-		}
-		act, err := config.ApplyTrayAutostart(ac.Autostart, st.TrayAutostart, cmd)
-		if err != nil {
-			return err
-		}
-		switch act {
-		case config.AutostartWritten:
-			log.Printf("autostart: HKLM Run %s = %s", config.TrayRunValue, cmd)
-		case config.AutostartDeleted:
-			log.Printf("autostart: HKLM Run %s removed (trayAutostart off)", config.TrayRunValue)
-		}
-		return nil
+	return a
+}
+
+// Apply brings the Run value in line with st.TrayAutostart and records
+// the result (model.AutostartErr* code or "").
+func (a *trayAutostarter) Apply(st model.Settings) error {
+	err := a.apply(st)
+	a.setCode(config.AutostartErrorCode(err))
+	return err
+}
+
+func (a *trayAutostarter) apply(st model.Settings) error {
+	if st.TrayAutostart && a.cmdErr != nil {
+		return a.cmdErr
 	}
+	act, err := config.ApplyTrayAutostart(a.reg, st.TrayAutostart, a.cmd)
+	if err != nil {
+		return err
+	}
+	switch act {
+	case config.AutostartWritten:
+		a.log.Printf("autostart: HKLM Run %s = %s", config.TrayRunValue, a.cmd)
+	case config.AutostartDeleted:
+		a.log.Printf("autostart: HKLM Run %s removed (trayAutostart off)", config.TrayRunValue)
+	}
+	return nil
+}
+
+func (a *trayAutostarter) setCode(code string) {
+	a.mu.Lock()
+	a.code = code
+	a.mu.Unlock()
+}
+
+// ErrorCode is get_status.trayAutostartError: the model.AutostartErr*
+// code of the last application ("" after a successful one).
+func (a *trayAutostarter) ErrorCode() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.code
 }

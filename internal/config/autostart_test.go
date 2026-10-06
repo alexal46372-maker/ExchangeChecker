@@ -2,9 +2,13 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
 // fakeRun is an in-memory RunRegistry with injectable errors.
@@ -124,5 +128,25 @@ func TestCHK_CFG_04_ApplyTrayAutostart(t *testing.T) {
 	}
 	if _, err := ApplyTrayAutostart(&fakeRun{}, true, ""); err == nil {
 		t.Error("empty command: no error")
+	}
+}
+
+// TestCHK_CFG_04_AutostartErrorCode — errors of the Run value map to the
+// get_status.trayAutostartError codes.
+func TestCHK_CFG_04_AutostartErrorCode(t *testing.T) {
+	_, pathErr := TrayRunCommand("exchsvc.exe")
+	for err, want := range map[error]string{
+		nil:                                   "",
+		pathErr:                               model.AutostartErrTrayPath,
+		fmt.Errorf("x: %w", os.ErrPermission): model.AutostartErrAccessDenied,
+		errors.New("other"):                   model.AutostartErrRegistry,
+	} {
+		if got := AutostartErrorCode(err); got != want {
+			t.Errorf("AutostartErrorCode(%v) = %q, want %q", err, got, want)
+		}
+	}
+	f := &fakeRun{setErr: fmt.Errorf("RegSetValueExW: %w", os.ErrPermission)}
+	if _, err := ApplyTrayAutostart(f, true, `"C:\x\ExchangeCheckerTray.exe"`); AutostartErrorCode(err) != model.AutostartErrAccessDenied {
+		t.Errorf("wrapped set error: %v", err)
 	}
 }

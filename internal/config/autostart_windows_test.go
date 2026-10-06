@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -106,5 +108,16 @@ func TestCHK_CFG_04_RegistryRunWindows(t *testing.T) {
 	}
 	if m, ok := MachineRunRegistry().(RegistryRun); !ok || m.Root != winapi.HKEY_LOCAL_MACHINE || m.Path != RunKeyPath || m.View != winapi.KEY_WOW64_64KEY {
 		t.Errorf("MachineRunRegistry = %+v", MachineRunRegistry())
+	}
+}
+
+// TestCHK_CFG_04_AccessDeniedCode — ERROR_ACCESS_DENIED (Errno 5) from
+// advapi32 is the access_denied code of get_status.trayAutostartError.
+func TestCHK_CFG_04_AccessDeniedCode(t *testing.T) {
+	if got := AutostartErrorCode(fmt.Errorf("autostart: write: %w", syscall.Errno(5))); got != model.AutostartErrAccessDenied {
+		t.Fatalf("Errno 5 -> %q", got)
+	}
+	if got := AutostartErrorCode(syscall.Errno(2)); got != model.AutostartErrRegistry {
+		t.Fatalf("Errno 2 -> %q", got)
 	}
 }

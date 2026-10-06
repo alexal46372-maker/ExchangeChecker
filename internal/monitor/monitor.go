@@ -1013,6 +1013,13 @@ func (r *errRecorder) ListPoints(ctx context.Context) ([]model.ExchangePoint, er
 	return pts, err
 }
 
+// KnownErrorKey reports whether key has a text in model: monitor.* /
+// test.* (model.MonitorMessage) or sql.* (model.SQLMessage, G1/G4). The
+// service only passes such keys to the tray in errorKey.
+func KnownErrorKey(key string) bool {
+	return key != "" && (model.MonitorMessage(key, model.LangEN) != "" || model.SQLMessage(key, model.LangEN) != "")
+}
+
 // ErrorKeyOf maps a reader error to a monitor.* message key.
 func ErrorKeyOf(err error) string {
 	switch sqlcheck.KindOf(err) {
@@ -1101,7 +1108,9 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 		}
 		rec := &errRecorder{ExchangeReader: r}
 		ps = sqlcheck.Status(cctx, rec, p, now)
-		if ps.Error != "" && ps.ErrorKey == "" {
+		if ps.Error != "" && !KnownErrorKey(ps.ErrorKey) {
+			// no key, or a key without a text in model (G1): the
+			// monitor.* key of the error kind
 			ps.ErrorKey = ErrorKeyOf(rec.err)
 		}
 	}()
@@ -1138,7 +1147,8 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 			ps = model.PendingProfileSnapshot(p, cfg.Settings)
 		}
 		model.SortPoints(ps.Points)
-		ps.Warnings = sqlcheck.Warnings(p)
+		// connection warnings (sql.* keys, texts model.SQLMessage; G1)
+		ps.Warnings = model.SQLWarnings(p)
 		// read-only settings view (phase 6): no password, no SQL
 		ps.Connection = model.ConnectionOf(p, cfg.Passwords[p.ID] != "")
 		ps.ThresholdOverride = &model.ThresholdOverride{WarnMinutes: p.WarnMinutes, ErrorMinutes: p.ErrorMinutes}

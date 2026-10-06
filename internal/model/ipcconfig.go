@@ -34,6 +34,27 @@ const (
 	CapConfigRead  = "config_read"
 	CapConfigWrite = "config_write"
 	CapCancel      = "cancel"
+	// CapTrayAutostartStatus: get_status replies carry trayAutostartError
+	// (CHK-CFG-04): the service manages the tray autostart in HKLM Run.
+	CapTrayAutostartStatus = "tray_autostart_status"
+)
+
+// Codes of IPCMessage.TrayAutostartError (get_status reply, capability
+// tray_autostart_status, CHK-CFG-04): the last application of
+// settings.trayAutostart to HKLM Run (at service start or after
+// save_settings) failed; "" = applied (or nothing to change).
+const (
+	// AutostartErrAccessDenied: the registry refused access
+	// (ERROR_ACCESS_DENIED).
+	AutostartErrAccessDenied = "access_denied"
+	// AutostartErrRegistry: any other registry error.
+	AutostartErrRegistry = "registry_error"
+	// AutostartErrTrayPath: the tray path could not be built from the
+	// service executable path.
+	AutostartErrTrayPath = "tray_path"
+	// AutostartErrSettings: at start settings.json could not be loaded;
+	// the Run value was left unchanged.
+	AutostartErrSettings = "settings_unreadable"
 )
 
 // Results (IPCMessage.Result).

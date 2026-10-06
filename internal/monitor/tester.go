@@ -185,8 +185,8 @@ func (t *Tester) Run(ctx context.Context, p model.Profile, password string) (mod
 		}
 		res.Category, res.ErrorKey = cat, model.TestCategoryKey(cat)
 		var se *sqlcheck.Error
-		if errors.As(o.err, &se) && se.Key != "" {
-			res.ErrorKey = se.Key // e.g. sql.tls_enable_tls10
+		if errors.As(o.err, &se) && KnownErrorKey(se.Key) {
+			res.ErrorKey = se.Key // e.g. sql.tls_enable_tls10 (text: model.SQLMessage)
 		}
 		res.Error = scrub(o.err.Error(), password)
 		return res, nil

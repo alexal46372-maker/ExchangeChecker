@@ -228,8 +228,8 @@ func TestCHK_CFG_04_ServiceNotManaged(t *testing.T) {
 	}
 	reg := &fakeRun{vals: map[string]string{}}
 	f := trayAutostart(appConfig{Autostart: reg}, stderrLog{})
-	if err := f(model.DefaultSettings()); err != nil {
-		t.Fatal(err)
+	if err := f.Apply(model.DefaultSettings()); err != nil || f.ErrorCode() != "" {
+		t.Fatal(err, f.ErrorCode())
 	}
 	exe, _ := os.Executable()
 	want := `"` + filepath.Join(filepath.Dir(exe), config.TrayExeName) + `"`

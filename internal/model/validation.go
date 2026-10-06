@@ -106,10 +106,13 @@ func ValidationKeys() []string {
 		ValServerFormat, ValMapping, ValDuplicate, ValConflict}
 }
 
-// FormatMessage returns MonitorMessage(key, lang) with {0}, {1}, ...
-// replaced by args.
+// FormatMessage returns MonitorMessage(key, lang) (or SQLMessage for the
+// sql.* / validation.sql_* keys) with {0}, {1}, ... replaced by args.
 func FormatMessage(key string, args []string, lang string) string {
 	s := MonitorMessage(key, lang)
+	if s == "" { // validation.sql_* / sql.* (sqlmessages.go, phase 6 G1)
+		s = SQLMessage(key, lang)
+	}
 	for i, a := range args {
 		s = strings.ReplaceAll(s, "{"+itoa(i)+"}", a)
 	}

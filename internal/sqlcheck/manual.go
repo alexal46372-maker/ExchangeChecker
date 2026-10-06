@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
 // ManualSQL contract (CHK-SQL-04): one read-only SELECT (or WITH ... SELECT)
@@ -93,7 +95,7 @@ func checkManualTokens(body string) error {
 		case ")":
 			depth--
 			if depth < 0 {
-				return ErrManualNotSelect
+				return manualErr(ErrManualNotSelect, model.ValSQLManualNotSelect, ErrManualNotSelect.Error())
 			}
 		case "SELECT":
 			if depth == 0 {
@@ -110,12 +112,13 @@ func checkManualTokens(body string) error {
 			}
 		default:
 			if manualForbidden[tk] {
-				return fmt.Errorf("%w %s (only one read-only SELECT is allowed)", ErrManualForbidden, tk)
+				return manualErr(ErrManualForbidden, model.ValSQLManualForbidden,
+					fmt.Sprintf("%s %s (only one read-only SELECT is allowed)", ErrManualForbidden, tk), tk)
 			}
 		}
 	}
 	if selects != 1 {
-		return ErrManualMulti
+		return manualErr(ErrManualMulti, model.ValSQLManualMulti, ErrManualMulti.Error())
 	}
 	return nil
 }
@@ -125,21 +128,32 @@ func checkManualTokens(body string) error {
 // top-level SELECT, none of the forbidden keywords outside literals /
 // comments / quoted identifiers (ErrManualForbidden, phase 2c), and no
 // T-SQL newer than SQL Server 2008 (ErrManualCompat2008, CHK-SQL-05).
+//
+// Every error carries a *model.FieldError (Field "manualSql", Key
+// validation.sql_manual_*, FieldErrorOf) and matches its sentinel with
+// errors.Is (phase 6, G1/G4).
 func ValidateManualSQL(q string) error {
 	body, err := stripManualSQL(q)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrManualLiteral):
+		return manualErr(ErrManualLiteral, model.ValSQLManualLiteral, ErrManualLiteral.Error())
+	case errors.Is(err, ErrManualMulti):
+		return manualErr(ErrManualMulti, model.ValSQLManualMulti, ErrManualMulti.Error())
+	case err != nil:
 		return err
 	}
 	if body == "" {
-		return ErrManualEmpty
+		return manualErr(ErrManualEmpty, model.ValSQLManualEmpty, ErrManualEmpty.Error())
 	}
 	first := strings.ToUpper(firstWord(body))
 	if first != "SELECT" && first != "WITH" {
-		return ErrManualNotSelect
+		return manualErr(ErrManualNotSelect, model.ValSQLManualNotSelect, ErrManualNotSelect.Error())
 	}
 	if v := Compat2008Violations(body); len(v) > 0 {
-		return fmt.Errorf("%w: %s (use TOP, ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...), CASE, CONVERT, + for strings)",
-			ErrManualCompat2008, strings.Join(v, ", "))
+		list := strings.Join(v, ", ")
+		return manualErr(ErrManualCompat2008, model.ValSQLManualCompat2008,
+			fmt.Sprintf("%s: %s (use TOP, ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...), CASE, CONVERT, + for strings)",
+				ErrManualCompat2008, list), list)
 	}
 	return checkManualTokens(body)
 }
@@ -217,56 +231,23 @@ func firstWord(s string) string {
 	return s
 }
 
-// ManualSQLTemplate is an example manual query for the setup UI.
+// ManualSQLTemplate is an example manual query for the setup UI (the
+// pre-phase-6 shape; model.ManualSQLTemplate carries RU/EN titles).
 type ManualSQLTemplate struct {
 	Name        string
 	Description string
 	SQL         string
 }
 
-// ManualSQLTemplates are examples of the manual SQL contract written for
-// SQL Server 2008 (compatibility level 100): TOP / GROUP BY / MAX,
-// ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...), CASE and binary
-// literals only; no OFFSET/FETCH, TRY_CONVERT, IIF, CONCAT, FORMAT, LAG/LEAD
-// or windowed aggregates with ORDER BY (CHK-SQL-05 checks them). Table
-// and column names are the 1C storage names of the example databases;
-// replace the numbers with those of the actual configuration.
-var ManualSQLTemplates = []ManualSQLTemplate{
-	{
-		Name:        "1c_node_linked",
-		Description: "exchange plan _NodeNNN + register with a simple reference _FldNNNRRef",
-		SQL: `SELECT n.[_Description], MAX(r.[_Fld458]), MAX(r.[_Fld459])
-FROM [dbo].[_Node123] AS n WITH (NOLOCK)
-JOIN [dbo].[_InfoRg456] AS r WITH (NOLOCK) ON r.[_Fld457RRef] = n.[_IDRRef]
-GROUP BY n.[_IDRRef], n.[_Description]`,
-	},
-	{
-		Name:        "1c_node_composite",
-		Description: "exchange plan _Node124 + register with a 1C 8.1 composite reference (_TYPE = 0x08, _RTRef = table number 124 = 0x0000007C)",
-		SQL: `SELECT n.[_Description], MAX(r.[_Fld602]), MAX(r.[_Fld603])
-FROM [dbo].[_Node124] AS n WITH (NOLOCK)
-JOIN [dbo].[_InfoRg600] AS r WITH (NOLOCK)
-  ON r.[_Fld601_TYPE] = 0x08 AND r.[_Fld601_RTRef] = 0x0000007C AND r.[_Fld601_RRRef] = n.[_IDRRef]
-GROUP BY n.[_IDRRef], n.[_Description]`,
-	},
-	{
-		Name:        "1c_latest_row",
-		Description: "latest register row per point via ROW_NUMBER() (SQL 2005+; instead of LAG/OFFSET)",
-		SQL: `WITH x AS (
-  SELECT n.[_Description] AS point, r.[_Fld458] AS sent, r.[_Fld459] AS recv,
-         ROW_NUMBER() OVER (PARTITION BY r.[_Fld457RRef] ORDER BY r.[_Fld459] DESC) AS rn
-  FROM [dbo].[_InfoRg456] AS r WITH (NOLOCK)
-  JOIN [dbo].[_Node123] AS n WITH (NOLOCK) ON n.[_IDRRef] = r.[_Fld457RRef]
-)
-SELECT point, sent, recv FROM x WHERE rn = 1`,
-	},
-	{
-		Name:        "1c_directory_dates",
-		Description: "exchange dates in the directory row itself; CASE instead of IIF (SQL 2012+); the service also turns 1C empty dates into NULL",
-		SQL: `SELECT TOP (1000) d.[_Description],
-  CASE WHEN d.[_Fld56] > '17530101' THEN d.[_Fld56] END,
-  CASE WHEN d.[_Fld57] > '17530101' THEN d.[_Fld57] END
-FROM [dbo].[_Reference55] AS d WITH (NOLOCK)
-ORDER BY d.[_Description]`,
-	},
+// ManualSQLTemplates are the examples of model.SQLManualTemplates (phase
+// 6, G4) in the old shape: Name = ID, Description = English description.
+// They are SQL Server 2008 T-SQL (CHK-SQL-05).
+var ManualSQLTemplates = legacyTemplates()
+
+func legacyTemplates() []ManualSQLTemplate {
+	var out []ManualSQLTemplate
+	for _, t := range model.SQLManualTemplates() {
+		out = append(out, ManualSQLTemplate{Name: t.ID, Description: t.Description.EN, SQL: t.SQL})
+	}
+	return out
 }

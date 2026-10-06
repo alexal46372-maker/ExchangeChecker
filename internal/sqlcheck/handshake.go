@@ -166,11 +166,21 @@ func (d handshakeDialer) DialContext(ctx context.Context, network, addr string) 
 	return conn, nil
 }
 
+// sessionKeeper takes over the sockets of a session after login: the
+// sessionHold of TestConnectionInfo or the queryGuard of an interactive
+// store (interactive.go).
+type sessionKeeper interface {
+	// adopt takes the sockets; false if they must not be used (closed).
+	adopt(c []net.Conn) bool
+	// causeOr returns why adopt refused, or def.
+	causeOr(def error) error
+}
+
 // guardedConnector is the driver.Connector of Open.
 type guardedConnector struct {
 	inner  *mssql.Connector
 	budget time.Duration
-	hold   *sessionHold // nil: the guard ends at login (poll stores)
+	hold   sessionKeeper // nil: the guard ends at login (poll stores)
 }
 
 func newGuardedConnector(cfg msdsn.Config, budget time.Duration) *guardedConnector {

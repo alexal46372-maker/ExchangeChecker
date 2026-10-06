@@ -318,6 +318,15 @@ func maxTimeValue(cur *time.Time, v interface{}) *time.Time {
 // the user can pick a known point for the time-based DiscoverByValue.
 // Read-only (NOLOCK), at most limit rows per table.
 func ListNodePoints(ctx context.Context, st Store, opt DiscoverOptions, limit int) ([]model.NodePoint, error) {
+	out, err := listNodePoints(ctx, st, opt, limit)
+	if err != nil {
+		return nil, ctxErr("node points", err)
+	}
+	return out, nil
+}
+
+// listNodePoints is ListNodePoints without the final error normalization.
+func listNodePoints(ctx context.Context, st Store, opt DiscoverOptions, limit int) ([]model.NodePoint, error) {
 	if limit <= 0 {
 		limit = 1000
 	}

@@ -27,8 +27,10 @@ var (
 )
 
 // findTable resolves a mapping table name in the catalog. Empty schema:
-// the only table with that name, or the one in dbo.
-func findTable(tables []*tableInfo, schema, name string) (*tableInfo, error) {
+// the only table with that name, or the one in dbo. field / schemaField
+// name the mapping fields for the typed error ("table" / "schema" or
+// "timesTable" / "timesSchema").
+func findTable(tables []*tableInfo, schema, name, field, schemaField string) (*tableInfo, error) {
 	var hits []*tableInfo
 	for _, t := range tables {
 		if strings.EqualFold(t.ref.Name, name) && (schema == "" || strings.EqualFold(t.ref.Schema, schema)) {
@@ -37,7 +39,9 @@ func findTable(tables []*tableInfo, schema, name string) (*tableInfo, error) {
 	}
 	switch len(hits) {
 	case 0:
-		return nil, fmt.Errorf("%w: %s", ErrTableNotFound, TableRef{Schema: schema, Name: name})
+		ref := TableRef{Schema: schema, Name: name}.String()
+		return nil, newFieldError(ErrTableNotFound, field, model.ValSQLTableNotFound,
+			fmt.Sprintf("%s: %s", ErrTableNotFound, ref), ref)
 	case 1:
 		return hits[0], nil
 	}
@@ -46,18 +50,29 @@ func findTable(tables []*tableInfo, schema, name string) (*tableInfo, error) {
 			return t, nil
 		}
 	}
-	return nil, fmt.Errorf("%w: %q", ErrTableAmbiguous, name)
+	return nil, newFieldError(ErrTableAmbiguous, schemaField, model.ValSQLTableAmbiguous,
+		fmt.Sprintf("%s: %q", ErrTableAmbiguous, name), name)
 }
 
-func findCol(t *tableInfo, name, role string) (Column, error) {
+// findCol resolves column name of the mapping field (role: English name
+// for the message).
+func findCol(t *tableInfo, name, field, role string) (Column, error) {
 	if err := checkIdent(name); err != nil {
-		return Column{}, fmt.Errorf("%s column: %w", role, err)
+		return Column{}, identErr(field, role, name, err)
 	}
 	c, ok := t.find(name)
 	if !ok {
-		return Column{}, fmt.Errorf("%w: %s column %s.%s", ErrColumnNotFound, role, t.ref, name)
+		return Column{}, newFieldError(ErrColumnNotFound, field, model.ValSQLColumnNotFound,
+			fmt.Sprintf("%s: %s column %s.%s", ErrColumnNotFound, role, t.ref, name), t.ref.String(), name)
 	}
 	return c, nil
+}
+
+// typeErr is ErrColumnType of column c of t for the mapping field.
+func typeErr(field, role string, t *tableInfo, c Column, typ, want, wantText string) error {
+	return newFieldError(ErrColumnType, field, model.ValSQLColumnType,
+		fmt.Sprintf("%s: %s column %s.%s is %s (want %s)", ErrColumnType, role, t.ref, c.Name, typ, wantText),
+		t.ref.String(), c.Name, typ, want)
 }
 
 // CheckMapping validates a mapping (typically edited by hand) against the
@@ -78,94 +93,99 @@ func CheckMapping(cols []Column, m model.Mapping) error {
 		}
 	}
 	if strings.TrimSpace(m.Table) == "" {
-		return merr(ErrNotConfigured)
+		return merr(newFieldError(ErrNotConfigured, "table", model.ValRequired, ErrNotConfigured.Error()))
 	}
 	tables := groupTables(cols)
-	pt, err := findTable(tables, m.Schema, m.Table)
+	pt, err := findTable(tables, m.Schema, m.Table, "table", "schema")
 	if err != nil {
 		return merr(err)
 	}
-	for _, pc := range []struct{ name, role string }{{m.PointNameColumn, "point name"}, {m.PointIDColumn, "point code"}} {
+	for _, pc := range []struct{ name, field, role string }{
+		{m.PointNameColumn, "pointNameColumn", "point name"}, {m.PointIDColumn, "pointIdColumn", "point code"}} {
 		if pc.name == "" {
 			continue
 		}
-		c, err := findCol(pt, pc.name, pc.role)
+		c, err := findCol(pt, pc.name, pc.field, pc.role)
 		if err != nil {
 			return merr(err)
 		}
 		if !c.IsText() && !c.IsNumeric() {
-			return merr(fmt.Errorf("%w: %s column %s.%s is %s (want char/varchar/nchar/nvarchar up to 4000 or a number)",
-				ErrColumnType, pc.role, pt.ref, c.Name, c.DataType))
+			return merr(typeErr(pc.field, pc.role, pt, c, c.DataType, model.SQLTypesPointColumn,
+				"char/varchar/nchar/nvarchar up to 4000 or a number"))
 		}
 	}
 	if m.Mode == model.MappingCounters {
 		if m.PointKeyColumn != "" {
-			if _, err := findCol(pt, m.PointKeyColumn, "point key"); err != nil {
+			if _, err := findCol(pt, m.PointKeyColumn, "pointKeyColumn", "point key"); err != nil {
 				return merr(err)
 			}
 		}
-		for _, cc := range []struct{ name, role string }{{m.SentNoCol(), "sent counter"}, {m.ReceivedNoCol(), "received counter"}} {
-			c, err := findCol(pt, cc.name, cc.role)
+		for _, cc := range []struct{ name, field, role string }{
+			{m.SentNoCol(), "sentNoColumn", "sent counter"}, {m.ReceivedNoCol(), "receivedNoColumn", "received counter"}} {
+			c, err := findCol(pt, cc.name, cc.field, cc.role)
 			if err != nil {
 				return merr(err)
 			}
 			if !c.IsNumeric() {
-				return merr(fmt.Errorf("%w: %s column %s.%s is %s (want a number)", ErrColumnType, cc.role, pt.ref, c.Name, c.DataType))
+				return merr(typeErr(cc.field, cc.role, pt, c, c.DataType, model.SQLTypesNumber, "a number"))
 			}
 		}
 		return nil
 	}
 	ts := pt
 	if m.Linked() {
-		key, err := findCol(pt, m.PointKeyColumn, "point key")
+		key, err := findCol(pt, m.PointKeyColumn, "pointKeyColumn", "point key")
 		if err != nil {
 			return merr(err)
 		}
-		if ts, err = findTable(tables, m.TimesSchema, m.TimesTable); err != nil {
+		if ts, err = findTable(tables, m.TimesSchema, m.TimesTable, "timesTable", "timesSchema"); err != nil {
 			return merr(err)
 		}
-		link, err := findCol(ts, m.TimesLinkColumn, "link")
+		link, err := findCol(ts, m.TimesLinkColumn, "timesLinkColumn", "link")
 		if err != nil {
 			return merr(err)
 		}
 		if !strings.EqualFold(key.DataType, link.DataType) || key.MaxLength != link.MaxLength {
-			return merr(fmt.Errorf("%w: %s.%s is %s(%d), %s.%s is %s(%d)", ErrLinkTypeMismatch,
-				ts.ref, link.Name, link.DataType, link.MaxLength, pt.ref, key.Name, key.DataType, key.MaxLength))
+			lt := fmt.Sprintf("%s(%d)", link.DataType, link.MaxLength)
+			kt := fmt.Sprintf("%s(%d)", key.DataType, key.MaxLength)
+			return merr(newFieldError(ErrLinkTypeMismatch, "timesLinkColumn", model.ValSQLLinkTypeMismatch,
+				fmt.Sprintf("%s: %s.%s is %s, %s.%s is %s", ErrLinkTypeMismatch, ts.ref, link.Name, lt, pt.ref, key.Name, kt),
+				ts.ref.String()+"."+link.Name, lt, pt.ref.String()+"."+key.Name, kt))
 		}
 		if m.Composite() {
 			// 1C composite reference: _TYPE binary(1), _RTRef binary(4)
 			for _, cc := range []struct {
-				name, role string
-				size       int
-			}{{m.TimesLinkTypeColumn, "link type (_TYPE)", 1}, {m.TimesLinkRTRefColumn, "link table number (_RTRef)", 4}} {
-				c, err := findCol(ts, cc.name, cc.role)
+				name, field, role, want string
+				size                    int
+			}{{m.TimesLinkTypeColumn, "timesLinkTypeColumn", "link type (_TYPE)", model.SQLTypesBinary1, 1},
+				{m.TimesLinkRTRefColumn, "timesLinkRTRefColumn", "link table number (_RTRef)", model.SQLTypesBinary4, 4}} {
+				c, err := findCol(ts, cc.name, cc.field, cc.role)
 				if err != nil {
 					return merr(err)
 				}
 				if c.typ() != "binary" || c.MaxLength != cc.size {
-					return merr(fmt.Errorf("%w: %s column %s.%s is %s(%d) (want binary(%d))",
-						ErrColumnType, cc.role, ts.ref, c.Name, c.DataType, c.MaxLength, cc.size))
+					return merr(typeErr(cc.field, cc.role, ts, c, fmt.Sprintf("%s(%d)", c.DataType, c.MaxLength), cc.want, cc.want))
 				}
 			}
 		}
 	}
 	n := 0
-	for _, tc := range []struct{ name, role string }{{m.LastSendColumn, "last send"}, {m.LastRecvColumn, "last recv"}} {
+	for _, tc := range []struct{ name, field, role string }{
+		{m.LastSendColumn, "lastSendColumn", "last send"}, {m.LastRecvColumn, "lastRecvColumn", "last recv"}} {
 		if tc.name == "" {
 			continue
 		}
-		c, err := findCol(ts, tc.name, tc.role)
+		c, err := findCol(ts, tc.name, tc.field, tc.role)
 		if err != nil {
 			return merr(err)
 		}
 		if !c.IsDateTime() {
-			return merr(fmt.Errorf("%w: %s column %s.%s is %s (want date/datetime/datetime2/smalldatetime)",
-				ErrColumnType, tc.role, ts.ref, c.Name, c.DataType))
+			return merr(typeErr(tc.field, tc.role, ts, c, c.DataType, model.SQLTypesDateTime, model.SQLTypesDateTime))
 		}
 		n++
 	}
 	if n == 0 {
-		return merr(ErrNoTimestampColumn)
+		return merr(newFieldError(ErrNoTimestampColumn, "lastSendColumn", model.ValSQLNoTimestamp, ErrNoTimestampColumn.Error()))
 	}
 	return nil
 }
@@ -177,7 +197,7 @@ func ValidateMapping(ctx context.Context, st Store, m model.Mapping) error {
 	}
 	cols, err := st.Columns(ctx)
 	if err != nil {
-		return err
+		return ctxErr("check mapping", err)
 	}
 	return CheckMapping(cols, m)
 }
@@ -186,9 +206,24 @@ func ValidateMapping(ctx context.Context, st Store, m model.Mapping) error {
 // reads up to limit rows through it, converted like ListPoints (YearOffset,
 // UTC+3): what the tray shows before the user saves a manual mapping.
 // Counters mode previews point names only (times need two polls).
+// At most model.MaxSampleRows rows are read and every point name is cut to
+// model.MaxSampleCellRunes characters (SampleRow.PointTruncated; phase 6,
+// G1/G4: the rows go to the tray over IPC).
 func PreviewMapping(ctx context.Context, st Store, m model.Mapping, limit int) ([]model.SampleRow, error) {
+	rows, err := previewMapping(ctx, st, m, limit)
+	if err != nil {
+		return nil, ctxErr("preview mapping", err)
+	}
+	model.TruncateSampleRows(rows)
+	return rows, nil
+}
+
+func previewMapping(ctx context.Context, st Store, m model.Mapping, limit int) ([]model.SampleRow, error) {
 	if limit <= 0 {
 		limit = 20
+	}
+	if limit > model.MaxSampleRows {
+		limit = model.MaxSampleRows
 	}
 	if err := ValidateMapping(ctx, st, m); err != nil {
 		return nil, err

@@ -109,3 +109,18 @@ func classify(op string, err error, connPhase bool) error {
 func isCtxErr(err error) bool {
 	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
+
+// ctxErr gives a bare context error (Discover stops with the caller's
+// context error as is) a Kind: KindCanceled / KindTimeout, so the service
+// can answer "canceled" by Kind or ConnCategory (phase 6, G1/G4). Other
+// errors are returned unchanged.
+func ctxErr(op string, err error) error {
+	if err == nil || KindOf(err) != "" || !isCtxErr(err) {
+		return err
+	}
+	kind := KindTimeout
+	if errors.Is(err, context.Canceled) {
+		kind = KindCanceled
+	}
+	return &Error{Kind: kind, Op: op, Err: err}
+}

@@ -104,10 +104,11 @@ func Open(p model.Profile, password string) (*SQLStore, error) {
 	return openWith(p, password, nil)
 }
 
-// openWith is Open with an optional sessionHold: the sockets of sessions
-// established through the store stay under the hold after login
-// (TestConnectionInfo only; poll stores pass nil).
-func openWith(p model.Profile, password string, hold *sessionHold) (*SQLStore, error) {
+// openWith is Open with an optional session keeper: the sockets of
+// sessions established through the store stay under it after login
+// (TestConnectionInfo: sessionHold, interactive stores: queryGuard; poll
+// stores pass nil).
+func openWith(p model.Profile, password string, hold sessionKeeper) (*SQLStore, error) {
 	cfg, err := driverConfig(p, password)
 	if err != nil {
 		return nil, &Error{Kind: KindConfig, Op: "open", Err: err}
@@ -116,6 +117,11 @@ func openWith(p model.Profile, password string, hold *sessionHold) (*SQLStore, e
 	gc.hold = hold
 	db := sql.OpenDB(gc)
 	db.SetMaxOpenConns(2)
+	if _, ok := hold.(*queryGuard); ok {
+		// one session: a guard kill closes exactly the session of the
+		// request, the next query dials a new one
+		db.SetMaxOpenConns(1)
+	}
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxIdleTime(5 * time.Minute)
 	return NewSQLStore(db, p.ConnectTimeout(), p.QueryTimeout()), nil

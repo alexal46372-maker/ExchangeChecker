@@ -333,7 +333,8 @@ func manualOnConn(ctx context.Context, conn *sql.Conn, query string, limit int) 
 	}
 	if len(cols) != 3 {
 		return nil, &Error{Kind: KindMapping, Op: "manual sql",
-			Err: fmt.Errorf("%w: got %d (%s)", ErrManualColumns, len(cols), strings.Join(cols, ", "))}
+			Err: manualErr(ErrManualColumns, model.ValSQLManualColumns,
+				fmt.Sprintf("%s: got %d (%s)", ErrManualColumns, len(cols), strings.Join(cols, ", ")), strconv.Itoa(len(cols)))}
 	}
 	for rows.Next() {
 		if limit > 0 && len(out) >= limit {
@@ -345,10 +346,12 @@ func manualOnConn(ctx context.Context, conn *sql.Conn, query string, limit int) 
 		}
 		p := RawPoint{Name: valueString(name)}
 		if p.Send, err = valueTime(send); err != nil {
-			return nil, &Error{Kind: KindMapping, Op: "manual sql", Err: fmt.Errorf("column 2 (last send): %w", err)}
+			return nil, &Error{Kind: KindMapping, Op: "manual sql", Err: manualErr(err, model.ValSQLManualValueType,
+				"column 2 (last send): "+err.Error(), "2", fmt.Sprintf("%T", send))}
 		}
 		if p.Recv, err = valueTime(recv); err != nil {
-			return nil, &Error{Kind: KindMapping, Op: "manual sql", Err: fmt.Errorf("column 3 (last recv): %w", err)}
+			return nil, &Error{Kind: KindMapping, Op: "manual sql", Err: manualErr(err, model.ValSQLManualValueType,
+				"column 3 (last recv): "+err.Error(), "3", fmt.Sprintf("%T", recv))}
 		}
 		out = append(out, p)
 	}

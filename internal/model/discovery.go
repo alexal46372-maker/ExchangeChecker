@@ -52,6 +52,9 @@ type SampleRow struct {
 	Point    string     `json:"point"`
 	LastSend *time.Time `json:"lastSend,omitempty"`
 	LastRecv *time.Time `json:"lastRecv,omitempty"`
+	// PointTruncated: Point was cut to MaxSampleCellRunes characters
+	// (phase 6, G1/G4; sqlsample.go).
+	PointTruncated bool `json:"pointTruncated,omitempty"`
 }
 
 // DiscoveryCandidate is one proposed mapping returned by Discovery

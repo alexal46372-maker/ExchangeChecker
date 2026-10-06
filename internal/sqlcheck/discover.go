@@ -235,6 +235,16 @@ type dirTable struct {
 // read-only (WITH (NOLOCK), no session-level SET), bounded by TOP, per-query
 // timeouts, table caps and the total Timeout.
 func Discover(ctx context.Context, st Store, opt DiscoverOptions, now time.Time) ([]model.DiscoveryCandidate, error) {
+	out, err := discover(ctx, st, opt, now)
+	if err != nil {
+		return nil, ctxErr("discover", err)
+	}
+	model.TruncateCandidates(out) // text cells <= model.MaxSampleCellRunes (phase 6, G1/G4)
+	return out, nil
+}
+
+// discover is Discover without the final error / cell normalization.
+func discover(ctx context.Context, st Store, opt DiscoverOptions, now time.Time) ([]model.DiscoveryCandidate, error) {
 	d, cancel := newDiscoverer(ctx, st, opt, now)
 	defer cancel()
 	tables, err := d.catalog()

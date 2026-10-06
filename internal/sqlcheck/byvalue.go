@@ -55,6 +55,16 @@ var ErrEmptyPointName = errors.New("point name is empty")
 // Same limits as Discover: read-only NOLOCK queries, per-query timeout,
 // total time budget (partial result + model.HintTruncated).
 func DiscoverByValue(ctx context.Context, st Store, q model.ValueQuery, opt DiscoverOptions, now time.Time) ([]model.DiscoveryCandidate, error) {
+	out, err := discoverByValue(ctx, st, q, opt, now)
+	if err != nil {
+		return nil, ctxErr("discover by value", err)
+	}
+	model.TruncateCandidates(out)
+	return out, nil
+}
+
+// discoverByValue is DiscoverByValue without the final normalization.
+func discoverByValue(ctx context.Context, st Store, q model.ValueQuery, opt DiscoverOptions, now time.Time) ([]model.DiscoveryCandidate, error) {
 	name := strings.TrimSpace(q.PointName)
 	var ref []byte
 	if strings.TrimSpace(q.PointRef) != "" {

@@ -268,6 +268,9 @@ type IPCMessage struct {
 	// IPCRequest.Limit points. Precedence: budget > size > limit.
 	Truncated       bool   `json:"truncated,omitempty"`
 	TruncatedReason string `json:"truncatedReason,omitempty"`
+	// Limit (MsgNodePoints, only with TruncatedReason == TruncatedLimit):
+	// the IPCRequest.Limit the list was cut to (EC Tray, CHK-IPC-08).
+	Limit int `json:"limit,omitempty"`
 	// NodePoints of a MsgNodePoints reply (omitted when none).
 	NodePoints []NodePoint `json:"nodePoints,omitempty"`
 	// MappingCheck of a MsgMappingCheck reply.

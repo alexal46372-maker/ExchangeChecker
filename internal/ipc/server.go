@@ -642,6 +642,9 @@ func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) b
 		if err == nil {
 			m.ID = req.ID
 			m.Truncated = m.TruncatedReason != ""
+			if m.Type == model.MsgNodePoints && m.TruncatedReason == model.TruncatedLimit {
+				m.Limit = req.Limit // the limit the list was cut to (EC Tray)
+			}
 			fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
 		}
 		return m, err
@@ -694,6 +697,7 @@ func fitInteractiveReply(m *model.IPCMessage, max int) {
 	case len(m.NodePoints) > 0:
 		all := m.NodePoints
 		m.Truncated, m.TruncatedReason = true, sizeReason(m.TruncatedReason)
+		m.Limit = 0 // only with the reason "limit"
 		cut(len(all), func(k int) { m.NodePoints = all[:k] })
 	case m.MappingCheck != nil:
 		mc := *m.MappingCheck

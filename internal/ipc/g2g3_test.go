@@ -336,7 +336,7 @@ func TestCHK_IPC_08_ReplySizeLimit(t *testing.T) {
 // discovery reply (unknown fields ignored).
 func TestCHK_IPC_05_InteractiveFieldsOmitEmpty(t *testing.T) {
 	b, _ := json.Marshal(model.IPCMessage{ID: 1, Type: model.MsgPong, Version: 2})
-	for _, f := range []string{"candidates", "truncated", "truncatedReason", "nodePoints", "mappingCheck"} {
+	for _, f := range []string{"candidates", "truncated", "truncatedReason", "limit", "nodePoints", "mappingCheck"} {
 		if strings.Contains(string(b), f) {
 			t.Errorf("pong carries %s: %s", f, b)
 		}
@@ -433,5 +433,61 @@ func TestCHK_IPC_08_TruncatedReason(t *testing.T) {
 	h.mu.Unlock()
 	if m := c.call(model.IPCRequest{ID: 3, Cmd: model.CmdDiscover}); m.Truncated || m.TruncatedReason != "" {
 		t.Fatalf("discover complete: %v %q", m.Truncated, m.TruncatedReason)
+	}
+}
+
+// TestCHK_IPC_08_NodePointsLimitEcho — EC Tray: a node_points reply cut
+// by the requested limit (truncatedReason "limit") carries that limit
+// ("limit": N); otherwise (complete, cut to 64 KiB — reason "size" —, any
+// other reply) there is no "limit" in the JSON (omitempty, CHK-IPC-05).
+func TestCHK_IPC_08_NodePointsLimitEcho(t *testing.T) {
+	admin := int32(1)
+	h, l, _ := newDiscServer(t, &admin)
+	var big []model.NodePoint
+	for i := 0; i < 3000; i++ {
+		big = append(big, model.NodePoint{PlanTable: "_Node1", Ref: "0123456789abcdef0123456789abcdef", Name: "Точка обмена"})
+	}
+	h.cands, h.pts, h.reasonN = []model.DiscoveryCandidate{{Table: "_Node1"}}, big[:10], model.TruncatedLimit
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rw.Close()
+	readHello(t, rw)
+	// raw JSON of the reply with id
+	raw := func(req model.IPCRequest) (model.IPCMessage, string) {
+		t.Helper()
+		if err := WriteRequest(rw, req); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			var b json.RawMessage
+			if err := ReadMessage(rw, &b); err != nil {
+				t.Fatal(err)
+			}
+			var m model.IPCMessage
+			if err := json.Unmarshal(b, &m); err != nil {
+				t.Fatal(err)
+			}
+			if m.ID == req.ID {
+				return m, string(b)
+			}
+		}
+	}
+	m, js := raw(model.IPCRequest{ID: 1, Cmd: model.CmdListNodePoints, ProfileID: "p1", Limit: 10})
+	if m.TruncatedReason != model.TruncatedLimit || m.Limit != 10 || !strings.Contains(js, `"limit":10`) {
+		t.Fatalf("limit: %s", js)
+	}
+	set := func(f func()) { h.mu.Lock(); f(); h.mu.Unlock() }
+	set(func() { h.reasonN = "" })
+	if m, js = raw(model.IPCRequest{ID: 2, Cmd: model.CmdListNodePoints, ProfileID: "p1", Limit: 10}); m.Limit != 0 || strings.Contains(js, `"limit"`) {
+		t.Fatalf("complete: %s", js)
+	}
+	set(func() { h.pts, h.reasonN = big, model.TruncatedLimit })
+	if m, js = raw(model.IPCRequest{ID: 3, Cmd: model.CmdListNodePoints, ProfileID: "p1", Limit: 3000}); m.TruncatedReason != model.TruncatedSize || strings.Contains(js, `"limit"`) {
+		t.Fatalf("limit + size: reason %q, %d bytes, limit field %v", m.TruncatedReason, len(js), strings.Contains(js, `"limit"`))
+	}
+	if m, js = raw(model.IPCRequest{ID: 4, Cmd: model.CmdDiscover, ProfileID: "p1", Limit: 10}); m.Type != model.MsgDiscovery || strings.Contains(js, `"limit"`) {
+		t.Fatalf("discover: %s", js)
 	}
 }

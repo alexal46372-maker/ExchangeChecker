@@ -260,6 +260,9 @@ func TestCHK_TRAY_11_WindowClasses(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	conf := &fakeConfirm{}
 	app, w, dd, _ := openDiscEdited(t, conf)
+	// exit on this locked thread: the t.Cleanup Exit may run on another
+	// OS thread, where EnableWindow of the open dialog's owner blocks
+	defer app.Exit()
 	for h, c := range map[uintptr]string{app.hwnd: model.TrayWindowClass, w.hwnd: model.TraySettingsClass, dd.hwnd: model.TrayDiscoveryClass} {
 		if g := winapi.GetClassName(h); g != c {
 			t.Errorf("window class %q, want %q", g, c)

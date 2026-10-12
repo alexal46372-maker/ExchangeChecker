@@ -4,7 +4,8 @@ import "testing"
 
 // TestCHK_VER_01_VersionIsVar — Version is a package variable the linker
 // can override with -X (a const would ignore -X silently); the -X build
-// itself is checked in checks/ver01_test.go.
+// itself is checked in checks/res01_test.go (TestCHK_RES_01_LinkedExe,
+// TestCHK_VER_01_Built).
 func TestCHK_VER_01_VersionIsVar(t *testing.T) {
 	p := &Version // does not compile for a const
 	if *p != "0.0.0-dev" {

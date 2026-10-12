@@ -21,7 +21,8 @@ func (v FileVersion) String() string {
 // without a leading "v": "1.2.3", "1.2.3-rc.1", "0.0.0-ci.42",
 // "0.0.0-dev") to FILEVERSION (PLAN §12, phase 7, decision 6):
 // X.Y.Z → X,Y,Z,0; the pre-release "ci.N" → X,Y,Z,N; any pre-release sets
-// VS_FF_PRERELEASE. Build metadata ("+…") is ignored.
+// VS_FF_PRERELEASE. "ci.N" with N not a number in 0..65535 is an error.
+// Build metadata ("+…") is ignored.
 func ParseVersion(s string) (v FileVersion, prerelease bool, err error) {
 	bad := fmt.Errorf("winres: version %q is not X.Y.Z[-pre]", s)
 	core := s
@@ -48,9 +49,12 @@ func ParseVersion(s string) (v FileVersion, prerelease bool, err error) {
 		v[i] = uint16(n)
 	}
 	if strings.HasPrefix(pre, "ci.") {
-		if n, err := strconv.ParseUint(pre[3:], 10, 16); err == nil {
-			v[3] = uint16(n)
+		// CI builds: 0.0.0-ci.<run_number>; N must fit the fourth part
+		n, err := strconv.ParseUint(pre[3:], 10, 16)
+		if err != nil {
+			return FileVersion{}, false, fmt.Errorf("winres: version %q: ci build number must be 0..65535", s)
 		}
+		v[3] = uint16(n)
 	}
 	return v, prerelease, nil
 }

@@ -156,6 +156,7 @@ func TestCHK_RES_01_Version(t *testing.T) {
 		{"1.2.3", FileVersion{1, 2, 3, 0}, false},
 		{"0.0.0-dev", FileVersion{0, 0, 0, 0}, true},
 		{"0.0.0-ci.42", FileVersion{0, 0, 0, 42}, true},
+		{"0.0.0-ci.65535", FileVersion{0, 0, 0, 65535}, true},
 		{"2.0.1-rc.1+abc", FileVersion{2, 0, 1, 0}, true},
 	}
 	for _, c := range cases {
@@ -164,7 +165,7 @@ func TestCHK_RES_01_Version(t *testing.T) {
 			t.Errorf("ParseVersion(%q) = %v %v %v", c.in, v, pre, err)
 		}
 	}
-	for _, bad := range []string{"", "v1.2.3", "1.2", "1.2.3.4", "1.02.3", "1.2.3-", "70000.0.0", "a.b.c"} {
+	for _, bad := range []string{"", "v1.2.3", "1.2", "1.2.3.4", "1.02.3", "1.2.3-", "70000.0.0", "a.b.c", "0.0.0-ci.", "0.0.0-ci.x", "0.0.0-ci.65536", "0.0.0-ci.-1", "0.0.0-ci.1.2"} {
 		if _, _, err := ParseVersion(bad); err == nil {
 			t.Errorf("ParseVersion(%q) accepted", bad)
 		}

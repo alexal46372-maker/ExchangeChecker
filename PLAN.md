@@ -600,6 +600,7 @@ Wizard Win32 (страницы):
 - `cmd/exchsetup` + `internal/wininstall`
 - HKLM Run `ExchangeCheckerTray`: при установке — стартовое значение (`"<папка>\ExchangeCheckerTray.exe"`, 64-битное представление), при деинсталляции — удалить (§12 п. 72); дальше значение ведёт служба по `trayAutostart` (CHK-CFG-04)
 - check: `CHK-SETUP-01`
+- **EC Tray T1 (подфаза 7c, PLAN-phase7 §7.3/§10.3) ✅ (`CHK-TRAY-11`):** выход трея по `RegisterWindowMessageW(model.TrayExitMessage = "ExchangeChecker.TrayExit")` — главное скрытое окно → `App.Exit()` (значок удаляется, NIM_DELETE), окна `--settings` и Discovery закрываются сразу без вопросов (открытый вопрос отвечает «Нет», после него вопросов нет); `WM_CLOSE` главного окна тоже → `App.Exit()`. Межсеансовое событие (T2) и `.syso` (T3) — не сделаны
 
 ### Фаза 8 — Поставка
 

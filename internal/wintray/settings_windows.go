@@ -164,6 +164,9 @@ type settingsWindow struct {
 	connected                        bool       // service session state seen by onSessionState
 	loaded                           bool       // get_config (or a snapshot) loaded at least once
 	disc                             *discoveryDialog
+	// exiting: the tray exit message (or App.Exit) is closing the window:
+	// no questions any more, an open one answers «Нет» (CHK-TRAY-11)
+	exiting bool
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
@@ -402,6 +405,10 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 		return 0, true
 	case winapi.WM_CLOSE:
 		w.userClose()
+		return 0, true
+	}
+	if isTrayExit(msg) {
+		w.exitNow()
 		return 0, true
 	}
 	return 0, false
@@ -710,7 +717,11 @@ func (w *settingsWindow) ask(text string) bool {
 			return winapi.MessageBox(owner, text, caption, winapi.MB_YESNO|winapi.MB_ICONWARNING|winapi.MB_DEFBUTTON2) == winapi.IDYES
 		}
 	}
-	return confirm(w.hwnd, text, w.t(i18n.KeyAppName))
+	if w.exiting {
+		return false
+	}
+	ok := confirm(w.hwnd, text, w.t(i18n.KeyAppName))
+	return ok && !w.exiting // the exit message came while it was open
 }
 
 // discardOK asks «Отменить изменения?» when the form (either page) has
@@ -1148,6 +1159,15 @@ func (w *settingsWindow) userClose() {
 	if w.discardOK() {
 		w.close()
 	}
+}
+
+// exitNow closes the window (and the Discovery dialog) at once without
+// asking about unsaved edits (CHK-TRAY-11). Called from inside an open
+// question (its modal loop dispatches the message), it destroys the owner,
+// which ends the MessageBox owned by it; ask then answers «Нет».
+func (w *settingsWindow) exitNow() {
+	w.exiting = true
+	w.close()
 }
 
 // close cancels a running test (cancel {ref}) and destroys the window.

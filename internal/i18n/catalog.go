@@ -331,7 +331,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetTrust:               {"Доверять сертификату сервера без проверки", "Trust the server certificate without validation"},
 	KeySetEnabled:             {"Опрашивать эту базу", "Monitor this database"},
 	KeySetMapYes:              {"Таблицы обмена: настроены", "Exchange tables: configured"},
-	KeySetMapNo:               {"Таблицы обмена: не настроены (поиск таблиц — в следующем обновлении)", "Exchange tables: not configured (table discovery comes in the next update)"},
+	KeySetMapNo:               {"Таблицы обмена: не настроены — найдите их кнопкой «Таблицы обмена…»", "Exchange tables: not configured — find them with «Exchange tables…»"},
 	KeySetThresholds:          {"Свои пороги: предупреждение %d мин, ошибка %d мин", "Own thresholds: warning %d min, error %d min"},
 	KeySetTest:                {"Проверить подключение", "Test connection"},
 	KeySetCancelTest:          {"Отменить проверку", "Cancel test"},

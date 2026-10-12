@@ -18,6 +18,12 @@ const (
 	EventSource = "ExchangeChecker"
 	// PipeName is the service's named pipe.
 	PipeName = `\\.\pipe\ExchangeChecker`
+	// TrayExitMessage is the RegisterWindowMessageW name that makes the
+	// tray (window class ExchangeCheckerTray) and the settings / Discovery
+	// windows exit at once without questions (CHK-TRAY-11): the installer
+	// posts it before replacing or removing the files (phase 7 §7.3)
+	// without importing internal/wintray. wParam / lParam are ignored.
+	TrayExitMessage = "ExchangeChecker.TrayExit"
 	// IPCVersion is the protocol version (Hello, Pong). Version 2 (phase
 	// 4, CHK-IPC-05) adds test_profile, ack_alert, the heartbeat, error
 	// codes and Hello.Capabilities; every addition is an omitempty field or

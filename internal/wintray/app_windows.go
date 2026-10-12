@@ -27,6 +27,24 @@ const (
 	trayID    = 1
 )
 
+var (
+	trayExitOnce sync.Once
+	trayExitID   uint32
+)
+
+// trayExitMsg is the registered model.TrayExitMessage (0 if registration
+// failed: the message is then never matched).
+func trayExitMsg() uint32 {
+	trayExitOnce.Do(func() { trayExitID = winapi.RegisterWindowMessage(model.TrayExitMessage) })
+	return trayExitID
+}
+
+// isTrayExit reports whether msg is the registered tray exit message.
+func isTrayExit(msg uint32) bool {
+	m := trayExitMsg()
+	return m != 0 && msg == m
+}
+
 // Options configure the tray application.
 type Options struct {
 	Lang string
@@ -90,6 +108,8 @@ type App struct {
 	taskbarCreated uint32
 	about          uintptr
 	settings       *settingsWindow
+	// iconRemoves counts NIM_DELETE calls (test hook, CHK-TRAY-11)
+	iconRemoves int
 }
 
 // NewApp creates the hidden owner window, the tray icon and starts the
@@ -102,6 +122,7 @@ func NewApp(opt Options) (*App, error) {
 		return nil, err
 	}
 	a.hwnd = hwnd
+	trayExitMsg()
 	a.taskbarCreated = winapi.RegisterWindowMessage("TaskbarCreated")
 	a.alerts = trayalert.New(a.opt.Lang)
 	b := opt.Beeper
@@ -273,7 +294,7 @@ func (a *App) Exit() {
 		winapi.DestroyWindow(a.about)
 	}
 	if a.settings != nil {
-		a.settings.close() // cancels a running test
+		a.settings.exitNow() // no questions; cancels a running test
 	}
 	winapi.DestroyWindow(a.hwnd) // WM_DESTROY -> PostQuitMessage
 	a.icons.free()
@@ -292,6 +313,11 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 		// Explorer restarted: the icon is gone, add it again
 		a.nidAdded = false
 		a.addIcon()
+		return 0, true
+	case isTrayExit(msg), msg == winapi.WM_CLOSE:
+		// CHK-TRAY-11: the installer's exit message and WM_CLOSE remove
+		// the icon and end the tray (wParam / lParam ignored)
+		a.Exit()
 		return 0, true
 	case msg == winapi.WM_DESTROY:
 		winapi.PostQuitMessage(0)
@@ -365,6 +391,12 @@ func (a *App) ShowRightMenu() { a.Command(trackMenu(a.hwnd, a.RightMenu(), &a.sq
 
 // Command executes a menu command.
 func (a *App) Command(cmd int) {
+	a.qmu.Lock()
+	closing := a.closing
+	a.qmu.Unlock()
+	if closing { // e.g. the exit message arrived while a menu was open
+		return
+	}
 	switch cmd {
 	case trayui.CmdSettings:
 		a.OpenSettings()
@@ -511,4 +543,5 @@ func (a *App) removeIcon() {
 	n.Flags = 0
 	winapi.ShellNotifyIcon(winapi.NIM_DELETE, &n)
 	a.nidAdded = false
+	a.iconRemoves++
 }

@@ -61,6 +61,24 @@ const (
 	EventIDInternal uint32 = 110 // configuration / internal error
 )
 
+// eventIDs lists every event ID the service writes (ascending, unique).
+var eventIDs = [...]uint32{
+	EventIDService, EventIDRecover, EventIDWarning, EventIDError,
+	EventIDAck, EventIDConfig, EventIDInternal,
+}
+
+// EventIDs returns a fresh copy of all Event Log event IDs the service
+// writes, ascending and unique: the single source for the message table
+// generator (tools/mkres) and its tests (CHK-SVC-02, PLAN-phase7 §3.3 S1).
+// IDs are bare (no severity/customer/facility bits); ReportEventW gets the
+// same bare value with category 0 and exactly one insertion string.
+// Cross-platform on purpose (no build tag).
+func EventIDs() []uint32 {
+	out := make([]uint32, len(eventIDs))
+	copy(out, eventIDs[:])
+	return out
+}
+
 // Event Log entry types (winnt.h EVENTLOG_*).
 const (
 	EventTypeError       uint16 = 0x0001

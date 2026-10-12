@@ -60,12 +60,32 @@ func (l *EventLog) Report(eventType uint16, eventID uint32, msg string) error {
 		return err
 	}
 	strs := [1]*uint16{s}
-	r, _, e := callProc(procReportEventW, l.h, uintptr(eventType), 0, uintptr(eventID), 0,
+	// ReportEventW contract (CHK-SVC-02, PLAN-phase7 §3.3 S4): wCategory 0,
+	// dwEventID is the bare ID from alert.EventIDs() (no severity /
+	// customer / facility bits; the message table is built with the same
+	// bare IDs), lpUserSid NULL, wNumStrings 1 (exactly one insertion
+	// string, %1 in the message table), dwDataSize 0, lpRawData NULL.
+	// Locked by TestCHK_SVC_02_ReportEventContract.
+	r, _, e := reportEventCall(l.h, uintptr(eventType), 0, uintptr(eventID), 0,
 		1, 0, uintptr(unsafe.Pointer(&strs[0])), 0)
 	if r == 0 {
 		return fmt.Errorf("winapi: ReportEventW: %w", e)
 	}
 	return nil
+}
+
+// reportEventHook performs the ReportEventW call; tests replace it to
+// inspect the arguments (CHK-SVC-02). Production: callProc as before.
+var reportEventHook = func(args ...uintptr) (uintptr, uintptr, error) {
+	return callProc(procReportEventW, args...)
+}
+
+// reportEventCall keeps pointers converted to uintptr in its argument
+// list alive until it returns (same guarantee as callProc).
+//
+//go:uintptrescapes
+func reportEventCall(args ...uintptr) (uintptr, uintptr, error) {
+	return reportEventHook(args...)
 }
 
 // Close deregisters the source (DeregisterEventSource).

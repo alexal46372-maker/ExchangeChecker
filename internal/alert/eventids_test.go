@@ -33,7 +33,7 @@ func TestCHK_SVC_02_EventIDs(t *testing.T) {
 		}
 	}
 	ids[0] = 9999
-	ids = append(ids[:0], 1)
+	_ = append(ids[:0], 1) // overwrite via append must not leak either
 	if again := EventIDs(); again[0] != 100 || len(again) != len(want) {
 		t.Errorf("mutation leaked: %v", again)
 	}
@@ -42,11 +42,26 @@ func TestCHK_SVC_02_EventIDs(t *testing.T) {
 		set[id] = true
 	}
 
-	// Every EventID* constant declared here must be listed.
+	// Every EventID* constant declared in package alert (all non-test
+	// .go files) must be listed.
 	fs := token.NewFileSet()
-	f, err := parser.ParseFile(fs, "sink.go", nil, 0)
+	srcs, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
+	}
+	var pkgFiles []*ast.File
+	for _, p := range srcs {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fs, p, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pkgFiles = append(pkgFiles, f)
+	}
+	if len(pkgFiles) < 2 {
+		t.Fatalf("package alert sources not found: %v", srcs)
 	}
 	vals := map[string]uint32{
 		"EventIDService": EventIDService, "EventIDRecover": EventIDRecover,
@@ -55,22 +70,24 @@ func TestCHK_SVC_02_EventIDs(t *testing.T) {
 		"EventIDInternal": EventIDInternal,
 	}
 	declared := 0
-	ast.Inspect(f, func(n ast.Node) bool {
-		if vs, ok := n.(*ast.ValueSpec); ok {
-			for _, nm := range vs.Names {
-				if strings.HasPrefix(nm.Name, "EventID") {
-					declared++
-					v, ok := vals[nm.Name]
-					if !ok {
-						t.Errorf("%s: new event ID constant, add it to EventIDs() and this test", nm.Name)
-					} else if !set[v] {
-						t.Errorf("%s=%d missing from EventIDs()", nm.Name, v)
+	for _, f := range pkgFiles {
+		ast.Inspect(f, func(n ast.Node) bool {
+			if vs, ok := n.(*ast.ValueSpec); ok {
+				for _, nm := range vs.Names {
+					if strings.HasPrefix(nm.Name, "EventID") {
+						declared++
+						v, ok := vals[nm.Name]
+						if !ok {
+							t.Errorf("%s: new event ID constant, add it to EventIDs() and this test", nm.Name)
+						} else if !set[v] {
+							t.Errorf("%s=%d missing from EventIDs()", nm.Name, v)
+						}
 					}
 				}
 			}
-		}
-		return true
-	})
+			return true
+		})
+	}
 	if declared != len(vals) {
 		t.Errorf("declared %d EventID constants, want %d", declared, len(vals))
 	}
@@ -82,12 +99,15 @@ func TestCHK_SVC_02_EventIDs(t *testing.T) {
 	}
 	used := 0
 	for _, p := range files {
+		if strings.HasSuffix(p, "_test.go") {
+			continue // only what the service itself writes
+		}
 		f, err := parser.ParseFile(fs, p, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
-			if se, ok := n.(*ast.SelectorExpr); ok && strings.HasPrefix(se.Sel.Name, "EventID") {
+			if se, ok := n.(*ast.SelectorExpr); ok && strings.HasPrefix(se.Sel.Name, "EventID") && se.Sel.Name != "EventIDs" {
 				if x, ok := se.X.(*ast.Ident); ok && x.Name == "alert" {
 					used++
 					if v, ok := vals[se.Sel.Name]; !ok || !set[v] {

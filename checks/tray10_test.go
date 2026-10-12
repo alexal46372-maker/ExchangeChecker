@@ -140,6 +140,8 @@ var winAPIMinVersion = map[string]float64{
 	// advapi32 — service: delete a key in an explicit registry view (CHK-CFG-04 test
 	// cleanup); Vista / XP x64 (present on Windows 7 x64)
 	"RegDeleteKeyExW": 6.0,
+	// kernel32 — phase 7a: service message table test (CHK-SVC-02)
+	"FormatMessageW": 5.0,
 	// gdi32
 	"CreateBitmap": 5.0, "CreateDIBSection": 5.0, "DeleteObject": 5.0, "GetStockObject": 5.0,
 	// shell32

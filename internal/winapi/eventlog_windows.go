@@ -76,6 +76,8 @@ func (l *EventLog) Report(eventType uint16, eventID uint32, msg string) error {
 
 // reportEventHook performs the ReportEventW call; tests replace it to
 // inspect the arguments (CHK-SVC-02). Production: callProc as before.
+// Override only in non-parallel tests (no t.Parallel): it is an
+// unsynchronized package global and every EventLog.Report goes through it.
 var reportEventHook = func(args ...uintptr) (uintptr, uintptr, error) {
 	return callProc(procReportEventW, args...)
 }

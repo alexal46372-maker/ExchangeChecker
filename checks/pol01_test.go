@@ -54,7 +54,8 @@ func TestCHK_POL_01(t *testing.T) {
 		"net.exe",
 	}
 
-	scanDirs := []string{"cmd", "internal"}
+	// tools/ (phase 7a: mkres) is held to the same rule
+	scanDirs := []string{"cmd", "internal", "tools"}
 	var hits []string
 	for _, d := range scanDirs {
 		base := filepath.Join(root, d)

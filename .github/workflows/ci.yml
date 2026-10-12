@@ -10,6 +10,12 @@
 # no internal/sqlcheck, no os/exec; the tray is built as a GUI exe (not uploaded).
 # CHK-IPC-01, CHK-TRAY-01..06 — linux job: -race for internal/trayipc, internal/trayui,
 # internal/trayalert, internal/traysettings.
+# CHK-RES-01, CHK-VER-01, CHK-SETUP-11 (phase 7a) — both jobs: the committed .syso of
+# cmd/exchsetup and cmd/exchsvc match tools/mkres; a release-like build (service, tray,
+# setup without payload, -X version 0.0.0-ci.<run_number>, .syso regenerated with that
+# version in the job's working copy only) is inspected by checks/ (EC_BUILD_DIR); the
+# exe files stay in $RUNNER_TEMP and are not uploaded (CHK-CI-01). windows job: setup
+# dependency graph (no os/exec, SQL driver, x/sys).
 name: ci
 
 on:
@@ -65,6 +71,17 @@ jobs:
             exit 1
           fi
           echo "tray packages in graph: $(printf '%s\n' "$deps" | grep -c .)"
+      - name: setup dependencies (CHK-SETUP-11)
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          deps="$(go list -deps ./cmd/exchsetup)"
+          if printf '%s\n' "$deps" | grep -E -x "os/exec|database/sql|github.com/microsoft/go-mssqldb.*|golang.org/x/sys.*|.*/internal/(sqlcheck|monitor|ipc)|.*/tools/.*"; then
+            echo "forbidden package linked into the setup"
+            exit 1
+          fi
+          echo "setup packages in graph: $(printf '%s\n' "$deps" | grep -c .)"
       - name: go test (incl. named pipe / Event Log / SCM, CHK-MON-05..07)
         run: go test ./... -count=1 -v
       - name: go build (windows/amd64)
@@ -74,6 +91,20 @@ jobs:
         run: |
           go build ./...
           go build -ldflags="-H windowsgui" -o "$RUNNER_TEMP/exchtray.exe" ./cmd/exchtray
+      - name: release-like build + resource inspection (CHK-RES-01, CHK-VER-01; not uploaded)
+        run: |
+          go run ./tools/mkres -check
+          V="0.0.0-ci.$GITHUB_RUN_NUMBER"
+          out="$RUNNER_TEMP/release"
+          mkdir -p "$out"
+          go run ./tools/mkres -version "$V"
+          X="-X github.com/alexal46372-maker/ExchangeChecker/internal/version.Version=$V"
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$out/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerTray.exe" ./cmd/exchtray
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built' -count=1 -v
+          go run ./tools/mkres
+          go run ./tools/mkres -check
 
   linux:
     name: linux / go1.20.14 vet + pure-Go tests + SQL Server integration
@@ -128,3 +159,17 @@ jobs:
           EC_SQL_TEST_USER: sa
           EC_SQL_TEST_PASSWORD: "Ec_Test-Passw0rd!"
         run: go test -race -count=1 ./internal/monitor/... ./internal/ipc/... ./internal/sqlcheck/... ./internal/trayipc/... ./internal/trayui/... ./internal/trayalert/... ./internal/traysettings/...
+      - name: release-like build + resource inspection (CHK-RES-01, CHK-VER-01; not uploaded)
+        run: |
+          go run ./tools/mkres -check
+          V="0.0.0-ci.$GITHUB_RUN_NUMBER"
+          out="$RUNNER_TEMP/release"
+          mkdir -p "$out"
+          go run ./tools/mkres -version "$V"
+          X="-X github.com/alexal46372-maker/ExchangeChecker/internal/version.Version=$V"
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$out/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerTray.exe" ./cmd/exchtray
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built' -count=1 -v
+          go run ./tools/mkres
+          go run ./tools/mkres -check

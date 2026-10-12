@@ -1,9 +1,12 @@
 package checks_test
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -122,4 +125,51 @@ func mentionIsBanComment(src, needle string) bool {
 		}
 	}
 	return true
+}
+
+// TestCHK_POL_01_NoOSExec — no .go file under cmd/, internal/ or tools/
+// (tests included) imports os/exec: no helper processes (POLICY §4). The
+// only exception are the tests of package checks/ (they run `go build`,
+// checks/res01_test.go), which this scan does not cover by design; a
+// self-check below makes sure the scan really finds an os/exec import.
+func TestCHK_POL_01_NoOSExec(t *testing.T) {
+	root := findModuleRoot(t)
+	importsExec := func(name string, src []byte) bool {
+		f, err := parser.ParseFile(token.NewFileSet(), name, src, parser.ImportsOnly)
+		if err != nil {
+			t.Errorf("parse %s: %v", name, err)
+			return false
+		}
+		for _, imp := range f.Imports {
+			if p, _ := strconv.Unquote(imp.Path.Value); p == "os/exec" {
+				return true
+			}
+		}
+		return false
+	}
+	if !importsExec("probe.go", []byte("package p\nimport x \"os/exec\"\nvar _ = x.Command\n")) {
+		t.Fatal("CHK-POL-01: scan does not detect an os/exec import")
+	}
+	files := 0
+	for _, d := range []string{"cmd", "internal", "tools"} {
+		filepath.Walk(filepath.Join(root, d), func(p string, fi os.FileInfo, err error) error {
+			if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".go") {
+				return err
+			}
+			files++
+			b, err := os.ReadFile(p)
+			if err != nil {
+				t.Error(err)
+				return nil
+			}
+			if importsExec(p, b) {
+				rel, _ := filepath.Rel(root, p)
+				t.Errorf("CHK-POL-01: %s imports os/exec (allowed only in checks/ tests)", filepath.ToSlash(rel))
+			}
+			return nil
+		})
+	}
+	if files < 100 {
+		t.Fatalf("scan found only %d .go files", files)
+	}
 }

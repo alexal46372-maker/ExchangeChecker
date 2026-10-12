@@ -3,10 +3,15 @@
 package wintray
 
 import (
+	"context"
+	"io"
 	"runtime"
 	"testing"
+	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -105,7 +110,7 @@ func TestCHK_TRAY_11_SettingsUnsaved(t *testing.T) {
 }
 
 // openDiscEdited opens the Discovery dialog and makes an unapplied edit.
-func openDiscEdited(t *testing.T, conf *fakeConfirm) (*App, *settingsWindow, *discoveryDialog) {
+func openDiscEdited(t *testing.T, conf *fakeConfirm) (*App, *settingsWindow, *discoveryDialog, *discService) {
 	t.Helper()
 	ds := newDiscService()
 	app := startCfgApp(t, ds.cfgService, true, nil, conf)
@@ -126,7 +131,7 @@ func openDiscEdited(t *testing.T, conf *fakeConfirm) (*App, *settingsWindow, *di
 	if !dd.d.Unapplied() {
 		t.Fatal("the edit is not unapplied")
 	}
-	return app, w, dd
+	return app, w, dd, ds
 }
 
 // TestCHK_TRAY_11_DiscoveryUnsaved — the Discovery dialog with unapplied
@@ -135,11 +140,15 @@ func TestCHK_TRAY_11_DiscoveryUnsaved(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	conf := &fakeConfirm{no: true}
-	app, w, dd := openDiscEdited(t, conf)
+	app, w, dd, _ := openDiscEdited(t, conf)
+	ups := w.updates
 	postExit(t, dd.hwnd)
 	pumpUntil(t, "dialog closed", func() bool { return !winapi.IsWindow(dd.hwnd) && !winapi.IsWindow(w.hwnd) })
 	if len(conf.texts) != 0 || app.settings != nil {
 		t.Errorf("questions %q", conf.texts)
+	}
+	if w.updates != ups {
+		t.Errorf("dd.close refreshed the exiting settings window (%d updates)", w.updates-ups)
 	}
 }
 
@@ -170,26 +179,90 @@ func TestCHK_TRAY_11_PendingConfirm(t *testing.T) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		conf := &fakeConfirm{}
-		app := startCfgApp(t, newCfgService(), true, nil, conf)
+		svc := newCfgService()
+		app := startCfgApp(t, svc, true, nil, conf)
 		w := openAdmin(t, app)
 		w.set(idSetName, "правка")
 		conf.hook = func() { postExit(t, app.hwnd); PumpPending() }
 		winapi.SendMessage(w.hwnd, winapi.WM_CLOSE, 0, 0) // «Отменить изменения?» open
 		pumpUntil(t, "tray exit", func() bool { return appClosed(app) && !winapi.IsWindow(w.hwnd) })
-		if len(conf.texts) != 1 {
-			t.Errorf("questions %q", conf.texts)
+		if len(conf.texts) != 1 || svc.count("save") != 0 || svc.count("settings") != 0 || svc.count("delete") != 0 {
+			t.Errorf("questions %q, saves %d/%d, deletes %d", conf.texts, svc.count("save"), svc.count("settings"), svc.count("delete"))
 		}
 	})
 	t.Run("discovery", func(t *testing.T) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		conf := &fakeConfirm{}
-		_, w, dd := openDiscEdited(t, conf)
+		_, w, dd, ds := openDiscEdited(t, conf)
 		conf.hook = func() { postExit(t, dd.hwnd); PumpPending() }
 		winapi.SendMessage(dd.hwnd, winapi.WM_CLOSE, 0, 0) // «Закрыть без применения?» open
 		pumpUntil(t, "dialog closed", func() bool { return !winapi.IsWindow(dd.hwnd) && !winapi.IsWindow(w.hwnd) })
-		if len(conf.texts) != 1 {
-			t.Errorf("questions %q", conf.texts)
+		if len(conf.texts) != 1 || w.ed.MapEdit != nil || ds.count("save") != 0 {
+			t.Errorf("questions %q, applied %v, saves %d", conf.texts, w.ed.MapEdit != nil, ds.count("save"))
 		}
 	})
+}
+
+// TestCHK_TRAY_11_ExitHungSession — a session goroutine that never ends
+// (Dial ignores ctx) does not keep the tray: the icon is removed before
+// the wait and Exit returns within exitWait (under the installer's 5 s).
+func TestCHK_TRAY_11_ExitHungSession(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	hang, dialed := make(chan struct{}), make(chan struct{}, 1)
+	defer close(hang)
+	dial := func(context.Context) (io.ReadWriteCloser, error) {
+		dialed <- struct{}{}
+		<-hang
+		return nil, io.EOF
+	}
+	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenSettings: true, Beeper: &testBeeper{},
+		Session: trayipc.Options{Dial: dial}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-dialed
+	app.nidAdded = true
+	atWait := -1
+	exitWaitHook = func() { atWait = app.iconRemoves }
+	defer func() { exitWaitHook = nil }()
+	start := time.Now()
+	app.Exit()
+	el := time.Since(start)
+	if el < exitWait || el > exitWait+time.Second {
+		t.Errorf("Exit took %v (bound %v)", el, exitWait)
+	}
+	if exitWait >= 5*time.Second {
+		t.Errorf("exitWait %v is not under the installer's 5 s", exitWait)
+	}
+	if atWait != 1 {
+		t.Errorf("icon removes when the wait started: %d", atWait)
+	}
+	if app.iconRemoves != 1 || app.nidAdded || winapi.IsWindow(app.hwnd) {
+		t.Errorf("icon removes %d, window %v", app.iconRemoves, winapi.IsWindow(app.hwnd))
+	}
+}
+
+// TestCHK_TRAY_11_WindowClasses — the classes the installer looks for
+// (model) are the classes of the tray windows.
+func TestCHK_TRAY_11_WindowClasses(t *testing.T) {
+	for got, want := range map[string]string{
+		mainClass: "ExchangeCheckerTray", SettingsClass: "ExchangeCheckerTraySettings",
+		SettingsViewClass: "ExchangeCheckerTraySettingsView", DiscoveryClass: "ExchangeCheckerTrayDiscovery",
+		model.TrayWindowClass + "|": mainClass + "|",
+	} {
+		if got != want {
+			t.Errorf("class %q, want %q", got, want)
+		}
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	conf := &fakeConfirm{}
+	app, w, dd, _ := openDiscEdited(t, conf)
+	for h, c := range map[uintptr]string{app.hwnd: model.TrayWindowClass, w.hwnd: model.TraySettingsClass, dd.hwnd: model.TrayDiscoveryClass} {
+		if g := winapi.GetClassName(h); g != c {
+			t.Errorf("window class %q, want %q", g, c)
+		}
+	}
 }

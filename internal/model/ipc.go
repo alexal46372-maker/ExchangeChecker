@@ -24,6 +24,17 @@ const (
 	// posts it before replacing or removing the files (phase 7 §7.3)
 	// without importing internal/wintray. wParam / lParam are ignored.
 	TrayExitMessage = "ExchangeChecker.TrayExit"
+	// Window classes that handle TrayExitMessage (CHK-TRAY-11). A separate
+	// `exchtray --settings` process never sees the message posted to the
+	// main tray window: the installer sends it with HWND_BROADCAST or to
+	// each of these classes.
+	TrayWindowClass = "ExchangeCheckerTray"
+	// TraySettingsClass: the administrator settings window (elevated
+	// `--settings` process); TraySettingsViewClass: the read-only one.
+	TraySettingsClass     = "ExchangeCheckerTraySettings"
+	TraySettingsViewClass = "ExchangeCheckerTraySettingsView"
+	// TrayDiscoveryClass: the Discovery dialog of the settings window.
+	TrayDiscoveryClass = "ExchangeCheckerTrayDiscovery"
 	// IPCVersion is the protocol version (Hello, Pong). Version 2 (phase
 	// 4, CHK-IPC-05) adds test_profile, ack_alert, the heartbeat, error
 	// codes and Hello.Capabilities; every addition is an omitempty field or

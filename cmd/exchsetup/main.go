@@ -1,5 +1,10 @@
-// Command exchsetup is the installer stub for Exchange Checker.
-// Phase 0: stub only; will become Win32 setup wizard (see PLAN.md §9).
+// Command exchsetup is the installer of Exchange Checker
+// (ExchangeCheckerSetup.exe, PLAN.md §9, docs/PHASE7.md).
+//
+// Phase 7a: still a stub; the exe already carries its resources
+// (rsrc_windows_amd64.syso from tools/mkres: requireAdministrator manifest,
+// icon, VERSIONINFO — CHK-RES-01, CHK-VER-01, CHK-SETUP-11). The wizard,
+// silent mode and the payload come in 7b–7d.
 package main
 
 import (

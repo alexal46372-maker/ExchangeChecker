@@ -279,6 +279,10 @@ func (dd *discoveryDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (ui
 		dd.userClose()
 		return 0, true
 	}
+	if isTrayExit(msg) { // CHK-TRAY-11: the dialog and its settings window
+		dd.w.exitNow()
+		return 0, true
+	}
 	return 0, false
 }
 
@@ -511,7 +515,11 @@ func (dd *discoveryDialog) ask(text string) bool {
 			return winapi.MessageBox(owner, text, caption, winapi.MB_YESNO|winapi.MB_ICONWARNING|winapi.MB_DEFBUTTON2) == winapi.IDYES
 		}
 	}
-	return confirm(dd.hwnd, text, dd.t(i18n.KeyAppName))
+	if dd.w.exiting {
+		return false
+	}
+	ok := confirm(dd.hwnd, text, dd.t(i18n.KeyAppName))
+	return ok && !dd.w.exiting // the exit message came while it was open
 }
 
 // overwriteOK asks before a new search / another candidate / a template

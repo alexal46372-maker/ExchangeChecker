@@ -110,13 +110,13 @@ func TestCHK_SVC_02_EventIDs(t *testing.T) {
 	}
 }
 
-type fakeReporter struct {
+type eventIDFakeReporter struct {
 	typ []uint16
 	id  []uint32
 	msg []string
 }
 
-func (f *fakeReporter) Report(t uint16, id uint32, m string) error {
+func (f *eventIDFakeReporter) Report(t uint16, id uint32, m string) error {
 	f.typ, f.id, f.msg = append(f.typ, t), append(f.id, id), append(f.msg, m)
 	return nil
 }
@@ -124,7 +124,7 @@ func (f *fakeReporter) Report(t uint16, id uint32, m string) error {
 // TestCHK_SVC_02_EventLogSinkContract — the sink passes a bare listed ID
 // and one message string per event to the Reporter (S4, Go side).
 func TestCHK_SVC_02_EventLogSinkContract(t *testing.T) {
-	r := &fakeReporter{}
+	r := &eventIDFakeReporter{}
 	s := &EventLogSink{R: r, Lang: "en"}
 	s.Alert(model.AlertEvent{From: model.LevelOK, To: model.LevelError})
 	s.Alert(model.AlertEvent{From: model.LevelError, To: model.LevelOK})

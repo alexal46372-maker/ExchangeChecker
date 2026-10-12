@@ -19,9 +19,10 @@ func TestCHK_SVC_02_ReportEventContract(t *testing.T) {
 	reportEventHook = func(args ...uintptr) (uintptr, uintptr, error) {
 		got = append([]uintptr(nil), args...)
 		if len(args) == 9 && args[7] != 0 {
-			p := *(**uint16)(unsafe.Pointer(args[7]))
+			arr := *(*unsafe.Pointer)(unsafe.Pointer(&args[7]))
+			p := *(**uint16)(arr)
 			n := 0
-			for *(*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(p)) + uintptr(n)*2)) != 0 {
+			for *(*uint16)(unsafe.Add(unsafe.Pointer(p), n*2)) != 0 {
 				n++
 			}
 			str = syscall.UTF16ToString(unsafe.Slice(p, n))

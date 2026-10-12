@@ -16,7 +16,7 @@ import (
 
 // DiscoveryClass is the window class of the Discovery dialog (phase 6d,
 // CHK-TRAY-07): «Таблицы обмена…» of the administrator settings window.
-const DiscoveryClass = "ExchangeCheckerTrayDiscovery"
+const DiscoveryClass = model.TrayDiscoveryClass
 
 // Discovery dialog control IDs.
 const (
@@ -829,6 +829,9 @@ func (dd *discoveryDialog) close() {
 	winapi.DestroyWindow(dd.hwnd)
 	if w.disc == dd {
 		w.disc = nil
+	}
+	if w.exiting { // the whole settings window goes away (CHK-TRAY-11)
+		return
 	}
 	if !w.cfg.hidden && winapi.IsWindow(w.hwnd) {
 		winapi.SetForegroundWindow(w.hwnd)

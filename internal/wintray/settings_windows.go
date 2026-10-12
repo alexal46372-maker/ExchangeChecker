@@ -23,8 +23,8 @@ import (
 // the tray process has its own class, SettingsViewClass, so that search
 // can never find a read-only window that is closing after «Изменить».
 const (
-	SettingsClass     = "ExchangeCheckerTraySettings"
-	SettingsViewClass = "ExchangeCheckerTraySettingsView"
+	SettingsClass     = model.TraySettingsClass
+	SettingsViewClass = model.TraySettingsViewClass
 )
 
 // msgSetTask: queued results of the settings window's requests.
@@ -167,6 +167,7 @@ type settingsWindow struct {
 	// exiting: the tray exit message (or App.Exit) is closing the window:
 	// no questions any more, an open one answers «Нет» (CHK-TRAY-11)
 	exiting bool
+	updates int // update calls (test hook)
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
@@ -580,6 +581,7 @@ func (w *settingsWindow) fill() {
 
 // update refreshes hints, enabled states and the status line.
 func (w *settingsWindow) update() {
+	w.updates++
 	ed := w.ed
 	edit := ed.CanEdit()
 	has := ed.HasProfile()

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	mainClass = "ExchangeCheckerTray"
+	mainClass = model.TrayWindowClass
 	// msgEvents: session events are queued (drained on the UI thread).
 	msgEvents = winapi.WM_APP + 1
 	// msgNotify: NotifyIcon callback message.
@@ -71,6 +71,13 @@ type Options struct {
 	// fake).
 	Confirm func(owner uintptr, text, caption string) bool
 }
+
+// exitWait bounds the wait for the session goroutine in Exit (well under
+// the installer's 5 s before TerminateProcess).
+var exitWait = 2 * time.Second
+
+// exitWaitHook runs when Exit starts waiting for the session (test hook).
+var exitWaitHook func()
 
 // ackTimeout bounds one ack_alert request.
 const ackTimeout = 10 * time.Second
@@ -286,7 +293,15 @@ func (a *App) Exit() {
 	a.removeIcon()
 	a.player.Close()
 	a.cancel()
-	<-a.done
+	// bounded: a hung session must not keep the tray (the icon is already
+	// gone) — the installer terminates it after 5 s (CHK-TRAY-11)
+	if exitWaitHook != nil {
+		exitWaitHook()
+	}
+	select {
+	case <-a.done:
+	case <-time.After(exitWait):
+	}
 	if a.awin != nil {
 		winapi.DestroyWindow(a.awin.hwnd)
 	}

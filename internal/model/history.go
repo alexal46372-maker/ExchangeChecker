@@ -97,8 +97,9 @@ const (
 	HistoryScanLines = 200000
 	HistoryScanTime  = 2 * time.Second
 	// HistorySDDL: the history folder is SYSTEM + Administrators only,
-	// protected (architect decision 1); the tray reads it through IPC.
-	HistorySDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	// protected, auto-inherited flag like DataDirSDDL (architect decision
+	// 1); the tray reads it through IPC.
+	HistorySDDL = "D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 )
 
 // check_now limits (CHK-SVC-04).

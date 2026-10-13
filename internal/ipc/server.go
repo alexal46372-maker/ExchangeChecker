@@ -1102,6 +1102,13 @@ func (s *Server) startHistory(c *conn, req model.IPCRequest) bool {
 // checkNow handles check_now (phase 9, CHK-SVC-04): at most one request
 // per model.CheckConnInterval per connection (rate_limited +
 // retryAfterMs), then the handler's limits.
+//
+// The per-connection limit only damps a chatty client; several pipes can
+// bypass it, which is fine: the monitor's global limits (all profiles once
+// per model.CheckAllInterval, a profile once per
+// model.CheckProfileInterval, coalescing with queued / running polls)
+// bound the SQL load regardless of the number of connections, and the
+// pipe server caps the connections.
 func (s *Server) checkNow(c *conn, req model.IPCRequest) model.IPCMessage {
 	ch, ok := s.H.(Checker)
 	if !ok {

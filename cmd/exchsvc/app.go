@@ -163,7 +163,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	// service keeps monitoring
 	secureHist := ac.SecureHistory
 	if secureHist == nil {
-		secureHist = secureHistoryDir
+		secureHist = func(dir string) error { return secureHistoryDir(dir, log.Printf) }
 	}
 	hist := history.Open(history.Options{Dir: filepath.Join(ac.Dir, model.HistoryDir), Prepare: secureHist, Now: ac.Now, Log: log})
 	defer hist.Close()

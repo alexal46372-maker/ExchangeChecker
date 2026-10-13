@@ -367,7 +367,19 @@ func (e *Editor) validationText(args []string) string {
 		}
 		a[3] = e.t(presetKeys[PresetIndex(a[3])])
 	}
-	return model.FormatMessage(args[1], a, e.Lang)
+	text := model.FormatMessage(args[1], a, e.Lang)
+	if args[1] == model.ValSQLServerForbidden && len(args) > 2 { // phase 9b (CHK-TRAY-29): the reason
+		if k, ok := forbiddenReasonKeys[args[2]]; ok {
+			text += " " + e.t(k)
+		}
+	}
+	return text
+}
+
+// forbiddenReasonKeys: {0} of validation.sql_server_forbidden.
+var forbiddenReasonKeys = map[string]string{
+	"np": i18n.KeyValReasonNp, "lpc": i18n.KeyValReasonLpc, "admin": i18n.KeyValReasonAdmin,
+	"unc": i18n.KeyValReasonUnc, "backslash": i18n.KeyValReasonBackslash, "pipe": i18n.KeyValReasonPipe,
 }
 
 func (e *Editor) fieldProblem(fe *model.FieldError) *Problem {
@@ -667,7 +679,7 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 			return &Problem{Text: e.t(i18n.KeySetNoRevision), Reload: true}
 		}
 		text := base
-		if detail != "" && m.ErrorKey != model.MsgTestPasswordRequired {
+		if detail != "" && m.ErrorKey != model.MsgTestPasswordRequired && m.ErrorKey != model.MsgPasswordTargetChange {
 			text += " " + detail
 		}
 		return &Problem{Text: text, Field: e.focus(path, params)}

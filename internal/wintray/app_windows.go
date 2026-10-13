@@ -81,6 +81,9 @@ type Options struct {
 	BalloonStore BalloonStore
 	// Log receives tray log lines (nil = package log; tests: a fake).
 	Log func(line string)
+	// BalloonDebounce overrides the hold time of recovery balloons (0 =
+	// twice the poll interval, < 0 = none; tests).
+	BalloonDebounce time.Duration
 	// HiddenStatus keeps the «Состояние» window hidden (tests).
 	HiddenStatus bool
 }
@@ -136,6 +139,18 @@ type App struct {
 	balloons     []trayui.Balloon
 	statusWin    *statusWindow
 	checkResults []string
+	// phase 9b: check_now wait (CHK-TRAY-22), service clock (CHK-TRAY-23),
+	// balloon debounce (CHK-TRAY-24), events_since catch-up (CHK-TRAY-25),
+	// history window (CHK-TRAY-26)
+	check        trayui.CheckState
+	clock        trayui.ServerClock
+	debounce     trayui.Debouncer
+	dueTimer     *time.Timer
+	tracker      trayui.EventTracker
+	wasConnected bool
+	catchUps     int
+	caughtUp     []model.AlertEvent
+	histWin      *histWindow
 }
 
 // NewApp creates the hidden owner window, the tray icon and starts the
@@ -325,6 +340,12 @@ func (a *App) Exit() {
 	if a.awin != nil {
 		winapi.DestroyWindow(a.awin.hwnd)
 	}
+	if a.histWin != nil && a.histWin.alive() {
+		winapi.DestroyWindow(a.histWin.hwnd) // cancels its history request
+	}
+	if a.dueTimer != nil {
+		a.dueTimer.Stop()
+	}
 	if a.statusWin != nil && winapi.IsWindow(a.statusWin.hwnd) {
 		winapi.DestroyWindow(a.statusWin.hwnd)
 	}
@@ -398,9 +419,10 @@ func (a *App) drain() {
 	} else if old.Icon != a.ind.Icon || old.Tooltip != a.ind.Tooltip {
 		a.modifyIcon()
 	}
+	a.afterDrain(q)
 	a.balloonEvents(q)
 	if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) {
-		sw.update(a.status, a.connected())
+		sw.update(a.status, a.connected() && !a.check.Busy)
 	}
 }
 
@@ -426,7 +448,7 @@ func (a *App) LeftMenu() []trayui.Item { return trayui.BuildLeftMenu(a.status, a
 func (a *App) RightMenu() []trayui.Item {
 	m := trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref, a.serviceState())
 	// phase 9a items before the separator above «Выход»
-	ext := trayui.Phase9Items(a.opt.Lang, a.balloonsOn, a.connected())
+	ext := trayui.Phase9Items(a.opt.Lang, a.balloonsOn, a.connected() && !a.check.Busy)
 	at := len(m) - 2
 	out := append(append(append([]trayui.Item(nil), m[:at]...), ext...), m[at:]...)
 	return out

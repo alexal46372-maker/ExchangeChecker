@@ -394,7 +394,93 @@ const (
 	KeyAgoDays               = "ago.days"
 )
 
+// Phase 9b (CHK-TRAY-22..29).
+const (
+	KeyCheckRateLimited   = "check.rate_limited"
+	KeyCheckRunning       = "check.running"
+	KeyCheckCoalesced     = "check.coalesced"
+	KeyCheckDone          = "check.done"
+	KeyCheckTimeout       = "check.timeout"
+	KeyStHistory          = "st.history"
+	KeyTipStHistory       = "tip.st_history"
+	KeyStHistoryNoPoint   = "st.history_no_point"
+	KeyStHistoryOff       = "st.history_off"
+	KeyHistTitle          = "hist.title"
+	KeyHistDay            = "hist.day"
+	KeyHistWeek           = "hist.week"
+	KeyTipHistDay         = "tip.hist_day"
+	KeyTipHistWeek        = "tip.hist_week"
+	KeyTipHistChart       = "tip.hist_chart"
+	KeyTipHistInfo        = "tip.hist_info"
+	KeyTipHistExportCSV   = "tip.hist_export_csv"
+	KeyTipHistExportHTML  = "tip.hist_export_html"
+	KeyTipHistClose       = "tip.hist_close"
+	KeyHistLoading        = "hist.loading"
+	KeyHistLoaded         = "hist.loaded"
+	KeyHistEmpty          = "hist.empty"
+	KeyHistExporting      = "hist.exporting"
+	KeyHistFailed         = "hist.failed"
+	KeyHistAxisMin        = "hist.axis_min"
+	KeyHistColTime        = "hist.col_time"
+	KeyHistColKind        = "hist.col_kind"
+	KeyHistColLag         = "hist.col_lag"
+	KeyHistColLatency     = "hist.col_latency"
+	KeyHistColChange      = "hist.col_change"
+	KeyHistColDuration    = "hist.col_duration"
+	KeyHistKindPoint      = "hist.kind_point"
+	KeyHistKindProfile    = "hist.kind_profile"
+	KeyHistKindEvent      = "hist.kind_event"
+	KeyHistKindRecovered  = "hist.kind_recovered"
+	KeyValReasonNp        = "val.reason_np"
+	KeyValReasonLpc       = "val.reason_lpc"
+	KeyValReasonAdmin     = "val.reason_admin"
+	KeyValReasonUnc       = "val.reason_unc"
+	KeyValReasonBackslash = "val.reason_backslash"
+	KeyValReasonPipe      = "val.reason_pipe"
+)
+
 var catalog = map[string][2]string{ // key -> {ru, en}
+	KeyCheckRateLimited:      {"Проверка уже запрашивалась недавно, повторите через %d с", "A check was requested recently, try again in %d s"},
+	KeyCheckRunning:          {"Проверка выполняется…", "Check in progress…"},
+	KeyCheckCoalesced:        {"Опрос уже идёт, ждём его результат…", "A poll is already running, waiting for its result…"},
+	KeyCheckDone:             {"Проверка выполнена", "Check completed"},
+	KeyCheckTimeout:          {"Результат проверки не пришёл, данные обновятся при следующем опросе", "The check result did not arrive, the data will update with the next poll"},
+	KeyStHistory:             {"История…", "History…"},
+	KeyTipStHistory:          {"График отставания и события выбранной точки за сутки или неделю", "Lag chart and events of the selected point for a day or a week"},
+	KeyStHistoryNoPoint:      {"Выберите в таблице строку точки обмена", "Select an exchange point row in the table"},
+	KeyStHistoryOff:          {"История недоступна: служба её не поддерживает", "History is not available: the service does not support it"},
+	KeyHistTitle:             {"История: %s", "History: %s"},
+	KeyHistDay:               {"Сутки", "Day"},
+	KeyHistWeek:              {"Неделя", "Week"},
+	KeyTipHistDay:            {"Последние 24 часа, точки по 5 минут", "The last 24 hours, 5-minute points"},
+	KeyTipHistWeek:           {"Последние 7 дней, точки по часу", "The last 7 days, hourly points"},
+	KeyTipHistChart:          {"Отставание обмена, мин: толстая линия — среднее, тонкие — мин. и макс.; жёлтая и красная — пороги; треугольник — просрочка, кружок — восстановление", "Exchange lag, min: thick line is the average, thin lines min and max; yellow and red are the thresholds; triangle is an overdue, circle a recovery"},
+	KeyTipHistInfo:           {"Состояние загрузки и выгрузки истории", "History loading and export state"},
+	KeyTipHistExportCSV:      {"Сохранить все записи истории точки за период в CSV (UTF-8, «;»)", "Save all history records of the point for the period as CSV (UTF-8, \";\")"},
+	KeyTipHistExportHTML:     {"Сохранить все записи истории точки за период как страницу HTML", "Save all history records of the point for the period as an HTML page"},
+	KeyTipHistClose:          {"Закрыть окно и прервать загрузку", "Close the window and stop loading"},
+	KeyHistLoading:           {"Загрузка… страниц: %d", "Loading… pages: %d"},
+	KeyHistLoaded:            {"Интервалов: %d, событий: %d", "Intervals: %d, events: %d"},
+	KeyHistEmpty:             {"Нет данных за период", "No data for the period"},
+	KeyHistExporting:         {"Выгрузка… записей: %d", "Exporting… records: %d"},
+	KeyHistFailed:            {"Не удалось получить историю", "Could not get the history"},
+	KeyHistAxisMin:           {"мин", "min"},
+	KeyHistColTime:           {"Время", "Time"},
+	KeyHistColKind:           {"Запись", "Record"},
+	KeyHistColLag:            {"Отставание, мин", "Lag, min"},
+	KeyHistColLatency:        {"Опрос, мс", "Poll, ms"},
+	KeyHistColChange:         {"Переход", "Transition"},
+	KeyHistColDuration:       {"Длительность, мин", "Duration, min"},
+	KeyHistKindPoint:         {"опрос точки", "point poll"},
+	KeyHistKindProfile:       {"опрос базы", "database poll"},
+	KeyHistKindEvent:         {"тревога", "alert"},
+	KeyHistKindRecovered:     {"восстановление", "recovery"},
+	KeyValReasonNp:           {"Причина: «np:» — именованный канал.", "Reason: \"np:\" is a named pipe."},
+	KeyValReasonLpc:          {"Причина: «lpc:» — локальное подключение LPC.", "Reason: \"lpc:\" is a local LPC connection."},
+	KeyValReasonAdmin:        {"Причина: «admin:» — выделенное подключение администратора (DAC).", "Reason: \"admin:\" is the dedicated admin connection (DAC)."},
+	KeyValReasonUnc:          {"Причина: адрес вида «\\\\компьютер» — UNC-путь.", "Reason: an address like \"\\\\computer\" is a UNC path."},
+	KeyValReasonBackslash:    {"Причина: адрес начинается с обратной косой черты.", "Reason: the address starts with a backslash."},
+	KeyValReasonPipe:         {"Причина: адрес содержит путь канала «\\pipe\\».", "Reason: the address contains a pipe path \"\\pipe\\\"."},
 	KeyBalloonOverdueTitle:   {"Просрочка обмена", "Exchange overdue"},
 	KeyBalloonRecoveredTitle: {"Обмен восстановлен", "Exchange recovered"},
 	KeyBalloonOverdue:        {"%s: нет обмена %d мин (%s)", "%s: no exchange for %d min (%s)"},

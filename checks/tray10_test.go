@@ -168,6 +168,10 @@ var winAPIMinVersion = map[string]float64{
 	// phase 9a «Состояние» window: NM_CUSTOMDRAW copy (kernel32) and the
 	// export save dialog (comdlg32) (CHK-TRAY-19 / CHK-TRAY-21)
 	"RtlMoveMemory": 5.0, "GetSaveFileNameW": 5.0,
+	// phase 9b history chart, plain GDI (CHK-TRAY-26)
+	"BeginPaint": 5.0, "EndPaint": 5.0, "GetClientRect": 5.0, "InvalidateRect": 5.0, "FillRect": 5.0,
+	"CreatePen": 5.0, "CreateSolidBrush": 5.0, "SelectObject": 5.0, "MoveToEx": 5.0, "LineTo": 5.0,
+	"Polyline": 5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

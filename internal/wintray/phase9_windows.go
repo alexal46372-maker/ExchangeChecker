@@ -101,17 +101,36 @@ func (a *App) Balloons() []trayui.Balloon { return a.balloons }
 
 // balloonEvents shows one balloon for the point alert pushes of a drain.
 func (a *App) balloonEvents(q []trayipc.Event) {
-	if !a.balloonsOn {
-		return
-	}
-	var bs []trayui.Balloon
+	var evs []model.AlertEvent
 	for _, e := range q {
 		if e.Kind != trayipc.EventAlert || e.Alert == nil {
 			continue
 		}
-		if b, ok := trayui.BalloonFor(*e.Alert, a.opt.Lang); ok {
-			bs = append(bs, b)
+		if !a.tracker.Observe(*e.Alert) { // (runId, eventId) seen: duplicate push
+			continue
 		}
+		evs = append(evs, *e.Alert)
+	}
+	a.feedBalloons(evs)
+}
+
+// feedBalloons passes alert events through the debouncer (CHK-TRAY-24)
+// and shows one balloon for what is due now.
+func (a *App) feedBalloons(evs []model.AlertEvent) {
+	now := time.Now()
+	a.debounce.Window = a.debounceWindow()
+	var bs []trayui.Balloon
+	for _, ev := range evs {
+		bs = append(bs, a.debounce.Feed(ev, now, a.opt.Lang)...)
+	}
+	bs = append(bs, a.debounce.Due(now)...)
+	a.showBalloons(bs)
+	a.scheduleDue()
+}
+
+func (a *App) showBalloons(bs []trayui.Balloon) {
+	if !a.balloonsOn {
+		return
 	}
 	b, ok := trayui.CombineBalloons(bs, a.opt.Lang)
 	if !ok {
@@ -119,6 +138,39 @@ func (a *App) balloonEvents(q []trayipc.Event) {
 	}
 	a.balloons = append(a.balloons, b)
 	a.showBalloon(b)
+}
+
+// debounceWindow: Options.BalloonDebounce (tests; < 0 = none), else twice
+// the poll interval of the heartbeat (trayui.DebounceWindow).
+func (a *App) debounceWindow() time.Duration {
+	switch {
+	case a.opt.BalloonDebounce < 0:
+		return 0
+	case a.opt.BalloonDebounce > 0:
+		return a.opt.BalloonDebounce
+	}
+	poll := 60
+	if hb := a.status.Heartbeat; hb != nil && hb.PollIntervalSec > 0 {
+		poll = hb.PollIntervalSec
+	}
+	return trayui.DebounceWindow(poll)
+}
+
+// scheduleDue arms one timer for the earliest held recovery.
+func (a *App) scheduleDue() {
+	t, ok := a.debounce.NextDue()
+	if !ok {
+		return
+	}
+	if a.dueTimer != nil {
+		a.dueTimer.Stop()
+	}
+	a.dueTimer = time.AfterFunc(time.Until(t)+10*time.Millisecond, func() {
+		a.runOnUI(func() {
+			a.showBalloons(a.debounce.Due(time.Now()))
+			a.scheduleDue()
+		})
+	})
 }
 
 func (a *App) showBalloon(b trayui.Balloon) {
@@ -151,36 +203,90 @@ func (a *App) OpenStatus() *statusWindow {
 		if err != nil {
 			return nil
 		}
+		sw.now = a.serverNow
+		sw.canHistory = a.canHistory
+		sw.onHistory = func(r trayui.StatusRow) { a.OpenHistory(r) }
 		a.statusWin = sw
 	}
-	a.statusWin.update(a.status, a.connected())
+	a.statusWin.update(a.status, a.connected() && !a.check.Busy)
 	if !a.opt.HiddenStatus {
 		a.statusWin.show()
 	}
 	return a.statusWin
 }
 
-// CheckNow sends poll_now for all databases (CHK-TRAY-20) off the UI
-// thread; the result goes to the status window (or a tray message).
+// CheckNow asks the service for an immediate poll of all databases
+// (CHK-TRAY-20 / CHK-TRAY-22): check_now when announced (the button and
+// the menu item stay unavailable until the status that contains the
+// result: lastCheckSeq >= checkSeq, at most trayui.CheckWait), else
+// poll_now (unavailable until the reply).
 func (a *App) CheckNow() {
+	if a.check.Busy {
+		return
+	}
 	s, lang := a.session, a.opt.Lang
+	useCheck := s.Supported(model.CmdCheckNow)
+	a.check.Start(time.Now())
+	a.updateCheckUI()
+	cmd := model.CmdPollNow
+	if useCheck {
+		cmd = model.CmdCheckNow
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), pollNowTimeout)
-		m, err := s.Do(ctx, model.IPCRequest{Cmd: model.CmdPollNow})
+		m, err := s.Do(ctx, model.IPCRequest{Cmd: cmd})
 		cancel()
-		text, warn := CheckNowText(m, err, lang)
+		r := trayui.ParseCheckReply(m, err, useCheck, lang)
 		a.runOnUI(func() {
-			a.checkResults = append(a.checkResults, text)
-			if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) && winapi.IsWindowVisible(sw.hwnd) {
-				sw.setInfo(text)
-				return
+			a.check.Reply(r)
+			a.checkResult(r.Text, r.Warn)
+			if a.check.Busy {
+				// the result may already be in the current snapshot
+				a.checkStatus(a.status.Snapshot)
+				time.AfterFunc(trayui.CheckWait+50*time.Millisecond, func() {
+					a.runOnUI(func() { a.checkStatus(nil) })
+				})
 			}
-			if warn {
-				a.notify(text, true)
-			}
+			a.updateCheckUI()
 		})
 	}()
 }
+
+// checkStatus ends the wait of check_now on the status with the result.
+func (a *App) checkStatus(snap *model.StatusSnapshot) {
+	done, timedOut := a.check.Status(snap, time.Now())
+	switch {
+	case done:
+		a.checkResult(i18n.T(i18n.KeyCheckDone, a.opt.Lang), false)
+	case timedOut:
+		a.checkResult(i18n.T(i18n.KeyCheckTimeout, a.opt.Lang), false)
+	default:
+		return
+	}
+	a.updateCheckUI()
+}
+
+func (a *App) checkResult(text string, warn bool) {
+	a.checkResults = append(a.checkResults, text)
+	if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) {
+		sw.setInfo(text)
+		if winapi.IsWindowVisible(sw.hwnd) {
+			return
+		}
+	}
+	if warn {
+		a.notify(text, true)
+	}
+}
+
+func (a *App) updateCheckUI() {
+	if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) {
+		winapi.EnableWindow(sw.check, a.connected() && !a.check.Busy)
+	}
+}
+
+// CheckBusy: «Проверить сейчас» is waiting (tests).
+func (a *App) CheckBusy() bool { return a.check.Busy }
 
 // CheckNowText is the outcome of a poll_now reply.
 func CheckNowText(m model.IPCMessage, err error, lang string) (string, bool) {

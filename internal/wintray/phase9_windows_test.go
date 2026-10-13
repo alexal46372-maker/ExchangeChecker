@@ -70,6 +70,7 @@ func TestCHK_TRAY_18_Balloons(t *testing.T) {
 	defer app.Exit() // windows close on this locked thread
 	store := &memBalloonStore{on: true}
 	app.opt.BalloonStore = store
+	app.opt.BalloonDebounce = -1 // phase 9b debounce off: every transition shows (CHK-TRAY-24 has its own test)
 	app.loadBalloonPref()
 
 	push := func(evs ...model.AlertEvent) {

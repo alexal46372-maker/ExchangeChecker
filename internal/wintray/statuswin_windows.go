@@ -21,6 +21,7 @@ const (
 	idStCheckNow   = 410
 	idStExportCSV  = 411
 	idStExportHTML = 412
+	idStHistory    = 413
 	idStClose      = winapi.IDCANCEL
 )
 
@@ -37,6 +38,9 @@ const (
 type statusWindow struct {
 	hwnd, list, info        uintptr
 	check, csv, html, close uintptr
+	history                 uintptr
+	canHistory              func() bool
+	onHistory               func(trayui.StatusRow)
 	tips                    *tooltips
 	lang                    string
 	rows                    []trayui.StatusRow
@@ -69,6 +73,9 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 				if sw.onCheck != nil {
 					sw.onCheck()
 				}
+				return 0, true
+			case idStHistory:
+				sw.openHistory()
 				return 0, true
 			case idStExportCSV:
 				sw.export(exportCSV)
@@ -104,7 +111,8 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 		winapi.ListViewInsertColumn(sw.list, i, i18n.T(k, lang), statusColWidths[i])
 	}
 	by := int32(h - 90)
-	sw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idStInfo, 10, by+5, 420, 22)
+	sw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idStInfo, 10, by+5, 320, 22)
+	sw.history = child(hwnd, "BUTTON", i18n.T(i18n.KeyStHistory, lang), winapi.WS_TABSTOP, idStHistory, w-726, by, 120, 28)
 	sw.check = child(hwnd, "BUTTON", i18n.T(i18n.KeyMenuCheckNow, lang), winapi.WS_TABSTOP, idStCheckNow, w-596, by, 140, 28)
 	sw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV, lang), winapi.WS_TABSTOP, idStExportCSV, w-446, by, 130, 28)
 	sw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, lang), winapi.WS_TABSTOP, idStExportHTML, w-306, by, 130, 28)
@@ -113,6 +121,7 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	sw.tips.set(sw.check, i18n.T(i18n.KeyTipCheckNow, lang))
 	sw.tips.set(sw.csv, i18n.T(i18n.KeyTipExportCSV, lang))
 	sw.tips.set(sw.html, i18n.T(i18n.KeyTipExportHTML, lang))
+	sw.tips.set(sw.history, i18n.T(i18n.KeyTipStHistory, lang))
 	sw.tips.set(sw.info, i18n.T(i18n.KeyTipStInfo, lang))
 	sw.tips.set(sw.close, i18n.T(i18n.KeyTipClose, lang))
 	if show {
@@ -128,11 +137,19 @@ func (sw *statusWindow) show() {
 
 // update refills the list from the status (UI thread).
 func (sw *statusWindow) update(st trayipc.Status, connected bool) {
+	var selKey [2]string
+	if i := winapi.ListViewSelected(sw.list); i >= 0 && i < len(sw.rows) {
+		selKey = [2]string{sw.rows[i].ProfileID, sw.rows[i].PointKey}
+	}
 	sw.rows = trayui.StatusRows(st, sw.lang, sw.now())
 	winapi.SendMessage(sw.list, winapi.LVM_DELETEALLITEMS, 0, 0)
-	for _, r := range sw.rows {
+	for i, r := range sw.rows {
 		winapi.ListViewAddRow(sw.list, r.Cells())
+		if selKey[0] != "" && r.ProfileID == selKey[0] && r.PointKey == selKey[1] {
+			winapi.ListViewSelect(sw.list, i) // the selection survives a refresh
+		}
 	}
+	sw.updateHistoryButton()
 	winapi.EnableWindow(sw.check, connected)
 	if sw.rows == nil {
 		winapi.SetWindowText(sw.info, i18n.T(i18n.KeyStNoData, sw.lang))
@@ -147,6 +164,14 @@ func (sw *statusWindow) setInfo(text string) { winapi.SetWindowText(sw.info, tex
 // the row level.
 func (sw *statusWindow) onNotify(lp uintptr) (uintptr, bool) {
 	h := winapi.ReadNMHDR(lp)
+	if h.From == sw.list && h.Code == winapi.LVN_ITEMCHANGED {
+		sw.updateHistoryButton()
+		return 0, false
+	}
+	if h.From == sw.list && h.Code == winapi.NM_DBLCLK {
+		sw.openHistory()
+		return 0, true
+	}
 	if h.From != sw.list || h.Code != winapi.NM_CUSTOMDRAW {
 		return 0, false
 	}
@@ -195,4 +220,31 @@ func (sw *statusWindow) export(k exportKind) {
 	}
 	sw.lastSaved = p
 	sw.setInfo(fmt.Sprintf(i18n.T(i18n.KeyStSaved, sw.lang), p))
+}
+
+// selected is the selected row (ok = false when none).
+func (sw *statusWindow) selected() (trayui.StatusRow, bool) {
+	i := winapi.ListViewSelected(sw.list)
+	if i < 0 || i >= len(sw.rows) {
+		return trayui.StatusRow{}, false
+	}
+	return sw.rows[i], true
+}
+
+// updateHistoryButton: «История…» needs a point row and the history
+// capability of the service (CHK-TRAY-26 fallback).
+func (sw *statusWindow) updateHistoryButton() {
+	r, ok := sw.selected()
+	winapi.EnableWindow(sw.history, ok && r.PointKey != "" && sw.canHistory != nil && sw.canHistory())
+}
+
+func (sw *statusWindow) openHistory() {
+	r, ok := sw.selected()
+	if !ok {
+		sw.setInfo(i18n.T(i18n.KeyStHistoryNoPoint, sw.lang))
+		return
+	}
+	if sw.onHistory != nil {
+		sw.onHistory(r)
+	}
 }

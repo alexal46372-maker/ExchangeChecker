@@ -22,6 +22,9 @@ type StatusRow struct {
 	Level                 model.AlertLevel
 	Color                 Color
 	Note                  string // error text / baseline / acknowledged
+	// phase 9b: the history window of a point row (CHK-TRAY-26)
+	ProfileID, PointKey string // PointKey "" = a database row
+	WarnMin, ErrMin     int
 }
 
 // StatusColumns are the column header keys, in StatusRow order of the
@@ -72,7 +75,7 @@ func StatusRows(st trayipc.Status, lang string, now time.Time) []StatusRow {
 			db = p.ProfileID
 		}
 		if !p.Enabled || p.Error != "" || p.ErrorKey != "" || !p.Polled || len(p.Points) == 0 {
-			r := StatusRow{Database: db, AgoMinutes: -1, Level: p.Level, Color: LevelColor(p.Level)}
+			r := StatusRow{Database: db, AgoMinutes: -1, Level: p.Level, Color: LevelColor(p.Level), ProfileID: p.ProfileID}
 			switch {
 			case !p.Enabled:
 				r.State, r.Color = i18n.T(i18n.KeyStDisabled, lang), ColorGrey
@@ -95,7 +98,10 @@ func StatusRows(st trayipc.Status, lang string, now time.Time) []StatusRow {
 		for _, pt := range ps {
 			r := StatusRow{Database: db, Point: pt.Name, Plan: pt.PlanLabel, Level: pt.Level, Color: LevelColor(pt.Level),
 				LastSend: timeText(pt.LastSend), LastRecv: timeText(pt.LastRecv), Fresh: timeText(pt.FreshAt),
-				State: levelText(pt.Level, lang)}
+				State: levelText(pt.Level, lang), ProfileID: p.ProfileID, PointKey: pt.Key, WarnMin: p.WarnMinutes, ErrMin: p.ErrorMinutes}
+			if r.PointKey == "" {
+				r.PointKey = model.PointKey(pt.ExchangePoint)
+			}
 			if r.Plan == "" {
 				r.Plan = pt.PlanTable
 			}

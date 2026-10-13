@@ -1,6 +1,6 @@
 # Фаза 7: Win32-инсталлятор Exchange Checker (план, утверждён 12.10.2026)
 
-План написан EC Setup на `main` 56bba90 (7a реализована от `main` f892603) и утверждён координатором 12.10.2026 с решениями ниже. **Решения координатора (§D) имеют приоритет над текстом плана**; противоречащие места плана исправлены или помечены. Решения перенесены в PLAN.md §12 п. 90 (пп. 87–89 в `main` заняты решениями EC Tray T1). Статус подфаз: **7a — реализована** (ветка `phase7a`), 7b–7e — запланированы.
+План написан EC Setup на `main` 56bba90 (7a реализована от `main` f892603) и утверждён координатором 12.10.2026 с решениями ниже. **Решения координатора (§D) имеют приоритет над текстом плана**; противоречащие места плана исправлены или помечены. Решения перенесены в PLAN.md §12 п. 90 (пп. 87–89 в `main` заняты решениями EC Tray T1). Статус подфаз: **7a — реализована** (ветка `phase7a`), **7b — реализована** (ветка `phase7b`), 7c–7e — запланированы.
 
 ## D. Решения координатора (12.10.2026)
 
@@ -61,6 +61,13 @@
 Требования к фазе 7, уже записанные в репозитории: DELIVERY.md («Требования к инсталлятору (фаза 7) из фазы 6»), PLAN §9, §11 «Фаза 7», §12 пп. 9, 34, 47, 56, 58, 59, 72; CHECKS: `CHK-SETUP-01` (planned), `CHK-SVC-01` (planned: «служба под настоящим SCM, источник Event Log»), `CHK-DELIV-01` (planned).
 
 ---
+
+## R2. Реализация 7b
+
+- Тихий режим: `internal/wininstall` (план + `System`), `cmd/exchsetup` (`/S`, `/uninstall`), payload `-tags payload` (svc+tray+uninstall C2).
+- WinAPI: `internal/winapi/scm_*.go`, `path_windows.go`, `regextra_windows.go`, `owner_windows.go`.
+- Проверки CHK-SETUP-01..07, CHK-SVC-01, базовый CHK-SETUP-12; CI — сборка с payload + `go vet -tags payload` + E2E на windows.
+- Сжатие payload (решение 19): без gzip в 7b. Замеры (Go 1.20.14, -s -w, windows/amd64): svc 6.65 MiB, tray 2.68 MiB, uninstall 2.22 MiB, Setup with embed 13.79 MiB; gzip-9 of payload ≈ 4.75 MiB (41%). Рекомендация на 7e — gzip.
 
 ## 1. Мастер установки и доставка exe внутрь Setup.exe
 
@@ -433,7 +440,7 @@ D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)
 - T3 (трей на mkres) — в 7e.
 - Зависимости: нет.
 
-**7b — ядро установки и удаления без мастера (тихий режим).**
+**7b — ядро установки и удаления без мастера (тихий режим). ✅ реализовано (ветка `phase7b`).**
 - Сделать: `internal/wininstall` (план, исполнитель), payload (`-tags payload`), файлы, DACL папки установки, ACL ProgramData, SCM (create, config2, DACL, start, stop, delete), источник Event Log, HKLM Run, Uninstall-ключ, копия-деинсталлятор и самоудаление, разбор CLI (`/S /DIR= /NOSTART /LOG= /uninstall /PURGEDATA`), журнал; новые обёртки в `internal/winapi` + allowlist; шаг CI сборки с payload; гейтированный базовый E2E (установка и удаление).
 - Проверки: CHK-SETUP-01..07, CHK-SVC-01, базовый CHK-SETUP-12.
 - **От EC Service:** только то, что сделано в 7a (FormatMessage-проверка CHK-SETUP-04 опирается на MESSAGETABLE в svc). Изменения кода службы не нужны.

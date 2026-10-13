@@ -10,12 +10,13 @@
 # no internal/sqlcheck, no os/exec; the tray is built as a GUI exe (not uploaded).
 # CHK-IPC-01, CHK-TRAY-01..06 — linux job: -race for internal/trayipc, internal/trayui,
 # internal/trayalert, internal/traysettings.
-# CHK-RES-01, CHK-VER-01, CHK-SETUP-11 (phase 7a) — both jobs: the committed .syso of
+# CHK-RES-01, CHK-VER-01, CHK-SETUP-11 (phase 7a/7b) — both jobs: the committed .syso of
 # cmd/exchsetup and cmd/exchsvc match tools/mkres; a release-like build (service, tray,
-# setup without payload, -X version 0.0.0-ci.<run_number>, .syso regenerated with that
-# version in the job's working copy only) is inspected by checks/ (EC_BUILD_DIR); the
-# exe files stay in $RUNNER_TEMP and are not uploaded (CHK-CI-01). windows job: setup
-# dependency graph (no os/exec, SQL driver, x/sys).
+# uninstaller without payload, setup with -tags payload embedding them, -X version
+# 0.0.0-ci.<run_number>, .syso regenerated with that version in the job's working copy
+# only) is inspected by checks/ (EC_BUILD_DIR); go vet -tags payload; the exe files stay
+# in $RUNNER_TEMP and are not uploaded (CHK-CI-01). windows job: setup dependency graph
+# (no os/exec, SQL driver, x/sys); gated E2E CHK-SVC-01 / CHK-SETUP-12 after go test.
 name: ci
 
 on:
@@ -91,20 +92,40 @@ jobs:
         run: |
           go build ./...
           go build -ldflags="-H windowsgui" -o "$RUNNER_TEMP/exchtray.exe" ./cmd/exchtray
-      - name: release-like build + resource inspection (CHK-RES-01, CHK-VER-01; not uploaded)
+      - name: release-like build with payload (CHK-RES-01, CHK-VER-01, CHK-SETUP-02; not uploaded)
         run: |
           go run ./tools/mkres -check
           V="0.0.0-ci.$GITHUB_RUN_NUMBER"
           out="$RUNNER_TEMP/release"
-          mkdir -p "$out"
+          pay="cmd/exchsetup/payload"
+          mkdir -p "$out" "$pay"
           go run ./tools/mkres -version "$V"
           X="-X github.com/alexal46372-maker/ExchangeChecker/internal/version.Version=$V"
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$out/ExchangeCheckerSvc.exe" ./cmd/exchsvc
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerTray.exe" ./cmd/exchtray
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$pay/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerTray.exe" ./cmd/exchtray
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerUninstall.exe" ./cmd/exchsetup
+          GOOS=windows GOARCH=amd64 go vet -tags payload ./cmd/exchsetup
+          GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          cp "$pay/ExchangeCheckerSvc.exe" "$out/"
+          cp "$pay/ExchangeCheckerTray.exe" "$out/"
+          cp "$pay/ExchangeCheckerUninstall.exe" "$out/"
+          ls -la "$out"
           EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built' -count=1 -v
           go run ./tools/mkres
           go run ./tools/mkres -check
+
+      - name: service SCM E2E (CHK-SVC-01)
+        env:
+          EC_SVC_E2E: "1"
+        run: |
+          export EC_SVC_EXE="$RUNNER_TEMP/release/ExchangeCheckerSvc.exe"
+          go test ./checks -run TestCHK_SVC_01_RealSCM -count=1 -v
+      - name: setup silent E2E (CHK-SETUP-12 basic)
+        env:
+          EC_SETUP_E2E: "1"
+        run: |
+          export EC_SETUP_EXE="$RUNNER_TEMP/release/ExchangeCheckerSetup.exe"
+          go test ./checks -run TestCHK_SETUP_12_E2E -count=1 -v
 
   linux:
     name: linux / go1.20.14 vet + pure-Go tests + SQL Server integration
@@ -159,17 +180,24 @@ jobs:
           EC_SQL_TEST_USER: sa
           EC_SQL_TEST_PASSWORD: "Ec_Test-Passw0rd!"
         run: go test -race -count=1 ./internal/monitor/... ./internal/ipc/... ./internal/sqlcheck/... ./internal/trayipc/... ./internal/trayui/... ./internal/trayalert/... ./internal/traysettings/...
-      - name: release-like build + resource inspection (CHK-RES-01, CHK-VER-01; not uploaded)
+      - name: release-like build with payload (CHK-RES-01, CHK-VER-01, CHK-SETUP-02; not uploaded)
         run: |
           go run ./tools/mkres -check
           V="0.0.0-ci.$GITHUB_RUN_NUMBER"
           out="$RUNNER_TEMP/release"
-          mkdir -p "$out"
+          pay="cmd/exchsetup/payload"
+          mkdir -p "$out" "$pay"
           go run ./tools/mkres -version "$V"
           X="-X github.com/alexal46372-maker/ExchangeChecker/internal/version.Version=$V"
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$out/ExchangeCheckerSvc.exe" ./cmd/exchsvc
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerTray.exe" ./cmd/exchtray
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$pay/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerTray.exe" ./cmd/exchtray
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerUninstall.exe" ./cmd/exchsetup
+          GOOS=windows GOARCH=amd64 go vet -tags payload ./cmd/exchsetup
+          GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          cp "$pay/ExchangeCheckerSvc.exe" "$out/"
+          cp "$pay/ExchangeCheckerTray.exe" "$out/"
+          cp "$pay/ExchangeCheckerUninstall.exe" "$out/"
+          ls -la "$out"
           EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built' -count=1 -v
           go run ./tools/mkres
           go run ./tools/mkres -check

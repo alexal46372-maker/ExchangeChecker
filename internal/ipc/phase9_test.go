@@ -27,7 +27,7 @@ func (h *p9Handler) CheckNow(id string) (model.CheckResult, error) {
 
 func (h *p9Handler) EventsSince(run string, since uint64, limit int) model.EventsPage {
 	if run != "r1" {
-		return model.EventsPage{RunID: "r1", LastID: 400, Reset: true}
+		return model.EventsPage{RunID: "r1", LastID: 400, ResetRequired: true}
 	}
 	var evs []model.AlertEvent
 	for i := since + 1; i <= 400; i++ {
@@ -146,7 +146,7 @@ func TestCHK_SVC_05_EventsSinceIPC(t *testing.T) {
 		t.Fatalf("events: %d bytes, %d events, %+v", len(b), len(m.Events), m.LastID)
 	}
 	m = do(t, c, model.IPCRequest{Cmd: model.CmdEventsSince, RunID: "old", SinceID: 9})
-	if !m.Reset || len(m.Events) != 0 || m.LastID == nil || *m.LastID != 400 {
+	if !m.ResetRequired || len(m.Events) != 0 || m.LastID == nil || *m.LastID != 400 {
 		t.Fatalf("reset: %+v", m)
 	}
 }

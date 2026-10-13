@@ -93,27 +93,27 @@ func TestCHK_SVC_05_EventsSince(t *testing.T) {
 	m.ring.size = 3
 	m.ring.add(model.AlertEvent{ID: 1})
 	m.ring.add(model.AlertEvent{ID: 2})
-	if p := m.EventsSince("run1", 0, 0); p.Reset || len(p.Events) != 2 || p.LastID != 2 || p.RunID != "run1" {
+	if p := m.EventsSince("run1", 0, 0); p.ResetRequired || len(p.Events) != 2 || p.LastID != 2 || p.RunID != "run1" {
 		t.Fatalf("all: %+v", p)
 	}
 	for _, c := range []struct {
 		run   string
 		since uint64
 	}{{"", 0}, {"other", 1}, {"run1", 5}} {
-		if p := m.EventsSince(c.run, c.since, 0); !p.Reset || len(p.Events) != 0 || p.LastID != 2 {
+		if p := m.EventsSince(c.run, c.since, 0); !p.ResetRequired || len(p.Events) != 0 || p.LastID != 2 {
 			t.Errorf("%+v: %+v", c, p)
 		}
 	}
-	if p := m.EventsSince("run1", 2, 0); p.Reset || len(p.Events) != 0 || p.LastID != 2 {
+	if p := m.EventsSince("run1", 2, 0); p.ResetRequired || len(p.Events) != 0 || p.LastID != 2 {
 		t.Errorf("up to date: %+v", p)
 	}
 	for i := uint64(3); i <= 5; i++ {
 		m.ring.add(model.AlertEvent{ID: i})
 	}
-	if p := m.EventsSince("run1", 1, 0); !p.Reset {
+	if p := m.EventsSince("run1", 1, 0); !p.ResetRequired {
 		t.Errorf("gap must reset: %+v", p)
 	}
-	if p := m.EventsSince("run1", 2, 0); p.Reset || len(p.Events) != 3 || p.Events[0].ID != 3 {
+	if p := m.EventsSince("run1", 2, 0); p.ResetRequired || len(p.Events) != 3 || p.Events[0].ID != 3 {
 		t.Errorf("after eviction: %+v", p)
 	}
 	if p := m.EventsSince("run1", 2, 2); !p.Truncated || len(p.Events) != 2 || p.LastID != 4 {
@@ -144,8 +144,43 @@ func TestCHK_SVC_05_PollEvents(t *testing.T) {
 			t.Errorf("event without run id: %+v", e)
 		}
 	}
-	for _, a := range m.Snapshot().Alerts {
-		_ = a
+	sn := m.Snapshot()
+	if sn.ServerNow.IsZero() || ps.LastQueryMs == nil {
+		t.Errorf("serverNow / lastQueryMs: %v %v", sn.ServerNow, ps.LastQueryMs)
+	}
+	clk.Add(time.Hour)
+	res, err := m.CheckNow("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.pollSome(context.Background(), nil)
+	if sn := m.Snapshot(); sn.LastCheckSeq < res.CheckSeq || sn.LastCheckSeq == 0 {
+		t.Errorf("lastCheckSeq %d < checkSeq %d", sn.LastCheckSeq, res.CheckSeq)
+	}
+}
+
+// TestCHK_SVC_05_EventKinds — eventId, kind alert / recovered and
+// durationMin since the point left ok.
+func TestCHK_SVC_05_EventKinds(t *testing.T) {
+	m := New(Options{RunID: "r"})
+	k := func(id uint64, from, to model.AlertLevel, min int) model.AlertEvent {
+		e := model.AlertEvent{ID: id, ProfileID: "db1", Key: "k1", From: from, To: to, At: t0.Add(time.Duration(min) * time.Minute)}
+		m.mu.Lock()
+		m.classifyEventLocked(&e)
+		m.mu.Unlock()
+		return e
+	}
+	if e := k(1, model.LevelOK, model.LevelWarning, 0); e.Kind != model.AlertKindAlert || e.EventID != 1 || e.RunID != "r" || e.DurationMin != nil {
+		t.Errorf("raise %+v", e)
+	}
+	if e := k(2, model.LevelWarning, model.LevelError, 5); e.Kind != model.AlertKindAlert {
+		t.Errorf("escalate %+v", e)
+	}
+	if e := k(3, model.LevelError, model.LevelOK, 17); e.Kind != model.AlertKindRecovered || e.DurationMin == nil || *e.DurationMin != 17 {
+		t.Errorf("recover %+v", e)
+	}
+	if p := m.EventsSince("r", 0, 0); len(p.Events) != 3 || p.Events[2].Kind != model.AlertKindRecovered {
+		t.Errorf("ring %+v", p)
 	}
 }
 
@@ -183,7 +218,7 @@ func TestCHK_CFG_05_SaveProfileTarget(t *testing.T) {
 	}
 	q.Server = `np:\\srv\pipe\sql\query`
 	_, err := e.m.SaveProfile(q, "pw3", false, e.rev(), "acct")
-	if ie := p9IPCErr(t, err); ie.Key != model.MsgMonitorProfileInvalid || len(ie.Args) < 2 || ie.Args[0] != "server" || ie.Args[1] != model.ValServerForbidden {
+	if ie := p9IPCErr(t, err); ie.Key != model.MsgMonitorProfileInvalid || len(ie.Args) < 2 || ie.Args[0] != "server" || ie.Args[1] != model.ValSQLServerForbidden {
 		t.Errorf("np: %+v", ie)
 	}
 }

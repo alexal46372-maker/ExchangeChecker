@@ -193,6 +193,8 @@ type IPCRequest struct {
 	Kinds   []string   `json:"kinds,omitempty"`
 	RunID   string     `json:"runId,omitempty"`
 	SinceID uint64     `json:"sinceId,omitempty"`
+	// Bucket: history aggregation (HistoryBucket1m / 5m / 1h), "" = records.
+	Bucket string `json:"bucket,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -316,13 +318,13 @@ type IPCMessage struct {
 	RetryAfterMs int64 `json:"retryAfterMs,omitempty"`
 	// CheckSeq: check_now reply (always present there).
 	CheckSeq *uint64 `json:"checkSeq,omitempty"`
-	// Events / RunID / LastID / Reset of a MsgEvents reply (Truncated is
+	// Events / RunID / LastID / ResetRequired of a MsgEvents reply (Truncated is
 	// shared): LastID is the ID of the last event in Events, or the
 	// newest event ID of the run when Events is empty (always present);
-	// Reset: RunID differs or SinceID is older than the buffer (the
+	// ResetRequired: RunID differs or SinceID is older than the buffer (the
 	// client takes the active alerts from get_status).
-	Events []AlertEvent `json:"events,omitempty"`
-	RunID  string       `json:"runId,omitempty"`
-	LastID *uint64      `json:"lastId,omitempty"`
-	Reset  bool         `json:"reset,omitempty"`
+	Events        []AlertEvent `json:"events,omitempty"`
+	RunID         string       `json:"runId,omitempty"`
+	LastID        *uint64      `json:"lastId,omitempty"`
+	ResetRequired bool         `json:"resetRequired,omitempty"`
 }

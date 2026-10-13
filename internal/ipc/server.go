@@ -1140,7 +1140,7 @@ func (s *Server) eventsSince(req model.IPCRequest) model.IPCMessage {
 	page := ef.EventsSince(req.RunID, req.SinceID, req.Limit)
 	last := page.LastID
 	m := model.IPCMessage{ID: req.ID, Type: model.MsgEvents, Events: page.Events, RunID: page.RunID, LastID: &last,
-		Reset: page.Reset}
+		ResetRequired: page.ResetRequired}
 	if page.Truncated {
 		m.Truncated, m.TruncatedReason = true, model.TruncatedLimit
 	}

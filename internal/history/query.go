@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -25,9 +26,11 @@ type Query struct {
 	Kinds     []string
 	Limit     int
 	Cursor    string
-	// Known filters the profiles of the current configuration (deleted
-	// profiles are not returned); nil = all.
-	Known func(profileID string) bool
+	// Names: current profiles (id -> name); records of other (deleted)
+	// profiles are not returned; nil = all, without names.
+	Names map[string]string
+	// Bucket: model.HistoryBucket* aggregation, "" = records.
+	Bucket string
 	// MaxBytes caps the serialized records (default
 	// model.IPCMaxInteractiveReply minus the reply envelope).
 	MaxBytes int
@@ -51,7 +54,7 @@ func bad(key, msg string, args ...string) error {
 
 func (q Query) hash() string {
 	h := sha256.Sum256([]byte(strings.Join([]string{q.ProfileID, q.PointKey, q.From.UTC().Format(time.RFC3339Nano),
-		q.To.UTC().Format(time.RFC3339Nano), strings.Join(q.Kinds, ",")}, "\x00")))
+		q.To.UTC().Format(time.RFC3339Nano), strings.Join(q.Kinds, ","), q.Bucket}, "\x00")))
 	return hex.EncodeToString(h[:8])
 }
 
@@ -90,10 +93,25 @@ func (s *Store) Query(ctx context.Context, q Query) (model.HistoryPage, error) {
 			kinds[kindProfile] = true
 		case model.HistoryKindEvent:
 			kinds[kindEvent] = true
+		case model.HistoryKindRecovered:
+			kinds[kindRecov] = true
 		default:
 			return page, bad(model.MsgHistoryBadFilter, "unknown kind "+strconv.Quote(k), "kinds", model.ValEnum, k)
 		}
 	}
+	var bucket time.Duration
+	switch q.Bucket {
+	case "":
+	case model.HistoryBucket1m:
+		bucket = time.Minute
+	case model.HistoryBucket5m:
+		bucket = 5 * time.Minute
+	case model.HistoryBucket1h:
+		bucket = time.Hour
+	default:
+		return page, bad(model.MsgHistoryBadFilter, "unknown bucket "+strconv.Quote(q.Bucket), "bucket", model.ValEnum, q.Bucket)
+	}
+	agg := newAggregator(q.Bucket, bucket, q.Names)
 	limit := q.Limit
 	if limit == 0 {
 		limit = model.HistoryDefaultLimit
@@ -131,10 +149,19 @@ func (s *Store) Query(ctx context.Context, q Query) (model.HistoryPage, error) {
 	}
 	start := time.Now()
 	size, scanned := 2, 0
+	finish := func() (model.HistoryPage, error) {
+		if agg != nil {
+			page.Bucket, page.Buckets = q.Bucket, agg.result()
+		} else {
+			finishRecords(page.Records)
+		}
+		page.HasMore = page.NextCursor != ""
+		return page, nil
+	}
 	stop := func(reason, day string, o int64) (model.HistoryPage, error) {
 		page.Truncated, page.TruncatedReason = true, reason
 		page.NextCursor = encodeCursor(cursor{D: day, O: o, H: h})
-		return page, nil
+		return finish()
 	}
 	for day := startDay; day <= endDay; day = nextDay(day) {
 		f, err := openRegular(filepath.Join(s.opt.Dir, day+".jsonl"))
@@ -165,8 +192,18 @@ func (s *Store) Query(ctx context.Context, q Query) (model.HistoryPage, error) {
 				}
 			}
 			var d diskRec
-			if json.Unmarshal(b, &d) == nil && d.V == 1 && match(q, kinds, d) {
+			ok := json.Unmarshal(b, &d) == nil && d.V == 1 && match(q, kinds, d)
+			if ok && agg != nil {
+				if !agg.add(d, limit, maxBytes) {
+					f.Close()
+					return stop(agg.reason, day, at)
+				}
+			} else if ok {
 				rec := d.record()
+				rec.ID = day + ":" + strconv.FormatInt(at, 10)
+				if q.Names != nil {
+					rec.ProfileName = q.Names[d.P]
+				}
 				rb, _ := json.Marshal(rec)
 				if len(page.Records) == limit {
 					f.Close()
@@ -186,7 +223,12 @@ func (s *Store) Query(ctx context.Context, q Query) (model.HistoryPage, error) {
 		}
 		f.Close()
 	}
-	return page, nil
+	return finish()
+}
+
+// finishRecords sorts a page by CheckedAt, then by file position (stable).
+func finishRecords(rs []model.HistoryRecord) {
+	sort.SliceStable(rs, func(i, j int) bool { return rs[i].CheckedAt.Before(rs[j].CheckedAt) })
 }
 
 func match(q Query, kinds map[string]bool, d diskRec) bool {
@@ -202,8 +244,10 @@ func match(q Query, kinds map[string]bool, d diskRec) bool {
 	if q.PointKey != "" && (d.K == kindProfile || d.PK != q.PointKey) {
 		return false
 	}
-	if q.Known != nil && !q.Known(d.P) {
-		return false
+	if q.Names != nil {
+		if _, ok := q.Names[d.P]; !ok {
+			return false
+		}
 	}
 	return true
 }

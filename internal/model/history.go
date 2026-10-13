@@ -15,7 +15,8 @@ const (
 	// CmdCheckNow asks for an immediate poll of every profile ("") or of
 	// IPCRequest.ProfileID. Reply MsgOK with Result ResultAccepted /
 	// ResultCheckCoalesced and CheckSeq, or MsgError rate_limited with
-	// RetryAfterMs. poll_now is unchanged.
+	// RetryAfterMs. poll_now is unchanged (architect decision 5); EC Tray
+	// should switch its "check now" action from poll_now to check_now.
 	CmdCheckNow = "check_now"
 	// CmdEventsSince returns the transition events after
 	// IPCRequest.SinceID of run IPCRequest.RunID. Reply MsgEvents.
@@ -49,6 +50,24 @@ const (
 	HistoryKindPoint   = "point"
 	HistoryKindProfile = "profile"
 	HistoryKindEvent   = "event"
+	// HistoryKindRecovered: a transition back to ok (event record with
+	// from, to and durationMin); kinds ["event"] does not include it.
+	HistoryKindRecovered = "recovered"
+)
+
+// History aggregation buckets (IPCRequest.Bucket): instead of records the
+// page carries HistoryPage.Buckets with min / max / avg of latency and lag
+// per profile / point and bucket, so a week fits into one 64 KiB page.
+const (
+	HistoryBucket1m = "1m"
+	HistoryBucket5m = "5m"
+	HistoryBucket1h = "1h"
+)
+
+// Alert event kinds (AlertEvent.Kind, phase 9).
+const (
+	AlertKindAlert     = "alert"
+	AlertKindRecovered = "recovered"
 )
 
 // History status of a profile record (HistoryRecord.Status).
@@ -120,34 +139,78 @@ type HistoryRecord struct {
 	// UTC+3.
 	CheckedAt time.Time `json:"checkedAt"`
 	ProfileID string    `json:"profileId"`
+	// ProfileName: current name of the profile (deleted profiles are not
+	// returned).
+	ProfileName string `json:"profileName,omitempty"`
+	// ID is a stable record id ("YYYY-MM-DD:offset"); records are sorted
+	// by CheckedAt, then by ID position.
+	ID string `json:"id"`
 	// PointKey / PointName / PlanTable: point records and point events.
 	PointKey  string `json:"pointKey,omitempty"`
 	PointName string `json:"pointName,omitempty"`
 	PlanTable string `json:"planTable,omitempty"`
 	// Level: point / profile records.
 	Level *AlertLevel `json:"level,omitempty"`
-	// FreshAt / LagMinutes / Baseline / Source: point records.
-	FreshAt    *time.Time `json:"freshAt,omitempty"`
-	LagMinutes *int       `json:"lagMinutes,omitempty"`
-	Baseline   bool       `json:"baseline,omitempty"`
-	Source     string     `json:"source,omitempty"`
-	// LatencyMs / Status: profile records (HistoryStatus*).
+	// FreshAt / LagMin / Baseline / Source: point records.
+	FreshAt  *time.Time `json:"freshAt,omitempty"`
+	LagMin   *int       `json:"lagMin,omitempty"`
+	Baseline bool       `json:"baseline,omitempty"`
+	Source   string     `json:"source,omitempty"`
+	// LatencyMs / QueryMs / Status: profile records (HistoryStatus*).
+	// LatencyMs is the total wall time of the poll; QueryMs the time of
+	// the queries (currently measured around the whole poll, = LatencyMs).
 	LatencyMs *int64 `json:"latencyMs,omitempty"`
+	QueryMs   *int64 `json:"queryMs,omitempty"`
 	Status    string `json:"status,omitempty"`
 	// ErrorKey: known localizable key only (profile records; point
 	// records: monitor-level reason such as no_timestamps).
 	ErrorKey string `json:"errorKey,omitempty"`
-	// From / To / EventID / RunID: event records.
-	From    *AlertLevel `json:"from,omitempty"`
-	To      *AlertLevel `json:"to,omitempty"`
-	EventID uint64      `json:"eventId,omitempty"`
-	RunID   string      `json:"runId,omitempty"`
+	// From / To / EventID / RunID: event and recovered records;
+	// DurationMin: recovered records, minutes since the alert was raised.
+	From        *AlertLevel `json:"from,omitempty"`
+	To          *AlertLevel `json:"to,omitempty"`
+	DurationMin *int64      `json:"durationMin,omitempty"`
+	EventID     uint64      `json:"eventId,omitempty"`
+	RunID       string      `json:"runId,omitempty"`
+}
+
+// HistoryAgg is min / max / avg of one value over a bucket.
+type HistoryAgg struct {
+	Min   int64   `json:"min"`
+	Max   int64   `json:"max"`
+	Avg   float64 `json:"avg"`
+	Count int     `json:"count"`
+}
+
+// HistoryBucket aggregates the point (PointKey set) or profile records of
+// one bucket [Start, Start+bucket).
+type HistoryBucket struct {
+	Start       time.Time `json:"start"`
+	Kind        string    `json:"kind"`
+	ProfileID   string    `json:"profileId"`
+	ProfileName string    `json:"profileName,omitempty"`
+	PointKey    string    `json:"pointKey,omitempty"`
+	PointName   string    `json:"pointName,omitempty"`
+	// Records: number of records; Errors: profile records with status
+	// error / timeout / hung; WorstLevel: worst level seen.
+	Records    int         `json:"records"`
+	Errors     int         `json:"errors,omitempty"`
+	WorstLevel *AlertLevel `json:"worstLevel,omitempty"`
+	LatencyMs  *HistoryAgg `json:"latencyMs,omitempty"`
+	QueryMs    *HistoryAgg `json:"queryMs,omitempty"`
+	LagMin     *HistoryAgg `json:"lagMin,omitempty"`
 }
 
 // HistoryPage is IPCMessage.History.
 type HistoryPage struct {
 	// Records in ascending CheckedAt order (file order); [] when none.
 	Records []HistoryRecord `json:"records"`
+	// Bucket / Buckets: aggregated reply (IPCRequest.Bucket); Records is
+	// then empty. Buckets are sorted by Start, profile, point.
+	Bucket  string          `json:"bucket,omitempty"`
+	Buckets []HistoryBucket `json:"buckets,omitempty"`
+	// HasMore: another page follows (NextCursor); always present.
+	HasMore bool `json:"hasMore"`
 	// NextCursor continues after the last record (present iff Truncated).
 	NextCursor string `json:"nextCursor,omitempty"`
 	// Truncated / TruncatedReason: TruncatedSize (64 KiB),
@@ -166,9 +229,9 @@ type CheckResult struct {
 
 // EventsPage is the monitor's answer to events_since.
 type EventsPage struct {
-	Events    []AlertEvent
-	RunID     string
-	LastID    uint64
-	Reset     bool
-	Truncated bool
+	Events        []AlertEvent
+	RunID         string
+	LastID        uint64
+	ResetRequired bool
+	Truncated     bool
 }

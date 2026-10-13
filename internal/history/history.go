@@ -52,6 +52,7 @@ const (
 	kindPoint   = "pt"
 	kindProfile = "pr"
 	kindEvent   = "ev"
+	kindRecov   = "rc"
 )
 
 // diskRec is one line of a day file (short field names).
@@ -69,6 +70,8 @@ type diskRec struct {
 	BL  bool              `json:"bl,omitempty"`
 	Src string            `json:"src,omitempty"`
 	MS  *int64            `json:"ms,omitempty"`
+	QM  *int64            `json:"qm,omitempty"`
+	DM  *int64            `json:"dm,omitempty"`
 	St  string            `json:"st,omitempty"`
 	EK  string            `json:"ek,omitempty"`
 	F   *model.AlertLevel `json:"f,omitempty"`
@@ -77,13 +80,14 @@ type diskRec struct {
 	Run string            `json:"run,omitempty"`
 }
 
-var kindNames = map[string]string{kindPoint: model.HistoryKindPoint, kindProfile: model.HistoryKindProfile, kindEvent: model.HistoryKindEvent}
+var kindNames = map[string]string{kindPoint: model.HistoryKindPoint, kindProfile: model.HistoryKindProfile, kindEvent: model.HistoryKindEvent,
+	kindRecov: model.HistoryKindRecovered}
 
 // record converts a disk line to the IPC record (full names).
 func (d diskRec) record() model.HistoryRecord {
 	return model.HistoryRecord{Kind: kindNames[d.K], CheckedAt: d.T, ProfileID: d.P, PointKey: d.PK, PointName: d.N,
-		PlanTable: d.PL, Level: d.L, FreshAt: d.FA, LagMinutes: d.Lag, Baseline: d.BL, Source: d.Src, LatencyMs: d.MS,
-		Status: d.St, ErrorKey: d.EK, From: d.F, To: d.To, EventID: d.ID, RunID: d.Run}
+		PlanTable: d.PL, Level: d.L, FreshAt: d.FA, LagMin: d.Lag, Baseline: d.BL, Source: d.Src, LatencyMs: d.MS,
+		QueryMs: d.QM, Status: d.St, ErrorKey: d.EK, From: d.F, To: d.To, DurationMin: d.DM, EventID: d.ID, RunID: d.Run}
 }
 
 type line struct {
@@ -242,7 +246,7 @@ func (s *Store) RecordSnapshot(snap model.StatusSnapshot) {
 		}
 		s.last[ps.ProfileID] = ps.CheckedAt
 		lvl := ps.Level
-		ls = append(ls, encode(diskRec{K: kindProfile, T: ps.CheckedAt, P: ps.ProfileID, L: &lvl, MS: ps.LatencyMs,
+		ls = append(ls, encode(diskRec{K: kindProfile, T: ps.CheckedAt, P: ps.ProfileID, L: &lvl, MS: ps.LatencyMs, QM: ps.LastQueryMs,
 			St: profileStatus(ps), EK: knownKey(ps.ErrorKey)}))
 		if ps.Error != "" {
 			continue
@@ -271,7 +275,11 @@ func (s *Store) Alert(e model.AlertEvent) {
 		return
 	}
 	from, to := e.From, e.To
-	s.enqueue([]line{encode(diskRec{K: kindEvent, T: e.At, P: e.ProfileID, PK: e.Key, N: e.PointName, PL: e.PlanTable,
+	k := kindEvent
+	if e.Kind == model.AlertKindRecovered {
+		k = kindRecov
+	}
+	s.enqueue([]line{encode(diskRec{K: k, DM: e.DurationMin, T: e.At, P: e.ProfileID, PK: e.Key, N: e.PointName, PL: e.PlanTable,
 		F: &from, To: &to, ID: e.ID, Run: e.RunID, EK: knownKey(e.ErrorKey)})})
 }
 

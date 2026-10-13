@@ -109,7 +109,7 @@ func TestCHK_SVC_03_WriteAndQuery(t *testing.T) {
 			}
 		case model.HistoryKindPoint:
 			pt++
-			if r.FreshAt == nil || r.LagMinutes == nil || *r.LagMinutes != 5 || r.PointKey == "" || r.Level == nil {
+			if r.FreshAt == nil || r.LagMin == nil || *r.LagMin != 5 || r.PointKey == "" || r.Level == nil {
 				t.Errorf("point %+v", r)
 			}
 		case model.HistoryKindEvent:
@@ -133,7 +133,7 @@ func TestCHK_SVC_03_WriteAndQuery(t *testing.T) {
 		t.Errorf("point filter: %d", len(r))
 	}
 	q4 := q
-	q4.Known = func(id string) bool { return id != "db1" }
+	q4.Names = map[string]string{"db2": "Second"}
 	if r := all(t, s, q4); len(r) != 2 {
 		t.Errorf("deleted profile filtered: %d", len(r))
 	}
@@ -315,4 +315,79 @@ func mustJSON(t *testing.T, v interface{}) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// TestCHK_SVC_03_BucketsRecoveredIDs — bucket aggregation (min / max / avg
+// of latency, query time and lag), recovered records with durationMin,
+// stable ids, profileName, sort by checkedAt, hasMore.
+func TestCHK_SVC_03_BucketsRecoveredIDs(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir, nil)
+	for i, ms := range []int64{10, 30, 20} {
+		sn := snapAt(h0.Add(time.Duration(i)*time.Minute), 1)
+		v, q := ms, ms/2
+		sn.Profiles[0].LatencyMs, sn.Profiles[0].LastQueryMs = &v, &q
+		sn.Profiles[0].Points[0].LagMinutes = int(ms)
+		s.RecordSnapshot(sn)
+	}
+	d := int64(12)
+	s.Alert(model.AlertEvent{ID: 9, RunID: "r1", ProfileID: "db1", From: model.LevelError, To: model.LevelOK,
+		At: h0.Add(30 * time.Second), Kind: model.AlertKindRecovered, DurationMin: &d})
+	s.Close()
+	names := map[string]string{"db1": "Main", "db2": "Second"}
+	p, err := s.Query(context.Background(), Query{From: h0.Add(-time.Hour), To: h0.Add(time.Hour), Names: names})
+	if err != nil || p.HasMore || len(p.Records) != 10 {
+		t.Fatalf("records %+v %v", p, err)
+	}
+	seen := map[string]bool{}
+	for i, r := range p.Records {
+		if r.ID == "" || seen[r.ID] || r.ProfileName != names[r.ProfileID] {
+			t.Errorf("record %+v", r)
+		}
+		seen[r.ID] = true
+		if i > 0 && r.CheckedAt.Before(p.Records[i-1].CheckedAt) {
+			t.Errorf("not sorted at %d", i)
+		}
+		if r.Kind == model.HistoryKindProfile && r.ProfileID == "db1" && (r.QueryMs == nil || r.LatencyMs == nil) {
+			t.Errorf("queryMs %+v", r)
+		}
+	}
+	p, err = s.Query(context.Background(), Query{From: h0.Add(-time.Hour), To: h0.Add(time.Hour), Names: names,
+		Kinds: []string{model.HistoryKindRecovered}})
+	if err != nil || len(p.Records) != 1 || p.Records[0].Kind != model.HistoryKindRecovered ||
+		p.Records[0].DurationMin == nil || *p.Records[0].DurationMin != 12 {
+		t.Fatalf("recovered %+v %v", p, err)
+	}
+	p, err = s.Query(context.Background(), Query{From: h0.Add(-time.Hour), To: h0.Add(time.Hour), Names: names,
+		Bucket: model.HistoryBucket1h, ProfileID: "db1"})
+	if err != nil || len(p.Records) != 0 || p.Bucket != "1h" || len(p.Buckets) != 2 {
+		t.Fatalf("buckets %+v %v", p, err)
+	}
+	for _, b := range p.Buckets {
+		if !b.Start.Equal(h0) || b.ProfileName != "Main" || b.Records != 3 {
+			t.Errorf("bucket %+v", b)
+		}
+		switch b.Kind {
+		case model.HistoryKindProfile:
+			if b.LatencyMs == nil || b.LatencyMs.Min != 10 || b.LatencyMs.Max != 30 || b.LatencyMs.Avg != 20 ||
+				b.QueryMs == nil || b.QueryMs.Max != 15 {
+				t.Errorf("profile bucket %+v", b)
+			}
+		case model.HistoryKindPoint:
+			if b.PointKey != "k0" || b.LagMin == nil || b.LagMin.Min != 10 || b.LagMin.Max != 30 || b.LagMin.Count != 3 {
+				t.Errorf("point bucket %+v", b)
+			}
+		default:
+			t.Errorf("kind %+v", b)
+		}
+	}
+	if _, err := s.Query(context.Background(), Query{From: h0, To: h0.Add(time.Hour), Bucket: "2m"}); err == nil {
+		t.Error("bad bucket accepted")
+	}
+	raw, _ := json.Marshal(p)
+	for _, k := range []string{`"buckets"`, `"hasMore":false`, `"latencyMs":{"min":10`, `"lagMin"`} {
+		if !strings.Contains(string(raw), k) {
+			t.Errorf("no %s in %s", k, raw)
+		}
+	}
 }

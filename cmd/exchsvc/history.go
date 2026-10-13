@@ -17,15 +17,15 @@ type historySource struct {
 }
 
 func (s historySource) History(ctx context.Context, req model.IPCRequest) (model.HistoryPage, error) {
-	known := map[string]bool{}
+	names := map[string]string{}
 	for _, p := range s.mon.Snapshot().Profiles {
-		known[p.ProfileID] = true
+		names[p.ProfileID] = p.Name
 	}
-	if req.ProfileID != "" && !known[req.ProfileID] && s.h.Err() == nil {
+	if _, ok := names[req.ProfileID]; req.ProfileID != "" && !ok && s.h.Err() == nil {
 		return model.HistoryPage{}, monitor.ErrUnknownProfile
 	}
 	q := history.Query{ProfileID: req.ProfileID, PointKey: req.PointKey, Kinds: req.Kinds, Limit: req.Limit,
-		Cursor: req.Cursor, Known: func(id string) bool { return known[id] }}
+		Cursor: req.Cursor, Names: names, Bucket: req.Bucket}
 	if req.From != nil {
 		q.From = *req.From
 	}

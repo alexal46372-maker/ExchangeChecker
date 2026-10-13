@@ -338,6 +338,11 @@ type Monitor struct {
 	checkLast map[string]time.Time
 	runID     string
 	ring      eventRing
+	// phase 9: when a point / profile left ok (recovered durationMin, mu),
+	// check_now sequence requested / included (mu)
+	raisedAt     map[string]time.Time
+	checkReqSeq  uint64
+	lastCheckSeq uint64
 }
 
 // New returns a Monitor; call Run to start it.
@@ -396,6 +401,7 @@ func New(opt Options) *Monitor {
 		m.runID = newRunID()
 	}
 	m.ring.size = model.EventRingSize
+	m.raisedAt = map[string]time.Time{}
 	m.loadAcks()
 	return m
 }
@@ -502,6 +508,7 @@ func (m *Monitor) Snapshot() model.StatusSnapshot {
 		s = model.StatusSnapshot{Now: now, Profiles: []model.ProfileSnapshot{}}
 	}
 	m.heartbeatLocked(now).apply(&s)
+	s.ServerNow = now // phase 9
 	return s
 }
 
@@ -974,6 +981,7 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 		}
 	}
 	settings := m.cfg.Settings
+	reqSeq := m.checkReqSeq // phase 9: check_now requests covered by this poll
 	m.mu.Unlock()
 	interval := m.interval()
 	sem := make(chan struct{}, m.opt.MaxConcurrent)
@@ -1018,11 +1026,16 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 			snap := model.NewProfileSnapshot(e.profile, *results[i], cfg.Settings, now)
 			ms := latency[i]
 			snap.LatencyMs = &ms // phase 9 (CHK-SVC-03)
+			qms := ms
+			snap.LastQueryMs = &qms
 			res[e.profile.ID] = snap
 			polled[e.profile.ID] = true
 		}
 		if only == nil {
 			m.lastCycle = now // a full cycle completed (CHK-IPC-04)
+		}
+		if reqSeq > m.lastCheckSeq {
+			m.lastCheckSeq = reqSeq
 		}
 		return polled
 	})
@@ -1230,7 +1243,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	m.markAckedLocked(profiles, alerts)
 	for i := range events {
 		m.markEventLocked(&events[i])
-		events[i].RunID = m.runID // phase 9 (CHK-SVC-05)
+		m.classifyEventLocked(&events[i]) // phase 9 (CHK-SVC-05)
 		m.ring.add(events[i])
 	}
 	m.seq++
@@ -1238,6 +1251,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		Seq: m.seq, Now: now, Level: model.WorstProfileLevel(profiles), Profiles: profiles,
 		Alerts: alerts, PollIntervalSec: int(m.intervalLocked() / time.Second),
 		LastPollAt: m.lastPoll, ConfigRevision: m.revision,
+		ServerNow: now, LastCheckSeq: m.lastCheckSeq,
 	}
 	switch {
 	case m.good: // a configuration has been applied

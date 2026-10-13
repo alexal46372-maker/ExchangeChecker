@@ -65,7 +65,7 @@ func (m *Monitor) EventsSince(runID string, since uint64, limit int) model.Event
 	page := model.EventsPage{RunID: m.runID, LastID: r.lastID}
 	gap := r.evicted && len(r.evs) > 0 && since+1 < r.evs[0].ID
 	if runID != m.runID || since > r.lastID || gap {
-		page.Reset = true
+		page.ResetRequired = true
 		return page
 	}
 	for _, e := range r.evs {
@@ -82,6 +82,31 @@ func (m *Monitor) EventsSince(runID string, since uint64, limit int) model.Event
 		page.LastID = page.Events[n-1].ID
 	}
 	return page
+}
+
+// classifyEventLocked sets RunID, EventID, Kind and, for a recovery,
+// DurationMin (minutes since the point / profile left ok in this run), and
+// adds the event to the ring (m.mu).
+func (m *Monitor) classifyEventLocked(e *model.AlertEvent) {
+	e.RunID = m.runID
+	e.EventID = e.ID
+	e.Kind = model.AlertKindAlert
+	k := e.ProfileID + "\x00" + e.Key
+	switch {
+	case e.To == model.LevelOK:
+		e.Kind = model.AlertKindRecovered
+		if t, ok := m.raisedAt[k]; ok {
+			d := int64(e.At.Sub(t) / time.Minute)
+			if d < 0 {
+				d = 0
+			}
+			e.DurationMin = &d
+			delete(m.raisedAt, k)
+		}
+	case e.From == model.LevelOK:
+		m.raisedAt[k] = e.At
+	}
+	m.ring.add(*e)
 }
 
 // Rate-limiter keys of check_now (separate from poll_now's).
@@ -123,6 +148,11 @@ func (m *Monitor) CheckNow(profileID string) (model.CheckResult, error) {
 	m.cmdMu.Lock()
 	defer m.cmdMu.Unlock()
 	res := model.CheckResult{CheckSeq: seq}
+	m.mu.Lock()
+	if seq > m.checkReqSeq {
+		m.checkReqSeq = seq
+	}
+	m.mu.Unlock()
 	if m.pendAll || (profileID != "" && (m.pendIDs[profileID] || (e != nil && e.busyNow()))) {
 		res.Coalesced = true
 		return res, nil

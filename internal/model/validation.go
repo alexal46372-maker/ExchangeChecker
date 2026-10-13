@@ -91,11 +91,12 @@ const (
 	// ValConflict: mutually exclusive request fields (password and
 	// clearPassword).
 	ValConflict = "validation.conflict"
-	// ValServerForbidden: the server names a named pipe / LPC / UNC path
-	// (np:, lpc:, \\host\..., //host/..., ...\pipe\...): such a
-	// connection authenticates the service account over SMB (phase 9,
-	// CHK-CFG-05); {0} = np | lpc | unc | pipe.
-	ValServerForbidden = "config.server_name_forbidden"
+	// ValSQLServerForbidden: the SQL Server address names a named pipe /
+	// LPC / DAC / UNC path (np:, lpc:, admin:, \\host\..., //host/...,
+	// a leading backslash, ...\pipe\...): such a connection
+	// authenticates the service account over SMB (phase 9, CHK-CFG-05);
+	// {0} = np | lpc | admin | unc | backslash | pipe.
+	ValSQLServerForbidden = "validation.sql_server_forbidden"
 )
 
 // Limits of a profile (phase 6): a save_profile request must fit into
@@ -108,7 +109,7 @@ const (
 // ValidationKeys lists the validation.* keys.
 func ValidationKeys() []string {
 	return []string{ValRequired, ValRange, ValEnum, ValGreaterThan, ValTooLong, ValTooMany, ValPresetConflict,
-		ValServerFormat, ValMapping, ValDuplicate, ValConflict, ValServerForbidden}
+		ValServerFormat, ValMapping, ValDuplicate, ValConflict, ValSQLServerForbidden}
 }
 
 // FormatMessage returns MonitorMessage(key, lang) (or SQLMessage for the
@@ -131,8 +132,8 @@ func validateServer(server string) *FieldError {
 	if s == "" {
 		return fieldErr("server", ValRequired, "server is required")
 	}
-	if why := ServerNameForbidden(s); why != "" {
-		return fieldErr("server", ValServerForbidden, "server: named pipe / LPC / UNC targets are not allowed ("+why+")", why)
+	if err := ValidateSQLServerAddr(s); err != nil {
+		return err.(*FieldError)
 	}
 	i := strings.IndexByte(s, '\\')
 	if i < 0 {
@@ -150,21 +151,36 @@ func validateServer(server string) *FieldError {
 	return nil
 }
 
-// ServerNameForbidden reports why server may not be used (phase 9,
-// CHK-CFG-05), "" when it is allowed: the np: / lpc: protocol prefixes
-// (ASCII case-insensitive) -> "np" / "lpc", a UNC path (\\host or
-// //host) -> "unc", a pipe path (\pipe\ or /pipe/ anywhere) -> "pipe".
-// tcp: and plain host / host\instance stay allowed. Shared by the tray
-// (early feedback) and the service (save_profile, test_profile).
-func ServerNameForbidden(server string) string {
-	s := strings.ToLower(strings.TrimSpace(server))
+// ValidateSQLServerAddr checks a SQL Server address (phase 9,
+// CHK-CFG-05): nil when allowed, else a *FieldError (field "server", key
+// ValSQLServerForbidden, Args [reason]). Forbidden: the np: / lpc: /
+// admin: prefixes (ASCII case-insensitive) -> np / lpc / admin, a UNC
+// path (\\host or //host) -> unc, any other name starting with a
+// backslash -> backslash, a pipe path (\pipe\ or /pipe/ anywhere) ->
+// pipe. tcp: and plain host / host\instance stay allowed. Shared by the
+// tray (early feedback), the service (save_profile, test_profile) and
+// later EC SQL (sqlcheck).
+func ValidateSQLServerAddr(addr string) error {
+	why := sqlServerForbidden(addr)
+	if why == "" {
+		return nil
+	}
+	return fieldErr("server", ValSQLServerForbidden, "server: named pipe / LPC / DAC / UNC targets are not allowed ("+why+")", why)
+}
+
+func sqlServerForbidden(addr string) string {
+	s := strings.ToLower(strings.TrimSpace(addr))
 	switch {
 	case strings.HasPrefix(s, "np:"):
 		return "np"
 	case strings.HasPrefix(s, "lpc:"):
 		return "lpc"
+	case strings.HasPrefix(s, "admin:"):
+		return "admin"
 	case strings.HasPrefix(s, `\\`), strings.HasPrefix(s, "//"), strings.HasPrefix(s, `\/`), strings.HasPrefix(s, `/\`):
 		return "unc"
+	case strings.HasPrefix(s, `\`):
+		return "backslash"
 	case strings.Contains(s, `\pipe\`), strings.Contains(s, "/pipe/"), strings.Contains(s, `\pipe/`), strings.Contains(s, `/pipe\`):
 		return "pipe"
 	}

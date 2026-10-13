@@ -145,40 +145,43 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 
 	// delayed auto-start, failure actions, service DACL
-	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer scm.Close()
-	svc, err := winapi.OpenService(scm, model.ServiceName, winapi.ServiceQueryConfig|winapi.ServiceQueryStatus|winapi.ServiceReadControl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-	delBuf, err := winapi.QueryServiceConfig2Bytes(svc, winapi.ServiceConfigDelayedAutoStart)
-	if err != nil {
-		t.Fatalf("delayed: %v", err)
-	}
-	if len(delBuf) < 4 || delBuf[0] == 0 {
-		t.Fatalf("delayed auto-start not set: %v", delBuf)
-	}
-	faBuf, err := winapi.QueryServiceConfig2Bytes(svc, winapi.ServiceConfigFailureActions)
-	if err != nil || len(faBuf) < int(unsafe.Sizeof(winapi.ServiceFailureActionsW{})) {
-		t.Fatalf("failure actions: %v len=%d", err, len(faBuf))
-	}
-	// ResetPeriod at offset 0 (uint32) = 86400
-	reset := uint32(faBuf[0]) | uint32(faBuf[1])<<8 | uint32(faBuf[2])<<16 | uint32(faBuf[3])<<24
-	if reset != 86400 {
-		t.Fatalf("failure ResetPeriod=%d want 86400", reset)
-	}
-	sddl, err := winapi.ServiceDACL(svc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("service SDDL: %s", sddl)
-	if !strings.Contains(sddl, "AU") && !strings.Contains(sddl, "S-1-5-11") {
-		t.Fatalf("service DACL missing Authenticated Users: %s", sddl)
-	}
+	// Close SCM handles before uninstall: an open handle keeps a
+	// mark-for-delete service visible in the SCM database.
+	func() {
+		scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer scm.Close()
+		svc, err := winapi.OpenService(scm, model.ServiceName, winapi.ServiceQueryConfig|winapi.ServiceQueryStatus|winapi.ServiceReadControl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer svc.Close()
+		delBuf, err := winapi.QueryServiceConfig2Bytes(svc, winapi.ServiceConfigDelayedAutoStart)
+		if err != nil {
+			t.Fatalf("delayed: %v", err)
+		}
+		if len(delBuf) < 4 || delBuf[0] == 0 {
+			t.Fatalf("delayed auto-start not set: %v", delBuf)
+		}
+		faBuf, err := winapi.QueryServiceConfig2Bytes(svc, winapi.ServiceConfigFailureActions)
+		if err != nil || len(faBuf) < int(unsafe.Sizeof(winapi.ServiceFailureActionsW{})) {
+			t.Fatalf("failure actions: %v len=%d", err, len(faBuf))
+		}
+		reset := uint32(faBuf[0]) | uint32(faBuf[1])<<8 | uint32(faBuf[2])<<16 | uint32(faBuf[3])<<24
+		if reset != 86400 {
+			t.Fatalf("failure ResetPeriod=%d want 86400", reset)
+		}
+		sddl, err := winapi.ServiceDACL(svc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("service SDDL: %s", sddl)
+		if !strings.Contains(sddl, "AU") && !strings.Contains(sddl, "S-1-5-11") {
+			t.Fatalf("service DACL missing Authenticated Users: %s", sddl)
+		}
+	}()
 
 	// folder ACLs
 	dataDACL, err := winapi.FileDACL(data)

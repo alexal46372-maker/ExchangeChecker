@@ -4,6 +4,7 @@ package winapi
 
 import (
 	"fmt"
+	"path/filepath"
 	"syscall"
 	"unsafe"
 )
@@ -114,19 +115,40 @@ func WaitProcessExit(pid uint32, timeoutMs uint32) error {
 
 // LongPath expands 8.3 components (e.g. C:\Users\RUNNER~1) with
 // GetLongPathNameW; on failure the input is returned unchanged.
+// A path that does not exist yet (e.g. a new /DIR) is expanded through its
+// nearest existing parent and the missing tail is appended unchanged.
 func LongPath(p string) string {
+	if l, ok := longPathExisting(p); ok {
+		return l
+	}
+	clean := filepath.Clean(p)
+	tail := ""
+	for dir := clean; ; {
+		parent := filepath.Dir(dir)
+		tail = filepath.Join(filepath.Base(dir), tail)
+		if parent == dir {
+			return p
+		}
+		if l, ok := longPathExisting(parent); ok {
+			return filepath.Join(l, tail)
+		}
+		dir = parent
+	}
+}
+
+func longPathExisting(p string) (string, bool) {
 	in, err := syscall.UTF16PtrFromString(p)
 	if err != nil {
-		return p
+		return "", false
 	}
 	buf := make([]uint16, 512)
 	for {
 		r, _, _ := callProc(procGetLongPathNameW, uintptr(unsafe.Pointer(in)), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 		if r == 0 {
-			return p
+			return "", false
 		}
 		if int(r) < len(buf) {
-			return syscall.UTF16ToString(buf[:r])
+			return syscall.UTF16ToString(buf[:r]), true
 		}
 		buf = make([]uint16, r+1)
 	}

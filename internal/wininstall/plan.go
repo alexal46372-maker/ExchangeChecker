@@ -180,7 +180,11 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// 3b. stop tray before replacing its image (upgrade / reinstall)
 	if !fresh {
 		log.Printf("stopping tray in %s", dir)
-		if err := sys.StopTray(dir); err != nil {
+		tw, err := sys.StopTray(dir)
+		for _, w := range tw {
+			warn("stop tray: %s", w)
+		}
+		if err != nil {
 			warn("stop tray: %v", err)
 		}
 	}
@@ -379,7 +383,11 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 		step("delete service", sys.DeleteService(model.ServiceName))
 	}
 	if dir != "" {
-		step("stop tray", sys.StopTray(dir))
+		tw, err := sys.StopTray(dir)
+		for _, w := range tw {
+			log.Printf("WARNING: stop tray: %s", w)
+		}
+		step("stop tray", err)
 	}
 	step("delete HKLM Run "+config.TrayRunValue, sys.DeleteTrayRun())
 	step("delete event log source", sys.DeleteEventSource())

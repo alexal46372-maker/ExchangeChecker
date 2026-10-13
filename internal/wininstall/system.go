@@ -90,7 +90,8 @@ type System interface {
 	// StopTray asks tray processes under installDir to exit: same session
 	// gets TrayExitMessage (window classes + broadcast), other sessions get
 	// TerminateProcess; leftovers after ~5s are terminated.
-	StopTray(installDir string) error
+	// Warnings: processes skipped (image mismatch, e.g. *.exe.old after 3010).
+	StopTray(installDir string) (warnings []string, err error)
 	WriteUninstallKey(vals []RegValue) error
 	// ReadUninstallKey returns current Uninstall values (for upgrade rollback).
 	ReadUninstallKey() ([]RegValue, error)

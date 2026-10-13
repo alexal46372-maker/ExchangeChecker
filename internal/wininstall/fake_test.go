@@ -32,7 +32,8 @@ type recordingSystem struct {
 	WriteReboot bool   // WriteFile returns reboot=true
 	FailAlso    string // second prefix that always fails (e.g. a rollback step)
 	Specs       []ServiceSpec
-	Long        map[string]string // LongPath mapping (8.3 → long)
+	Long        map[string]string
+	TrayWarn    []string // LongPath mapping (8.3 → long)
 }
 
 func newFake() *recordingSystem {
@@ -314,10 +315,10 @@ func (f *recordingSystem) ApplyTrayRun(serviceExe, dataDir string) (string, erro
 	return "written", nil
 }
 
-func (f *recordingSystem) StopTray(installDir string) error {
+func (f *recordingSystem) StopTray(installDir string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.step("StopTray|%s", installDir)
+	return f.TrayWarn, f.step("StopTray|%s", installDir)
 }
 
 func (f *recordingSystem) DeleteTrayRun() error {

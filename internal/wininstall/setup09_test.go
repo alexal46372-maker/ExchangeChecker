@@ -422,3 +422,37 @@ func TestCHK_SETUP_09_UninstallSelfExeLongPath(t *testing.T) {
 		t.Fatalf("dir=%q err=%v", res.Dir, res.Err)
 	}
 }
+
+// 7c carry-over 3: a skipped tray (image mismatch, e.g. *.exe.old after 3010)
+// is a WARNING, never an error, in both install and uninstall.
+func TestCHK_SETUP_09_TraySkipWarns(t *testing.T) {
+	f := newFake()
+	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: `C:\EC`}
+	f.Service = ServiceInfo{Exists: true, ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`}
+	f.TrayWarn = []string{"tray pid 7 skipped: image mismatch (ExchangeCheckerTray.exe.old)"}
+	lg := &memLog{}
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, lg)
+	if res.Code != ExitOK && res.Code != ExitRebootRequired {
+		t.Fatalf("install code=%d err=%v", res.Code, res.Err)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "skipped") {
+		t.Fatalf("warning missing: %v", res.Warnings)
+	}
+	lg2 := &memLog{}
+	ures := Uninstall(f, UninstallConfig{DataDir: `C:\ProgramData\ExchangeChecker`}, lg2)
+	if ures.Err != nil {
+		t.Fatalf("uninstall must not fail on a skipped tray: %v", ures.Err)
+	}
+	found := false
+	for _, l := range lg2.lines {
+		if strings.HasPrefix(l, "WARNING: stop tray:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("uninstall WARNING missing: %v", lg2.lines)
+	}
+}

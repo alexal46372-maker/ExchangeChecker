@@ -40,7 +40,7 @@ func (stubSystem) SetEventSource(string) error                       { return Er
 func (stubSystem) DeleteEventSource() error                          { return ErrNotWindows }
 func (stubSystem) ApplyTrayRun(string, string) (string, error)       { return "", ErrNotWindows }
 func (stubSystem) DeleteTrayRun() error                              { return ErrNotWindows }
-func (stubSystem) StopTray(string) error                             { return ErrNotWindows }
+func (stubSystem) StopTray(string) ([]string, error)                 { return nil, ErrNotWindows }
 func (stubSystem) WriteUninstallKey([]RegValue) error                { return ErrNotWindows }
 func (stubSystem) ReadUninstallKey() ([]RegValue, error)             { return nil, ErrNotWindows }
 func (stubSystem) DeleteUninstallKey() error                         { return ErrNotWindows }

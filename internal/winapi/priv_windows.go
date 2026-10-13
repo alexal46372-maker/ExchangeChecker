@@ -60,8 +60,52 @@ func lastError() syscall.Errno {
 // caller (TakeOwnershipTree) may still try SetFileOwner without them.
 func EnablePrivileges(names ...string) error { return adjustPrivileges(sePrivilegeEnabled, names) }
 
-// DisablePrivileges turns the named privileges off again (attributes 0).
-func DisablePrivileges(names ...string) error { return adjustPrivileges(0, names) }
+// EnablePrivilegeScoped enables one privilege and returns restore, which
+// puts back the PreviousState reported by AdjustTokenPrivileges (a
+// privilege that was already enabled stays enabled).
+func EnablePrivilegeScoped(name string) (restore func() error, err error) {
+	var tok syscall.Token
+	proc, _ := syscall.GetCurrentProcess()
+	r, _, e := callProc(procOpenProcessToken, uintptr(proc), tokenAdjustPrivileges|tokenQuery, uintptr(unsafe.Pointer(&tok)))
+	if r == 0 {
+		return nil, fmt.Errorf("OpenProcessToken: %w", lastErr(e))
+	}
+	var id luid
+	r, _, e = callProc(procLookupPrivilegeValueW, 0, uintptr(unsafe.Pointer(UTF16Ptr(name))), uintptr(unsafe.Pointer(&id)))
+	if r == 0 {
+		tok.Close()
+		return nil, fmt.Errorf("LookupPrivilegeValue %s: %w", name, lastErr(e))
+	}
+	tp := tokenPrivileges1{PrivilegeCount: 1, Privileges: luidAndAttributes{Luid: id, Attributes: sePrivilegeEnabled}}
+	var prev tokenPrivileges1
+	var retLen uint32
+	setLastError(0)
+	r, _, e = callProc(procAdjustTokenPrivileges, uintptr(tok), 0, uintptr(unsafe.Pointer(&tp)),
+		unsafe.Sizeof(prev), uintptr(unsafe.Pointer(&prev)), uintptr(unsafe.Pointer(&retLen)))
+	if r == 0 {
+		tok.Close()
+		return nil, fmt.Errorf("AdjustTokenPrivileges %s: %w", name, lastErr(e))
+	}
+	en, _ := e.(syscall.Errno)
+	if en == 0 {
+		en = lastError()
+	}
+	if en == errNotAllAssigned {
+		tok.Close()
+		return nil, fmt.Errorf("AdjustTokenPrivileges %s: ERROR_NOT_ALL_ASSIGNED (privilege not held)", name)
+	}
+	return func() error {
+		defer tok.Close()
+		if prev.PrivilegeCount == 0 {
+			return nil // state did not change: nothing to restore
+		}
+		r, _, e := callProc(procAdjustTokenPrivileges, uintptr(tok), 0, uintptr(unsafe.Pointer(&prev)), 0, 0, 0)
+		if r == 0 {
+			return fmt.Errorf("AdjustTokenPrivileges restore %s: %w", name, lastErr(e))
+		}
+		return nil
+	}, nil
+}
 
 func adjustPrivileges(attr uint32, names []string) error {
 	var tok syscall.Token

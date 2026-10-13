@@ -441,8 +441,7 @@ func (winSystem) LongPath(p string) string {
 	return p
 }
 
-func (s winSystem) ForceStopService(name, installDir string) ([]string, error) {
-	var warns []string
+func (s winSystem) ForceStopService(name, installDir string) (warns []string, err error) {
 	stopErr := s.StopService(name, ForceStopTimeout)
 	// candidates: the SCM-reported pid + any ExchangeCheckerSvc.exe under
 	// installDir (hung before the dispatcher connected). Every candidate is
@@ -464,12 +463,13 @@ func (s winSystem) ForceStopService(name, installDir string) ([]string, error) {
 		}
 		return warns, stopErr
 	}
-	if err := winapi.EnablePrivileges("SeDebugPrivilege"); err != nil {
-		warns = append(warns, fmt.Sprintf("SeDebugPrivilege not enabled: %v", err))
+	if restore, perr := winapi.EnablePrivilegeScoped("SeDebugPrivilege"); perr != nil {
+		warns = append(warns, fmt.Sprintf("SeDebugPrivilege not enabled: %v", perr))
 	} else {
+		// named result: the deferred warning reaches the caller
 		defer func() {
-			if err := winapi.DisablePrivileges("SeDebugPrivilege"); err != nil {
-				warns = append(warns, fmt.Sprintf("SeDebugPrivilege not disabled: %v", err))
+			if rerr := restore(); rerr != nil {
+				warns = append(warns, fmt.Sprintf("SeDebugPrivilege not restored: %v", rerr))
 			}
 		}()
 	}
@@ -479,7 +479,9 @@ func (s winSystem) ForceStopService(name, installDir string) ([]string, error) {
 	for pid := range pids {
 		err := winapi.TerminatePID(pid, match, 15000)
 		if errors.Is(err, winapi.ErrImageMismatch) {
-			continue // not our exe (or pid reused): never touched
+			// not our exe (pid reused, or e.g. *.exe.old after 3010): untouched
+			warns = append(warns, fmt.Sprintf("service pid %d skipped: %v", pid, err))
+			continue
 		}
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("terminate pid %d: %v", pid, err))
@@ -636,16 +638,16 @@ func (winSystem) DeleteUserKey() error {
 	return winapi.RegDeleteKey(winapi.HKEY_CURRENT_USER, UserKeyPath)
 }
 
-func (winSystem) StopTray(installDir string) error {
+func (winSystem) StopTray(installDir string) (warns []string, err error) {
 	if installDir == "" {
-		return nil
+		return nil, nil
 	}
 	msg := winapi.RegisterWindowMessage(model.TrayExitMessage)
 	selfSess, sessErr := winapi.CurrentSessionID()
 
 	procs, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
 	if err != nil {
-		return err
+		return warns, err
 	}
 	var list []TrayProc
 	for _, p := range procs {
@@ -696,7 +698,12 @@ func (winSystem) StopTray(installDir string) error {
 	term := func(pid uint32, why string) {
 		// one handle: verify image, terminate, wait (PID reuse safe)
 		err := winapi.TerminatePID(pid, func(img string) bool { return winapi.SameImage(img, trayImg) }, 5000)
-		if err != nil && !errors.Is(err, winapi.ErrImageMismatch) && first == nil {
+		if errors.Is(err, winapi.ErrImageMismatch) {
+			// e.g. ExchangeCheckerTray.exe.old after a 3010 upgrade: not ours to kill
+			warns = append(warns, fmt.Sprintf("tray pid %d (%s) skipped: %v", pid, why, err))
+			return
+		}
+		if err != nil && first == nil {
 			first = fmt.Errorf("stop tray pid %d (%s): %w", pid, why, err)
 		}
 	}
@@ -708,19 +715,19 @@ func (winSystem) StopTray(installDir string) error {
 	for time.Now().Before(deadline) {
 		left, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
 		if err != nil {
-			return err
+			return warns, err
 		}
 		if len(left) == 0 {
-			return first
+			return warns, first
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	left, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
 	if err != nil {
-		return err
+		return warns, err
 	}
 	for _, p := range left {
 		term(p.PID, "after wait")
 	}
-	return first
+	return warns, first
 }

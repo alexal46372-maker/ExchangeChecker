@@ -1,6 +1,7 @@
 package checks_test
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -176,26 +177,114 @@ func TestCHK_POL_01_NoOSExec(t *testing.T) {
 
 // TestCHK_POL_01_NoStartProcess — cmd/, internal/, tools/ (including _test.go)
 // must not start helper processes via os.StartProcess, syscall.StartProcess,
-// syscall.CreateProcess, or NewProc("CreateProcess…"). checks/ tests may
-// (CHK-SETUP-07 rename). CreateProcessWithTokenW for launching the tray
-// (phase 7d) is not exempted here yet.
+// syscall.CreateProcess / CreateProcessAsUser, or NewProc("CreateProcess…")
+// (string literal or same-file const). Import aliases are followed; comments
+// are ignored (go/ast). checks/ tests may (CHK-SETUP-07 rename).
+// CreateProcessWithTokenW for launching the tray (phase 7d) is not exempted.
 func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 	root := findModuleRoot(t)
-	re := regexp.MustCompile(
-		`os\.StartProcess|` +
-			`syscall\.StartProcess|` +
-			`syscall\.CreateProcess|` +
-			`NewProc\("CreateProcess[^"]*"\)`,
-	)
-	// Self-check: the scanner must catch a probe.
-	probe := "package p\nfunc f(){ os.StartProcess(\"x\", nil, nil) }\n"
-	if !re.MatchString(probe) {
-		t.Fatal("CHK-POL-01: scan does not detect os.StartProcess")
+
+	startsProcess := func(name string, src []byte) bool {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Errorf("parse %s: %v", name, err)
+			return false
+		}
+		// import path → local name (alias or default)
+		pkgName := map[string]string{} // local → import path
+		for _, imp := range f.Imports {
+			path, _ := strconv.Unquote(imp.Path.Value)
+			local := path
+			if i := strings.LastIndex(path, "/"); i >= 0 {
+				local = path[i+1:]
+			}
+			if imp.Name != nil {
+				local = imp.Name.Name
+			}
+			pkgName[local] = path
+		}
+		// same-file string consts
+		consts := map[string]string{}
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs := spec.(*ast.ValueSpec)
+				for i, n := range vs.Names {
+					if i < len(vs.Values) {
+						if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+							if s, err := strconv.Unquote(lit.Value); err == nil {
+								consts[n.Name] = s
+							}
+						}
+					}
+				}
+			}
+		}
+		bannedSel := map[string]bool{
+			"StartProcess": true, "CreateProcess": true, "CreateProcessAsUser": true,
+		}
+		var hit bool
+		ast.Inspect(f, func(n ast.Node) bool {
+			if hit {
+				return false
+			}
+			switch x := n.(type) {
+			case *ast.SelectorExpr:
+				id, ok := x.X.(*ast.Ident)
+				if !ok || !bannedSel[x.Sel.Name] {
+					return true
+				}
+				path := pkgName[id.Name]
+				if path == "os" || path == "syscall" {
+					hit = true
+				}
+			case *ast.CallExpr:
+				sel, ok := x.Fun.(*ast.SelectorExpr)
+				if !ok || sel.Sel.Name != "NewProc" || len(x.Args) < 1 {
+					return true
+				}
+				var name string
+				switch a := x.Args[0].(type) {
+				case *ast.BasicLit:
+					if a.Kind == token.STRING {
+						name, _ = strconv.Unquote(a.Value)
+					}
+				case *ast.Ident:
+					name = consts[a.Name]
+				}
+				if strings.HasPrefix(name, "CreateProcess") {
+					hit = true
+				}
+			}
+			return true
+		})
+		return hit
 	}
-	probe2 := `package p` + "\n" + `var _ = mod.NewProc("CreateProcessWithTokenW")` + "\n"
-	if !re.MatchString(probe2) {
-		t.Fatal("CHK-POL-01: scan does not detect NewProc(\"CreateProcess…\")")
+
+	probes := []struct {
+		name string
+		src  string
+	}{
+		{"alias_os.go", "package p\nimport x \"os\"\nfunc f(){ x.StartProcess(\"a\", nil, nil) }\n"},
+		{"alias_sys.go", "package p\nimport s \"syscall\"\nfunc f(){ s.CreateProcess(nil, nil, nil, nil, false, 0, nil, nil, nil, nil) }\n"},
+		{"as_user.go", "package p\nimport \"syscall\"\nfunc f(){ syscall.CreateProcessAsUser(0, nil, nil, nil, nil, false, 0, nil, nil, nil, nil) }\n"},
+		{"newproc_lit.go", "package p\nvar _ = mod.NewProc(\"CreateProcessWithTokenW\")\n"},
+		{"newproc_const.go", "package p\nconst n = \"CreateProcessW\"\nvar _ = mod.NewProc(n)\n"},
+		{"comment_only.go", "package p\n// os.StartProcess is forbidden\nconst x = 1\n"},
 	}
+	for _, p := range probes[:5] {
+		if !startsProcess(p.name, []byte(p.src)) {
+			t.Fatalf("CHK-POL-01: scan does not detect probe %s", p.name)
+		}
+	}
+	if startsProcess(probes[5].name, []byte(probes[5].src)) {
+		t.Fatal("CHK-POL-01: scan flags comment-only mention")
+	}
+
 	files := 0
 	for _, d := range []string{"cmd", "internal", "tools"} {
 		filepath.Walk(filepath.Join(root, d), func(p string, fi os.FileInfo, err error) error {
@@ -208,9 +297,9 @@ func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 				t.Error(err)
 				return nil
 			}
-			if re.Match(b) {
+			if startsProcess(p, b) {
 				rel, _ := filepath.Rel(root, p)
-				t.Errorf("CHK-POL-01: %s starts a process (os/syscall.StartProcess or CreateProcess NewProc); allowed only in checks/ tests", filepath.ToSlash(rel))
+				t.Errorf("CHK-POL-01: %s starts a process (os/syscall.StartProcess or CreateProcess); allowed only in checks/ tests", filepath.ToSlash(rel))
 			}
 			return nil
 		})

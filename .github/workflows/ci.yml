@@ -120,11 +120,27 @@ jobs:
         run: |
           export EC_SVC_EXE="$RUNNER_TEMP/release/ExchangeCheckerSvc.exe"
           go test ./checks -run TestCHK_SVC_01_RealSCM -count=1 -v
-      - name: setup silent E2E (CHK-SETUP-12 basic + CHK-SETUP-03/04/05 windows)
+      - name: setup silent E2E (CHK-SETUP-12 + upgrade + CHK-SETUP-03/04/05 windows)
         env:
           EC_SETUP_E2E: "1"
         run: |
-          export EC_SETUP_EXE="$RUNNER_TEMP/release/ExchangeCheckerSetup.exe"
+          build_setup() {
+            local ver="$1" out="$2"
+            local X="-X github.com/alexal46372-maker/ExchangeChecker/internal/version.Version=$ver"
+            local pay="$out/payload"
+            mkdir -p "$pay"
+            GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+            GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerTray.exe" ./cmd/exchtray
+            GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerUninstall.exe" ./cmd/exchsetup
+            rm -rf cmd/exchsetup/payload
+            mkdir -p cmd/exchsetup/payload
+            cp "$pay"/* cmd/exchsetup/payload/
+            GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          }
+          build_setup "1.0.0" "$RUNNER_TEMP/e2e-v1"
+          build_setup "1.1.0" "$RUNNER_TEMP/e2e-v2"
+          export EC_SETUP_EXE="$RUNNER_TEMP/e2e-v1/ExchangeCheckerSetup.exe"
+          export EC_SETUP_EXE_V2="$RUNNER_TEMP/e2e-v2/ExchangeCheckerSetup.exe"
           go test ./internal/wininstall -run 'TestCHK_SETUP_03_RealSCM|TestCHK_SETUP_04_EventSourceWindows|TestCHK_SETUP_05_ACLWindows' -count=1 -v
           go test ./checks -run TestCHK_SETUP_12_E2E -count=1 -v
 

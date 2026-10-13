@@ -3,6 +3,8 @@
 package checks_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -242,6 +244,65 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		t.Fatalf("HKLM Run=%q ok=%v want %q", runVal, runOK, wantRun)
 	}
 
+	// --- upgrade to V2 (CHK-SETUP-12 / 7c) ---
+	setupV2 := os.Getenv("EC_SETUP_EXE_V2")
+	if setupV2 == "" {
+		t.Fatal("EC_SETUP_EXE_V2 required for upgrade E2E")
+	}
+	hashData := func() map[string]string {
+		t.Helper()
+		out := map[string]string{}
+		_ = filepath.Walk(data, func(path string, fi os.FileInfo, err error) error {
+			if err != nil || fi.IsDir() {
+				return err
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			sum := sha256.Sum256(b)
+			rel, _ := filepath.Rel(data, path)
+			out[filepath.ToSlash(rel)] = hex.EncodeToString(sum[:])
+			return nil
+		})
+		return out
+	}
+	seed := filepath.Join(data, "settings.json")
+	if _, err := os.Stat(seed); err != nil {
+		if err := os.WriteFile(seed, []byte(`{"trayAutostart":true,"language":"en"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := hashData()
+	if len(before) == 0 {
+		t.Fatal("ProgramData empty before upgrade")
+	}
+	v1 := inst.Version
+	logU := filepath.Join(os.TempDir(), "ec-setup-e2e-upgrade.log")
+	code = run(setupV2, "/S", "/DIR="+dir, "/LOG="+logU, "/LANG=en")
+	if code != 0 {
+		dumpLog(t, logU)
+		t.Fatalf("upgrade exit %d; log %s", code, logU)
+	}
+	after := hashData()
+	for k, v := range before {
+		if after[k] != v {
+			t.Fatalf("ProgramData %s hash changed: %s -> %s", k, v, after[k])
+		}
+	}
+	inst2, err := sys.ReadInstalled()
+	if err != nil || !inst2.Present {
+		t.Fatalf("uninstall key after upgrade: %+v %v", inst2, err)
+	}
+	if inst2.Version == "" || inst2.Version == v1 {
+		t.Fatalf("DisplayVersion after V2=%q (was %q)", inst2.Version, v1)
+	}
+	info2, err := sys.QueryService(model.ServiceName)
+	if err != nil || !info2.Exists || !info2.Running {
+		t.Fatalf("service after upgrade: %+v err=%v", info2, err)
+	}
+	t.Logf("upgraded %s -> %s; ProgramData hashes stable (%d files)", v1, inst2.Version, len(before))
+
 	// uninstall via installed ExchangeCheckerUninstall.exe (keep data)
 	uninstLog := filepath.Join(os.TempDir(), "ec-setup-e2e-uninst.log")
 	code = run(uninst, "/uninstall", "/S", "/LOG="+uninstLog)
@@ -305,8 +366,7 @@ func dumpLog(t *testing.T, path string) {
 	t.Logf("---- %s ----\n%s", path, string(b))
 }
 
-// assertProtectedSYBA: DACL starts with D:P (protected), ACEs only for SY and BA
-// (aliases or well-known SIDs S-1-5-18 / S-1-5-32-544).
+// assertProtectedSYBA: DACL starts with D:P (protected)+AI; ACEs only SY and BA.
 func assertProtectedSYBA(t *testing.T, label, sddl string) {
 	t.Helper()
 	if !strings.HasPrefix(sddl, "D:P") {
@@ -319,9 +379,8 @@ func assertProtectedSYBA(t *testing.T, label, sddl string) {
 	if !strings.Contains(sddl[:ctrlEnd], "AI") {
 		t.Fatalf("%s DACL missing AI (want P/AI): %s", label, sddl)
 	}
-	re := regexp.MustCompile(`\((?:[^;]*;){5}([^)]+)\)`)
-	m := re.FindAllStringSubmatch(sddl, -1)
-	if len(m) == 0 {
+	aces := parseSDDLACEs(sddl)
+	if len(aces) == 0 {
 		t.Fatalf("%s DACL has no ACEs: %s", label, sddl)
 	}
 	okSID := map[string]bool{
@@ -329,19 +388,16 @@ func assertProtectedSYBA(t *testing.T, label, sddl string) {
 		"S-1-5-18": true, "S-1-5-32-544": true,
 	}
 	seenSY, seenBA := false, false
-	for _, g := range m {
-		sid := strings.ToUpper(g[1])
+	for _, a := range aces {
+		sid := strings.ToUpper(a.SID)
+		if !okSID[sid] {
+			t.Fatalf("%s DACL has non-SY/BA ACE %q: %s", label, a.SID, sddl)
+		}
 		if sid == "SY" || sid == "S-1-5-18" {
 			seenSY = true
 		}
 		if sid == "BA" || sid == "S-1-5-32-544" {
 			seenBA = true
-		}
-		if !okSID[sid] && !okSID[g[1]] {
-			// also accept mixed-case SID forms already uppercased
-			if !(sid == "SY" || sid == "BA" || sid == "S-1-5-18" || sid == "S-1-5-32-544") {
-				t.Fatalf("%s DACL has non-SY/BA ACE %q: %s", label, g[1], sddl)
-			}
 		}
 	}
 	if !seenSY || !seenBA {
@@ -349,7 +405,7 @@ func assertProtectedSYBA(t *testing.T, label, sddl string) {
 	}
 }
 
-// assertInstallDACL: protected + SY + BA + BU FRFX (0x1200a9 or FRFX).
+// assertInstallDACL: protected P/AI; each ACE checked — BU only FRFX/0x1200a9 (no write).
 func assertInstallDACL(t *testing.T, sddl string) {
 	t.Helper()
 	if !strings.HasPrefix(sddl, "D:P") {
@@ -362,13 +418,44 @@ func assertInstallDACL(t *testing.T, sddl string) {
 	if !strings.Contains(sddl[:ctrlEnd], "AI") {
 		t.Fatalf("install DACL missing AI (want P/AI): %s", sddl)
 	}
-	if !strings.Contains(sddl, "SY") || !strings.Contains(sddl, "BA") {
-		t.Fatalf("install DACL missing SY/BA: %s", sddl)
+	aces := parseSDDLACEs(sddl)
+	seenSY, seenBA, seenBU := false, false, false
+	for _, a := range aces {
+		sid := strings.ToUpper(a.SID)
+		rights := strings.ToUpper(a.Rights)
+		switch {
+		case sid == "SY" || sid == "S-1-5-18":
+			seenSY = true
+		case sid == "BA" || sid == "S-1-5-32-544":
+			seenBA = true
+		case sid == "BU" || sid == "S-1-5-32-545":
+			seenBU = true
+			if rights != "FRFX" && rights != "0X1200A9" {
+				t.Fatalf("install DACL Users ACE rights=%q want FRFX/0x1200a9: %s", a.Rights, sddl)
+			}
+			// reject any write-ish right tokens if rights were a list
+			for _, bad := range []string{"FA", "FW", "GA", "GW", "WD", "WO", "SD", "WA", "WEA", "WC"} {
+				if rights != "FRFX" && strings.Contains(rights, bad) {
+					t.Fatalf("install DACL Users ACE has write right %s: %s", bad, sddl)
+				}
+			}
+		default:
+			t.Fatalf("install DACL unexpected ACE SID %q: %s", a.SID, sddl)
+		}
 	}
-	if !strings.Contains(sddl, "BU") && !strings.Contains(sddl, "S-1-5-32-545") {
-		t.Fatalf("install DACL missing Users: %s", sddl)
+	if !seenSY || !seenBA || !seenBU {
+		t.Fatalf("install DACL missing SY/BA/BU: %s", sddl)
 	}
-	if !strings.Contains(sddl, "FRFX") && !strings.Contains(sddl, "0x1200a9") && !strings.Contains(strings.ToLower(sddl), "0x1200a9") {
-		t.Fatalf("install DACL Users ACE is not FRFX/0x1200a9: %s", sddl)
+}
+
+type sddlACE struct{ Rights, SID string }
+
+func parseSDDLACEs(sddl string) []sddlACE {
+	re := regexp.MustCompile(`\(([^;]*);([^;]*);([^;]*);([^;]*);([^;]*);([^)]+)\)`)
+	m := re.FindAllStringSubmatch(sddl, -1)
+	out := make([]sddlACE, 0, len(m))
+	for _, g := range m {
+		out = append(out, sddlACE{Rights: g[3], SID: g[6]})
 	}
+	return out
 }

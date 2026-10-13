@@ -4,7 +4,7 @@
 
 | Check ID | Статус | Что покрывает |
 |----------|--------|---------------|
-| `CHK-POL-01` | **implemented (phase 0; 7a)** | go 1.20 в go.mod; static scan `cmd/`, `internal/`, `tools/`: нет cmd.exe / powershell / wmic / sc.exe / net.exe; **импорт `os/exec` запрещён во всех `.go` этих каталогов, включая `_test.go`** (разбор импортов `go/parser`). Исключение — только тесты пакета `checks/` (`checks/res01_test.go`, `go build` для `TestCHK_RES_01_LinkedExe`; POLICY §4). Tests: `TestCHK_POL_01`, `TestCHK_POL_01_NoOSExec` |
+| `CHK-POL-01` | **implemented (phase 0; 7a)** | go 1.20 в go.mod; static scan `cmd/`, `internal/`, `tools/`: нет cmd.exe / powershell / wmic / sc.exe / net.exe; **импорт `os/exec` запрещён во всех `.go` этих каталогов, включая `_test.go`** (разбор импортов `go/parser`). Исключение — только тесты пакета `checks/` (`checks/res01_test.go`, `go build` для `TestCHK_RES_01_LinkedExe`; POLICY §4). Tests: `TestCHK_POL_01`, `TestCHK_POL_01_NoOSExec`, `TestCHK_POL_01_NoStartProcess` (go/ast: StartProcess/CreateProcess/NewProc, aliases+consts) |
 | `CHK-CI-01` | **implemented (phase 1)** | GitHub Actions: windows-latest Go 1.20.14; `go vet`/`go test`/`go build` GOOS=windows GOARCH=amd64 CGO_ENABLED=0; optional linux job. Workflow: `.github/workflows/ci.yml`. **Фаза 4b:** в linux-job добавлен шаг `go test -race` для `internal/monitor`, `internal/ipc`, `internal/sqlcheck` (с `EC_SQL_TEST_*`); детектору гонок нужен cgo, поэтому `CGO_ENABLED=1` только в env этого шага — сборка windows/amd64 и остальные шаги остаются с `CGO_ENABLED=0` (политика релиза не меняется). |
 | `CHK-CFG-01` | **implemented (phase 1)** | model+config: Settings/Profiles/Secrets load-save, defaults, Validate, atomic write, LANGID→language, Protector (fake). Tests: `TestCHK_CFG_01_*` in `internal/model`, `internal/config`, `internal/winapi`. |
 | `CHK-CFG-02` | **implemented (phase 1)** | Real DPAPI LocalMachine roundtrip + MoveFileEx atomic replace on Windows. Tests: `TestCHK_CFG_02_*` in `internal/winapi`, `internal/config` (build tag `windows`). |
@@ -63,9 +63,9 @@
 | `CHK-SETUP-06` | **implemented (7b)** (`TestCHK_SETUP_06_*`) | HKLM Run через `config.ApplyTrayAutostart` / `TrayRunCommand`; удаление после остановки службы |
 | `CHK-SETUP-07` | **implemented (7b)** (`TestCHK_SETUP_07_*`) | Uninstall-ключ (без Publisher), C2 uninstall.exe, purge/keep data, SelfDelete → 3010 |
 | `CHK-SETUP-08` | planned (7d) | Ярлык трея в меню Пуск через COM `IShellLinkW`/`IPersistFile` (язык установки) |
-| `CHK-SETUP-09` | planned (7c) | Обновление: обнаружение, остановка службы и трея (свой сеанс — сообщение `model.TrayExitMessage`, чужие — `TerminateProcess`; служба — `TerminateProcess` только с согласия, в тихом режиме ошибка), замена с откатом, даунгрейд, тип запуска сохраняется |
+| `CHK-SETUP-09` | **implemented (phase 7c)** | Обновление: обнаружение (Uninstall / ImagePath), StopService+StopTray (свой сеанс — `TrayExitMessage` по классам `model.Tray*`, чужие — `TerminateProcess`), `*.bak`+откат, ProgramData не трогается, тип запуска сохраняется, рестарт только если служба работала, даунгрейд → код 3, та же версия → reinstall. Tests: `TestCHK_SETUP_09_*` (`internal/wininstall`) |
 | `CHK-SETUP-10` | planned (7d) | Мастер UI: страницы, проверка пути, один чекбокс «Запустить службу и запускать автоматически» (вкл.), запуск трея без повышения (`CreateProcessWithTokenW`, неудача — не ошибка), тихий режим без UI и без запуска трея |
-| `CHK-SETUP-12` | **partial (7b basic)** (`TestCHK_SETUP_12_E2E`, `EC_SETUP_E2E=1`); обновление — 7c, финал — 7e | E2E: тихая установка → проверка службы/ключей/файлов → uninstall (данные остаются) → purge |
+| `CHK-SETUP-12` | **partial (7b+7c)** (`TestCHK_SETUP_12_E2E`, `EC_SETUP_E2E=1` + `EC_SETUP_EXE_V2`); финал — 7e | E2E: тихая установка → проверка → V2 поверх (хэши ProgramData) → uninstall (данные остаются) → purge |
 | `CHK-DELIV-01` | planned (7e) | Zip по DELIVERY.md без исходников: одна запись `ExchangeCheckerSetup.exe`, собирается и проверяется внутри job CI без загрузки (CHK-CI-01 не меняется, PLAN §12 п. 90) |
 
 ## Как запускать CHK-POL-01

@@ -43,6 +43,12 @@ type System interface {
 	// WriteFile writes data via a temporary file + MoveFileEx and reads it
 	// back (sha256).
 	WriteFile(path string, data []byte) error
+	// BackupFile copies path to path+".bak" when it exists (upgrade).
+	BackupFile(path string) error
+	// RestoreBackup renames path+".bak" over path (upgrade rollback).
+	RestoreBackup(path string) error
+	// RemoveBackup deletes path+".bak" if present.
+	RemoveBackup(path string) error
 	// RemoveFile deletes path; a file in use is scheduled for deletion at
 	// reboot (reboot = true).
 	RemoveFile(path string) (reboot bool, err error)
@@ -67,8 +73,9 @@ type System interface {
 	DeleteEventSource() error
 	ApplyTrayRun(serviceExe, dataDir string) (string, error)
 	DeleteTrayRun() error
-	// StopTray asks tray processes under installDir to exit
-	// (TrayExitMessage broadcast), then TerminateProcess leftovers.
+	// StopTray asks tray processes under installDir to exit: same session
+	// gets TrayExitMessage (window classes + broadcast), other sessions get
+	// TerminateProcess; leftovers after ~5s are terminated.
 	StopTray(installDir string) error
 	WriteUninstallKey(vals []RegValue) error
 	DeleteUninstallKey() error

@@ -106,6 +106,43 @@ func (f *recordingSystem) WriteFile(path string, data []byte) error {
 	return nil
 }
 
+func (f *recordingSystem) BackupFile(path string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("BackupFile|%s", path); err != nil {
+		return err
+	}
+	if data, ok := f.Files[path]; ok {
+		cp := append([]byte(nil), data...)
+		f.Files[path+".bak"] = cp
+	}
+	return nil
+}
+
+func (f *recordingSystem) RestoreBackup(path string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("RestoreBackup|%s", path); err != nil {
+		return err
+	}
+	bak := path + ".bak"
+	if data, ok := f.Files[bak]; ok {
+		f.Files[path] = append([]byte(nil), data...)
+		delete(f.Files, bak)
+	}
+	return nil
+}
+
+func (f *recordingSystem) RemoveBackup(path string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("RemoveBackup|%s", path); err != nil {
+		return err
+	}
+	delete(f.Files, path+".bak")
+	return nil
+}
+
 func (f *recordingSystem) RemoveFile(path string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

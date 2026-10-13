@@ -81,7 +81,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	if !inst.Present && svc.Exists {
 		// broken install: the service is there without the Uninstall key
-		inst = Installed{Present: true, Version: "", Dir: filepath.Dir(ExePathFromImagePath(svc.ImagePath))}
+		inst = Installed{Present: true, Version: "", Dir: ParentDir(ExePathFromImagePath(svc.ImagePath))}
 		warn("service %s exists without an Uninstall key: reinstalling into %s", model.ServiceName, inst.Dir)
 	}
 	mode, w := Decide(inst.Version, c.Version, inst.Present)
@@ -114,8 +114,12 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 
 	var undo undoStack
 	failRollback := func(err error) Result {
-		if fresh {
-			log.Printf("rolling back the fresh install")
+		if len(undo) > 0 {
+			if fresh {
+				log.Printf("rolling back the fresh install")
+			} else {
+				log.Printf("rolling back the upgrade")
+			}
 			undo.run(log)
 		}
 		return fail(err)
@@ -145,16 +149,36 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		return failRollback(errf("DACL "+dir, err))
 	}
 	// 3. stop a running service before its exe is replaced
-	if svc.Exists && svc.Running {
+	wasRunning := svc.Exists && svc.Running
+	if wasRunning {
 		log.Printf("stopping service %s", model.ServiceName)
 		if err := sys.StopService(model.ServiceName, StopTimeout); err != nil {
 			return failRollback(errf("stop service", err))
 		}
+		undo.push(func() error {
+			return sys.StartService(model.ServiceName, StartTimeout)
+		})
 	}
-	// 4. files
+	// 3b. stop tray before replacing its image (upgrade / reinstall)
+	if !fresh {
+		log.Printf("stopping tray in %s", dir)
+		if err := sys.StopTray(dir); err != nil {
+			warn("stop tray: %v", err)
+		}
+	}
+	// 4. files (upgrade: *.bak then atomic replace; rollback restores bak)
 	var total int64
+	var bakPaths []string
 	for _, n := range PayloadFiles {
 		p := joinDir(dir, n)
+		if !fresh {
+			if err := sys.BackupFile(p); err != nil {
+				return failRollback(errf("backup "+p, err))
+			}
+			bakPaths = append(bakPaths, p)
+			path := p
+			undo.push(func() error { return sys.RestoreBackup(path) })
+		}
 		if err := sys.WriteFile(p, c.Files[n]); err != nil {
 			return failRollback(errf("write "+p, err))
 		}
@@ -205,9 +229,16 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		return failRollback(errf("Uninstall key", err))
 	}
 	// 9. start
-	start := (fresh && !c.Opts.NoStart) || (svc.Exists && svc.Running)
+	// restart only when the service was running (upgrade) or fresh+auto
+	start := (fresh && !c.Opts.NoStart) || (!fresh && wasRunning)
 	if !fresh && !svc.Exists && !c.Opts.NoStart {
 		start = true
+	}
+	// drop upgrade backups after registrations succeeded
+	for _, p := range bakPaths {
+		if err := sys.RemoveBackup(p); err != nil {
+			warn("remove backup %s: %v", p, err)
+		}
 	}
 	res.Code = ExitOK
 	if start {
@@ -250,7 +281,7 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	step("query service", err)
 	dir := CleanDir(inst.Dir)
 	if dir == "" && svc.Exists {
-		dir = filepath.Dir(ExePathFromImagePath(svc.ImagePath))
+		dir = ParentDir(ExePathFromImagePath(svc.ImagePath))
 	}
 	if dir == "" && c.SelfExe != "" && strings.EqualFold(filepath.Base(c.SelfExe), config.UninstallExeName) {
 		dir = filepath.Dir(c.SelfExe)

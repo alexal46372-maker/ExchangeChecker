@@ -101,6 +101,18 @@ func joinDir(dir, name string) string {
 	return strings.TrimRight(dir, `\`) + `\` + name
 }
 
+// ParentDir is filepath.Dir for Windows paths (backslash), portable on linux tests.
+func ParentDir(p string) string {
+	p = CleanDir(p)
+	if i := strings.LastIndex(p, `\`); i >= 0 {
+		if i == 2 && len(p) >= 3 && p[1] == ':' {
+			return p[:3] // "C:\"
+		}
+		return p[:i]
+	}
+	return p
+}
+
 func sizeKB(n int64) uint32 {
 	k := (n + 1023) / 1024
 	if k > 0xFFFFFFFF {

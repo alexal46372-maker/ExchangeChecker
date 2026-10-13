@@ -21,6 +21,9 @@ func (stubSystem) SetDACL(string, string) error                { return ErrNotWi
 func (stubSystem) TakeOwnership(string) (bool, error)          { return false, ErrNotWindows }
 func (stubSystem) CheckFixedDrive(string) error                { return ErrNotWindows }
 func (stubSystem) WriteFile(string, []byte) error              { return ErrNotWindows }
+func (stubSystem) BackupFile(string) error                     { return ErrNotWindows }
+func (stubSystem) RestoreBackup(string) error                  { return ErrNotWindows }
+func (stubSystem) RemoveBackup(string) error                   { return ErrNotWindows }
 func (stubSystem) RemoveFile(string) (bool, error)             { return false, ErrNotWindows }
 func (stubSystem) RemoveDirIfEmpty(string) (bool, error)       { return false, ErrNotWindows }
 func (stubSystem) RemoveAll(string) error                      { return ErrNotWindows }

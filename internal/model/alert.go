@@ -36,6 +36,9 @@ type AlertEvent struct {
 	// (CHK-IPC-02).
 	Acknowledged bool       `json:"acknowledged,omitempty"`
 	AckedAt      *time.Time `json:"ackedAt,omitempty"`
+	// RunID of the service run that produced the event (phase 9,
+	// CHK-SVC-05): (RunID, ID) is unique.
+	RunID string `json:"runId,omitempty"`
 }
 
 // Raised reports whether the event is an escalation (to a worse level).

@@ -132,6 +132,9 @@ type IPCError struct {
 	// ProfileID is copied into IPCMessage.ProfileID: the OTHER profile
 	// whose invalid entry in profiles.json refused the write (phase 6).
 	ProfileID string
+	// RetryAfterMs is copied into IPCMessage.RetryAfterMs (rate_limited
+	// of check_now, phase 9).
+	RetryAfterMs int64
 }
 
 func (e *IPCError) Error() string { return e.Message }
@@ -178,8 +181,18 @@ type IPCRequest struct {
 	// Mapping checked by check_mapping (phase 6, G3).
 	Mapping *Mapping `json:"mapping,omitempty"`
 	// Limit: preview rows of check_mapping (1..20, 0 = 5), points of
-	// list_node_points (0 = all read).
+	// list_node_points (0 = all read), records of history (1..5000,
+	// 0 = 1000), events of events_since (1..1000, 0 = 500).
 	Limit int `json:"limit,omitempty"`
+	// Phase 9: history window [From, To) (RFC 3339), opaque Cursor of the
+	// next page, record Kinds (HistoryKind*, empty = all), and the
+	// events_since position (RunID, SinceID).
+	From    *time.Time `json:"from,omitempty"`
+	To      *time.Time `json:"to,omitempty"`
+	Cursor  string     `json:"cursor,omitempty"`
+	Kinds   []string   `json:"kinds,omitempty"`
+	RunID   string     `json:"runId,omitempty"`
+	SinceID uint64     `json:"sinceId,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -216,6 +229,9 @@ type Heartbeat struct {
 	PollerHung      bool `json:"pollerHung"`
 	HungAfterSec    int  `json:"hungAfterSec"`
 	PollIntervalSec int  `json:"pollIntervalSec"`
+	// RunID identifies this run of the service (phase 9, CHK-SVC-05):
+	// AlertEvent.ID restarts with every run.
+	RunID string `json:"runId,omitempty"`
 }
 
 // IPCMessage is a service -> tray reply or push.
@@ -292,4 +308,21 @@ type IPCMessage struct {
 	NodePoints []NodePoint `json:"nodePoints,omitempty"`
 	// MappingCheck of a MsgMappingCheck reply.
 	MappingCheck *MappingCheck `json:"mappingCheck,omitempty"`
+
+	// Phase 9 (capabilities history, check_now, events_since):
+	// History of a MsgHistory reply.
+	History *HistoryPage `json:"history,omitempty"`
+	// RetryAfterMs: rate_limited reply of check_now.
+	RetryAfterMs int64 `json:"retryAfterMs,omitempty"`
+	// CheckSeq: check_now reply (always present there).
+	CheckSeq *uint64 `json:"checkSeq,omitempty"`
+	// Events / RunID / LastID / Reset of a MsgEvents reply (Truncated is
+	// shared): LastID is the ID of the last event in Events, or the
+	// newest event ID of the run when Events is empty (always present);
+	// Reset: RunID differs or SinceID is older than the buffer (the
+	// client takes the active alerts from get_status).
+	Events []AlertEvent `json:"events,omitempty"`
+	RunID  string       `json:"runId,omitempty"`
+	LastID *uint64      `json:"lastId,omitempty"`
+	Reset  bool         `json:"reset,omitempty"`
 }

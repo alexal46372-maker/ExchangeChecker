@@ -64,6 +64,9 @@ type ProfileSnapshot struct {
 	Connection        *ProfileConnection `json:"connection,omitempty"`
 	ThresholdOverride *ThresholdOverride `json:"thresholdOverride,omitempty"`
 	MappingSummary    *MappingSummary    `json:"mappingSummary,omitempty"`
+	// LatencyMs: wall time of the last poll of the profile (connect +
+	// queries), phase 9 (CHK-SVC-03); omitted before the first poll.
+	LatencyMs *int64 `json:"latencyMs,omitempty"`
 }
 
 // StatusSnapshot is the full monitor state sent to the tray.

@@ -13,7 +13,7 @@ import (
 // driver). The sqlcheck side is covered by its g1g4_test.go.
 
 func TestCHK_SQL_04_SQLMessagesModel(t *testing.T) {
-	keys := append(SQLMessageKeys(), SQLValidationKeys()...)
+	keys := append(append(SQLMessageKeys(), SQLValidationKeys()...), append(SQLWizardMessageKeys(), SQLWizardValidationKeys()...)...)
 	seen := map[string]bool{}
 	for _, k := range keys {
 		if seen[k] {

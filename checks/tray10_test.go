@@ -153,6 +153,10 @@ var winAPIMinVersion = map[string]float64{
 	"StartServiceW": 5.0, "ControlService": 5.0, "DeleteService": 5.0,
 	"GetDriveTypeW": 5.0, "GetDiskFreeSpaceExW": 5.0, "GetWindowsDirectoryW": 5.0,
 	"OpenProcess": 5.0, "WaitForSingleObject": 5.0,
+	"CreateToolhelp32Snapshot": 5.0, "Process32FirstW": 5.0, "Process32NextW": 5.0,
+	"TerminateProcess": 5.0, "QueryFullProcessImageNameW": 6.0,
+	"SendMessageTimeoutW": 5.0,
+	"OpenProcessToken":    5.0, "LookupPrivilegeValueW": 5.0, "AdjustTokenPrivileges": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

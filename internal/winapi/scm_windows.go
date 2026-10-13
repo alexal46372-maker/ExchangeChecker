@@ -331,3 +331,12 @@ const ErrServiceAlreadyRunning syscall.Errno = 1056
 
 // ErrServiceNotActive is ERROR_SERVICE_NOT_ACTIVE (1062).
 const ErrServiceNotActive syscall.Errno = 1062
+
+// ErrServiceMarkedForDelete is ERROR_SERVICE_MARKED_FOR_DELETE (1072).
+const ErrServiceMarkedForDelete syscall.Errno = 1072
+
+// ErrServiceExists is ERROR_SERVICE_EXISTS (1073).
+const ErrServiceExists syscall.Errno = 1073
+
+// ErrServiceCannotAcceptCtrl is ERROR_SERVICE_CANNOT_ACCEPT_CTRL (1061).
+const ErrServiceCannotAcceptCtrl syscall.Errno = 1061

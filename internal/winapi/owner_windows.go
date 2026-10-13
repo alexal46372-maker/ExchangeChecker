@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -15,9 +16,7 @@ const (
 	SIDLocalSystem           = "S-1-5-18"
 )
 
-// FileOwnerSID returns the owner SID string of path (GetNamedSecurityInfoW +
-// ConvertSidToStringSid is avoided: we use ConvertSecurityDescriptorToString-
-// SecurityDescriptorW with OWNER_SECURITY_INFORMATION).
+// FileOwnerSID returns the owner SID string of path.
 func FileOwnerSID(path string) (string, error) {
 	p, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
@@ -36,12 +35,10 @@ func FileOwnerSID(path string) (string, error) {
 		return "", fmt.Errorf("winapi: ConvertSDToStringSD(owner): %w", e)
 	}
 	defer callProc(procLocalFree, uintptr(unsafe.Pointer(str)))
-	// SDDL like "O:BA" or "O:S-1-5-32-544"
 	s := utf16PtrToString(str)
 	if len(s) >= 2 && (s[0] == 'O' || s[0] == 'o') && s[1] == ':' {
 		s = s[2:]
 	}
-	// Expand well-known short forms used in SDDL
 	switch s {
 	case "BA":
 		return SIDAdministrators, nil
@@ -76,14 +73,23 @@ func SetFileOwner(path, sidString string) error {
 
 // TakeOwnershipTree sets the owner of path and every descendant to
 // SIDAdministrators when the current owner is neither SYSTEM nor
-// Administrators. changed is true when at least one owner was foreign.
+// Administrators. Enables SeTakeOwnershipPrivilege and SeRestorePrivilege
+// first. FileOwnerSID failures are returned as a joined warning error
+// (caller logs them); the walk continues. changed is true when at least
+// one owner was foreign and was changed.
 func TakeOwnershipTree(path string) (changed bool, err error) {
+	if err := EnablePrivileges("SeTakeOwnershipPrivilege", "SeRestorePrivilege"); err != nil {
+		return false, fmt.Errorf("enable ownership privileges: %w", err)
+	}
+	var warns []string
 	walk := func(p string, _ os.FileInfo, werr error) error {
 		if werr != nil {
+			warns = append(warns, fmt.Sprintf("%s: walk: %v", p, werr))
 			return nil
 		}
 		owner, oerr := FileOwnerSID(p)
 		if oerr != nil {
+			warns = append(warns, fmt.Sprintf("%s: FileOwnerSID: %v", p, oerr))
 			return nil
 		}
 		if owner == SIDAdministrators || owner == SIDLocalSystem {
@@ -97,6 +103,9 @@ func TakeOwnershipTree(path string) (changed bool, err error) {
 	}
 	if err := filepath.Walk(path, walk); err != nil {
 		return changed, err
+	}
+	if len(warns) > 0 {
+		return changed, fmt.Errorf("%s", strings.Join(warns, "; "))
 	}
 	return changed, nil
 }

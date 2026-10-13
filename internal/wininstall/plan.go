@@ -262,6 +262,9 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 		}
 		step("delete service", sys.DeleteService(model.ServiceName))
 	}
+	if dir != "" {
+		step("stop tray", sys.StopTray(dir))
+	}
 	step("delete HKLM Run "+config.TrayRunValue, sys.DeleteTrayRun())
 	step("delete event log source", sys.DeleteEventSource())
 	if dir != "" {

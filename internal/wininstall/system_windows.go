@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -84,15 +84,28 @@ func (winSystem) RemoveDirIfEmpty(dir string) (bool, error) {
 	if err == nil || os.IsNotExist(err) {
 		return false, nil
 	}
-	// not empty or in use
+	// Non-empty: leave it; do not schedule reboot (no 3010 for leftovers).
+	if isDirNotEmpty(err) {
+		return false, nil
+	}
+	// in use: schedule deletion at reboot
 	if err2 := winapi.MoveFileEx(dir, "", winapi.MoveFileDelayUntilReboot); err2 != nil {
-		// directory not empty is fine to report; delay often fails for non-empty
-		if pe, ok := err.(*os.PathError); ok && pe.Err == syscall.ENOTEMPTY {
-			return false, nil // leave non-empty dir (should not happen if files removed)
-		}
 		return false, err
 	}
 	return true, nil
+}
+
+func isDirNotEmpty(err error) bool {
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		// ERROR_DIR_NOT_EMPTY = 145; ENOTEMPTY on some Go/Windows builds
+		return errno == 145 || errno == syscall.ENOTEMPTY
+	}
+	return false
 }
 
 func (winSystem) RemoveAll(dir string) error {
@@ -135,11 +148,7 @@ func (winSystem) QueryService(name string) (ServiceInfo, error) {
 	defer scm.Close()
 	svc, err := winapi.OpenService(scm, name, winapi.ServiceQueryStatus|winapi.ServiceQueryConfig)
 	if err != nil {
-		if errors.Is(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceDoesNotExist) {
-			return ServiceInfo{}, nil
-		}
-		// OpenService wraps the errno; also match ERROR_SERVICE_DOES_NOT_EXIST in text
-		if strings.Contains(err.Error(), "1060") || strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+		if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
 			return ServiceInfo{}, nil
 		}
 		return ServiceInfo{}, err
@@ -157,7 +166,7 @@ func (winSystem) QueryService(name string) (ServiceInfo, error) {
 		Exists:    true,
 		ImagePath: cfg.BinaryPath,
 		AutoStart: cfg.StartType == winapi.ServiceAutoStart,
-		Running:   state == winapi.ServiceRunning,
+		Running:   state == winapi.ServiceRunning || state == winapi.ServiceStartPend,
 	}, nil
 }
 
@@ -165,6 +174,9 @@ func isErrno(err error, want syscall.Errno) bool {
 	var e syscall.Errno
 	return errors.As(err, &e) && e == want
 }
+
+// errServiceBusyClear: CreateService when the name is marked for delete or already exists.
+var errServiceBusyClear = errors.New("служба занята или помечена на удаление: закройте services.msc или перезагрузитесь")
 
 func (s winSystem) CreateService(spec ServiceSpec) error {
 	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect | winapi.SCManagerCreateService)
@@ -179,6 +191,9 @@ func (s winSystem) CreateService(spec ServiceSpec) error {
 	svc, err := winapi.CreateService(scm, spec.Name, spec.DisplayName, winapi.ServiceAccessForSetup,
 		winapi.ServiceWin32OwnProcess, start, winapi.ServiceErrorNormal, spec.ImagePath)
 	if err != nil {
+		if isErrno(err, winapi.ErrServiceMarkedForDelete) || isErrno(err, winapi.ErrServiceExists) {
+			return fmt.Errorf("%w (%v)", errServiceBusyClear, err)
+		}
 		return err
 	}
 	defer svc.Close()
@@ -253,8 +268,7 @@ func (winSystem) StartService(name string, timeout time.Duration) error {
 		return err
 	}
 	defer svc.Close()
-	if err := winapi.StartService(svc); err != nil && !isErrno(err, winapi.ErrServiceAlreadyRunning) &&
-		!strings.Contains(err.Error(), "1056") {
+	if err := winapi.StartService(svc); err != nil && !isErrno(err, winapi.ErrServiceAlreadyRunning) {
 		return err
 	}
 	deadline := time.Now().Add(timeout)
@@ -291,7 +305,7 @@ func (winSystem) StopService(name string, timeout time.Duration) error {
 	defer scm.Close()
 	svc, err := winapi.OpenService(scm, name, winapi.ServiceStop|winapi.ServiceQueryStatus)
 	if err != nil {
-		if strings.Contains(err.Error(), "1060") {
+		if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
 			return nil
 		}
 		return err
@@ -302,9 +316,13 @@ func (winSystem) StopService(name string, timeout time.Duration) error {
 		return err
 	}
 	if state != winapi.ServiceStopped {
-		if _, err := winapi.ControlService(svc, winapi.ServiceControlStop); err != nil &&
-			!isErrno(err, winapi.ErrServiceNotActive) && !strings.Contains(err.Error(), "1062") {
-			return err
+		if state != winapi.ServiceStopPend {
+			if _, err := winapi.ControlService(svc, winapi.ServiceControlStop); err != nil &&
+				!isErrno(err, winapi.ErrServiceNotActive) &&
+				!isErrno(err, winapi.ErrServiceCannotAcceptCtrl) {
+				return err
+			}
+			// 1061 / already STOP_PENDING: just wait for STOPPED
 		}
 		deadline := time.Now().Add(timeout)
 		for time.Now().Before(deadline) {
@@ -335,13 +353,16 @@ func (winSystem) DeleteService(name string) error {
 	defer scm.Close()
 	svc, err := winapi.OpenService(scm, name, winapi.ServiceDelete)
 	if err != nil {
-		if strings.Contains(err.Error(), "1060") {
+		if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
 			return nil
 		}
 		return err
 	}
 	defer svc.Close()
-	if err := winapi.DeleteService(svc); err != nil && !strings.Contains(err.Error(), "1060") {
+	if err := winapi.DeleteService(svc); err != nil {
+		if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -421,3 +442,29 @@ func (winSystem) DeleteUserKey() error {
 }
 
 // silence unused import of model in case of future use
+
+func (winSystem) StopTray(installDir string) error {
+	if installDir == "" {
+		return nil
+	}
+	msg := winapi.RegisterWindowMessage(model.TrayExitMessage)
+	if msg != 0 {
+		winapi.BroadcastMessage(msg, 2000)
+		time.Sleep(500 * time.Millisecond)
+	}
+	procs, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
+	if err != nil {
+		return err
+	}
+	var first error
+	for _, p := range procs {
+		if err := winapi.TerminatePID(p.PID); err != nil {
+			if first == nil {
+				first = fmt.Errorf("stop tray pid %d: %w", p.PID, err)
+			}
+			continue
+		}
+		_ = winapi.WaitProcessExit(p.PID, 5000)
+	}
+	return first
+}

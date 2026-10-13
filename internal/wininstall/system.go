@@ -67,6 +67,9 @@ type System interface {
 	DeleteEventSource() error
 	ApplyTrayRun(serviceExe, dataDir string) (string, error)
 	DeleteTrayRun() error
+	// StopTray asks tray processes under installDir to exit
+	// (TrayExitMessage broadcast), then TerminateProcess leftovers.
+	StopTray(installDir string) error
 	WriteUninstallKey(vals []RegValue) error
 	DeleteUninstallKey() error
 	ReadInstalled() (Installed, error)

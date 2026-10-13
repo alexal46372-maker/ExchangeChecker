@@ -241,6 +241,12 @@ func (f *recordingSystem) ApplyTrayRun(serviceExe, dataDir string) (string, erro
 	return "written", nil
 }
 
+func (f *recordingSystem) StopTray(installDir string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.step("StopTray|%s", installDir)
+}
+
 func (f *recordingSystem) DeleteTrayRun() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

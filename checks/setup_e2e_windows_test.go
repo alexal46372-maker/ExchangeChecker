@@ -95,8 +95,12 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if admin, _ := winapi.ProcessIsAdmin(); !admin {
 		t.Fatal("admin required")
 	}
-	dir := filepath.Join(os.TempDir(), "ExchangeCheckerE2E")
-	_ = os.RemoveAll(dir)
+	// /DIR is passed in the runner's 8.3 form (C:\Users\RUNNER~1\…) on purpose;
+	// setup expands it (LongPath of the nearest existing parent), so every
+	// registered path is compared with the long form.
+	dirArg := filepath.Join(os.TempDir(), "ExchangeCheckerE2E")
+	_ = os.RemoveAll(dirArg)
+	dir := winapi.LongPath(dirArg)
 	data := config.DefaultDir()
 	_ = os.MkdirAll(data, 0o755)
 	// Fresh install should write HKLM Run (default trayAutostart=true).
@@ -120,7 +124,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 
 	log1 := filepath.Join(os.TempDir(), "ec-setup-e2e-install.log")
-	code := run(setup, "/S", "/DIR="+dir, "/LOG="+log1, "/LANG=en")
+	code := run(setup, "/S", "/DIR="+dirArg, "/LOG="+log1, "/LANG=en")
 	if code != 0 {
 		t.Fatalf("install exit %d; log %s", code, log1)
 	}
@@ -411,7 +415,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 
 	logU := filepath.Join(os.TempDir(), "ec-setup-e2e-upgrade.log")
-	code = run(setupV2, "/S", "/DIR="+dir, "/LOG="+logU, "/LANG=en")
+	code = run(setupV2, "/S", "/DIR="+dirArg, "/LOG="+logU, "/LANG=en")
 	if code != 0 {
 		dumpLog(t, logU)
 		t.Fatalf("upgrade exit %d; log %s", code, logU)
@@ -470,7 +474,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 
 	// reinstall then purge via uninstall.exe
-	code = run(setup, "/S", "/DIR="+dir, "/NOSTART", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-reinst.log"))
+	code = run(setup, "/S", "/DIR="+dirArg, "/NOSTART", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-reinst.log"))
 	if code != 0 && code != wininstall.ExitRebootRequired {
 		t.Fatalf("reinstall %d", code)
 	}

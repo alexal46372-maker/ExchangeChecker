@@ -215,6 +215,7 @@ func allRecordedSQL(t *testing.T) map[string]string {
 	all[manualRowCountSQL(100)] = "manual_rowcount" // SQLStore.ManualPoints, before the manual query (phase 6 review)
 	all[serverInfoSQL] = "server_info"              // TestConnectionInfo / SQLStore.ServerInfo (phase 4)
 	all[serverPropsSQL] = "server_info_props"       // its fallback without sys.databases
+	all[databasesSQL] = "databases"                 // InteractiveReader.Databases (phase 9, CHK-SQL-07)
 	for _, tpl := range ManualSQLTemplates {
 		if _, run := all[tpl.SQL]; !run {
 			all[tpl.SQL] = "template:" + tpl.Name

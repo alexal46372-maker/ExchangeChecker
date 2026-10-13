@@ -35,3 +35,29 @@ func MoveFileReplace(from, to string) error {
 	}
 	return nil
 }
+
+const (
+	MoveFileDelayUntilReboot = 0x4
+	MoveFileCopyAllowed      = 0x2
+)
+
+// MoveFileEx is a thin MoveFileExW wrapper (flags as documented).
+// to == "" schedules deletion when flags include MoveFileDelayUntilReboot.
+func MoveFileEx(from, to string, flags uint32) error {
+	f, err := syscall.UTF16PtrFromString(from)
+	if err != nil {
+		return &os.LinkError{Op: "MoveFileEx", Old: from, New: to, Err: err}
+	}
+	var t *uint16
+	if to != "" {
+		t, err = syscall.UTF16PtrFromString(to)
+		if err != nil {
+			return &os.LinkError{Op: "MoveFileEx", Old: from, New: to, Err: err}
+		}
+	}
+	r, _, e := callProc(procMoveFileExW, uintptr(unsafe.Pointer(f)), uintptr(unsafe.Pointer(t)), uintptr(flags))
+	if r == 0 {
+		return &os.LinkError{Op: "MoveFileEx", Old: from, New: to, Err: e}
+	}
+	return nil
+}

@@ -146,6 +146,13 @@ var winAPIMinVersion = map[string]float64{
 	"CreateBitmap": 5.0, "CreateDIBSection": 5.0, "DeleteObject": 5.0, "GetStockObject": 5.0,
 	// shell32
 	"Shell_NotifyIconW": 5.0, "ShellExecuteExW": 5.0,
+	// advapi32 / kernel32 — phase 7b installer (CHK-SETUP-03..07)
+	"CreateServiceW": 5.0, "ChangeServiceConfigW": 5.0, "ChangeServiceConfig2W": 6.0,
+	"QueryServiceConfigW": 5.0, "QueryServiceConfig2W": 5.0,
+	"QueryServiceObjectSecurity": 5.0, "SetServiceObjectSecurity": 5.0,
+	"StartServiceW": 5.0, "ControlService": 5.0, "DeleteService": 5.0,
+	"GetDriveTypeW": 5.0, "GetDiskFreeSpaceExW": 5.0, "GetWindowsDirectoryW": 5.0,
+	"OpenProcess": 5.0, "WaitForSingleObject": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

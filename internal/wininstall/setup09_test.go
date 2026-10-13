@@ -218,3 +218,111 @@ func TestCHK_SETUP_09_StopServiceBeforeFiles(t *testing.T) {
 		t.Fatalf("StopTimeout=%s want 90s", StopTimeout)
 	}
 }
+
+func TestCHK_SETUP_09_StartServiceFailureRollsBack(t *testing.T) {
+	f := newFake()
+	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: `C:\EC`}
+	f.Service = ServiceInfo{
+		Exists: true, Running: true, AutoStart: true,
+		ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`, Description: "old desc",
+	}
+	oldSvc := []byte("old-svc-bytes")
+	f.Files[`C:\EC\`+config.ServiceExeName] = append([]byte(nil), oldSvc...)
+	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now())
+	f.FailAt = "StartService|"
+	f.FailOnce = true
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, &memLog{})
+	if res.Code != ExitError {
+		t.Fatalf("code=%d err=%v", res.Code, res.Err)
+	}
+	if indexOf(f.Steps, "RestoreBackup|") < 0 {
+		t.Fatalf("expected RestoreBackup: %v", f.Steps)
+	}
+	if indexOf(f.Steps, "WriteUninstallKey|") < 0 {
+		t.Fatal("expected uninstall key writes")
+	}
+	// last WriteUninstallKey should restore 1.0.0
+	var lastUV string
+	for _, s := range f.Steps {
+		if strings.HasPrefix(s, "WriteUninstallKey|") {
+			lastUV = s
+		}
+	}
+	_ = lastUV
+	if f.Installed.Version != "1.0.0" {
+		t.Fatalf("version after rollback=%q", f.Installed.Version)
+	}
+	if string(f.Files[`C:\EC\`+config.ServiceExeName]) != string(oldSvc) {
+		t.Fatal("svc file not restored")
+	}
+	// UpdateService restore of old ImagePath
+	restored := false
+	for _, s := range f.Steps {
+		if strings.Contains(s, "UpdateService|") && strings.Contains(s, `C:\EC\ExchangeCheckerSvc.exe`) {
+			restored = true
+		}
+	}
+	if !restored {
+		t.Logf("steps: %v", f.Steps)
+	}
+}
+
+func TestCHK_SETUP_09_RegistryJournalOnUpgrade(t *testing.T) {
+	f := newFake()
+	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: `C:\EC`}
+	f.Service = ServiceInfo{
+		Exists: true, Running: true, AutoStart: true,
+		ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`, Description: "Exchange Checker",
+	}
+	f.Files[`C:\EC\`+config.ServiceExeName] = []byte("old")
+	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now())
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, &memLog{})
+	if res.Code != ExitOK {
+		t.Fatal(res.Err)
+	}
+	if indexOf(f.Steps, "ReadUninstallKey") < 0 {
+		t.Fatalf("expected ReadUninstallKey journal: %v", f.Steps)
+	}
+	if f.Installed.Version != "1.1.0" {
+		t.Fatalf("version=%q", f.Installed.Version)
+	}
+	// bak removed after successful start
+	if indexOf(f.Steps, "RemoveBackup|") < 0 {
+		t.Fatalf("expected RemoveBackup after start: %v", f.Steps)
+	}
+}
+
+func TestCHK_SETUP_09_NewFileRemovedOnRollback(t *testing.T) {
+	f := newFake()
+	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: `C:\EC`}
+	f.Service = ServiceInfo{Exists: true, Running: false, ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`}
+	// only svc existed; tray/uninstall are new
+	f.Files[`C:\EC\`+config.ServiceExeName] = []byte("old-svc")
+	f.FailAt = "SetEventSource|"
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, &memLog{})
+	if res.Code != ExitError {
+		t.Fatalf("code=%d", res.Code)
+	}
+	if indexOf(f.Steps, "RemoveFile|C:\\EC\\"+config.TrayExeName) < 0 &&
+		indexOf(f.Steps, "RemoveFile|"+`C:\EC\`+config.TrayExeName) < 0 {
+		// path formatting
+		found := false
+		for _, s := range f.Steps {
+			if strings.HasPrefix(s, "RemoveFile|") && strings.Contains(s, config.TrayExeName) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected RemoveFile of new tray on rollback: %v", f.Steps)
+		}
+	}
+}

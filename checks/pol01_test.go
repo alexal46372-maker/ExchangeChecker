@@ -195,6 +195,9 @@ func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 		pkgName := map[string]string{} // local → import path
 		for _, imp := range f.Imports {
 			path, _ := strconv.Unquote(imp.Path.Value)
+			if imp.Name != nil && imp.Name.Name == "." && (path == "os" || path == "syscall") {
+				return true // forbid dot-import of os/syscall (hides StartProcess)
+			}
 			local := path
 			if i := strings.LastIndex(path, "/"); i >= 0 {
 				local = path[i+1:]
@@ -275,11 +278,15 @@ func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 		{"newproc_lit.go", "package p\nvar _ = mod.NewProc(\"CreateProcessWithTokenW\")\n"},
 		{"newproc_const.go", "package p\nconst n = \"CreateProcessW\"\nvar _ = mod.NewProc(n)\n"},
 		{"comment_only.go", "package p\n// os.StartProcess is forbidden\nconst x = 1\n"},
+		{"dot_os.go", "package p\nimport . \"os\"\nfunc f(){ StartProcess(\"a\", nil, nil) }\n"},
 	}
 	for _, p := range probes[:5] {
 		if !startsProcess(p.name, []byte(p.src)) {
 			t.Fatalf("CHK-POL-01: scan does not detect probe %s", p.name)
 		}
+	}
+	if !startsProcess(probes[6].name, []byte(probes[6].src)) {
+		t.Fatal("CHK-POL-01: scan does not detect dot-import of os")
 	}
 	if startsProcess(probes[5].name, []byte(probes[5].src)) {
 		t.Fatal("CHK-POL-01: scan flags comment-only mention")

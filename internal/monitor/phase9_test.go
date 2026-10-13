@@ -285,7 +285,7 @@ func TestCHK_SVC_04_DeletedProfileCheck(t *testing.T) {
 		t.Fatal("completed before any poll")
 	}
 	cfg.Set(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("db1")}})
-	m.LoadConfig()
+	m.reloadConfig(false)
 	m.mu.Lock()
 	last, pend := m.lastCheckSeq, len(m.checkPend)
 	m.mu.Unlock()

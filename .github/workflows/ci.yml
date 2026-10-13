@@ -93,6 +93,8 @@ jobs:
           echo "setup packages in graph: $(printf '%s\n' "$deps" | grep -c .)"
       - name: go test (incl. named pipe / Event Log / SCM, CHK-MON-05..07)
         run: go test ./... -count=1 -v
+      - name: setup wizard UI stability (CHK-SETUP-10, repeated)
+        run: go test ./internal/wininstall -run 'TestCHK_SETUP_10_Wizard|TestCHK_SETUP_10_UninstallConfirm' -count=25 -v
       - name: go build (windows/amd64)
         env:
           GOOS: windows

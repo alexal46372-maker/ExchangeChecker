@@ -11,11 +11,20 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
+// waitWindow returns the window of class once it is ready to be driven.
+// FindWindow alone is not enough: CreateWindowEx returns (and the window
+// becomes findable) before RunWizard/ConfirmUninstall have created the
+// child controls (build) and applied the page state (render: e.g. Next
+// disabled on a blocked downgrade). Reads such as IsWindowEnabled/GetDlgItem
+// are not messages, so they are not serialized behind that work and can see
+// a freshly created, still enabled Next button. The window is created
+// without WS_VISIBLE and ShowWindow(SW_SHOW) is called only after build and
+// render, so "visible" is the readiness signal.
 func waitWindow(t *testing.T, class string) uintptr {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if h := winapi.FindWindow(class); h != 0 {
+		if h := winapi.FindWindow(class); h != 0 && winapi.IsWindowVisible(h) {
 			return h
 		}
 		time.Sleep(50 * time.Millisecond)

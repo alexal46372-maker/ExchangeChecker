@@ -136,6 +136,9 @@ type settingsConfig struct {
 	confirm func(owner uintptr, text, caption string) bool
 	hidden  bool
 	onClose func()
+	// clipboard puts the grant script on the clipboard (nil =
+	// winapi.SetClipboardText; tests use a fake)
+	clipboard func(owner uintptr, text string) error
 }
 
 // settingsWindow is the database settings window (CHK-TRAY-04/05/06): the
@@ -170,6 +173,8 @@ type settingsWindow struct {
 	connected                        bool       // service session state seen by onSessionState
 	loaded                           bool       // get_config (or a snapshot) loaded at least once
 	disc                             *discoveryDialog
+	wiz                              *wizardDialog // «Добавить базу» (CHK-TRAY-30)
+	diagnoses                        int           // sql_diagnose replies shown (test hook)
 	// exiting: the tray exit message (or App.Exit) is closing the window:
 	// no questions any more, an open one answers «Нет» (CHK-TRAY-11)
 	exiting bool
@@ -542,7 +547,11 @@ func (w *settingsWindow) command(id int32, code uint32) {
 			w.selectFromList()
 		}
 	case idSetAdd:
-		w.newProfile()
+		if w.wizardAvailable() {
+			w.openWizard()
+		} else {
+			w.newProfile()
+		}
 	case idSetDelete:
 		w.deleteProfile()
 	case idSetSave:
@@ -740,7 +749,7 @@ func (w *settingsWindow) update() {
 		}
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
-		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy)
+		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy && w.wiz == nil)
 		winapi.EnableWindow(w.ctl[idSetDiscover], has && !w.busy && w.disc == nil && w.discoveryAvailable())
 	}
 	st := w.status
@@ -1095,7 +1104,47 @@ func (w *settingsWindow) test() {
 				return
 			}
 			w.testCancel = nil
-			w.problem(w.ed.TestReply(m, err))
+			pr := w.ed.TestReply(m, err)
+			w.problem(pr)
+			if err == nil && pr != nil {
+				w.testDiagnosis(m, pr.Text)
+			}
+		})
+	}()
+}
+
+// testDiagnosis adds the code and «что делать» of a failed test
+// (CHK-TRAY-31): the diagnosis of sql_diagnose in the administrator
+// window (an admin-only command), else the local text.
+func (w *settingsWindow) testDiagnosis(m model.IPCMessage, text string) {
+	req, code, ok := traysettings.DiagnoseRequest(m)
+	if !ok {
+		return
+	}
+	detail := "" // TestText / Reply already show the technical error
+	show := func(d *model.SQLDiagnosis) {
+		w.setStatus(text + "\r\n" + traysettings.ErrorText(code, d, detail, w.cfg.lang))
+	}
+	if w.cfg.mode != traysettings.Admin || !w.cfg.session.Supported(model.CmdSQLDiagnose) {
+		show(nil)
+		return
+	}
+	seq := w.testSeq
+	s := w.cfg.session
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), traysettings.CallTimeout)
+		r, err := s.Do(ctx, req)
+		cancel()
+		w.post(func() {
+			if seq != w.testSeq || w.testCancel != nil {
+				return
+			}
+			w.diagnoses++
+			if err == nil && r.Type == model.MsgSQLDiagnosis {
+				show(r.SQLDiagnosis)
+				return
+			}
+			show(nil)
 		})
 	}()
 }
@@ -1295,6 +1344,9 @@ func (w *settingsWindow) close() {
 	if w.disc != nil {
 		w.disc.close()
 	}
+	if w.wiz != nil {
+		w.wiz.close()
+	}
 	if w.testCancel != nil {
 		w.testCancel()
 		w.testCancel = nil
@@ -1326,7 +1378,9 @@ func RunSettings(opt SettingsOptions) int {
 		return 1
 	}
 	if !ok { // the open Discovery dialog first (its owner is disabled)
-		if h := winapi.FindWindow(DiscoveryClass); h != 0 {
+		if h := winapi.FindWindow(WizardClass); h != 0 {
+			frontWindow(h)
+		} else if h := winapi.FindWindow(DiscoveryClass); h != 0 {
 			frontWindow(h)
 		} else if h := winapi.FindWindow(SettingsClass); h != 0 {
 			frontWindow(h)
@@ -1374,6 +1428,9 @@ func (w *settingsWindow) loop() int {
 			break
 		}
 		if d := w.disc; d != nil && winapi.IsWindow(d.hwnd) && winapi.IsDialogMessage(d.hwnd, &m) {
+			continue
+		}
+		if z := w.wiz; z != nil && winapi.IsWindow(z.hwnd) && winapi.IsDialogMessage(z.hwnd, &m) {
 			continue
 		}
 		if winapi.IsWindow(w.hwnd) && winapi.IsDialogMessage(w.hwnd, &m) {

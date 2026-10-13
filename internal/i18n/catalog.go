@@ -444,6 +444,89 @@ const (
 	KeyValReasonPipe      = "val.reason_pipe"
 )
 
+// phase 9b part 2: «Добавить базу» wizard (CHK-TRAY-30..32)
+const (
+	KeyWizTitle            = "wiz.title"
+	KeyWizStep             = "wiz.step"
+	KeyWizStepServer       = "wiz.step_server"
+	KeyWizStepDB           = "wiz.step_db"
+	KeyWizStepFinish       = "wiz.step_finish"
+	KeyWizServer           = "wiz.server"
+	KeyWizFind             = "wiz.find"
+	KeyWizBrowsing         = "wiz.browsing"
+	KeyWizFound            = "wiz.found"
+	KeyWizFoundPartial     = "wiz.found_partial"
+	KeyWizNoneFound        = "wiz.none_found"
+	KeyWizRateLimited      = "wiz.rate_limited"
+	KeyWizBusy             = "wiz.busy"
+	KeyWizPort             = "wiz.port"
+	KeyWizAuth             = "wiz.auth"
+	KeyWizAuthSQL          = "wiz.auth_sql"
+	KeyWizAuthWindows      = "wiz.auth_windows"
+	KeyWizLogin            = "wiz.login"
+	KeyWizPassword         = "wiz.password"
+	KeyWizEncrypt          = "wiz.encrypt"
+	KeyWizDBs              = "wiz.dbs"
+	KeyWizRefresh          = "wiz.refresh"
+	KeyWizDBLoading        = "wiz.db_loading"
+	KeyWizDBCount          = "wiz.db_count"
+	KeyWizDBTruncated      = "wiz.db_truncated"
+	KeyWizDB1C             = "wiz.db_1c"
+	KeyWizDBNode           = "wiz.db_node"
+	KeyWizDBSize           = "wiz.db_size"
+	KeyWizDBNone           = "wiz.db_none"
+	KeyWizTesting          = "wiz.testing"
+	KeyWizTestOK           = "wiz.test_ok"
+	KeyWizDiscovering      = "wiz.discovering"
+	KeyWizApplied          = "wiz.applied"
+	KeyWizChoose           = "wiz.choose"
+	KeyWizChosen           = "wiz.chosen"
+	KeyWizConfidence       = "wiz.confidence"
+	KeyWizCands            = "wiz.cands"
+	KeyWizSaving           = "wiz.saving"
+	KeyWizBack             = "wiz.back"
+	KeyWizNext             = "wiz.next"
+	KeyWizSave             = "wiz.save"
+	KeyWizAdvanced         = "wiz.advanced"
+	KeyWizGrant            = "wiz.grant"
+	KeyWizCancel           = "wiz.cancel"
+	KeyWizGrantCopied      = "wiz.grant_copied"
+	KeyWizGrantPlaceholder = "wiz.grant_placeholder"
+	KeyWizClipFailed       = "wiz.clip_failed"
+	KeyWizAccessDenied     = "wiz.access_denied"
+	KeyWizErrCode          = "wiz.err_code"
+	KeyWizWhatToDo         = "wiz.what_to_do"
+	KeyWizFBLogin          = "wiz.fb_login"
+	KeyWizFBDatabase       = "wiz.fb_database"
+	KeyWizFBTLS            = "wiz.fb_tls"
+	KeyWizFBTimeout        = "wiz.fb_timeout"
+	KeyWizFBNetwork        = "wiz.fb_network"
+	KeyWizFBBrowser        = "wiz.fb_browser"
+	KeyWizFBInstance       = "wiz.fb_instance"
+	KeyWizFBPermission     = "wiz.fb_permission"
+	KeyWizFBNot1C          = "wiz.fb_not1c"
+	KeyWizFBConfig         = "wiz.fb_config"
+	KeyWizFBOther          = "wiz.fb_other"
+	KeyTipWizServer        = "tip.wiz_server"
+	KeyTipWizFind          = "tip.wiz_find"
+	KeyTipWizInstances     = "tip.wiz_instances"
+	KeyTipWizPort          = "tip.wiz_port"
+	KeyTipWizAuth          = "tip.wiz_auth"
+	KeyTipWizLogin         = "tip.wiz_login"
+	KeyTipWizPassword      = "tip.wiz_password"
+	KeyTipWizEncrypt       = "tip.wiz_encrypt"
+	KeyTipWizDBs           = "tip.wiz_dbs"
+	KeyTipWizRefresh       = "tip.wiz_refresh"
+	KeyTipWizCands         = "tip.wiz_cands"
+	KeyTipWizResult        = "tip.wiz_result"
+	KeyTipWizBack          = "tip.wiz_back"
+	KeyTipWizNext          = "tip.wiz_next"
+	KeyTipWizSave          = "tip.wiz_save"
+	KeyTipWizAdvanced      = "tip.wiz_advanced"
+	KeyTipWizGrant         = "tip.wiz_grant"
+	KeyTipWizCancel        = "tip.wiz_cancel"
+)
+
 var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyCheckRateLimited:      {"Проверка уже запрашивалась недавно, повторите через %d с", "A check was requested recently, try again in %d s"},
 	KeyCheckRunning:          {"Проверка выполняется…", "Check in progress…"},
@@ -794,99 +877,178 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetElevateCanceled:     {"Запуск от имени администратора отменён.", "Running as administrator was canceled."},
 	KeySetElevateFailed:       {"Не удалось запустить настройки от имени администратора: %s", "Could not open the settings as administrator: %s"},
 
-	KeyUnknownMessage:     {"Ошибка", "Error"},
-	KeySetPreset:          {"Тип сервера:", "Server type:"},
-	KeySetPreset2008:      {"SQL Server 2008 / 2008 R2", "SQL Server 2008 / 2008 R2"},
-	KeySetPresetNone:      {"SQL Server 2012 и новее", "SQL Server 2012 or newer"},
-	KeySetWarnMin:         {"Предупреждение, мин:", "Warning after, min:"},
-	KeySetErrorMin:        {"Ошибка, мин:", "Error after, min:"},
-	KeySetConnTimeout:     {"Тайм-аут подключения, с:", "Connect timeout, s:"},
-	KeySetQueryTimeout:    {"Тайм-аут запроса, с:", "Query timeout, s:"},
-	KeySetPortCue:         {"1433 или пусто для SQL Browser", "1433 or empty for SQL Browser"},
-	KeySetThreshCue:       {"как в общих настройках", "as in the general settings"},
-	KeySetTimeoutCue:      {"по умолчанию %d", "default %d"},
-	KeyMenuService:        {"Служба", "Service"},
-	KeyMenuSvcStart:       {"Запустить", "Start"},
-	KeyMenuSvcStop:        {"Остановить", "Stop"},
-	KeySvcState:           {"Состояние: %s", "State: %s"},
-	KeySvcRunning:         {"работает", "running"},
-	KeySvcStopped:         {"остановлена", "stopped"},
-	KeySvcStartPending:    {"запускается", "starting"},
-	KeySvcStopPending:     {"останавливается", "stopping"},
-	KeySvcNotInstalled:    {"не установлена", "not installed"},
-	KeySvcNoAccess:        {"нет доступа к состоянию", "no access to the state"},
-	KeySvcUnknown:         {"неизвестно", "unknown"},
-	KeySvcStartSent:       {"Служба «%s» запускается.", "The service \"%s\" is starting."},
-	KeySvcStopSent:        {"Служба «%s» останавливается.", "The service \"%s\" is stopping."},
-	KeySvcErrAccess:       {"Недостаточно прав, чтобы запустить или остановить службу «%s». Это может сделать администратор компьютера, например в оснастке «Службы» (services.msc).", "Not enough rights to start or stop the service \"%s\". A computer administrator can do it, for example in the Services console (services.msc)."},
-	KeySvcErrNotInstalled: {"Служба «%s» не установлена на этом компьютере. Запустите установщик Exchange Checker.", "The service \"%s\" is not installed on this computer. Run the Exchange Checker setup."},
-	KeySvcErrRunning:      {"Служба «%s» уже работает.", "The service \"%s\" is already running."},
-	KeySvcErrNotActive:    {"Служба «%s» уже остановлена.", "The service \"%s\" is already stopped."},
-	KeySvcErrOther:        {"Не удалось выполнить действие со службой «%s»: %s", "The service \"%s\" action failed: %s"},
-	KeyTipSetList:         {"Базы, которые проверяет служба. Выберите базу, чтобы увидеть и изменить её настройки.", "Databases checked by the service. Select one to view and edit its settings."},
-	KeyTipSetAdd:          {"Добавить новую базу данных для проверки.", "Add a new database to check."},
-	KeyTipSetDelete:       {"Удалить выбранную базу из настроек (с подтверждением).", "Remove the selected database from the settings (asks first)."},
-	KeyTipSetDiscover:     {"Найти в базе 1С таблицы с временем обмена и настроить их.", "Find the tables with exchange times in the 1C database and set them up."},
-	KeyTipSetName:         {"Название базы в меню трея и в тревогах. Можно оставить пустым — тогда «сервер/база».", "Name of the database in the tray menu and alerts. May be empty: \"server/database\" is shown then."},
-	KeyTipSetHost:         {"Имя компьютера или IP-адрес SQL Server, например SRV-SQL или 10.0.0.5. Без имени экземпляра.", "Computer name or IP address of SQL Server, e.g. SRV-SQL or 10.0.0.5. Without the instance name."},
-	KeyTipSetInstance:     {"Только имя именованного экземпляра, например SQLEXPRESS. Не сервер и не IP. Пусто — экземпляр по умолчанию.", "Only the name of a named instance, e.g. SQLEXPRESS. Not the server and not an IP. Empty: the default instance."},
-	KeyTipSetPort:         {"TCP-порт SQL Server. Пусто — 1433, а для именованного экземпляра порт узнаётся у SQL Browser (UDP 1434).", "TCP port of SQL Server. Empty: 1433; for a named instance the port is asked from SQL Browser (UDP 1434)."},
-	KeyTipSetDatabase:     {"Имя базы данных 1С на сервере, как в SQL Server Management Studio.", "Name of the 1C database on the server, as in SQL Server Management Studio."},
-	KeyTipSetAuth:         {"SQL — логин и пароль SQL Server. Windows — служба входит учётной записью компьютера (ДОМЕН\\ИМЯ$).", "SQL: a SQL Server login and password. Windows: the service logs in with the computer account (DOMAIN\\NAME$)."},
-	KeyTipSetLogin:        {"Логин SQL Server только с ролью db_datareader. Не sa.", "SQL Server login with the db_datareader role only. Not sa."},
-	KeyTipSetPassword:     {"Пароль SQL-логина. Хранится службой в зашифрованном виде; пусто — оставить сохранённый.", "Password of the SQL login. The service keeps it encrypted; empty keeps the saved one."},
-	KeyTipSetClearPw:      {"Удалить сохранённый пароль этой базы при сохранении.", "Delete the saved password of this database on save."},
-	KeyTipSetEncrypt:      {"Шифрование подключения. Для SQL Server 2008 без обновлений обычно «Без шифрования».", "Connection encryption. For SQL Server 2008 without updates usually \"No encryption\"."},
-	KeyTipSetPreset:       {"Версия SQL Server. «2008 / 2008 R2» разрешает TLS 1.0 и запрещает режим Strict.", "SQL Server version. \"2008 / 2008 R2\" allows TLS 1.0 and forbids the Strict mode."},
-	KeyTipSetTLS10:        {"Разрешить старый протокол TLS 1.0 — нужен SQL Server 2005/2008 без обновлений TLS 1.2.", "Allow the old TLS 1.0 protocol, needed by SQL Server 2005/2008 without the TLS 1.2 updates."},
-	KeyTipSetTrust:        {"Не проверять сертификат сервера (самоподписанный). Действует только в режиме «Весь сеанс (TLS)».", "Do not validate the server certificate (self-signed). Used only with \"Whole session (TLS)\"."},
-	KeyTipSetEnabled:      {"Снимите флажок, чтобы временно не проверять эту базу.", "Clear to stop checking this database for a while."},
-	KeyTipSetWarn:         {"Через сколько минут без обмена показать предупреждение. Значение, равное унаследованному из общих настроек, не фиксируется: профиль следует общим настройкам.", "Minutes without exchange before a warning. A value equal to the one inherited from the general settings is not fixed: the profile follows the general settings."},
-	KeyTipSetError:        {"Через сколько минут без обмена показать ошибку. Должно быть больше предупреждения. Значение, равное унаследованному из общих настроек, не фиксируется: профиль следует общим настройкам.", "Minutes without exchange before an error. Must be greater than the warning. A value equal to the one inherited from the general settings is not fixed: the profile follows the general settings."},
-	KeyTipSetConnTimeout:  {"Сколько секунд ждать подключения к SQL Server (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for the connection to SQL Server (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
-	KeyTipSetQueryTimeout: {"Сколько секунд ждать ответа на запрос (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for a query result (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
-	KeyTipSetPage:         {"Переключиться между базами и общими настройками.", "Switch between the databases and the general settings."},
-	KeyTipSetStatus:       {"Результат последнего действия и ошибки.", "Result of the last action and errors."},
-	KeyTipSetTest:         {"Проверить подключение и чтение таблиц с текущими значениями формы.", "Test the connection and table reading with the current form values."},
-	KeyTipSetCancelTest:   {"Прервать идущую проверку подключения.", "Stop the running connection test."},
-	KeyTipSetSave:         {"Сохранить изменения в настройки службы.", "Save the changes to the service settings."},
-	KeyTipSetPoll:         {"Попросить службу опросить эту базу сейчас.", "Ask the service to poll this database now."},
-	KeyTipSetReload:       {"Перечитать настройки из службы (несохранённые правки пропадут).", "Reload the settings from the service (unsaved edits are lost)."},
-	KeyTipSetElevate:      {"Открыть настройки с правами администратора, чтобы их можно было менять.", "Open the settings as administrator to be able to change them."},
-	KeyTipSetClose:        {"Закрыть окно настроек.", "Close the settings window."},
-	KeyTipGenPoll:         {"Как часто служба опрашивает базы, в секундах.", "How often the service polls the databases, in seconds."},
-	KeyTipGenWarn:         {"Общий порог предупреждения в минутах для всех баз без своего порога.", "General warning threshold in minutes for databases without their own."},
-	KeyTipGenError:        {"Общий порог ошибки в минутах; больше порога предупреждения.", "General error threshold in minutes; greater than the warning threshold."},
-	KeyTipGenBeep:         {"Пищать системным динамиком при тревоге.", "Beep with the system speaker on an alert."},
-	KeyTipGenWarnFreq:     {"Частота звука предупреждения, Гц.", "Pitch of the warning sound, Hz."},
-	KeyTipGenWarnDur:      {"Длительность звука предупреждения, мс.", "Length of the warning sound, ms."},
-	KeyTipGenErrFreq:      {"Частота звука ошибки, Гц.", "Pitch of the error sound, Hz."},
-	KeyTipGenErrDur:       {"Длительность звука ошибки, мс.", "Length of the error sound, ms."},
-	KeyTipGenGap:          {"Пауза между сигналами, мс.", "Pause between the beeps, ms."},
-	KeyTipGenLang:         {"Язык сообщений службы в журнале событий Windows.", "Language of the service messages in the Windows Event Log."},
-	KeyTipGenAutostart:    {"Запускать значок в трее при входе любого пользователя.", "Start the tray icon when any user logs on."},
-	KeyTipDiscFind:        {"Найти в базе таблицы, похожие на время обмена.", "Find tables that look like exchange times."},
-	KeyTipDiscPoints:      {"Загрузить список точек обмена (узлов планов обмена).", "Load the list of exchange points (exchange plan nodes)."},
-	KeyTipDiscCancel:      {"Прервать идущий поиск или проверку.", "Stop the running search or check."},
-	KeyTipDiscPoint:       {"Имя точки обмена, время которой вы знаете.", "Name of an exchange point whose time you know."},
-	KeyTipDiscTime:        {"Известное время последнего обмена этой точки: ДД.ММ.ГГГГ ЧЧ:ММ (UTC+3).", "Known time of the point's last exchange: DD.MM.YYYY HH:MM (UTC+3)."},
-	KeyTipDiscTol:         {"Допуск поиска по времени, минут. 0 или пусто — 1 сутки.", "Time tolerance of the search, minutes. 0 or empty: 1 day."},
-	KeyTipDiscByValue:     {"Найти колонки, где у точки записано это время.", "Find the columns where the point has this time."},
-	KeyTipDiscList:        {"Найденные варианты. Выберите вариант, чтобы перенести его в поля ниже.", "Found candidates. Select one to copy it to the fields below."},
-	KeyTipDiscDetails:     {"Подробности выбранного варианта.", "Details of the selected candidate."},
-	KeyTipDiscMode:        {"Как служба читает время: из таблиц, ручным SQL или по счётчикам сообщений.", "How the service reads the times: from tables, with manual SQL or by message counters."},
-	KeyTipDiscField:       {"Имя таблицы или колонки SQL Server, обычно вида _Node123 или _Fld456.", "SQL Server table or column name, usually like _Node123 or _Fld456."},
-	KeyTipDiscPlanLabel:   {"Своё название плана обмена для меню (необязательно).", "Own name of the exchange plan for the menu (optional)."},
-	KeyTipDiscYear:        {"1С хранит даты со сдвигом +2000 лет — обычно флажок включён.", "1C stores dates shifted by +2000 years: usually checked."},
-	KeyTipDiscKeep:        {"Показывать точки, для которых ещё нет записи времени.", "Show points that have no time record yet."},
-	KeyTipDiscAllPlans:    {"Добавить в профиль все найденные планы обмена, а не только выбранный.", "Add every found exchange plan to the profile, not only the selected one."},
-	KeyTipDiscTemplate:    {"Готовый шаблон ручного SQL для SQL Server 2008.", "Ready manual SQL template for SQL Server 2008."},
-	KeyTipDiscSQL:         {"Запрос должен вернуть имя точки, время отправки и время приёма.", "The query must return the point name, send time and receive time."},
-	KeyTipDiscResult:      {"Результат проверки и ошибки.", "Result of the check and errors."},
-	KeyTipDiscCheck:       {"Проверить настройку на сервере и показать примеры.", "Check the setup on the server and show examples."},
-	KeyTipDiscApply:       {"Перенести настройку в профиль базы (затем «Сохранить» в окне настроек).", "Copy the setup to the database profile (then \"Save\" in the settings window)."},
-	KeyTipDiscClose:       {"Закрыть окно без применения.", "Close the window without applying."},
-	KeyTipAlertAck:        {"Подтвердить тревогу: звук смолкнет до следующего изменения.", "Acknowledge the alert: silent until the next change."},
-	KeyTipAlertClose:      {"Закрыть окно и заглушить звук до следующего изменения статуса.", "Close the window and mute until the next status change."},
-	KeyTipAboutOK:         {"Закрыть окно «О программе».", "Close the About window."},
+	KeyUnknownMessage:      {"Ошибка", "Error"},
+	KeySetPreset:           {"Тип сервера:", "Server type:"},
+	KeySetPreset2008:       {"SQL Server 2008 / 2008 R2", "SQL Server 2008 / 2008 R2"},
+	KeySetPresetNone:       {"SQL Server 2012 и новее", "SQL Server 2012 or newer"},
+	KeySetWarnMin:          {"Предупреждение, мин:", "Warning after, min:"},
+	KeySetErrorMin:         {"Ошибка, мин:", "Error after, min:"},
+	KeySetConnTimeout:      {"Тайм-аут подключения, с:", "Connect timeout, s:"},
+	KeySetQueryTimeout:     {"Тайм-аут запроса, с:", "Query timeout, s:"},
+	KeySetPortCue:          {"1433 или пусто для SQL Browser", "1433 or empty for SQL Browser"},
+	KeySetThreshCue:        {"как в общих настройках", "as in the general settings"},
+	KeySetTimeoutCue:       {"по умолчанию %d", "default %d"},
+	KeyMenuService:         {"Служба", "Service"},
+	KeyMenuSvcStart:        {"Запустить", "Start"},
+	KeyMenuSvcStop:         {"Остановить", "Stop"},
+	KeySvcState:            {"Состояние: %s", "State: %s"},
+	KeySvcRunning:          {"работает", "running"},
+	KeySvcStopped:          {"остановлена", "stopped"},
+	KeySvcStartPending:     {"запускается", "starting"},
+	KeySvcStopPending:      {"останавливается", "stopping"},
+	KeySvcNotInstalled:     {"не установлена", "not installed"},
+	KeySvcNoAccess:         {"нет доступа к состоянию", "no access to the state"},
+	KeySvcUnknown:          {"неизвестно", "unknown"},
+	KeySvcStartSent:        {"Служба «%s» запускается.", "The service \"%s\" is starting."},
+	KeySvcStopSent:         {"Служба «%s» останавливается.", "The service \"%s\" is stopping."},
+	KeySvcErrAccess:        {"Недостаточно прав, чтобы запустить или остановить службу «%s». Это может сделать администратор компьютера, например в оснастке «Службы» (services.msc).", "Not enough rights to start or stop the service \"%s\". A computer administrator can do it, for example in the Services console (services.msc)."},
+	KeySvcErrNotInstalled:  {"Служба «%s» не установлена на этом компьютере. Запустите установщик Exchange Checker.", "The service \"%s\" is not installed on this computer. Run the Exchange Checker setup."},
+	KeySvcErrRunning:       {"Служба «%s» уже работает.", "The service \"%s\" is already running."},
+	KeySvcErrNotActive:     {"Служба «%s» уже остановлена.", "The service \"%s\" is already stopped."},
+	KeySvcErrOther:         {"Не удалось выполнить действие со службой «%s»: %s", "The service \"%s\" action failed: %s"},
+	KeyTipSetList:          {"Базы, которые проверяет служба. Выберите базу, чтобы увидеть и изменить её настройки.", "Databases checked by the service. Select one to view and edit its settings."},
+	KeyTipSetAdd:           {"Добавить новую базу данных для проверки.", "Add a new database to check."},
+	KeyTipSetDelete:        {"Удалить выбранную базу из настроек (с подтверждением).", "Remove the selected database from the settings (asks first)."},
+	KeyTipSetDiscover:      {"Найти в базе 1С таблицы с временем обмена и настроить их.", "Find the tables with exchange times in the 1C database and set them up."},
+	KeyTipSetName:          {"Название базы в меню трея и в тревогах. Можно оставить пустым — тогда «сервер/база».", "Name of the database in the tray menu and alerts. May be empty: \"server/database\" is shown then."},
+	KeyTipSetHost:          {"Имя компьютера или IP-адрес SQL Server, например SRV-SQL или 10.0.0.5. Без имени экземпляра.", "Computer name or IP address of SQL Server, e.g. SRV-SQL or 10.0.0.5. Without the instance name."},
+	KeyTipSetInstance:      {"Только имя именованного экземпляра, например SQLEXPRESS. Не сервер и не IP. Пусто — экземпляр по умолчанию.", "Only the name of a named instance, e.g. SQLEXPRESS. Not the server and not an IP. Empty: the default instance."},
+	KeyTipSetPort:          {"TCP-порт SQL Server. Пусто — 1433, а для именованного экземпляра порт узнаётся у SQL Browser (UDP 1434).", "TCP port of SQL Server. Empty: 1433; for a named instance the port is asked from SQL Browser (UDP 1434)."},
+	KeyTipSetDatabase:      {"Имя базы данных 1С на сервере, как в SQL Server Management Studio.", "Name of the 1C database on the server, as in SQL Server Management Studio."},
+	KeyTipSetAuth:          {"SQL — логин и пароль SQL Server. Windows — служба входит учётной записью компьютера (ДОМЕН\\ИМЯ$).", "SQL: a SQL Server login and password. Windows: the service logs in with the computer account (DOMAIN\\NAME$)."},
+	KeyTipSetLogin:         {"Логин SQL Server только с ролью db_datareader. Не sa.", "SQL Server login with the db_datareader role only. Not sa."},
+	KeyTipSetPassword:      {"Пароль SQL-логина. Хранится службой в зашифрованном виде; пусто — оставить сохранённый.", "Password of the SQL login. The service keeps it encrypted; empty keeps the saved one."},
+	KeyTipSetClearPw:       {"Удалить сохранённый пароль этой базы при сохранении.", "Delete the saved password of this database on save."},
+	KeyTipSetEncrypt:       {"Шифрование подключения. Для SQL Server 2008 без обновлений обычно «Без шифрования».", "Connection encryption. For SQL Server 2008 without updates usually \"No encryption\"."},
+	KeyTipSetPreset:        {"Версия SQL Server. «2008 / 2008 R2» разрешает TLS 1.0 и запрещает режим Strict.", "SQL Server version. \"2008 / 2008 R2\" allows TLS 1.0 and forbids the Strict mode."},
+	KeyTipSetTLS10:         {"Разрешить старый протокол TLS 1.0 — нужен SQL Server 2005/2008 без обновлений TLS 1.2.", "Allow the old TLS 1.0 protocol, needed by SQL Server 2005/2008 without the TLS 1.2 updates."},
+	KeyTipSetTrust:         {"Не проверять сертификат сервера (самоподписанный). Действует только в режиме «Весь сеанс (TLS)».", "Do not validate the server certificate (self-signed). Used only with \"Whole session (TLS)\"."},
+	KeyTipSetEnabled:       {"Снимите флажок, чтобы временно не проверять эту базу.", "Clear to stop checking this database for a while."},
+	KeyTipSetWarn:          {"Через сколько минут без обмена показать предупреждение. Значение, равное унаследованному из общих настроек, не фиксируется: профиль следует общим настройкам.", "Minutes without exchange before a warning. A value equal to the one inherited from the general settings is not fixed: the profile follows the general settings."},
+	KeyTipSetError:         {"Через сколько минут без обмена показать ошибку. Должно быть больше предупреждения. Значение, равное унаследованному из общих настроек, не фиксируется: профиль следует общим настройкам.", "Minutes without exchange before an error. Must be greater than the warning. A value equal to the one inherited from the general settings is not fixed: the profile follows the general settings."},
+	KeyTipSetConnTimeout:   {"Сколько секунд ждать подключения к SQL Server (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for the connection to SQL Server (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
+	KeyTipSetQueryTimeout:  {"Сколько секунд ждать ответа на запрос (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for a query result (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
+	KeyTipSetPage:          {"Переключиться между базами и общими настройками.", "Switch between the databases and the general settings."},
+	KeyTipSetStatus:        {"Результат последнего действия и ошибки.", "Result of the last action and errors."},
+	KeyTipSetTest:          {"Проверить подключение и чтение таблиц с текущими значениями формы.", "Test the connection and table reading with the current form values."},
+	KeyTipSetCancelTest:    {"Прервать идущую проверку подключения.", "Stop the running connection test."},
+	KeyTipSetSave:          {"Сохранить изменения в настройки службы.", "Save the changes to the service settings."},
+	KeyTipSetPoll:          {"Попросить службу опросить эту базу сейчас.", "Ask the service to poll this database now."},
+	KeyTipSetReload:        {"Перечитать настройки из службы (несохранённые правки пропадут).", "Reload the settings from the service (unsaved edits are lost)."},
+	KeyTipSetElevate:       {"Открыть настройки с правами администратора, чтобы их можно было менять.", "Open the settings as administrator to be able to change them."},
+	KeyTipSetClose:         {"Закрыть окно настроек.", "Close the settings window."},
+	KeyTipGenPoll:          {"Как часто служба опрашивает базы, в секундах.", "How often the service polls the databases, in seconds."},
+	KeyTipGenWarn:          {"Общий порог предупреждения в минутах для всех баз без своего порога.", "General warning threshold in minutes for databases without their own."},
+	KeyTipGenError:         {"Общий порог ошибки в минутах; больше порога предупреждения.", "General error threshold in minutes; greater than the warning threshold."},
+	KeyTipGenBeep:          {"Пищать системным динамиком при тревоге.", "Beep with the system speaker on an alert."},
+	KeyTipGenWarnFreq:      {"Частота звука предупреждения, Гц.", "Pitch of the warning sound, Hz."},
+	KeyTipGenWarnDur:       {"Длительность звука предупреждения, мс.", "Length of the warning sound, ms."},
+	KeyTipGenErrFreq:       {"Частота звука ошибки, Гц.", "Pitch of the error sound, Hz."},
+	KeyTipGenErrDur:        {"Длительность звука ошибки, мс.", "Length of the error sound, ms."},
+	KeyTipGenGap:           {"Пауза между сигналами, мс.", "Pause between the beeps, ms."},
+	KeyTipGenLang:          {"Язык сообщений службы в журнале событий Windows.", "Language of the service messages in the Windows Event Log."},
+	KeyTipGenAutostart:     {"Запускать значок в трее при входе любого пользователя.", "Start the tray icon when any user logs on."},
+	KeyTipDiscFind:         {"Найти в базе таблицы, похожие на время обмена.", "Find tables that look like exchange times."},
+	KeyTipDiscPoints:       {"Загрузить список точек обмена (узлов планов обмена).", "Load the list of exchange points (exchange plan nodes)."},
+	KeyTipDiscCancel:       {"Прервать идущий поиск или проверку.", "Stop the running search or check."},
+	KeyTipDiscPoint:        {"Имя точки обмена, время которой вы знаете.", "Name of an exchange point whose time you know."},
+	KeyTipDiscTime:         {"Известное время последнего обмена этой точки: ДД.ММ.ГГГГ ЧЧ:ММ (UTC+3).", "Known time of the point's last exchange: DD.MM.YYYY HH:MM (UTC+3)."},
+	KeyTipDiscTol:          {"Допуск поиска по времени, минут. 0 или пусто — 1 сутки.", "Time tolerance of the search, minutes. 0 or empty: 1 day."},
+	KeyTipDiscByValue:      {"Найти колонки, где у точки записано это время.", "Find the columns where the point has this time."},
+	KeyTipDiscList:         {"Найденные варианты. Выберите вариант, чтобы перенести его в поля ниже.", "Found candidates. Select one to copy it to the fields below."},
+	KeyTipDiscDetails:      {"Подробности выбранного варианта.", "Details of the selected candidate."},
+	KeyTipDiscMode:         {"Как служба читает время: из таблиц, ручным SQL или по счётчикам сообщений.", "How the service reads the times: from tables, with manual SQL or by message counters."},
+	KeyTipDiscField:        {"Имя таблицы или колонки SQL Server, обычно вида _Node123 или _Fld456.", "SQL Server table or column name, usually like _Node123 or _Fld456."},
+	KeyTipDiscPlanLabel:    {"Своё название плана обмена для меню (необязательно).", "Own name of the exchange plan for the menu (optional)."},
+	KeyTipDiscYear:         {"1С хранит даты со сдвигом +2000 лет — обычно флажок включён.", "1C stores dates shifted by +2000 years: usually checked."},
+	KeyTipDiscKeep:         {"Показывать точки, для которых ещё нет записи времени.", "Show points that have no time record yet."},
+	KeyTipDiscAllPlans:     {"Добавить в профиль все найденные планы обмена, а не только выбранный.", "Add every found exchange plan to the profile, not only the selected one."},
+	KeyTipDiscTemplate:     {"Готовый шаблон ручного SQL для SQL Server 2008.", "Ready manual SQL template for SQL Server 2008."},
+	KeyTipDiscSQL:          {"Запрос должен вернуть имя точки, время отправки и время приёма.", "The query must return the point name, send time and receive time."},
+	KeyTipDiscResult:       {"Результат проверки и ошибки.", "Result of the check and errors."},
+	KeyTipDiscCheck:        {"Проверить настройку на сервере и показать примеры.", "Check the setup on the server and show examples."},
+	KeyTipDiscApply:        {"Перенести настройку в профиль базы (затем «Сохранить» в окне настроек).", "Copy the setup to the database profile (then \"Save\" in the settings window)."},
+	KeyTipDiscClose:        {"Закрыть окно без применения.", "Close the window without applying."},
+	KeyTipAlertAck:         {"Подтвердить тревогу: звук смолкнет до следующего изменения.", "Acknowledge the alert: silent until the next change."},
+	KeyTipAlertClose:       {"Закрыть окно и заглушить звук до следующего изменения статуса.", "Close the window and mute until the next status change."},
+	KeyTipAboutOK:          {"Закрыть окно «О программе».", "Close the About window."},
+	KeyWizTitle:            {"Добавить базу", "Add a database"},
+	KeyWizStep:             {"Шаг %d из 3: %s", "Step %d of 3: %s"},
+	KeyWizStepServer:       {"сервер и вход", "server and login"},
+	KeyWizStepDB:           {"база данных", "database"},
+	KeyWizStepFinish:       {"проверка и сохранение", "test and save"},
+	KeyWizServer:           {"Сервер:", "Server:"},
+	KeyWizFind:             {"Найти", "Find"},
+	KeyWizBrowsing:         {"Поиск серверов SQL…", "Looking for SQL servers…"},
+	KeyWizFound:            {"Найдено экземпляров: %d (ответили компьютеров: %d).", "Instances found: %d (computers answered: %d)."},
+	KeyWizFoundPartial:     {"Список может быть неполным.", "The list may be incomplete."},
+	KeyWizNoneFound:        {"Серверы не найдены. Проверьте, что служба SQL Server Browser запущена и UDP 1434 не закрыт брандмауэром, или введите адрес вручную.", "No servers were found. Check that the SQL Server Browser service is running and UDP 1434 is not blocked by a firewall, or enter the address manually."},
+	KeyWizRateLimited:      {"Поиск выполнялся недавно — повторите через %d с.", "A search ran recently — try again in %d s."},
+	KeyWizBusy:             {"Служба уже выполняет поиск или проверку — повторите позже.", "The service is already running a search or a test — try again later."},
+	KeyWizPort:             {"Порт:", "Port:"},
+	KeyWizAuth:             {"Вход:", "Login with:"},
+	KeyWizAuthSQL:          {"Логин SQL Server", "SQL Server login"},
+	KeyWizAuthWindows:      {"Учётная запись компьютера (служба EC)", "Computer account (EC service)"},
+	KeyWizLogin:            {"Логин:", "Login:"},
+	KeyWizPassword:         {"Пароль:", "Password:"},
+	KeyWizEncrypt:          {"Шифрование:", "Encryption:"},
+	KeyWizDBs:              {"Базы данных сервера:", "Databases of the server:"},
+	KeyWizRefresh:          {"Обновить список", "Refresh the list"},
+	KeyWizDBLoading:        {"Получение списка баз…", "Reading the database list…"},
+	KeyWizDBCount:          {"Баз: %d.", "Databases: %d."},
+	KeyWizDBTruncated:      {"Показаны не все базы.", "Not all databases are shown."},
+	KeyWizDB1C:             {"база 1С", "1C database"},
+	KeyWizDBNode:           {"есть планы обмена (_Node)", "has exchange plans (_Node)"},
+	KeyWizDBSize:           {"%d МБ", "%d MB"},
+	KeyWizDBNone:           {"Выберите базу в списке.", "Choose a database in the list."},
+	KeyWizTesting:          {"Проверка подключения…", "Testing the connection…"},
+	KeyWizTestOK:           {"Подключение работает.", "The connection works."},
+	KeyWizDiscovering:      {"Поиск таблиц обмена…", "Looking for the exchange tables…"},
+	KeyWizApplied:          {"Выбрано автоматически: %s", "Chosen automatically: %s"},
+	KeyWizChoose:           {"Выберите вариант в списке или откройте «Расширенные настройки».", "Choose an option in the list or open \"Advanced settings\"."},
+	KeyWizChosen:           {"Выбрано: %s", "Chosen: %s"},
+	KeyWizConfidence:       {"[%d%%]", "[%d%%]"},
+	KeyWizCands:            {"Найденные таблицы обмена:", "Exchange tables found:"},
+	KeyWizSaving:           {"Сохранение…", "Saving…"},
+	KeyWizBack:             {"< Назад", "< Back"},
+	KeyWizNext:             {"Далее >", "Next >"},
+	KeyWizSave:             {"Сохранить", "Save"},
+	KeyWizAdvanced:         {"Расширенные настройки…", "Advanced settings…"},
+	KeyWizGrant:            {"Скопировать SQL-скрипт прав", "Copy the permissions SQL script"},
+	KeyWizCancel:           {"Отмена", "Cancel"},
+	KeyWizGrantCopied:      {"SQL-скрипт прав скопирован в буфер обмена. EC его не выполняет: проверьте и выполните его сами (например, в SQL Server Management Studio) от имени администратора SQL Server.", "The permissions SQL script was copied to the clipboard. EC does not run it: review it and run it yourself (for example in SQL Server Management Studio) as a SQL Server administrator."},
+	KeyWizGrantPlaceholder: {"Замените %s на пароль логина.", "Replace %s with the login password."},
+	KeyWizClipFailed:       {"Не удалось скопировать в буфер обмена: %s", "Could not copy to the clipboard: %s"},
+	KeyWizAccessDenied:     {"Нет прав администратора для этой команды. Закройте окно и откройте настройки снова через «Изменить (администратор)» с подтверждением UAC.", "Administrator rights are required for this command. Close the window and open the settings again with \"Edit (administrator)\" and confirm the UAC prompt."},
+	KeyWizErrCode:          {"Код ошибки: %s", "Error code: %s"},
+	KeyWizWhatToDo:         {"Что делать:", "What to do:"},
+	KeyWizFBLogin:          {"Проверьте логин и пароль; для учётной записи компьютера — что у неё есть логин на SQL Server (кнопка «Скопировать SQL-скрипт прав»).", "Check the login and the password; for the computer account, check that it has a SQL Server login (\"Copy the permissions SQL script\")."},
+	KeyWizFBDatabase:       {"База недоступна: проверьте имя, что она в состоянии ONLINE и что у логина есть к ней доступ.", "The database is not available: check the name, that it is ONLINE and that the login has access to it."},
+	KeyWizFBTLS:            {"Ошибка TLS: попробуйте другой режим шифрования или включите TLS 1.0 для старого сервера; для проверки сертификата нужен доверенный сертификат.", "TLS error: try another encryption mode or allow TLS 1.0 for an old server; certificate validation needs a trusted certificate."},
+	KeyWizFBTimeout:        {"Сервер не ответил вовремя: проверьте сеть и брандмауэр, увеличьте тайм-аут подключения.", "The server did not answer in time: check the network and the firewall, increase the connection timeout."},
+	KeyWizFBNetwork:        {"Нет сетевого подключения: проверьте имя сервера, порт, что TCP/IP включён в SQL Server Configuration Manager и порт открыт в брандмауэре.", "No network connection: check the server name and port, that TCP/IP is enabled in SQL Server Configuration Manager and the port is open in the firewall."},
+	KeyWizFBBrowser:        {"Служба SQL Server Browser не ответила: запустите её на сервере и откройте UDP 1434, или укажите порт экземпляра явно.", "The SQL Server Browser service did not answer: start it on the server and open UDP 1434, or enter the instance port explicitly."},
+	KeyWizFBInstance:       {"Экземпляр не найден: проверьте имя экземпляра (кнопка «Найти»), что служба SQL Server Browser запущена на сервере и UDP 1434 открыт, или укажите порт экземпляра явно.", "The instance was not found: check the instance name (\"Find\"), that the SQL Server Browser service is running on the server and UDP 1434 is open, or enter the instance port explicitly."},
+	KeyWizFBPermission:     {"Недостаточно прав на чтение: выдайте права скриптом (кнопка «Скопировать SQL-скрипт прав»).", "Not enough read permissions: grant them with the script (\"Copy the permissions SQL script\")."},
+	KeyWizFBNot1C:          {"Это не база 1С: выберите другую базу или задайте таблицы в «Расширенных настройках».", "This is not a 1C database: choose another database or set the tables in \"Advanced settings\"."},
+	KeyWizFBConfig:         {"Параметры подключения заданы неверно: проверьте поля шага «Сервер».", "The connection settings are wrong: check the fields of the Server step."},
+	KeyWizFBOther:          {"Проверьте параметры подключения и журнал службы EC.", "Check the connection settings and the EC service log."},
+	KeyTipWizServer:        {"Имя или IP-адрес SQL Server, для именованного экземпляра — «компьютер\\экземпляр». Без «tcp:», «np:» и UNC-путей.", "Name or IP address of the SQL Server, \"computer\\instance\" for a named instance. No \"tcp:\", \"np:\" or UNC paths."},
+	KeyTipWizFind:          {"Найти серверы через SQL Server Browser: пустое поле «Сервер» — в локальной сети, иначе — на указанном компьютере.", "Find servers with the SQL Server Browser: an empty Server box searches the local network, otherwise the given computer."},
+	KeyTipWizInstances:     {"Найденные экземпляры SQL Server; выбор подставляет адрес в поле «Сервер».", "SQL Server instances found; picking one fills the Server box."},
+	KeyTipWizPort:          {"TCP-порт; пусто — порт по умолчанию или через SQL Server Browser.", "TCP port; empty = the default port or via the SQL Server Browser."},
+	KeyTipWizAuth:          {"Логин SQL Server или учётная запись компьютера, от имени которой работает служба EC.", "A SQL Server login or the computer account the EC service runs as."},
+	KeyTipWizLogin:         {"Логин SQL Server только для чтения.", "A read-only SQL Server login."},
+	KeyTipWizPassword:      {"Пароль логина; хранится службой в зашифрованном виде и не показывается.", "The login password; the service stores it encrypted and never shows it."},
+	KeyTipWizEncrypt:       {"Режим шифрования (TLS) подключения.", "Encryption (TLS) mode of the connection."},
+	KeyTipWizDBs:           {"Базы данных сервера; отмечены базы 1С и базы с планами обмена (_Node).", "Databases of the server; 1C databases and databases with exchange plans (_Node) are marked."},
+	KeyTipWizRefresh:       {"Получить список баз заново.", "Read the database list again."},
+	KeyTipWizCands:         {"Варианты таблиц обмена с уверенностью; выбор применяется к новой базе.", "Exchange table options with their confidence; the chosen one is used for the new database."},
+	KeyTipWizResult:        {"Ход проверки, ошибки и что делать.", "Progress, errors and what to do."},
+	KeyTipWizBack:          {"Вернуться к предыдущему шагу.", "Go back to the previous step."},
+	KeyTipWizNext:          {"Перейти к следующему шагу.", "Go to the next step."},
+	KeyTipWizSave:          {"Сохранить новую базу в настройках службы.", "Save the new database in the service settings."},
+	KeyTipWizAdvanced:      {"Продолжить в полной форме настроек с уже введёнными данными.", "Continue in the full settings form with what was entered."},
+	KeyTipWizGrant:         {"Скопировать в буфер обмена T-SQL, выдающий права только на чтение; EC скрипт не выполняет.", "Copy the T-SQL that grants read-only access to the clipboard; EC never runs the script."},
+	KeyTipWizCancel:        {"Закрыть мастер без сохранения.", "Close the wizard without saving."},
 }

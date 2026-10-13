@@ -3,6 +3,7 @@
 package winapi
 
 import (
+	"errors"
 	"syscall"
 	"unsafe"
 )
@@ -66,8 +67,10 @@ type browseInfoW struct {
 }
 
 // BrowseForFolder shows SHBrowseForFolderW (OLE must be initialised on the
-// calling thread); ok = false when cancelled.
-func BrowseForFolder(owner uintptr, title string) (string, bool) {
+// calling thread); ok = false when cancelled; err when a folder was chosen
+// but its path could not be read (SHGetPathFromIDListW failed, e.g. a
+// virtual folder) — the caller shows an error instead of a silent cancel.
+func BrowseForFolder(owner uintptr, title string) (string, bool, error) {
 	name := make([]uint16, 260)
 	bi := browseInfoW{
 		Owner: owner, DisplayName: &name[0], Title: UTF16Ptr(title),
@@ -75,15 +78,15 @@ func BrowseForFolder(owner uintptr, title string) (string, bool) {
 	}
 	pidl, _, _ := callProc(procSHBrowseForFolderW, uintptr(unsafe.Pointer(&bi)))
 	if pidl == 0 {
-		return "", false
+		return "", false, nil
 	}
 	defer CoTaskMemFree(pidl)
 	buf := make([]uint16, 260)
 	r, _, _ := callProc(procSHGetPathFromIDListW, pidl, uintptr(unsafe.Pointer(&buf[0])))
 	if r == 0 {
-		return "", false
+		return "", false, errors.New("SHGetPathFromIDListW: the chosen item is not a file-system folder")
 	}
-	return syscall.UTF16ToString(buf), true
+	return syscall.UTF16ToString(buf), true, nil
 }
 
 type initCommonControlsEx struct {

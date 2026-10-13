@@ -212,8 +212,9 @@ func (w *wizard) build() {
 		winapi.SendMessage(w.ctl[IDDir], 0x00CF /*EM_SETREADONLY*/, 1, 0)
 		winapi.EnableWindow(w.ctl[IDBrowse], false)
 	}
-	if w.cfg.State.Mode != ModeFresh {
-		// upgrade keeps the start type (§7.5): the checkbox only shows it
+	if w.cfg.State.ServiceLocked() {
+		// upgrade/reinstall keep the old service state (§7.5): the checkbox
+		// only shows it and cannot be changed
 		winapi.EnableWindow(w.ctl[IDService], false)
 	}
 }
@@ -272,7 +273,7 @@ func (w *wizard) render() {
 	}
 	w.show([]int{IDBack}, s.Page != PageFinish)
 	winapi.EnableWindow(w.ctl[IDBack], s.CanBack())
-	winapi.EnableWindow(w.ctl[IDNext], s.Page != PageProgress)
+	winapi.EnableWindow(w.ctl[IDNext], s.Page != PageProgress && !s.Blocked())
 	w.show([]int{IDCancel}, s.Page != PageFinish)
 	winapi.EnableWindow(w.ctl[IDCancel], s.CanCancel())
 }
@@ -295,8 +296,13 @@ func (w *wizard) proc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 		case IDCancel:
 			w.onCancel()
 		case IDBrowse:
-			if dir, ok := winapi.BrowseForFolder(w.hwnd, T(s.Lang, "setup.folder.browse")); ok {
+			dir, ok, err := winapi.BrowseForFolder(w.hwnd, T(s.Lang, "setup.folder.browse"))
+			switch {
+			case err != nil:
+				winapi.SetWindowText(w.ctl[IDError], T(s.Lang, "setup.folder.browsefail", err.Error()))
+			case ok:
 				winapi.SetWindowText(w.ctl[IDDir], dir)
+				winapi.SetWindowText(w.ctl[IDError], "")
 			}
 		}
 		return 0, true
@@ -348,7 +354,9 @@ func (w *wizard) onNext() {
 		winapi.SetWindowText(w.ctl[IDError], "")
 	case PageOptions:
 		s.Shortcut = checked(w.ctl[IDShortcut])
-		s.Service = checked(w.ctl[IDService])
+		if !s.ServiceLocked() {
+			s.Service = checked(w.ctl[IDService])
+		}
 		_ = s.Next()
 		w.render()
 		w.start()
@@ -381,6 +389,12 @@ func (w *wizard) start() {
 
 func (w *wizard) onCancel() {
 	if !w.cfg.State.CanCancel() {
+		return
+	}
+	if w.cfg.State.Blocked() {
+		// downgrade refused on the Welcome page: nothing changed, exit 3
+		w.out.Result = Result{Code: ExitDowngrade, Err: ErrDowngradeRefused}
+		winapi.DestroyWindow(w.hwnd)
 		return
 	}
 	if !w.cfg.NoCancelConfirm {

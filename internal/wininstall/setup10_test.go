@@ -233,3 +233,36 @@ func TestCHK_SETUP_08_PlanShortcut(t *testing.T) {
 		t.Fatal("fresh rollback must delete the shortcut")
 	}
 }
+
+// 7d review: on upgrade the service checkbox is locked to the previous
+// state and the passed NoStart always matches it.
+func TestCHK_SETUP_10_UpgradeServiceLocked(t *testing.T) {
+	for _, was := range []bool{true, false} {
+		s := NewWizardState("en", "1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, "", was)
+		if !s.ServiceLocked() || s.Service != was {
+			t.Fatalf("was=%v: locked=%v service=%v", was, s.ServiceLocked(), s.Service)
+		}
+		s.Service = !was // even if something flips it
+		if o := s.Options(Options{}); o.NoStart != !was {
+			t.Fatalf("was=%v: NoStart=%v", was, o.NoStart)
+		}
+	}
+	if NewWizardState("en", "1.1.0", ModeFresh, "", `C:\EC`, false, "", false).ServiceLocked() {
+		t.Fatal("fresh install: checkbox must be editable")
+	}
+}
+
+// 7d review: a downgrade without /ALLOWDOWNGRADE is refused on Welcome.
+func TestCHK_SETUP_10_DowngradeBlockedOnWelcome(t *testing.T) {
+	s := NewWizardState("en", "1.0.0", ModeDowngrade, "1.1.0", `C:\EC`, true, "", true)
+	if !s.Blocked() || !errors.Is(s.Next(), ErrDowngradeRefused) || s.Page != PageWelcome {
+		t.Fatal("downgrade must stop on Welcome")
+	}
+	if !strings.Contains(s.WelcomeText(), "/ALLOWDOWNGRADE") {
+		t.Fatalf("welcome text: %q", s.WelcomeText())
+	}
+	s.AllowDowngrade = true
+	if s.Blocked() || s.Next() != nil || s.Page != PageFolder || !s.Options(Options{}).AllowDowngrade {
+		t.Fatal("/ALLOWDOWNGRADE must let the wizard continue")
+	}
+}

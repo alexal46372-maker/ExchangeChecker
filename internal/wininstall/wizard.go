@@ -30,7 +30,12 @@ type WizardState struct {
 	Shortcut   bool // default on
 	Service    bool // "start the service and start it automatically", default on (§D.1)
 	LaunchTray bool // Finish page, default on (§D.8)
-	Result     *Result
+	// SvcWasRunning: state before the upgrade (the locked checkbox value).
+	SvcWasRunning bool
+	// AllowDowngrade (/ALLOWDOWNGRADE): otherwise a downgrade is refused on
+	// the Welcome page.
+	AllowDowngrade bool
+	Result         *Result
 	// CheckDrive validates the drive (fixed disk) — winSystem.CheckFixedDrive.
 	CheckDrive func(dir string) error
 }
@@ -43,14 +48,28 @@ func NewWizardState(lang, ver string, mode Mode, installed, dir string, locked b
 		Dir: dir, DirLocked: locked, DataDir: dataDir,
 		Shortcut: true, Service: true, LaunchTray: true,
 	}
-	if mode == ModeUpgrade || mode == ModeReinstall || mode == ModeDowngrade {
+	s.SvcWasRunning = svcWasRunning
+	if s.ServiceLocked() {
 		s.Service = svcWasRunning
 	}
 	return s
 }
 
+// ErrDowngradeRefused: the wizard stopped on the Welcome page (exit 3).
+var ErrDowngradeRefused = fmt.Errorf("downgrade refused (use /ALLOWDOWNGRADE)")
+
+// ServiceLocked: on upgrade / reinstall / downgrade the service checkbox is
+// disabled and shows the previous state (the plan keeps the old state).
+func (s *WizardState) ServiceLocked() bool { return s.Mode != ModeFresh && s.Mode != "" }
+
+// Blocked: a downgrade without /ALLOWDOWNGRADE stops on the Welcome page.
+func (s *WizardState) Blocked() bool { return s.Mode == ModeDowngrade && !s.AllowDowngrade }
+
 // WelcomeText is the text of page 1.
 func (s *WizardState) WelcomeText() string {
+	if s.Blocked() {
+		return T(s.Lang, "setup.welcome.downgrade", s.Installed, s.Version)
+	}
 	switch s.Mode {
 	case ModeUpgrade, ModeDowngrade:
 		return T(s.Lang, "setup.welcome.upgrade", s.Installed, s.Version)
@@ -65,6 +84,9 @@ func (s *WizardState) WelcomeText() string {
 func (s *WizardState) Next() error {
 	switch s.Page {
 	case PageWelcome:
+		if s.Blocked() {
+			return ErrDowngradeRefused
+		}
 		s.Page = PageFolder
 	case PageFolder:
 		if !s.DirLocked {
@@ -112,6 +134,10 @@ func (s *WizardState) Options(base Options) Options {
 	}
 	o.NoShortcut = !s.Shortcut
 	o.NoStart = !s.Service
+	if s.ServiceLocked() {
+		o.NoStart = !s.SvcWasRunning // never differs from the previous state
+	}
+	o.AllowDowngrade = o.AllowDowngrade || s.AllowDowngrade
 	if s.Lang != "" {
 		o.Lang = s.Lang
 	}

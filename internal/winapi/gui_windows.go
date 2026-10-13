@@ -335,6 +335,10 @@ func PostMessage(hwnd uintptr, msg uint32, wp, lp uintptr) bool {
 func PostQuitMessage(code int32) { callProc(procPostQuitMessage, uintptr(code)) }
 
 // SendMessage sends a message and waits for the result.
+// uintptrescapes: lp/wp may carry a pointer (WM_SETTEXT, PBM_…) converted
+// at the caller.
+//
+//go:uintptrescapes
 func SendMessage(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 	r, _, _ := callProc(procSendMessageW, hwnd, uintptr(msg), wp, lp)
 	return r

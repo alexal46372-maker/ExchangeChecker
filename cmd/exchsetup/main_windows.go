@@ -141,6 +141,7 @@ func runWizard(sys wininstall.System, opts wininstall.Options, lang, defaultDir 
 	}
 	st := wininstall.NewWizardState(lang, version.Version, mode, inst.Version, dir, locked, config.DefaultDir(), svc.Running)
 	st.CheckDrive = sys.CheckFixedDrive
+	st.AllowDowngrade = opts.AllowDowngrade
 	out, err := wininstall.RunWizard(wininstall.WizardConfig{
 		State: st, Base: opts, LogPath: logPath,
 		Run: func(o wininstall.Options, progress func(string)) wininstall.Result {

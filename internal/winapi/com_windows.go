@@ -71,6 +71,11 @@ const (
 // callProc, see the package comment above).
 type comObject struct{ vtbl *[32]uintptr }
 
+// uintptrescapes: callers convert pointers (UTF16Ptr, &GUID, &pf, buffers)
+// to uintptr in comCall's own argument list; the directive keeps those
+// objects alive and unmoved until comCall returns (as for callProc).
+//
+//go:uintptrescapes
 func comCall(obj *comObject, idx int, args ...uintptr) uintptr {
 	fn := obj.vtbl[idx]
 	all := append([]uintptr{uintptr(unsafe.Pointer(obj))}, args...)

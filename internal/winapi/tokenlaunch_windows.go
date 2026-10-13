@@ -44,7 +44,11 @@ func LaunchAsShellUser(exe, dir string) error {
 	if err != nil {
 		return err
 	}
-	win, _ := WindowsDirectory()
+	win, err := WindowsDirectory()
+	if err != nil || win == "" {
+		// never launch without verifying the shell image
+		return fmt.Errorf("winapi: Windows directory: %v", err)
+	}
 	wantShell := filepath.Join(win, "explorer.exe")
 	procs, err := ListProcesses()
 	if err != nil {
@@ -76,7 +80,7 @@ func launchWithTokenOf(pid uint32, wantShell, exe, dir string) error {
 	if err != nil {
 		return err
 	}
-	if wantShell != "" && !SameImage(img, wantShell) {
+	if !SameImage(img, wantShell) {
 		return fmt.Errorf("%w: pid %d is %s", ErrImageMismatch, pid, img)
 	}
 	var tok syscall.Token

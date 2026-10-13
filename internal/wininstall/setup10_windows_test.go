@@ -158,3 +158,61 @@ func TestCHK_SETUP_10_UninstallConfirm(t *testing.T) {
 		t.Fatalf("uninstall+purge: %+v", r)
 	}
 }
+
+// TestCHK_SETUP_10_WizardUpgradeAndDowngrade — upgrade: service checkbox
+// disabled, shows the previous state, and the run gets the same NoStart;
+// downgrade: Next disabled on Welcome, Cancel → exit 3, nothing run.
+func TestCHK_SETUP_10_WizardUpgradeAndDowngrade(t *testing.T) {
+	for _, was := range []bool{true, false} {
+		st := NewWizardState("en", "1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, "", was)
+		ran := make(chan Options, 1)
+		done := make(chan WizardOutcome, 1)
+		go func() {
+			out, _ := RunWizard(WizardConfig{State: st, NoCancelConfirm: true,
+				Run: func(o Options, _ func(string)) Result { ran <- o; return Result{Code: ExitOK} }})
+			done <- out
+		}()
+		h := waitWindow(t, WizardClass)
+		click(h, IDNext)
+		click(h, IDNext)
+		if page(h) != PageOptions {
+			t.Fatalf("page %d", page(h))
+		}
+		svc := winapi.GetDlgItem(h, IDService)
+		if winapi.IsWindowEnabled(svc) || isChecked(h, IDService) != was {
+			t.Fatalf("was=%v: service checkbox enabled=%v checked=%v", was, winapi.IsWindowEnabled(svc), isChecked(h, IDService))
+		}
+		winapi.SendMessage(svc, BM_SETCHECK, map[bool]uintptr{true: 0, false: 1}[was], 0) // try to flip
+		click(h, IDNext)
+		o := <-ran
+		if o.NoStart != !was {
+			t.Fatalf("was=%v: NoStart=%v", was, o.NoStart)
+		}
+		for page(h) != PageFinish {
+			time.Sleep(20 * time.Millisecond)
+		}
+		click(h, IDNext)
+		<-done
+	}
+
+	st := NewWizardState("en", "1.0.0", ModeDowngrade, "1.1.0", `C:\EC`, true, "", true)
+	done := make(chan WizardOutcome, 1)
+	go func() {
+		out, _ := RunWizard(WizardConfig{State: st,
+			Run: func(Options, func(string)) Result { t.Error("must not run"); return Result{} }})
+		done <- out
+	}()
+	h := waitWindow(t, WizardClass)
+	if winapi.IsWindowEnabled(winapi.GetDlgItem(h, IDNext)) {
+		t.Fatal("downgrade: Next must be disabled on Welcome")
+	}
+	click(h, IDNext)
+	if page(h) != PageWelcome {
+		t.Fatal("downgrade left Welcome")
+	}
+	click(h, IDCancel) // no confirmation needed: nothing was changed
+	out := <-done
+	if out.Result.Code != ExitDowngrade {
+		t.Fatalf("downgrade exit %d, want %d", out.Result.Code, ExitDowngrade)
+	}
+}

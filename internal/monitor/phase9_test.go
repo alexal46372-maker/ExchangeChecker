@@ -268,3 +268,28 @@ func TestCHK_SVC_04_LastCheckSeq(t *testing.T) {
 		t.Fatalf("after a full cycle: last %d < %d", l, r3.CheckSeq)
 	}
 }
+
+// TestCHK_SVC_04_DeletedProfileCheck — a pending check of a profile that is
+// deleted is dropped and lastCheckSeq is settled at once (no wait for a
+// full cycle).
+func TestCHK_SVC_04_DeletedProfileCheck(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	cfg := NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("db1"), prof("db2")}})
+	m := New(baseOpt(newFactory(), cfg, clk))
+	m.LoadConfig()
+	r, err := m.CheckNow("db2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Snapshot().LastCheckSeq >= r.CheckSeq {
+		t.Fatal("completed before any poll")
+	}
+	cfg.Set(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{prof("db1")}})
+	m.LoadConfig()
+	m.mu.Lock()
+	last, pend := m.lastCheckSeq, len(m.checkPend)
+	m.mu.Unlock()
+	if last < r.CheckSeq || pend != 0 {
+		t.Fatalf("after deletion: lastCheckSeq %d < %d, pending %d", last, r.CheckSeq, pend)
+	}
+}

@@ -18,6 +18,9 @@ import (
 
 const cmdKeySQLDatabases = "sql_databases"
 
+// browseKeyAnyHost: limiter key of all targeted browses (Explorer.browseAt).
+const browseKeyAnyHost = "hosts"
+
 // databaseLister is implemented by *sqlcheck.InteractiveReader.
 type databaseLister interface {
 	Databases(ctx context.Context, opt sqlcheck.DatabasesOptions) (model.SQLDatabasesResult, error)
@@ -64,13 +67,23 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 	}
 	x.mu.Lock()
 	x.defaults()
-	if t, ok := x.browseAt[key]; ok {
-		if el := now.Sub(t); el >= 0 && el < every {
-			x.mu.Unlock()
-			ms := int64((every - el + time.Millisecond - 1) / time.Millisecond)
-			return res, &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgBrowseRateLimited,
-				Message: "monitor: sql_browse rate limited, retry after " + strconv.FormatInt(ms, 10) + " ms", RetryAfterMs: ms}
+	var wait time.Duration
+	hold := func(k string, d time.Duration) {
+		if t, ok := x.browseAt[k]; ok {
+			if el := now.Sub(t); el >= 0 && el < d && d-el > wait {
+				wait = d - el
+			}
 		}
+	}
+	hold(key, every)
+	if br.Host != "" { // aliases (FQDN / IP) of one host: service-wide limit
+		hold(browseKeyAnyHost, model.SQLBrowseAnyHostInterval)
+	}
+	if wait > 0 {
+		x.mu.Unlock()
+		ms := int64((wait + time.Millisecond - 1) / time.Millisecond)
+		return res, &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgBrowseRateLimited,
+			Message: "monitor: sql_browse rate limited, retry after " + strconv.FormatInt(ms, 10) + " ms", RetryAfterMs: ms}
 	}
 	if x.browsing {
 		x.mu.Unlock()
@@ -78,6 +91,9 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 	}
 	x.browsing = true
 	x.browseAt[key] = now
+	if br.Host != "" {
+		x.browseAt[browseKeyAnyHost] = now
+	}
 	for k, t := range x.browseAt { // forget old hosts
 		if d := now.Sub(t); d > model.SQLBrowseBroadcastInterval || d < 0 {
 			delete(x.browseAt, k)

@@ -76,10 +76,14 @@ func ClampSQLBrowseTimeoutMs(ms int) int {
 
 // sql_browse rate limits (CHK-IPC-10): a broadcast (no host) at most once
 // per SQLBrowseBroadcastInterval per service, a targeted browse at most
-// once per SQLBrowseHostInterval per host (ASCII case-insensitive);
+// once per SQLBrowseHostInterval per host (ASCII case-insensitive) and
+// any targeted browse at most once per SQLBrowseAnyHostInterval;
 // refusal: rate_limited + retryAfterMs, key MsgBrowseRateLimited.
 const (
 	SQLBrowseBroadcastInterval = 15 * time.Second
 	SQLBrowseHostInterval      = 3 * time.Second
-	MsgBrowseRateLimited       = "monitor.browse_rate_limited"
+	// SQLBrowseAnyHostInterval: any targeted browse at most once per
+	// this interval service-wide (FQDN / IP aliases of one host).
+	SQLBrowseAnyHostInterval = 1 * time.Second
+	MsgBrowseRateLimited     = "monitor.browse_rate_limited"
 )

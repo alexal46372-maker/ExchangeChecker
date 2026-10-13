@@ -224,3 +224,23 @@ func (m *Monitor) settleChecksLocked() {
 		m.lastCheckSeq = done
 	}
 }
+
+// dropChecksLocked removes the pending checks of profiles that were
+// deleted or disabled (no poll will cover them) and settles lastCheckSeq,
+// so later checks do not wait for a full cycle (m.mu held).
+func (m *Monitor) dropChecksLocked(profiles []model.Profile) {
+	enabled := make(map[string]bool, len(profiles))
+	for _, p := range profiles {
+		enabled[p.ID] = p.Enabled
+	}
+	changed := false
+	for scope := range m.checkPend {
+		if scope != "" && !enabled[scope] {
+			delete(m.checkPend, scope)
+			changed = true
+		}
+	}
+	if changed {
+		m.settleChecksLocked()
+	}
+}

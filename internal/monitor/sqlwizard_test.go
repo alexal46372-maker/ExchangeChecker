@@ -40,7 +40,8 @@ func wizBadRequest(t *testing.T, what string, err error, field, key string) {
 }
 
 // TestCHK_IPC_10_SQLBrowse — host validation (ValidateSQLServerAddr),
-// rate limits (broadcast 15 s, host 3 s), cap / truncation, cancel.
+// rate limits (broadcast 15 s, host 3 s, any host 1 s service-wide),
+// cap / truncation, cancel.
 func TestCHK_IPC_10_SQLBrowse(t *testing.T) {
 	clk := &fakeClock{t: t0}
 	m := New(baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings()}), clk))
@@ -91,6 +92,13 @@ func TestCHK_IPC_10_SQLBrowse(t *testing.T) {
 	}
 	_, err = m.SQLBrowse(ctx, model.IPCRequest{Host: "SRV1"})
 	limited("host again", err, 3000)
+	// another name (alias) right away: the service-wide 1 s limit
+	_, err = m.SQLBrowse(ctx, model.IPCRequest{Host: "10.0.0.5"})
+	limited("any host within 1 s", err, 1000)
+	clk.Add(400 * time.Millisecond)
+	_, err = m.SQLBrowse(ctx, model.IPCRequest{Host: "srv1.corp.local"})
+	limited("any host within 1 s", err, 600)
+	clk.Add(600 * time.Millisecond)
 	if _, err = m.SQLBrowse(ctx, model.IPCRequest{Host: "srv2", TimeoutMs: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +118,8 @@ func TestCHK_IPC_10_SQLBrowse(t *testing.T) {
 	if _, err = m.SQLBrowse(cctx, model.IPCRequest{Host: "slow"}); !errors.Is(err, context.Canceled) {
 		t.Errorf("cancel: %v", err)
 	}
-	if model.SQLBrowseBroadcastInterval != 15*time.Second || model.SQLBrowseHostInterval != 3*time.Second {
+	if model.SQLBrowseBroadcastInterval != 15*time.Second || model.SQLBrowseHostInterval != 3*time.Second ||
+		model.SQLBrowseAnyHostInterval != time.Second {
 		t.Error("intervals")
 	}
 }

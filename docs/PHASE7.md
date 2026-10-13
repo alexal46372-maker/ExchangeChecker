@@ -67,7 +67,7 @@
 - Тихий режим: `internal/wininstall` (план + `System`), `cmd/exchsetup` (`/S`, `/uninstall`), payload `-tags payload` (svc+tray+uninstall C2).
 - WinAPI: `internal/winapi/scm_*.go`, `path_windows.go`, `regextra_windows.go`, `owner_windows.go`.
 - Проверки CHK-SETUP-01..07, CHK-SVC-01, базовый CHK-SETUP-12; CI — сборка с payload + `go vet -tags payload` + E2E на windows.
-- Сжатие payload (решение 19): без gzip в 7b. Замеры (Go 1.20.14, -s -w, windows/amd64): svc 6.65 MiB, tray 2.68 MiB, uninstall 2.22 MiB, Setup with embed 13.79 MiB; gzip-9 of payload ≈ 4.75 MiB (41%). Рекомендация на 7e — gzip.
+- Сжатие payload (решение координатора после 7b): **в 7b без сжатия**; **в 7e — gzip** через stdlib `compress/gzip` только (без внешних утилит). Замеры 7b (Go 1.20.14, -s -w, windows/amd64): svc 6.65 MiB, tray 2.68 MiB, uninstall 2.22 MiB, Setup with embed 13.79 MiB; gzip-9 ≈ 4.75 MiB (41%).
 
 ## 1. Мастер установки и доставка exe внутрь Setup.exe
 

@@ -191,17 +191,18 @@ func TestCHK_SETUP_01_UninstallOrder(t *testing.T) {
 	}
 	steps := f.Steps
 	stop := indexOf(steps, "StopService|")
-	delRun := indexOf(steps, "DeleteTrayRun")
 	delSvc := indexOf(steps, "DeleteService|")
+	stopTray := indexOf(steps, "StopTray|")
+	delRun := indexOf(steps, "DeleteTrayRun")
 	delKey := indexOf(steps, "DeleteUninstallKey")
-	if stop < 0 || delRun < 0 || delSvc < 0 || delKey < 0 {
+	if stop < 0 || delSvc < 0 || stopTray < 0 || delRun < 0 || delKey < 0 {
 		t.Fatalf("missing steps: %v", steps)
 	}
-	if !(stop < delRun && delSvc < delRun) {
-		// plan: stop service BEFORE deleting Run
-		if stop > delRun {
-			t.Errorf("service must be stopped before Run delete: stop=%d run=%d\n%v", stop, delRun, steps)
-		}
+	if stop > delRun || delSvc > delRun {
+		t.Errorf("service stop/delete before Run delete: stop=%d svc=%d run=%d\n%v", stop, delSvc, delRun, steps)
+	}
+	if stopTray > delRun {
+		t.Errorf("StopTray before Run delete: tray=%d run=%d", stopTray, delRun)
 	}
 	if delKey < delRun || delKey < delSvc {
 		t.Errorf("Uninstall key must be last: key=%d run=%d svc=%d", delKey, delRun, delSvc)

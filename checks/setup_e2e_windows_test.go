@@ -3,12 +3,13 @@
 package checks_test
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
@@ -37,9 +38,7 @@ func TestCHK_SVC_01_RealSCM(t *testing.T) {
 	sys := wininstall.NewSystem()
 	_ = sys.StopService(name, 30*time.Second)
 	_ = sys.DeleteService(name)
-	img := wininstall.ServiceImagePath(exe) + " -config " + tmp
-	// CreateService ImagePath with args — quote exe only
-	img = `"` + exe + `" -config "` + tmp + `"`
+	img := `"` + exe + `" -config "` + tmp + `"`
 	spec := wininstall.ServiceSpec{
 		Name: name, DisplayName: "ExchangeChecker SVC E2E", ImagePath: img,
 		Description: "e2e", AutoStart: false,
@@ -56,7 +55,6 @@ func TestCHK_SVC_01_RealSCM(t *testing.T) {
 	if err := sys.StartService(name, 60*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	// pipe hello
 	deadline := time.Now().Add(30 * time.Second)
 	var last error
 	for time.Now().Before(deadline) {
@@ -81,7 +79,6 @@ func TestCHK_SVC_01_RealSCM(t *testing.T) {
 }
 
 // TestCHK_SETUP_12_E2E — gated EC_SETUP_E2E=1; needs EC_SETUP_EXE.
-// Basic 7b: silent install → checks → uninstall (keep data) → purge.
 func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if os.Getenv("EC_SETUP_E2E") != "1" {
 		t.Skip("set EC_SETUP_E2E=1")
@@ -95,81 +92,173 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 	dir := filepath.Join(os.TempDir(), "ExchangeCheckerE2E")
 	_ = os.RemoveAll(dir)
-	// seed settings so HKLM Run is not written (CHK-CFG-04 / E2E exception)
 	data := config.DefaultDir()
 	_ = os.MkdirAll(data, 0o755)
-	if err := os.WriteFile(filepath.Join(data, "settings.json"), []byte(`{"trayAutostart":false,"language":"en"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	log1 := filepath.Join(os.TempDir(), "ec-setup-e2e-install.log")
-	run := func(args ...string) (int, error) {
-		cmd := exec.Command(setup, args...)
+	// Fresh install should write HKLM Run (default trayAutostart=true).
+	// Remove any pre-seeded settings so defaults apply.
+	_ = os.Remove(filepath.Join(data, "settings.json"))
+
+	run := func(exe string, args ...string) int {
+		t.Helper()
+		cmd := exec.Command(exe, args...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		err := cmd.Run()
 		if err == nil {
-			return 0, nil
+			return 0
 		}
 		if ee, ok := err.(*exec.ExitError); ok {
-			return ee.ExitCode(), nil
+			return ee.ExitCode()
 		}
-		return -1, err
+		t.Fatalf("run %s: %v", exe, err)
+		return -1
 	}
-	code, err := run("/S", "/DIR="+dir, "/LOG="+log1, "/LANG=en")
-	if err != nil {
-		t.Fatal(err)
-	}
+
+	log1 := filepath.Join(os.TempDir(), "ec-setup-e2e-install.log")
+	code := run(setup, "/S", "/DIR="+dir, "/LOG="+log1, "/LANG=en")
 	if code != 0 {
 		t.Fatalf("install exit %d; log %s", code, log1)
 	}
+	uninst := filepath.Join(dir, config.UninstallExeName)
 	t.Cleanup(func() {
-		_, _ = run("/uninstall", "/S", "/PURGEDATA", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-cleanup.log"))
+		if _, err := os.Stat(uninst); err == nil {
+			_ = run(uninst, "/uninstall", "/S", "/PURGEDATA", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-cleanup.log"))
+		} else {
+			_ = run(setup, "/uninstall", "/S", "/PURGEDATA")
+		}
 	})
+
 	for _, name := range []string{config.ServiceExeName, config.TrayExeName, config.UninstallExeName} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatalf("missing %s: %v", name, err)
 		}
 	}
+
 	sys := wininstall.NewSystem()
 	info, err := sys.QueryService(model.ServiceName)
 	if err != nil || !info.Exists || !info.Running {
 		t.Fatalf("service: %+v err=%v", info, err)
 	}
+	if !info.AutoStart {
+		t.Fatal("service start type is not AUTO")
+	}
+
+	// delayed auto-start, failure actions, service DACL
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, model.ServiceName, winapi.ServiceQueryConfig|winapi.ServiceQueryStatus|winapi.ServiceReadControl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	delBuf, err := winapi.QueryServiceConfig2Bytes(svc, winapi.ServiceConfigDelayedAutoStart)
+	if err != nil {
+		t.Fatalf("delayed: %v", err)
+	}
+	if len(delBuf) < 4 || delBuf[0] == 0 {
+		t.Fatalf("delayed auto-start not set: %v", delBuf)
+	}
+	faBuf, err := winapi.QueryServiceConfig2Bytes(svc, winapi.ServiceConfigFailureActions)
+	if err != nil || len(faBuf) < int(unsafe.Sizeof(winapi.ServiceFailureActionsW{})) {
+		t.Fatalf("failure actions: %v len=%d", err, len(faBuf))
+	}
+	// ResetPeriod at offset 0 (uint32) = 86400
+	reset := uint32(faBuf[0]) | uint32(faBuf[1])<<8 | uint32(faBuf[2])<<16 | uint32(faBuf[3])<<24
+	if reset != 86400 {
+		t.Fatalf("failure ResetPeriod=%d want 86400", reset)
+	}
+	sddl, err := winapi.ServiceDACL(svc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("service SDDL: %s", sddl)
+	if !strings.Contains(sddl, "AU") && !strings.Contains(sddl, "S-1-5-11") {
+		t.Fatalf("service DACL missing Authenticated Users: %s", sddl)
+	}
+
+	// folder ACLs
+	dataDACL, err := winapi.FileDACL(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("data DACL: %s", dataDACL)
+	if strings.Contains(dataDACL, "BU") || strings.Contains(dataDACL, "S-1-5-32-545") {
+		t.Fatalf("Users on ProgramData: %s", dataDACL)
+	}
+	instDACL, err := winapi.FileDACL(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("install DACL: %s", instDACL)
+
+	// Uninstall key: no Publisher; QuietUninstallString present
+	view := uint32(winapi.KEY_WOW64_64KEY)
 	inst, err := sys.ReadInstalled()
 	if err != nil || !inst.Present {
 		t.Fatalf("uninstall key: %+v %v", inst, err)
 	}
-	ok, err := winapi.RegKeyExistsView(winapi.HKEY_LOCAL_MACHINE, wininstall.EventLogKeyPath, winapi.KEY_WOW64_64KEY)
-	if err != nil || !ok {
-		t.Fatalf("event log key: %v %v", ok, err)
-	}
-	// uninstall keep data
-	code, err = run("/uninstall", "/S", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-uninst.log"))
+	pub, pubOK, err := winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, wininstall.UninstallKeyPath, "Publisher", view)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if pubOK && pub != "" {
+		t.Fatalf("Publisher must be absent, got %q", pub)
+	}
+	quiet, ok, err := winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, wininstall.UninstallKeyPath, "QuietUninstallString", view)
+	if err != nil || !ok || !strings.Contains(quiet, "/uninstall /S") {
+		t.Fatalf("QuietUninstallString=%q ok=%v err=%v", quiet, ok, err)
+	}
+
+	// Event Log source
+	ok, err = winapi.RegKeyExistsView(winapi.HKEY_LOCAL_MACHINE, wininstall.EventLogKeyPath, view)
+	if err != nil || !ok {
+		t.Fatalf("event log key: %v %v", ok, err)
+	}
+
+	// HKLM Run present (default trayAutostart=true)
+	runVal, runOK, err := winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRun, _ := config.TrayRunCommand(filepath.Join(dir, config.ServiceExeName))
+	if !runOK || runVal != wantRun {
+		t.Fatalf("HKLM Run=%q ok=%v want %q", runVal, runOK, wantRun)
+	}
+
+	// uninstall via installed ExchangeCheckerUninstall.exe (keep data)
+	code = run(uninst, "/uninstall", "/S", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-uninst.log"))
 	if code != 0 && code != wininstall.ExitRebootRequired {
 		t.Fatalf("uninstall exit %d", code)
 	}
 	info, _ = sys.QueryService(model.ServiceName)
 	if info.Exists {
-		t.Fatal("service still exists")
+		t.Fatal("service still exists after uninstall")
 	}
 	if _, err := os.Stat(data); err != nil {
-		t.Fatalf("data should remain: %v", err)
+		t.Fatalf("data should remain without /PURGEDATA: %v", err)
 	}
-	// reinstall then purge
-	code, err = run("/S", "/DIR="+dir, "/NOSTART", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-reinst.log"))
-	if err != nil || (code != 0 && code != wininstall.ExitRebootRequired) {
-		t.Fatalf("reinstall %d %v", code, err)
+	runVal, runOK, err = winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, view)
+	if err != nil {
+		t.Fatal(err)
 	}
-	code, err = run("/uninstall", "/S", "/PURGEDATA", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-purge.log"))
-	if err != nil || (code != 0 && code != wininstall.ExitRebootRequired) {
-		t.Fatalf("purge %d %v", code, err)
+	if runOK {
+		t.Fatalf("HKLM Run still present after uninstall: %q", runVal)
+	}
+
+	// reinstall then purge via uninstall.exe
+	code = run(setup, "/S", "/DIR="+dir, "/NOSTART", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-reinst.log"))
+	if code != 0 && code != wininstall.ExitRebootRequired {
+		t.Fatalf("reinstall %d", code)
+	}
+	uninst = filepath.Join(dir, config.UninstallExeName)
+	code = run(uninst, "/uninstall", "/S", "/PURGEDATA", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-purge.log"))
+	if code != 0 && code != wininstall.ExitRebootRequired {
+		t.Fatalf("purge uninstall %d", code)
 	}
 	if _, err := os.Stat(data); err == nil {
-		// may remain if locked; warn
-		t.Logf("WARNING: data dir still present after purge: %s", data)
+		t.Errorf("data dir still present after /PURGEDATA: %s", data)
 	}
-	fmt.Println("CHK-SETUP-12 basic E2E ok")
 }

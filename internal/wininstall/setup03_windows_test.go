@@ -5,12 +5,10 @@ package wininstall
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -20,7 +18,16 @@ import (
 // TestCHK_SETUP_03_RealSCM — create a test service (not started), verify
 // config / failure actions / delayed / DACL; deny-only BA can query status
 // but not start; DeleteService in cleanup.
+
+func requireSetupE2E(t *testing.T) {
+	t.Helper()
+	if os.Getenv("EC_SETUP_E2E") != "1" {
+		t.Skip("set EC_SETUP_E2E=1 (HKLM / SCM; one-shot windows runner only)")
+	}
+}
+
 func TestCHK_SETUP_03_RealSCM(t *testing.T) {
+	requireSetupE2E(t)
 	if admin, _ := winapi.ProcessIsAdmin(); !admin {
 		t.Skip("admin required")
 	}
@@ -108,7 +115,11 @@ func TestCHK_SETUP_03_RealSCM(t *testing.T) {
 			t.Fatalf("DACL missing Authenticated Users: %s", sddl)
 		}
 	}
-	// deny-only BA: QUERY_STATUS ok, START denied
+	// Deny-only BA (CreateRestrictedToken with Administrators as a deny-only
+	// group) approximates a UAC-filtered token: the process is not a member of
+	// BA for access checks. The service DACL must still allow QUERY_STATUS
+	// (IU/AU) while denying START — so a non-elevated caller can read status
+	// (tray G7) but cannot start/stop the service.
 	tok, err := winapi.DenyOnlyToken(winapi.SIDAdministrators)
 	if err != nil {
 		t.Fatal(err)
@@ -138,6 +149,7 @@ func TestCHK_SETUP_03_RealSCM(t *testing.T) {
 
 // TestCHK_SETUP_05_ACLWindows — DACL on temp dirs; secrets.dpapi stays protected.
 func TestCHK_SETUP_05_ACLWindows(t *testing.T) {
+	requireSetupE2E(t)
 	if admin, _ := winapi.ProcessIsAdmin(); !admin {
 		t.Skip("admin required")
 	}
@@ -197,6 +209,7 @@ func TestCHK_SETUP_05_ACLWindows(t *testing.T) {
 
 // TestCHK_SETUP_04_EventSourceWindows — registry source + FormatMessage via file.
 func TestCHK_SETUP_04_EventSourceWindows(t *testing.T) {
+	requireSetupE2E(t)
 	if admin, _ := winapi.ProcessIsAdmin(); !admin {
 		t.Skip("admin required")
 	}
@@ -234,22 +247,50 @@ func TestCHK_SETUP_04_EventSourceWindows(t *testing.T) {
 	}
 }
 
-// TestCHK_SETUP_07_RenameRunning — MoveFileEx rename of a temp file (stand-in for self-delete).
+// TestCHK_SETUP_07_RenameRunning — MoveFileEx renames a *running* image
+// (copy of this test binary started with os.StartProcess; no os/exec).
 func TestCHK_SETUP_07_RenameRunning(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
-	a := filepath.Join(dir, "a.exe")
-	b := filepath.Join(dir, "b.exe")
-	if err := os.WriteFile(a, []byte("xx"), 0o644); err != nil {
+	running := filepath.Join(dir, "running.exe")
+	data, err := os.ReadFile(self)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := winapi.MoveFileEx(a, b, 0); err != nil {
+	if err := os.WriteFile(running, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(a); !errors.Is(err, os.ErrNotExist) && !os.IsNotExist(err) {
-		t.Fatalf("a still exists: %v", err)
+	attr := &os.ProcAttr{
+		Dir:   dir,
+		Files: []*os.File{nil, nil, nil},
+		Env:   append(os.Environ(), "EC_RENAME_CHILD=1"),
 	}
-	if _, err := os.Stat(b); err != nil {
+	proc, err := os.StartProcess(running, []string{running, "-test.run=TestCHK_SETUP_07_renameChildPark", "-test.count=1"}, attr)
+	if err != nil {
 		t.Fatal(err)
 	}
-	_ = syscall.Errno(0)
+	defer func() { _ = proc.Kill(); _, _ = proc.Wait() }()
+	time.Sleep(500 * time.Millisecond)
+	renamed := filepath.Join(dir, "renamed.exe")
+	if err := winapi.MoveFileEx(running, renamed, 0); err != nil {
+		t.Fatalf("rename running image: %v", err)
+	}
+	if _, err := os.Stat(running); !os.IsNotExist(err) {
+		t.Fatalf("old path still exists: %v", err)
+	}
+	if _, err := os.Stat(renamed); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCHK_SETUP_07_renameChildPark parks when started as the rename-child
+// (selected via -test.run). Not a check ID.
+func TestCHK_SETUP_07_renameChildPark(t *testing.T) {
+	if os.Getenv("EC_RENAME_CHILD") != "1" {
+		t.Skip("child park")
+	}
+	time.Sleep(60 * time.Second)
 }

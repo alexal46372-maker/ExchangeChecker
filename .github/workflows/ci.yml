@@ -120,11 +120,12 @@ jobs:
         run: |
           export EC_SVC_EXE="$RUNNER_TEMP/release/ExchangeCheckerSvc.exe"
           go test ./checks -run TestCHK_SVC_01_RealSCM -count=1 -v
-      - name: setup silent E2E (CHK-SETUP-12 basic)
+      - name: setup silent E2E (CHK-SETUP-12 basic + CHK-SETUP-03/04/05 windows)
         env:
           EC_SETUP_E2E: "1"
         run: |
           export EC_SETUP_EXE="$RUNNER_TEMP/release/ExchangeCheckerSetup.exe"
+          go test ./internal/wininstall -run 'TestCHK_SETUP_03_RealSCM|TestCHK_SETUP_04_EventSourceWindows|TestCHK_SETUP_05_ACLWindows' -count=1 -v
           go test ./checks -run TestCHK_SETUP_12_E2E -count=1 -v
 
   linux:

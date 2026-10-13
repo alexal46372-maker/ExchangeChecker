@@ -157,6 +157,7 @@ var winAPIMinVersion = map[string]float64{
 	"TerminateProcess": 5.0, "QueryFullProcessImageNameW": 6.0,
 	"SendMessageTimeoutW": 5.0,
 	"OpenProcessToken":    5.0, "LookupPrivilegeValueW": 5.0, "AdjustTokenPrivileges": 5.0,
+	"SetLastError": 5.0, "GetLastError": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

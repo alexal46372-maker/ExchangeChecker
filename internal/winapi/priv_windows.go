@@ -12,12 +12,15 @@ var (
 	procLookupPrivilegeValueW = modadvapi32.NewProc("LookupPrivilegeValueW")
 	procAdjustTokenPrivileges = modadvapi32.NewProc("AdjustTokenPrivileges")
 	procOpenProcessToken      = modadvapi32.NewProc("OpenProcessToken")
+	procSetLastError          = modkernel32.NewProc("SetLastError")
+	procGetLastError          = modkernel32.NewProc("GetLastError")
 )
 
 const (
 	tokenAdjustPrivileges = 0x0020
 	tokenQuery            = 0x0008
 	sePrivilegeEnabled    = 0x00000002
+	errNotAllAssigned     = syscall.Errno(1300) // ERROR_NOT_ALL_ASSIGNED
 )
 
 type luid struct {
@@ -36,9 +39,25 @@ type tokenPrivileges1 struct {
 	Privileges     luidAndAttributes
 }
 
+func setLastError(code uint32) {
+	callProc(procSetLastError, uintptr(code))
+}
+
+// lastError is the thread's GetLastError after a WinAPI call (via callProc /
+// LazyProc.Call). Prefer the error returned by callProc; this is a fallback
+// when that value was cleared.
+func lastError() syscall.Errno {
+	r, _, _ := callProc(procGetLastError)
+	return syscall.Errno(r)
+}
+
 // EnablePrivileges enables the named privileges on the current process token
 // (AdjustTokenPrivileges). Used before SetNamedSecurityInfo OWNER changes
 // (SeTakeOwnershipPrivilege, SeRestorePrivilege).
+//
+// After a successful AdjustTokenPrivileges, ERROR_NOT_ALL_ASSIGNED (1300)
+// means one or more privileges were not held — treated as failure. The
+// caller (TakeOwnershipTree) may still try SetFileOwner without them.
 func EnablePrivileges(names ...string) error {
 	var tok syscall.Token
 	proc, _ := syscall.GetCurrentProcess()
@@ -54,11 +73,21 @@ func EnablePrivileges(names ...string) error {
 			return fmt.Errorf("LookupPrivilegeValue %s: %w", name, lastErr(e))
 		}
 		tp := tokenPrivileges1{PrivilegeCount: 1, Privileges: luidAndAttributes{Luid: id, Attributes: sePrivilegeEnabled}}
+		// MSDN: SetLastError(0) before AdjustTokenPrivileges so a true return
+		// with ERROR_NOT_ALL_ASSIGNED is distinguishable from a clean success.
+		setLastError(0)
 		r, _, e = callProc(procAdjustTokenPrivileges, uintptr(tok), 0, uintptr(unsafe.Pointer(&tp)), 0, 0, 0)
-		// AdjustTokenPrivileges returns non-zero on success even when some
-		// privileges were not assigned; GetLastError may be ERROR_NOT_ALL_ASSIGNED (1300).
 		if r == 0 {
 			return fmt.Errorf("AdjustTokenPrivileges %s: %w", name, lastErr(e))
+		}
+		// callProc's third return is GetLastError from LazyProc.Call; also
+		// re-read GetLastError in case the Errno was zeroed.
+		en, _ := e.(syscall.Errno)
+		if en == 0 {
+			en = lastError()
+		}
+		if en == errNotAllAssigned {
+			return fmt.Errorf("AdjustTokenPrivileges %s: ERROR_NOT_ALL_ASSIGNED (privilege not held)", name)
 		}
 	}
 	return nil

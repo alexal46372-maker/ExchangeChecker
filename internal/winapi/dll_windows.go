@@ -49,6 +49,9 @@ func localFree(p unsafe.Pointer) {
 
 // callProc resolves p (LazyProc.Find) and calls it. A missing DLL or
 // export returns its error instead of panicking in Call (CHK-TRAY-10).
+// The third return is the thread's GetLastError after the call
+// (syscall.Errno, including 0 on success and ERROR_NOT_ALL_ASSIGNED for
+// AdjustTokenPrivileges) — the same value LazyProc.Call exposes.
 //
 // uintptrescapes (like syscall.LazyProc.Call, also variadic): pointers
 // converted to uintptr in the argument list of a callProc call are moved

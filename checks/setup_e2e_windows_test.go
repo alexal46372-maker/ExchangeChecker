@@ -256,13 +256,18 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 			if err != nil || fi.IsDir() {
 				return err
 			}
+			rel, _ := filepath.Rel(data, path)
+			rel = filepath.ToSlash(rel)
+			// logs grow while the service runs; config/secrets must stay put
+			if strings.HasPrefix(rel, "logs/") || strings.EqualFold(filepath.Ext(rel), ".log") {
+				return nil
+			}
 			b, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("read %s: %v", path, err)
 			}
 			sum := sha256.Sum256(b)
-			rel, _ := filepath.Rel(data, path)
-			out[filepath.ToSlash(rel)] = hex.EncodeToString(sum[:])
+			out[rel] = hex.EncodeToString(sum[:])
 			return nil
 		})
 		return out

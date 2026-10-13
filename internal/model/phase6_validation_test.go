@@ -17,7 +17,8 @@ func TestCHK_CFG_03_FieldErrors(t *testing.T) {
 		mut                    func(*Profile)
 	}{
 		{"empty server", "server", ValRequired, `profile "p1": server is required`, nil, func(p *Profile) { p.Server = " " }},
-		{"empty host", "server", ValServerFormat, "host is empty", []string{"empty_host"}, func(p *Profile) { p.Server = `\SQL` }},
+		// CHK-CFG-05: a leading backslash is a forbidden SQL Server address
+		{"empty host", "server", ValSQLServerForbidden, "not allowed (backslash)", []string{"backslash"}, func(p *Profile) { p.Server = `\SQL` }},
 		{"empty instance", "server", ValServerFormat, "instance is empty", []string{"empty_instance"}, func(p *Profile) { p.Server = `host\ ` }},
 		{"second backslash", "server", ValServerFormat, "more than one backslash", []string{"backslash"}, func(p *Profile) { p.Server = `h\a\b` }},
 		{"port", "port", ValRange, `profile "p1": port 70000 out of range`, []string{"0", "65535", "70000"}, func(p *Profile) { p.Port = 70000 }},

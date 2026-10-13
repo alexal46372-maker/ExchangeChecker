@@ -220,7 +220,7 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 	bad = sqlProf6("s1")
 	bad.Server = `\INST`
 	_, err = m.SaveProfile(bad, "pw", false, e.rev(), "a")
-	if ie := wantCode(t, "empty host", err, model.ErrCodeInvalidRequest, model.MsgMonitorProfileInvalid); ie.Args[0] != "server" || ie.Args[1] != model.ValServerFormat {
+	if ie := wantCode(t, "empty host", err, model.ErrCodeInvalidRequest, model.MsgMonitorProfileInvalid); ie.Args[0] != "server" || ie.Args[1] != model.ValSQLServerForbidden { // CHK-CFG-05
 		t.Errorf("args %v", ie.Args)
 	}
 	for _, pw := range []string{"Pw-One!", "Pw-Two!", "Pw-3", "ignored-pw"} {

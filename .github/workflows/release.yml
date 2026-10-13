@@ -1,0 +1,72 @@
+# Release build (manual acceptance / delivery). Same build steps as the windows job of
+# ci.yml; the only difference: the delivery zip is uploaded as ONE artifact (7 days).
+# Version: tag vX.Y.Z -> X.Y.Z; workflow_dispatch -> 0.0.0-ci.<run number> (tools/mkzip).
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  windows:
+    name: windows release zip (CHK-DELIV-01)
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.20.14"
+          check-latest: false
+          cache: false
+      - name: go version (must be go1.20.14)
+        run: |
+          go version
+          go version | grep -q "go1.20.14 windows/amd64"
+      - name: release build + delivery zip (CHK-RES-01, CHK-VER-01, CHK-SETUP-02, CHK-DELIV-01)
+        run: |
+          go run ./tools/mkres -check
+          # tag vX.Y.Z -> X.Y.Z, otherwise 0.0.0-ci.<run number>
+          V="$(go run ./tools/mkzip version)"
+          echo "version $V"
+          out="$RUNNER_TEMP/release"
+          pay="cmd/exchsetup/payload"
+          mkdir -p "$out" "$pay"
+          go run ./tools/mkres -version "$V"
+          X="-X github.com/alexal46372-maker/ExchangeChecker/internal/version.Version=$V"
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$out/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerTray.exe" ./cmd/exchtray
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerUninstall.exe" ./cmd/exchsetup
+          # payload: deterministic gzip -9 (stdlib), decompressed by setup with compress/gzip
+          go run ./tools/mkzip gz -o "$pay" "$out/ExchangeCheckerSvc.exe" "$out/ExchangeCheckerTray.exe" "$out/ExchangeCheckerUninstall.exe"
+          GOOS=windows GOARCH=amd64 go vet -tags payload ./cmd/exchsetup
+          GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+          mkdir -p "$RUNNER_TEMP/zip1" "$RUNNER_TEMP/zip2"
+          Z="ExchangeChecker-$V-windows-amd64.zip"
+          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" "$out/ExchangeCheckerSetup.exe"
+          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" "$out/ExchangeCheckerSetup.exe"
+          ls -la "$out" "$RUNNER_TEMP/zip1"
+          EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" EC_BUILD_ZIP="$RUNNER_TEMP/zip1/$Z" EC_BUILD_ZIP2="$RUNNER_TEMP/zip2/$Z" \
+            go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built|CHK_DELIV_01_Zip' -count=1 -v
+          echo "zip sha256:"
+          (cd "$RUNNER_TEMP/zip1" && sha256sum "$Z")
+          echo "ZIP_PATH=$RUNNER_TEMP/zip1/$Z" >> "$GITHUB_ENV"
+          echo "ZIP_NAME=ExchangeChecker-$V-windows-amd64" >> "$GITHUB_ENV"
+      - name: upload delivery zip (the only artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_PATH }}
+          if-no-files-found: error
+          retention-days: 7

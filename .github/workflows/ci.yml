@@ -24,6 +24,9 @@ name: ci
 
 on:
   push:
+    # explicit: every branch and release tags v* (mkzip version: tag vX.Y.Z -> X.Y.Z)
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -36,6 +39,8 @@ jobs:
   windows:
     name: windows / go1.20.14 (CHK-CI-01)
     runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
     defaults:
       run:
         shell: bash
@@ -118,6 +123,9 @@ jobs:
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" "$out/ExchangeCheckerSetup.exe"
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" "$out/ExchangeCheckerSetup.exe"
           ls -la "$out" "$pay" "$RUNNER_TEMP/zip1"
+          # cross-OS reproducibility report (release zip is taken from the windows job)
+          go env CGO_ENABLED GOFLAGS
+          (cd "$out" && sha256sum *.exe) ; (cd "$pay" && sha256sum *.gz) ; sha256sum "$RUNNER_TEMP/zip1/$Z"
           EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" EC_BUILD_ZIP="$RUNNER_TEMP/zip1/$Z" EC_BUILD_ZIP2="$RUNNER_TEMP/zip2/$Z" \
             go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built|CHK_DELIV_01_Zip' -count=1 -v
           go run ./tools/mkres
@@ -159,6 +167,8 @@ jobs:
   linux:
     name: linux / go1.20.14 vet + pure-Go tests + SQL Server integration
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
     services:
       mssql:
         image: mcr.microsoft.com/mssql/server:2019-latest
@@ -232,6 +242,9 @@ jobs:
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" "$out/ExchangeCheckerSetup.exe"
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" "$out/ExchangeCheckerSetup.exe"
           ls -la "$out" "$pay" "$RUNNER_TEMP/zip1"
+          # cross-OS reproducibility report (release zip is taken from the windows job)
+          go env CGO_ENABLED GOFLAGS
+          (cd "$out" && sha256sum *.exe) ; (cd "$pay" && sha256sum *.gz) ; sha256sum "$RUNNER_TEMP/zip1/$Z"
           EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" EC_BUILD_ZIP="$RUNNER_TEMP/zip1/$Z" EC_BUILD_ZIP2="$RUNNER_TEMP/zip2/$Z" \
             go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built|CHK_DELIV_01_Zip' -count=1 -v
           go run ./tools/mkres

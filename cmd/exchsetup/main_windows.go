@@ -104,11 +104,17 @@ func run(args []string) int {
 		defaultDir = filepath.Join(pf, "ExchangeChecker")
 	}
 	install := func(o wininstall.Options, lg wininstall.Logger) wininstall.Result {
+		files, perr := payloadFiles()
+		if perr != nil {
+			// keep the cause; Install then refuses with ErrNoPayload
+			logf("ERROR: payload: %v", perr)
+			lg.Printf("payload: %v", perr)
+		}
 		res := wininstall.Install(sys, wininstall.InstallConfig{
 			Opts:       o,
 			DefaultDir: defaultDir,
 			DataDir:    config.DefaultDir(),
-			Files:      payloadFiles(),
+			Files:      files,
 			Version:    version.Version,
 			Lang:       lang,
 			Now:        time.Now(),

@@ -152,7 +152,20 @@ func TestCHK_SETUP_10_UninstallConfirm(t *testing.T) {
 	}
 	run()
 	h = waitWindow(t, UninstallClass)
-	winapi.SendMessage(winapi.GetDlgItem(h, IDPurge), BM_SETCHECK, 1, 0)
+	// the class window can be found before its children exist (WM_CREATE)
+	var purge uintptr
+	for i := 0; i < 250 && purge == 0; i++ {
+		if purge = winapi.GetDlgItem(h, IDPurge); purge == 0 {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if purge == 0 {
+		t.Fatal("purge checkbox not created")
+	}
+	winapi.SendMessage(purge, BM_SETCHECK, 1, 0)
+	if !isChecked(h, IDPurge) {
+		t.Fatal("purge checkbox did not take the check")
+	}
 	click(h, IDUninstall)
 	if r := <-done; !r.ok || !r.purge {
 		t.Fatalf("uninstall+purge: %+v", r)

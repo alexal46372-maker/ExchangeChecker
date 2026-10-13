@@ -85,6 +85,7 @@ func startP9App(t *testing.T, svc *p9Service) (*App, *ipc.Server) {
 	t.Helper()
 	l := ipc.NewMemListener()
 	srv := ipc.NewServer(svc, nil)
+	srv.History = svc // history capability (EC Service sets it in cmd/exchsvc)
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }

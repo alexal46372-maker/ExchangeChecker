@@ -419,6 +419,7 @@ const (
 	KeyHistLoaded         = "hist.loaded"
 	KeyHistEmpty          = "hist.empty"
 	KeyHistExporting      = "hist.exporting"
+	KeyHistPartial        = "hist.partial"
 	KeyHistFailed         = "hist.failed"
 	KeyHistAxisMin        = "hist.axis_min"
 	KeyHistColTime        = "hist.col_time"
@@ -436,6 +437,10 @@ const (
 	KeyValReasonAdmin     = "val.reason_admin"
 	KeyValReasonUnc       = "val.reason_unc"
 	KeyValReasonBackslash = "val.reason_backslash"
+	KeyValReasonTcp       = "val.reason_tcp"
+	KeyValReasonSm        = "val.reason_sm"
+	KeyValReasonVia       = "val.reason_via"
+	KeyValReasonSlash     = "val.reason_slash"
 	KeyValReasonPipe      = "val.reason_pipe"
 )
 
@@ -463,6 +468,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyHistLoaded:            {"Интервалов: %d, событий: %d", "Intervals: %d, events: %d"},
 	KeyHistEmpty:             {"Нет данных за период", "No data for the period"},
 	KeyHistExporting:         {"Выгрузка… записей: %d", "Exporting… records: %d"},
+	KeyHistPartial:           {"Показаны не все записи: достигнут предел выгрузки", "Not all records are shown: the export limit was reached"},
 	KeyHistFailed:            {"Не удалось получить историю", "Could not get the history"},
 	KeyHistAxisMin:           {"мин", "min"},
 	KeyHistColTime:           {"Время", "Time"},
@@ -480,6 +486,10 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyValReasonAdmin:        {"Причина: «admin:» — выделенное подключение администратора (DAC).", "Reason: \"admin:\" is the dedicated admin connection (DAC)."},
 	KeyValReasonUnc:          {"Причина: адрес вида «\\\\компьютер» — UNC-путь.", "Reason: an address like \"\\\\computer\" is a UNC path."},
 	KeyValReasonBackslash:    {"Причина: адрес начинается с обратной косой черты.", "Reason: the address starts with a backslash."},
+	KeyValReasonTcp:          {"Причина: префикс протокола «tcp:» не нужен — укажите «хост» или «хост\\экземпляр», порт — в поле «Порт».", "Reason: the \"tcp:\" protocol prefix is not needed — enter \"host\" or \"host\\instance\", the port goes into the Port field."},
+	KeyValReasonSm:           {"Причина: «sm:» — общая память (только локальный сервер).", "Reason: \"sm:\" is shared memory (local server only)."},
+	KeyValReasonVia:          {"Причина: «via:» — устаревший протокол VIA.", "Reason: \"via:\" is the obsolete VIA protocol."},
+	KeyValReasonSlash:        {"Причина: адрес начинается с косой черты «/».", "Reason: the address starts with a slash \"/\"."},
 	KeyValReasonPipe:         {"Причина: адрес содержит путь канала «\\pipe\\».", "Reason: the address contains a pipe path \"\\pipe\\\"."},
 	KeyBalloonOverdueTitle:   {"Просрочка обмена", "Exchange overdue"},
 	KeyBalloonRecoveredTitle: {"Обмен восстановлен", "Exchange recovered"},

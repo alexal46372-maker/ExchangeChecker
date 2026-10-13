@@ -380,6 +380,7 @@ func (e *Editor) validationText(args []string) string {
 var forbiddenReasonKeys = map[string]string{
 	"np": i18n.KeyValReasonNp, "lpc": i18n.KeyValReasonLpc, "admin": i18n.KeyValReasonAdmin,
 	"unc": i18n.KeyValReasonUnc, "backslash": i18n.KeyValReasonBackslash, "pipe": i18n.KeyValReasonPipe,
+	"tcp": i18n.KeyValReasonTcp, "sm": i18n.KeyValReasonSm, "via": i18n.KeyValReasonVia, "slash": i18n.KeyValReasonSlash,
 }
 
 func (e *Editor) fieldProblem(fe *model.FieldError) *Problem {

@@ -45,8 +45,32 @@ func TestCHK_TRAY_28_Rotation(t *testing.T) {
 			t.Errorf("leaked %q in %q", bad, s)
 		}
 	}
-	if !strings.Contains(s, "Password=***") || !strings.Contains(s, "login=***") {
+	if !strings.Contains(s, "Password=***") || !strings.Contains(s, "User ID=***") {
 		t.Errorf("scrub %q", s)
+	}
+	for in, bad := range map[string][]string{
+		"dial sqlserver://sa:Pa ss@srv/inst?x=1":  {"sa:", "Pa ss"},
+		"http://user:p%40w@host:1433/db":          {"user:", "p%40w"},
+		`Password="a b; c" next`:                  {"a b", "c\""},
+		"password = top secret value; Server=srv": {"top", "secret", "value"},
+		"Пароль: очень секретно, база ERP":        {"очень", "секретно"},
+		"пароль=qwe ty":                           {"qwe", "ty"},
+		"Логин: Иван Петров; ok":                  {"Иван", "Петров"},
+		"ПОЛЬЗОВАТЕЛЬ=admin":                      {"admin"},
+		"pwd='x y z'":                             {"x y z"},
+	} {
+		got := Scrub(in)
+		for _, b := range bad {
+			if strings.Contains(got, b) {
+				t.Errorf("Scrub(%q) = %q leaks %q", in, got, b)
+			}
+		}
+	}
+	if got := Scrub("Server=srv; Database=ERP; base=1"); got != "Server=srv; Database=ERP; base=1" {
+		t.Errorf("non-credentials changed: %q", got)
+	}
+	if got := Scrub("Пароль: x, база ERP"); !strings.HasSuffix(got, ", база ERP") || !strings.HasPrefix(got, "Пароль: ***") {
+		t.Errorf("segment end: %q", got)
 	}
 	var nl *Logger
 	if nl.Log("x") != nil || (&Logger{}).Log("x") != nil {

@@ -78,8 +78,8 @@ func (a *App) catchUp(req model.IPCRequest, page int) {
 			fresh, more := a.tracker.Apply(m)
 			if m.ResetRequired && hadRun {
 				// service restarted or the position left the ring: the
-				// active alerts come from get_status, nothing is replayed
-				a.debounce.Reset()
+				// active alerts come from get_status, nothing is replayed;
+				// held recoveries stay pending (review 9b)
 				a.logf("tray: events_since: reset required (run %s)", m.RunID)
 			}
 			a.caughtUp = append(a.caughtUp, fresh...)

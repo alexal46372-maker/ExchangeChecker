@@ -369,8 +369,9 @@ func headersOf(keys []string, lang string) []string {
 	return h
 }
 
-// ExportHistoryCSV renders the records (same rules as ExportCSV).
-func ExportHistoryCSV(recs []model.HistoryRecord, lang string) []byte {
+// ExportHistoryCSV renders the records (same rules as ExportCSV); partial
+// (a record / page limit was hit) adds a last line «показаны не все записи».
+func ExportHistoryCSV(recs []model.HistoryRecord, lang string, partial bool) []byte {
 	var b bytes.Buffer
 	b.WriteString("\uFEFF")
 	line := func(cells []string) {
@@ -386,18 +387,25 @@ func ExportHistoryCSV(recs []model.HistoryRecord, lang string) []byte {
 	for _, r := range recs {
 		line(HistoryCells(r, lang))
 	}
+	if partial {
+		line([]string{i18n.T(i18n.KeyHistPartial, lang)})
+	}
 	return b.Bytes()
 }
 
 // ExportHistoryHTML renders the records as a page; title names the point.
-func ExportHistoryHTML(recs []model.HistoryRecord, title string, from, to time.Time, lang string) []byte {
+func ExportHistoryHTML(recs []model.HistoryRecord, title string, from, to time.Time, lang string, partial bool) []byte {
 	var b bytes.Buffer
 	e := html.EscapeString
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + e(lang) + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
 	b.WriteString("<style>body{font-family:Segoe UI,Arial,sans-serif;font-size:13px}table{border-collapse:collapse}" +
 		"td,th{border:1px solid #999;padding:3px 6px;text-align:left}th{background:#eee}</style></head><body>\n")
 	b.WriteString("<h1>" + e(title) + "</h1>\n<p>" + e(from.In(model.DBZone).Format("02.01.2006 15:04")) + " — " +
-		e(to.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n<table>\n<tr>")
+		e(to.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n")
+	if partial {
+		b.WriteString("<p><strong>" + e(i18n.T(i18n.KeyHistPartial, lang)) + "</strong></p>\n")
+	}
+	b.WriteString("<table>\n<tr>")
 	for _, h := range headersOf(HistoryColumns, lang) {
 		b.WriteString("<th>" + e(h) + "</th>")
 	}

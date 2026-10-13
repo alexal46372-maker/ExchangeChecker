@@ -103,13 +103,14 @@ func (c *CheckState) Reply(r CheckReply) {
 }
 
 // Status applies a snapshot (or a tick with snap nil); done = the result
-// of the check is in this snapshot (lastCheckSeq >= checkSeq and a newer
-// seq), timedOut = CheckWait passed.
+// of the check is in this snapshot (lastCheckSeq >= checkSeq only: this
+// is normative; checkSeq is a counter of its own, unrelated to seq),
+// timedOut = CheckWait passed (a coalesced check may come with a later poll).
 func (c *CheckState) Status(snap *model.StatusSnapshot, now time.Time) (done, timedOut bool) {
 	if !c.Busy {
 		return false, false
 	}
-	if c.WaitSeq && snap != nil && snap.LastCheckSeq >= c.Seq && snap.Seq > c.Seq {
+	if c.WaitSeq && snap != nil && snap.LastCheckSeq >= c.Seq {
 		c.Busy = false
 		return true, false
 	}
@@ -304,7 +305,3 @@ func (t *EventTracker) SetRun(run string) {
 		t.RunID = run
 	}
 }
-
-// Reset forgets the shown / pending state (service restart: the active
-// alerts come again from get_status).
-func (d *Debouncer) Reset() { d.pending, d.shown = nil, nil }

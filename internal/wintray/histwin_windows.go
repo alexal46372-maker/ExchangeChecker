@@ -17,15 +17,20 @@ import (
 
 // History window of one point (phase 9b, CHK-TRAY-26 / CHK-TRAY-27).
 const (
-	histClass      = "ExchangeCheckerTrayHistory"
-	chartClass     = "ExchangeCheckerTrayChart"
-	idHistDay      = 500
-	idHistWeek     = 501
-	idHistChart    = 502
-	idHistInfo     = 503
-	idHistCSV      = 510
-	idHistHTML     = 511
-	idHistClose    = winapi.IDCANCEL
+	histClass   = "ExchangeCheckerTrayHistory"
+	chartClass  = "ExchangeCheckerTrayChart"
+	idHistDay   = 500
+	idHistWeek  = 501
+	idHistChart = 502
+	idHistInfo  = 503
+	idHistCSV   = 510
+	idHistHTML  = 511
+	idHistClose = winapi.IDCANCEL
+)
+
+// History read limits (vars: tests lower them); hitting one marks the
+// window / export «показаны не все записи».
+var (
 	histMaxPages   = 400    // bucket / event / export pages per request
 	histMaxRecords = 250000 // export cap (31 days of 10 s polls fit)
 )
@@ -52,31 +57,37 @@ type histWindow struct {
 	savePath               func(k exportKind) (string, bool) // test hook
 	lastSaved              string
 	pages, events          int // loaded (tests)
+	partial, lastPartial   bool
 }
 
 // fetchHistory reads every page of req (cursor), calling onPage on the
-// loader goroutine; a history error reply returns errHistory.
-func fetchHistory(ctx context.Context, a *App, req model.IPCRequest, lang string, onPage func(*model.HistoryPage) bool) error {
-	for i := 0; i < histMaxPages; i++ {
+// loader goroutine (false = record limit reached: stop); a history error
+// reply returns errHistory. partial: histMaxPages or the record limit
+// stopped the reading before the last page.
+func fetchHistory(ctx context.Context, a *App, req model.IPCRequest, lang string, onPage func(*model.HistoryPage) bool) (partial bool, err error) {
+	for i := 0; ; i++ {
+		if i == histMaxPages {
+			return true, nil
+		}
 		m, err := a.session.DoCancel(ctx, req)
 		if err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return false, ctx.Err()
 			}
-			return errHistory{trayui.HistoryErrorText(m, err, lang)}
+			return false, errHistory{trayui.HistoryErrorText(m, err, lang)}
 		}
 		if m.Type == model.MsgError || m.History == nil {
-			return errHistory{trayui.HistoryErrorText(m, nil, lang)}
+			return false, errHistory{trayui.HistoryErrorText(m, nil, lang)}
 		}
+		more := m.History.HasMore && m.History.NextCursor != ""
 		if !onPage(m.History) {
-			return nil
+			return more, nil
 		}
-		if !m.History.HasMore || m.History.NextCursor == "" {
-			return nil
+		if !more {
+			return false, nil
 		}
 		req.Cursor = m.History.NextCursor
 	}
-	return nil
 }
 
 func newHistWindow(a *App, row trayui.StatusRow, show bool) (*histWindow, error) {
@@ -221,7 +232,7 @@ func (hw *histWindow) load() {
 				}
 			})
 		}
-		err := fetchHistory(ctx, a, trayui.HistoryRequest(row.ProfileID, row.PointKey, from, to, bucket,
+		partial, err := fetchHistory(ctx, a, trayui.HistoryRequest(row.ProfileID, row.PointKey, from, to, bucket,
 			[]string{model.HistoryKindPoint}, ""), lang, func(p *model.HistoryPage) bool {
 			bm.Add(p.Buckets)
 			pages++
@@ -229,13 +240,15 @@ func (hw *histWindow) load() {
 			return true
 		})
 		if err == nil {
-			err = fetchHistory(ctx, a, trayui.HistoryRequest(row.ProfileID, row.PointKey, from, to, "",
+			var p2 bool
+			p2, err = fetchHistory(ctx, a, trayui.HistoryRequest(row.ProfileID, row.PointKey, from, to, "",
 				[]string{model.HistoryKindEvent, model.HistoryKindRecovered}, ""), lang, func(p *model.HistoryPage) bool {
 				evs = append(evs, p.Records...)
 				pages++
 				progress()
 				return len(evs) < histMaxRecords
 			})
+			partial = partial || p2
 		}
 		buckets := bm.Buckets()
 		a.runOnUI(func() {
@@ -251,12 +264,15 @@ func (hw *histWindow) load() {
 				return
 			}
 			hw.model = trayui.BuildChart(from, to, buckets, evs, row.PointKey, row.WarnMin, row.ErrMin)
-			hw.gap, hw.loaded, hw.pages, hw.events = gap, true, pages, len(hw.model.Marks)
+			hw.gap, hw.loaded, hw.pages, hw.events, hw.partial = gap, true, pages, len(hw.model.Marks), partial
+			text := fmt.Sprintf(i18n.T(i18n.KeyHistLoaded, lang), len(hw.model.Points), len(hw.model.Marks))
 			if len(hw.model.Points) == 0 && len(hw.model.Marks) == 0 {
-				hw.setInfo(i18n.T(i18n.KeyHistEmpty, lang))
-			} else {
-				hw.setInfo(fmt.Sprintf(i18n.T(i18n.KeyHistLoaded, lang), len(hw.model.Points), len(hw.model.Marks)))
+				text = i18n.T(i18n.KeyHistEmpty, lang)
 			}
+			if partial {
+				text += " " + i18n.T(i18n.KeyHistPartial, lang)
+			}
+			hw.setInfo(text)
 			winapi.InvalidateRect(hw.chart, true)
 		})
 	}()
@@ -383,14 +399,17 @@ func (hw *histWindow) dialogPath(k exportKind) (string, bool) {
 // export reads every record page of the span (no buckets) and saves it
 // (CHK-TRAY-27); it runs beside the chart load and stops with the window.
 func (hw *histWindow) export(k exportKind) {
+	if hw.expCancel != nil {
+		return // one export at a time; no save dialog while one runs
+	}
 	p, ok := hw.savePath(k)
 	if !ok || p == "" {
 		return
 	}
 	a, lang, row := hw.app, hw.lang, hw.row
 	from, to, _ := trayui.SpanRange(hw.span, a.serverNow())
-	if hw.expCancel != nil {
-		return // one export at a time (the buttons are disabled meanwhile)
+	if hw.expCancel != nil || !hw.alive() {
+		return // an export started while the dialog was open / window closed
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	hw.expCancel = cancel
@@ -399,7 +418,7 @@ func (hw *histWindow) export(k exportKind) {
 	winapi.EnableWindow(html, false)
 	go func() {
 		var recs []model.HistoryRecord
-		err := fetchHistory(ctx, a, trayui.HistoryRequest(row.ProfileID, row.PointKey, from, to, "", nil, ""), lang,
+		partial, err := fetchHistory(ctx, a, trayui.HistoryRequest(row.ProfileID, row.PointKey, from, to, "", nil, ""), lang,
 			func(pg *model.HistoryPage) bool {
 				recs = append(recs, pg.Records...)
 				n := len(recs)
@@ -413,9 +432,9 @@ func (hw *histWindow) export(k exportKind) {
 		if err == nil {
 			var data []byte
 			if k == exportCSV {
-				data = trayui.ExportHistoryCSV(recs, lang)
+				data = trayui.ExportHistoryCSV(recs, lang, partial)
 			} else {
-				data = trayui.ExportHistoryHTML(recs, fmt.Sprintf(i18n.T(i18n.KeyHistTitle, lang), row.Database+" — "+row.Point), from, to, lang)
+				data = trayui.ExportHistoryHTML(recs, fmt.Sprintf(i18n.T(i18n.KeyHistTitle, lang), row.Database+" — "+row.Point), from, to, lang, partial)
 			}
 			if werr := os.WriteFile(p, data, 0o644); werr != nil {
 				err = errHistory{fmt.Sprintf(i18n.T(i18n.KeyStSaveFailed, lang), werr)}
@@ -434,8 +453,12 @@ func (hw *histWindow) export(k exportKind) {
 			case err != nil:
 				hw.setInfo(err.Error())
 			default:
-				hw.lastSaved = p
-				hw.setInfo(fmt.Sprintf(i18n.T(i18n.KeyStSaved, lang), p))
+				hw.lastSaved, hw.lastPartial = p, partial
+				text := fmt.Sprintf(i18n.T(i18n.KeyStSaved, lang), p)
+				if partial {
+					text += " " + i18n.T(i18n.KeyHistPartial, lang)
+				}
+				hw.setInfo(text)
 			}
 		})
 	}()

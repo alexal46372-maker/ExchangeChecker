@@ -44,10 +44,22 @@ type Logger struct {
 	mu sync.Mutex
 }
 
-var credRe = regexp.MustCompile(`(?i)\b(password|passwd|pwd|login|user(?: ?id)?|uid)\s*([=:])\s*("[^"]*"|'[^']*'|[^\s;,]+)`)
+var (
+	// key = value / key: value; Go's \b is ASCII-only, so the key must
+	// follow a non-letter (Russian keys «пароль», «логин» included). The
+	// value is quoted ("..." / '...') or runs to the end of the segment
+	// (; , or end of line), spaces included.
+	credRe = regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}_])(password|passwd|pwd|login|user ?id|user|uid|пароль|логин|пользователь)(\s*[=:]\s*)("[^"]*"?|'[^']*'?|[^;,\r\n]*)`)
+	// user:password@ of a URL (scheme://u:p@host) or a bare //u:p@
+	urlCredRe = regexp.MustCompile(`(//)[^/\s@:]+:[^/@\r\n]*@`)
+)
 
-// Scrub masks credential-looking key=value / key: value pairs.
-func Scrub(s string) string { return credRe.ReplaceAllString(s, "$1$2***") }
+// Scrub masks credential-looking key=value / key: value pairs and the
+// user info of URLs.
+func Scrub(s string) string {
+	s = urlCredRe.ReplaceAllString(s, "$1***:***@")
+	return credRe.ReplaceAllString(s, "$1$2$3***")
+}
 
 // Log writes one line (time stamp, scrubbed text, CRLF). Errors are
 // returned but a tray never fails because of its log.

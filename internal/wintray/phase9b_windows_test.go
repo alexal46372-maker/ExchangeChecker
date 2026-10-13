@@ -41,7 +41,7 @@ func (f *p9Service) CheckNow(string) (model.CheckResult, error) {
 	if f.rate > 0 {
 		return model.CheckResult{}, &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgCheckRateLimited, Message: "rate", RetryAfterMs: f.rate}
 	}
-	return model.CheckResult{CheckSeq: f.Snapshot().Seq}, nil
+	return model.CheckResult{CheckSeq: 41 + uint64(f.checks)}, nil // own counter, unrelated to seq
 }
 
 func (f *p9Service) EventsSince(run string, since uint64, limit int) model.EventsPage {
@@ -128,13 +128,13 @@ func TestCHK_TRAY_22_CheckNowCapability(t *testing.T) {
 		t.Fatalf("waiting: %q busy=%v", app.checkResults, app.CheckBusy())
 	}
 	snap := phase9Snapshot()
-	snap.Seq, snap.LastCheckSeq = 2, 0
-	srv.PublishStatus(snap) // another poll, not ours
+	snap.Seq, snap.LastCheckSeq = 2, 41
+	srv.PublishStatus(snap) // an earlier check, not ours (checkSeq 42)
 	pumpFor(100 * time.Millisecond)
 	if !app.CheckBusy() {
 		t.Fatal("must wait for lastCheckSeq")
 	}
-	snap.Seq, snap.LastCheckSeq = 3, 1
+	snap.Seq, snap.LastCheckSeq = 3, 42
 	srv.PublishStatus(snap)
 	pumpUntil(t, "result status", func() bool { return !app.CheckBusy() })
 	if app.checkResults[len(app.checkResults)-1] != "Проверка выполнена" || !winapi.IsWindowEnabled(sw.check) {
@@ -253,6 +253,20 @@ func TestCHK_TRAY_25_EventsSince(t *testing.T) {
 	pumpUntil(t, "reset", func() bool { return app.tracker.RunID == "r2" })
 	if len(app.caughtUp) != 2 || app.tracker.LastID != 3 || len(app.Balloons()) != 2 {
 		t.Errorf("reset replayed: %d %d", len(app.caughtUp), len(app.Balloons()))
+	}
+	// a held recovery survives resetRequired (review 9b: no Debouncer reset)
+	app.opt.BalloonDebounce = 300 * time.Millisecond
+	app.feedBalloons([]model.AlertEvent{ev(9, "Касса", model.LevelError, model.LevelOK)})
+	svc.m.Lock()
+	svc.evReply = func(string, uint64) model.EventsPage {
+		return model.EventsPage{RunID: "r3", LastID: 1, ResetRequired: true}
+	}
+	svc.m.Unlock()
+	app.onConnected()
+	pumpUntil(t, "reset r3", func() bool { return app.tracker.RunID == "r3" })
+	pumpUntil(t, "held recovery after reset", func() bool { return len(app.Balloons()) == 3 })
+	if !app.Balloons()[2].Recovered {
+		t.Errorf("recovery %+v", app.Balloons()[2])
 	}
 }
 
@@ -443,8 +457,35 @@ func TestCHK_TRAY_27_HistoryExport(t *testing.T) {
 	if strings.Count(string(h), "<td>ERP</td>") != 3 {
 		t.Fatalf("html %s", h)
 	}
-	if !strings.HasPrefix(winapi.GetWindowText(hw.info), "Сохранено: ") {
+	if !strings.HasPrefix(winapi.GetWindowText(hw.info), "Сохранено: ") || hw.lastPartial {
 		t.Errorf("info %q", winapi.GetWindowText(hw.info))
+	}
+	// no save dialog while an export runs
+	asked := 0
+	hw.savePath = func(exportKind) (string, bool) { asked++; return "", false }
+	hw.expCancel = func() {}
+	hw.export(exportCSV)
+	if asked != 0 {
+		t.Error("dialog opened during an export")
+	}
+	hw.expCancel = nil
+	// the page limit marks the export «показаны не все записи»
+	old := histMaxPages
+	histMaxPages = 1
+	defer func() { histMaxPages = old }()
+	hw.savePath = func(exportKind) (string, bool) { return filepath.Join(dir, "p.csv"), true }
+	hw.lastSaved = ""
+	hw.export(exportCSV)
+	pumpUntil(t, "partial csv", func() bool { return hw.lastSaved != "" })
+	c, _ = os.ReadFile(filepath.Join(dir, "p.csv"))
+	if !hw.lastPartial || !strings.HasSuffix(string(c), i18n.T(i18n.KeyHistPartial, i18n.RU)+"\r\n") ||
+		!strings.Contains(winapi.GetWindowText(hw.info), i18n.T(i18n.KeyHistPartial, i18n.RU)) {
+		t.Errorf("partial %v %q", hw.lastPartial, winapi.GetWindowText(hw.info))
+	}
+	hw.load() // the chart is marked as well
+	pumpUntil(t, "partial chart", func() bool { return hw.loaded })
+	if hw.partial {
+		t.Error("chart pages are complete here")
 	}
 }
 

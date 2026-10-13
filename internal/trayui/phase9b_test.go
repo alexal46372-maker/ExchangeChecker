@@ -27,10 +27,10 @@ func TestCheckState(t *testing.T) {
 	if !c.Busy || !r.WaitSeq || r.Text != "Check in progress…" {
 		t.Fatalf("accepted %+v %+v", c, r)
 	}
-	if d, _ := c.Status(&model.StatusSnapshot{Seq: 8, LastCheckSeq: 3}, now); d || !c.Busy {
-		t.Fatal("old lastCheckSeq must not end the wait")
+	if d, _ := c.Status(&model.StatusSnapshot{Seq: 900, LastCheckSeq: 6}, now); d || !c.Busy {
+		t.Fatal("old lastCheckSeq must not end the wait (seq is unrelated)")
 	}
-	if d, _ := c.Status(&model.StatusSnapshot{Seq: 9, LastCheckSeq: 7}, now); !d || c.Busy {
+	if d, _ := c.Status(&model.StatusSnapshot{Seq: 2, LastCheckSeq: 7}, now); !d || c.Busy {
 		t.Fatal("lastCheckSeq >= checkSeq ends the wait")
 	}
 	c.Start(now)
@@ -193,13 +193,19 @@ func TestHistoryExport(t *testing.T) {
 		{Kind: model.HistoryKindProfile, CheckedAt: at, ProfileName: "<b>", LatencyMs: &lat},
 		{Kind: model.HistoryKindRecovered, CheckedAt: at, ProfileName: "ERP", PointName: "p", From: &w, To: &ok, DurationMin: &dur},
 	}
-	c := string(ExportHistoryCSV(recs, "ru"))
+	c := string(ExportHistoryCSV(recs, "ru", false))
 	if !strings.HasPrefix(c, "\uFEFFВремя;База;Точка;") || strings.Count(c, "\r\n") != 4 ||
 		!strings.Contains(c, "13.10.2026 12:00:05;ERP;'=Склад;опрос точки;предупреждение;42;") ||
 		!strings.Contains(c, "предупреждение → норма;17;") || !strings.Contains(c, ";150;") {
 		t.Fatalf("csv %q", c)
 	}
-	h := string(ExportHistoryHTML(recs, "ERP — p", at, at, "en"))
+	if p := string(ExportHistoryCSV(recs, "ru", true)); !strings.HasSuffix(p, "\r\nПоказаны не все записи: достигнут предел выгрузки\r\n") {
+		t.Errorf("partial csv %q", p)
+	}
+	if p := string(ExportHistoryHTML(recs, "x", at, at, "en", true)); !strings.Contains(p, "Not all records are shown") {
+		t.Error("partial html")
+	}
+	h := string(ExportHistoryHTML(recs, "ERP — p", at, at, "en", false))
 	if !strings.Contains(h, "&lt;b&gt;") || strings.Contains(h, "<b>") || !strings.Contains(h, "#fff3c4") || !strings.Contains(h, "recovery") {
 		t.Fatalf("html %s", h)
 	}

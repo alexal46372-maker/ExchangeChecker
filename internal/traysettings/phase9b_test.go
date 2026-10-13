@@ -28,6 +28,33 @@ func TestCHK_TRAY_29_SaveErrors(t *testing.T) {
 			t.Errorf("%s target change: %+v", lang, pr)
 		}
 	}
+	// every reason of model.ValidateSQLServerAddr has a text
+	for addr, reason := range map[string]string{"np:x": "np", "lpc:x": "lpc", "admin:x": "admin", "tcp:x,1433": "tcp", "sm:x": "sm",
+		"via:x": "via", `\\x\y`: "unc", `\x`: "backslash", "/x": "slash", `x\pipe\sql`: "pipe"} {
+		fe, _ := model.ValidateSQLServerAddr(addr).(*model.FieldError)
+		if fe == nil || len(fe.Args) != 1 || fe.Args[0] != reason {
+			t.Errorf("%s: %+v", addr, fe)
+			continue
+		}
+		if _, ok := forbiddenReasonKeys[reason]; !ok {
+			t.Errorf("no text for reason %s", reason)
+		}
+	}
+	// validation errors as invalid_request / monitor.bad_request with
+	// errorArgs [field, key, args...]: same text and focus
+	for _, lang := range []string{i18n.RU, i18n.EN} {
+		e := NewEditor(lang, Admin)
+		pr := e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorBadRequest,
+			ErrorArgs: []string{"server", model.ValSQLServerForbidden, "tcp"}})
+		if pr == nil || pr.Field != FieldHost || !strings.Contains(pr.Text, i18n.T(i18n.KeyValReasonTcp, lang)) {
+			t.Errorf("bad_request %s: %+v", lang, pr)
+		}
+		pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorBadRequest,
+			ErrorArgs: []string{"port", model.ValRange, "1", "65535", "70000"}})
+		if pr == nil || pr.Field != Field("port") {
+			t.Errorf("bad_request port %s: %+v", lang, pr)
+		}
+	}
 	// local validation gives the same text
 	e := NewEditor(i18n.RU, Admin)
 	fe := model.ValidateSQLServerAddr(`np:\\srv\pipe\sql`).(*model.FieldError)

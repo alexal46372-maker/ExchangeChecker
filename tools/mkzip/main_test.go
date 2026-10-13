@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wininstall"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winres"
 )
 
 func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
@@ -20,6 +21,9 @@ func TestCHK_DELIV_01_Version(t *testing.T) {
 	}{
 		{map[string]string{"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v1.2.3", "GITHUB_RUN_NUMBER": "9"}, "1.2.3", true},
 		{map[string]string{"GITHUB_REF_TYPE": "branch", "GITHUB_REF_NAME": "v1.2.3", "GITHUB_RUN_NUMBER": "9"}, "0.0.0-ci.9", true},
+		{map[string]string{"GITHUB_REF_TYPE": "branch", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_RUN_NUMBER": "4"}, "0.0.0-rel.4", true},
+		{map[string]string{"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v0.7.0", "GITHUB_EVENT_NAME": "push", "GITHUB_RUN_NUMBER": "4"}, "0.7.0", true},
+		{map[string]string{"GITHUB_REF_TYPE": "branch", "GITHUB_EVENT_NAME": "push", "GITHUB_RUN_NUMBER": "4"}, "0.0.0-ci.4", true},
 		{map[string]string{"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v1.2"}, "", false},
 		{map[string]string{"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v01.2.3"}, "", false},
 		{map[string]string{"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "release"}, "", false},
@@ -29,6 +33,11 @@ func TestCHK_DELIV_01_Version(t *testing.T) {
 		v, err := Version(env(c.env))
 		if (err == nil) != c.ok || v != c.want {
 			t.Errorf("%v: %q %v", c.env, v, err)
+		}
+		if err == nil {
+			if _, _, perr := winres.ParseVersion(v); perr != nil {
+				t.Errorf("%q not accepted by winres.ParseVersion: %v", v, perr)
+			}
 		}
 	}
 }

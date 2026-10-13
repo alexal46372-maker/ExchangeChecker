@@ -48,11 +48,16 @@ func ParseVersion(s string) (v FileVersion, prerelease bool, err error) {
 		}
 		v[i] = uint16(n)
 	}
-	if strings.HasPrefix(pre, "ci.") {
-		// CI builds: 0.0.0-ci.<run_number>; N must fit the fourth part
-		n, err := strconv.ParseUint(pre[3:], 10, 16)
+	for _, kind := range []string{"ci.", "rel."} {
+		if !strings.HasPrefix(pre, kind) {
+			continue
+		}
+		// CI builds 0.0.0-ci.<run_number>, manual release builds
+		// (workflow_dispatch) 0.0.0-rel.<run_number>; N must fit the
+		// fourth part
+		n, err := strconv.ParseUint(pre[len(kind):], 10, 16)
 		if err != nil {
-			return FileVersion{}, false, fmt.Errorf("winres: version %q: ci build number must be 0..65535", s)
+			return FileVersion{}, false, fmt.Errorf("winres: version %q: %s build number must be 0..65535", s, strings.TrimSuffix(kind, "."))
 		}
 		v[3] = uint16(n)
 	}

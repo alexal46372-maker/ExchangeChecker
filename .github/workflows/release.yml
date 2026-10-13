@@ -1,6 +1,8 @@
 # Release build (manual acceptance / delivery). Same build steps as the windows job of
 # ci.yml; the only difference: the delivery zip is uploaded as ONE artifact (7 days).
-# Version: tag vX.Y.Z -> X.Y.Z; workflow_dispatch -> 0.0.0-ci.<run number> (tools/mkzip).
+# Version: tag vX.Y.Z -> X.Y.Z; workflow_dispatch -> 0.0.0-rel.<run number> (tools/mkzip).
+# CHK-CI-01 exception (POLICY.md): only this workflow uploads, exactly one zip, 7 days;
+# checks/ci01_artifacts_test.go enforces that no other workflow uploads anything.
 name: release
 
 on:
@@ -37,7 +39,7 @@ jobs:
       - name: release build + delivery zip (CHK-RES-01, CHK-VER-01, CHK-SETUP-02, CHK-DELIV-01)
         run: |
           go run ./tools/mkres -check
-          # tag vX.Y.Z -> X.Y.Z, otherwise 0.0.0-ci.<run number>
+          # tag vX.Y.Z -> X.Y.Z, workflow_dispatch -> 0.0.0-rel.<run number>
           V="$(go run ./tools/mkzip version)"
           echo "version $V"
           out="$RUNNER_TEMP/release"

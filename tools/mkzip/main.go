@@ -5,6 +5,7 @@
 //	mkzip zip -o <out.zip> <Setup.exe>      deterministic zip with exactly one entry
 //	                                        ExchangeCheckerSetup.exe
 //	mkzip version                           prints X.Y.Z for a vX.Y.Z tag build,
+//	                                        0.0.0-rel.<N> for workflow_dispatch,
 //	                                        else 0.0.0-ci.<GITHUB_RUN_NUMBER>
 //
 // Nothing is uploaded (CHK-CI-01): CI builds and checks the zip in the job.
@@ -44,6 +45,11 @@ func Version(getenv func(string) string) (string, error) {
 	n := getenv("GITHUB_RUN_NUMBER")
 	if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(n) {
 		return "", errors.New("GITHUB_RUN_NUMBER not set")
+	}
+	if getenv("GITHUB_EVENT_NAME") == "workflow_dispatch" {
+		// manual release build (release.yml): own series, never clashes
+		// with the 0.0.0-ci.N numbers of ci.yml
+		return "0.0.0-rel." + n, nil
 	}
 	return "0.0.0-ci." + n, nil
 }

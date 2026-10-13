@@ -824,6 +824,7 @@ func (m *Monitor) reloadConfigLocked(force bool) bool {
 	}
 	recovered := m.retry && settingsErr == nil
 	m.entries, m.cfg, m.stamp, m.loaded, m.good = next, cfg, stamp, true, true
+	m.dropChecksLocked(cfg.Profiles) // phase 9 (CHK-SVC-04)
 	m.revision = rev
 	if settingsErr == nil {
 		m.retry, m.cfgFatal, m.stale, m.warnMsg = false, nil, false, ""

@@ -169,7 +169,7 @@ func TestCHK_SETUP_10_SilentNoWindows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := string(b)
+	src := strings.ReplaceAll(string(b), "\r\n", "\n") // CRLF checkout on windows
 	silent := strings.Index(src, "if opts.Silent {\n\t\t// silent: no window")
 	wiz := strings.Index(src, "return runWizard(")
 	if silent < 0 || wiz < 0 || wiz < silent {

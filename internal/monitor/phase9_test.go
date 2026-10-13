@@ -9,7 +9,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-func ipcErr(t *testing.T, err error) *model.IPCError {
+func p9IPCErr(t *testing.T, err error) *model.IPCError {
 	t.Helper()
 	var ie *model.IPCError
 	if !errors.As(err, &ie) {
@@ -38,12 +38,12 @@ func TestCHK_SVC_04_CheckNow(t *testing.T) {
 	}
 	m.takePending()
 	_, err = m.CheckNow("db1")
-	if ie := ipcErr(t, err); ie.Code != model.ErrCodeRateLimited || ie.Key != model.MsgCheckRateLimited || ie.RetryAfterMs != 10000 {
+	if ie := p9IPCErr(t, err); ie.Code != model.ErrCodeRateLimited || ie.Key != model.MsgCheckRateLimited || ie.RetryAfterMs != 10000 {
 		t.Fatalf("profile limit: %+v", ie)
 	}
 	clk.Add(4 * time.Second)
 	_, err = m.CheckNow("db1")
-	if ie := ipcErr(t, err); ie.RetryAfterMs != 6000 {
+	if ie := p9IPCErr(t, err); ie.RetryAfterMs != 6000 {
 		t.Fatalf("retry after: %+v", ie)
 	}
 	clk.Add(6 * time.Second)
@@ -57,11 +57,11 @@ func TestCHK_SVC_04_CheckNow(t *testing.T) {
 	m.takePending()
 	clk.Add(5 * time.Second)
 	_, err = m.CheckNow("")
-	if ie := ipcErr(t, err); ie.RetryAfterMs != 25000 {
+	if ie := p9IPCErr(t, err); ie.RetryAfterMs != 25000 {
 		t.Fatalf("all limit: %+v", ie)
 	}
 	_, err = m.CheckNow("db1")
-	if ie := ipcErr(t, err); ie.Code != model.ErrCodeRateLimited || ie.RetryAfterMs != 5000 {
+	if ie := p9IPCErr(t, err); ie.Code != model.ErrCodeRateLimited || ie.RetryAfterMs != 5000 {
 		t.Fatalf("profile after all: %+v", ie)
 	}
 	clk.Add(5 * time.Second)
@@ -69,10 +69,10 @@ func TestCHK_SVC_04_CheckNow(t *testing.T) {
 		t.Fatalf("profile 10 s after all: %v", err)
 	}
 	m.takePending()
-	if _, err := m.CheckNow("nope"); ipcErr(t, err).Code != model.ErrCodeNotFound {
+	if _, err := m.CheckNow("nope"); p9IPCErr(t, err).Code != model.ErrCodeNotFound {
 		t.Errorf("unknown: %v", err)
 	}
-	if _, err := m.CheckNow("db2"); ipcErr(t, err).Key != model.MsgMonitorProfileOff {
+	if _, err := m.CheckNow("db2"); p9IPCErr(t, err).Key != model.MsgMonitorProfileOff {
 		t.Errorf("disabled: %v", err)
 	}
 	if c, err := m.PollNow("db1"); err != nil || c {
@@ -165,7 +165,7 @@ func TestCHK_CFG_05_SaveProfileTarget(t *testing.T) {
 		q := p
 		mod(&q)
 		_, err := e.m.SaveProfile(q, "", false, e.rev(), "acct")
-		if ie := ipcErr(t, err); ie.Code != model.ErrCodeInvalidRequest || ie.Key != model.MsgPasswordTargetChange {
+		if ie := p9IPCErr(t, err); ie.Code != model.ErrCodeInvalidRequest || ie.Key != model.MsgPasswordTargetChange {
 			t.Errorf("%s:%d: %+v", q.Server, q.Port, ie)
 		}
 	}
@@ -183,7 +183,7 @@ func TestCHK_CFG_05_SaveProfileTarget(t *testing.T) {
 	}
 	q.Server = `np:\\srv\pipe\sql\query`
 	_, err := e.m.SaveProfile(q, "pw3", false, e.rev(), "acct")
-	if ie := ipcErr(t, err); ie.Key != model.MsgMonitorProfileInvalid || len(ie.Args) < 2 || ie.Args[0] != "server" || ie.Args[1] != model.ValServerForbidden {
+	if ie := p9IPCErr(t, err); ie.Key != model.MsgMonitorProfileInvalid || len(ie.Args) < 2 || ie.Args[0] != "server" || ie.Args[1] != model.ValServerForbidden {
 		t.Errorf("np: %+v", ie)
 	}
 }

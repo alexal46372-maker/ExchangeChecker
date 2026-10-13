@@ -205,6 +205,7 @@ func TestCHK_TRAY_30_WizardAutoPick(t *testing.T) {
 	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node20" {
 		t.Error("auto pick not applied")
 	}
+	wd.click(t, idWizCancel)
 }
 
 // TestCHK_TRAY_31_WizardDiagnosis — CHK-TRAY-31: an error with errorInfo
@@ -277,6 +278,7 @@ func TestCHK_TRAY_32_WizardGrant(t *testing.T) {
 	w.cfg.clipboard = func(uintptr, string) error { return errors.New("busy clipboard") }
 	wd.click(t, idWizGrant)
 	pumpUntil(t, "clip error", func() bool { return wd.idle() && strings.Contains(wd.text(), "busy clipboard") })
+	wd.click(t, idWizCancel)
 }
 
 // TestCHK_TRAY_32_Clipboard — the real clipboard round trip (skipped

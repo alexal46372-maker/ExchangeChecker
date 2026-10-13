@@ -652,8 +652,16 @@ func (wd *wizardDialog) close() {
 	}
 	w := wd.w
 	w.wiz = nil
-	winapi.EnableWindow(w.hwnd, true)
+	w.qmu.Lock()
+	owner := !w.closed // the settings window itself is being destroyed
+	w.qmu.Unlock()
+	if owner {
+		winapi.EnableWindow(w.hwnd, true)
+	}
 	winapi.DestroyWindow(wd.hwnd)
+	if !owner {
+		return
+	}
 	if !w.cfg.hidden && winapi.IsWindow(w.hwnd) {
 		winapi.SetForegroundWindow(w.hwnd)
 	}

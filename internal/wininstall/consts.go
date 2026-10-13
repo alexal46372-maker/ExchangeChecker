@@ -40,6 +40,7 @@ var (
 	FailureResetPeriod = 24 * time.Hour
 	FailureDelays      = []time.Duration{60 * time.Second, 120 * time.Second, 300 * time.Second}
 	StartTimeout       = 60 * time.Second
+	ForceStopTimeout   = 15 * time.Second
 	StopTimeout        = 90 * time.Second
 )
 

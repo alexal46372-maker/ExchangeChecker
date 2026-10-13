@@ -33,6 +33,7 @@ func (stubSystem) CreateService(ServiceSpec) error             { return ErrNotWi
 func (stubSystem) UpdateService(ServiceSpec, bool) error       { return ErrNotWindows }
 func (stubSystem) StartService(string, time.Duration) error    { return ErrNotWindows }
 func (stubSystem) StopService(string, time.Duration) error     { return ErrNotWindows }
+func (stubSystem) ForceStopService(string, string) error       { return ErrNotWindows }
 func (stubSystem) DeleteService(string) error                  { return ErrNotWindows }
 func (stubSystem) SetEventSource(string) error                 { return ErrNotWindows }
 func (stubSystem) DeleteEventSource() error                    { return ErrNotWindows }

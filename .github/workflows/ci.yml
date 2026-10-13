@@ -142,8 +142,11 @@ jobs:
           build_setup "1.1.0" "$RUNNER_TEMP/e2e-v2"
           export EC_SETUP_EXE="$RUNNER_TEMP/e2e-v1/ExchangeCheckerSetup.exe"
           export EC_SETUP_EXE_V2="$RUNNER_TEMP/e2e-v2/ExchangeCheckerSetup.exe"
+          # test-only fault build (hangs in START_PENDING); never released
+          GOOS=windows GOARCH=amd64 go build -tags e2efault -trimpath -o "$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+          export EC_SVC_FAULT_EXE="$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe"
           go test ./internal/wininstall -run 'TestCHK_SETUP_03_RealSCM|TestCHK_SETUP_04_EventSourceWindows|TestCHK_SETUP_05_ACLWindows' -count=1 -v
-          go test ./checks -run TestCHK_SETUP_12_E2E -count=1 -v
+          go test ./checks -run TestCHK_SETUP_12_E2E -count=1 -timeout 20m -v
 
   linux:
     name: linux / go1.20.14 vet + pure-Go tests + SQL Server integration

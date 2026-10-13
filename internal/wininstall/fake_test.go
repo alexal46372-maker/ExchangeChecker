@@ -29,7 +29,9 @@ type recordingSystem struct {
 	FailAt      string // step prefix that returns error
 	FailOnce    bool   // clear FailAt after the first injected error
 	RebootRm    bool
-	WriteReboot bool // WriteFile returns reboot=true
+	WriteReboot bool   // WriteFile returns reboot=true
+	FailAlso    string // second prefix that always fails (e.g. a rollback step)
+	Specs       []ServiceSpec
 }
 
 func newFake() *recordingSystem {
@@ -49,6 +51,9 @@ func (f *recordingSystem) step(format string, args ...interface{}) error {
 		if f.FailOnce {
 			f.FailAt = ""
 		}
+		return fmt.Errorf("injected failure: %s", s)
+	}
+	if f.FailAlso != "" && strings.HasPrefix(s, f.FailAlso) {
 		return fmt.Errorf("injected failure: %s", s)
 	}
 	return nil
@@ -216,8 +221,11 @@ func (f *recordingSystem) UpdateService(s ServiceSpec, setStart bool) error {
 	if err := f.step("UpdateService|%s|setStart=%v|auto=%v|img=%s", s.Name, setStart, s.AutoStart, s.ImagePath); err != nil {
 		return err
 	}
+	f.Specs = append(f.Specs, s)
 	f.Service.ImagePath = s.ImagePath
-	f.Service.Description = s.Description
+	if s.Description != "" {
+		f.Service.Description = s.Description
+	}
 	if setStart {
 		f.Service.AutoStart = s.AutoStart
 	}
@@ -242,6 +250,16 @@ func (f *recordingSystem) StopService(name string, timeout time.Duration) error 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.step("StopService|%s", name); err != nil {
+		return err
+	}
+	f.Service.Running = false
+	return nil
+}
+
+func (f *recordingSystem) ForceStopService(name, dir string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("ForceStopService|%s", name); err != nil {
 		return err
 	}
 	f.Service.Running = false

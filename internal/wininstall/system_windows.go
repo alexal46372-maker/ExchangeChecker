@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -94,8 +95,9 @@ func isFileLocked(err error) bool {
 			errors.As(le.Err, &errno)
 		}
 	}
-	// ERROR_ACCESS_DENIED=5, SHARING_VIOLATION=32, LOCK_VIOLATION=33
-	return errno == 5 || errno == 32 || errno == 33
+	// only SHARING_VIOLATION=32 / LOCK_VIOLATION=33; ACCESS_DENIED (5) is a
+	// real permission error, not a lock
+	return errno == 32 || errno == 33
 }
 
 func (winSystem) BackupFile(path string) (bool, error) {
@@ -242,13 +244,15 @@ func (winSystem) QueryService(name string) (ServiceInfo, error) {
 	if err != nil {
 		return ServiceInfo{}, err
 	}
-	desc, _ := winapi.QueryServiceDescription(svc)
+	desc, derr := winapi.QueryServiceDescription(svc)
 	return ServiceInfo{
-		Exists:      true,
-		ImagePath:   cfg.BinaryPath,
-		Description: desc,
-		AutoStart:   cfg.StartType == winapi.ServiceAutoStart,
-		Running:     state == winapi.ServiceRunning || state == winapi.ServiceStartPend,
+		Exists:        true,
+		ImagePath:     cfg.BinaryPath,
+		DisplayName:   cfg.DisplayName,
+		Description:   desc,
+		DescriptionOK: derr == nil,
+		AutoStart:     cfg.StartType == winapi.ServiceAutoStart,
+		Running:       state == winapi.ServiceRunning || state == winapi.ServiceStartPend,
 	}, nil
 }
 
@@ -315,8 +319,11 @@ func (s winSystem) UpdateService(spec ServiceSpec, setStart bool) error {
 }
 
 func (winSystem) applyServiceExtras(svc winapi.ServiceHandle, spec ServiceSpec, setDelayed bool) error {
-	if err := winapi.SetServiceDescription(svc, spec.Description); err != nil {
-		return err
+	// empty = unknown (e.g. rollback when the old description was unreadable)
+	if spec.Description != "" {
+		if err := winapi.SetServiceDescription(svc, spec.Description); err != nil {
+			return err
+		}
 	}
 	delays := make([]uint32, len(spec.FailureDelays))
 	for i, d := range spec.FailureDelays {
@@ -425,6 +432,52 @@ func (winSystem) StopService(name string, timeout time.Duration) error {
 		_ = winapi.WaitProcessExit(pid, 15000)
 	}
 	return nil
+}
+
+func (s winSystem) ForceStopService(name, installDir string) error {
+	stopErr := s.StopService(name, ForceStopTimeout)
+	// candidates: the SCM-reported pid (if its image is ours) + any
+	// ExchangeCheckerSvc.exe running from installDir (hung before the
+	// dispatcher connected: SCM may not know its pid)
+	pids := map[uint32]bool{}
+	if _, pid, err := winapi.ServiceProcessID(name); err == nil && pid != 0 {
+		if img, err := winapi.ProcessImagePath(pid); err == nil && ownSvcImage(img, installDir) {
+			pids[pid] = true
+		}
+	}
+	if procs, err := winapi.ProcessesInDir(installDir, config.ServiceExeName); err == nil {
+		for _, p := range procs {
+			pids[p.PID] = true
+		}
+	}
+	if len(pids) == 0 {
+		if stopErr != nil {
+			if info, err := s.QueryService(name); err == nil && !info.Running {
+				return nil
+			}
+		}
+		return stopErr
+	}
+	_ = winapi.EnablePrivileges("SeDebugPrivilege")
+	var errs []string
+	for pid := range pids {
+		if err := winapi.TerminatePID(pid); err != nil {
+			errs = append(errs, fmt.Sprintf("terminate pid %d: %v", pid, err))
+			continue
+		}
+		if err := winapi.WaitProcessExit(pid, 15000); err != nil {
+			errs = append(errs, fmt.Sprintf("wait pid %d: %v", pid, err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("force stop %s: %s", name, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func ownSvcImage(img, installDir string) bool {
+	want := strings.ToLower(filepath.Clean(winapi.LongPath(filepath.Join(installDir, config.ServiceExeName))))
+	return strings.ToLower(filepath.Clean(winapi.LongPath(img))) == want
 }
 
 func (winSystem) DeleteService(name string) error {

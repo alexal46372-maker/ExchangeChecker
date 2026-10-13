@@ -5,6 +5,7 @@ package checks_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -325,6 +326,49 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 	t.Logf("rollback ok: version=%s (V1) service running", instRB.Version)
 
+	// Real rollback #2: V2 service process starts and then hangs in
+	// START_PENDING (test-only build tag e2efault) — its exe is locked, so
+	// the installer must force-stop it before restoring V1.
+	faultExe := os.Getenv("EC_SVC_FAULT_EXE")
+	if faultExe == "" {
+		t.Fatal("EC_SVC_FAULT_EXE required (exchsvc built with -tags e2efault)")
+	}
+	faultBytes, err := os.ReadFile(faultExe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badFiles[config.ServiceExeName] = faultBytes
+	res = wininstall.Install(sys, wininstall.InstallConfig{
+		Opts:       wininstall.Options{Silent: true},
+		DefaultDir: dir, DataDir: data, Files: badFiles,
+		Version: "1.2.0", Lang: "en", Now: time.Now(),
+	}, &e2eLog{t})
+	if res.Code != wininstall.ExitError {
+		t.Fatalf("hung-V2 upgrade code=%d err=%v (want exit 1 + rollback)", res.Code, res.Err)
+	}
+	if errors.Is(res.Err, wininstall.ErrRollbackIncomplete) {
+		t.Fatalf("hung-V2 rollback incomplete: %v", res.Err)
+	}
+	instRB, err = sys.ReadInstalled()
+	if err != nil || !instRB.Present || instRB.Version != "1.0.0" {
+		t.Fatalf("after hung-V2 rollback DisplayVersion=%+v want 1.0.0: %v", instRB, err)
+	}
+	infoRB, err = sys.QueryService(model.ServiceName)
+	if err != nil || !infoRB.Exists {
+		t.Fatalf("service after hung-V2 rollback: %+v err=%v", infoRB, err)
+	}
+	if st, _, err := winapi.ServiceProcessID(model.ServiceName); err != nil || st != winapi.ServiceRunning {
+		t.Fatalf("service state after hung-V2 rollback=%d err=%v want RUNNING", st, err)
+	}
+	svcBytes, err = os.ReadFile(filepath.Join(dir, config.ServiceExeName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha256.Sum256(svcBytes) != v1Sum {
+		t.Fatal("svc file not restored to V1 image after hung-V2 rollback")
+	}
+	t.Logf("hung-V2 rollback ok: version=%s, V1 bytes, service RUNNING", instRB.Version)
+
 	// Start V1 tray from the install folder; good upgrade must terminate it.
 	trayPath := filepath.Join(dir, config.TrayExeName)
 	trayProc, err := os.StartProcess(trayPath, []string{trayPath}, &os.ProcAttr{
@@ -334,10 +378,22 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start V1 tray: %v", err)
 	}
-	trayPID := trayProc.Pid
-	// Kill only — never Wait (process may already be gone after StopTray).
-	t.Cleanup(func() { _ = trayProc.Kill() })
+	// Own process handle: Wait in a goroutine, bounded by a timeout.
+	trayDone := make(chan error, 1)
+	go func() { _, err := trayProc.Wait(); trayDone <- err }()
+	t.Cleanup(func() {
+		select {
+		case <-trayDone:
+		default:
+			_ = trayProc.Kill()
+		}
+	})
 	time.Sleep(500 * time.Millisecond)
+	select {
+	case err := <-trayDone:
+		t.Fatalf("V1 tray exited before upgrade: %v", err)
+	default:
+	}
 
 	logU := filepath.Join(os.TempDir(), "ec-setup-e2e-upgrade.log")
 	code = run(setupV2, "/S", "/DIR="+dir, "/LOG="+logU, "/LANG=en")
@@ -345,26 +401,11 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		dumpLog(t, logU)
 		t.Fatalf("upgrade exit %d; log %s", code, logU)
 	}
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		left, err := winapi.ProcessesInDir(dir, config.TrayExeName)
-		if err != nil {
-			t.Fatal(err)
-		}
-		alive := false
-		for _, p := range left {
-			if int(p.PID) == trayPID {
-				alive = true
-			}
-		}
-		if !alive {
-			break
-		}
-		if time.Now().After(deadline) {
-			_ = trayProc.Kill()
-			t.Fatalf("V1 tray pid %d still running after upgrade", trayPID)
-		}
-		time.Sleep(200 * time.Millisecond)
+	select {
+	case <-trayDone:
+	case <-time.After(15 * time.Second):
+		dumpLog(t, logU)
+		t.Fatalf("V1 tray pid %d still alive (own handle) after upgrade", trayProc.Pid)
 	}
 	after := hashData()
 	for k, v := range before {

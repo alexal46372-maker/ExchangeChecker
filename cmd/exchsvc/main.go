@@ -35,6 +35,7 @@ func main() {
 	// the SCM-started service keeps HKLM Run in line with
 	// settings.trayAutostart (CHK-CFG-04); a console run does not touch it
 	ac.Autostart = config.MachineRunRegistry()
+	e2eFaultHook()
 	err := winsvc.Run(model.ServiceName, func(ctx context.Context) error { return runService(ctx, ac) })
 	if errors.Is(err, winsvc.ErrNotService) {
 		fmt.Fprintf(os.Stderr, "%s %s: console mode, config %s (Ctrl+C to stop)\n", model.ServiceName, version.Version, ac.Dir)

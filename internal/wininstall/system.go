@@ -18,8 +18,12 @@ type ServiceInfo struct {
 	Exists      bool
 	ImagePath   string
 	Description string
-	AutoStart   bool
-	Running     bool
+	// DescriptionOK: the description was read (false: query failed, do not
+	// overwrite it on rollback).
+	DescriptionOK bool
+	DisplayName   string
+	AutoStart     bool
+	Running       bool
 }
 
 // Installed describes an existing installation (Uninstall key).
@@ -69,6 +73,10 @@ type System interface {
 	UpdateService(s ServiceSpec, setStart bool) error
 	StartService(name string, timeout time.Duration) error
 	StopService(name string, timeout time.Duration) error
+	// ForceStopService stops the service; if it stays START_PENDING / will
+	// not stop, it terminates only ExchangeCheckerSvc.exe processes whose
+	// image lives under installDir (rollback must not hit a locked file).
+	ForceStopService(name, installDir string) error
 	DeleteService(name string) error
 
 	// registry (HKLM, 64-bit view)

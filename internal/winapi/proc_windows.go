@@ -138,7 +138,8 @@ func ProcessesInDir(installDir string, exeNames ...string) ([]Process, error) {
 	for _, n := range exeNames {
 		want[strings.ToLower(n)] = true
 	}
-	root := strings.ToLower(filepath.Clean(installDir))
+	// 8.3 vs long names: QueryFullProcessImageName returns the long form
+	root := strings.ToLower(filepath.Clean(LongPath(installDir)))
 	var out []Process
 	for _, p := range all {
 		if !want[strings.ToLower(p.Exe)] {
@@ -147,7 +148,7 @@ func ProcessesInDir(installDir string, exeNames ...string) ([]Process, error) {
 		if p.Path == "" {
 			continue
 		}
-		path := strings.ToLower(filepath.Clean(p.Path))
+		path := strings.ToLower(filepath.Clean(LongPath(p.Path)))
 		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) || strings.HasPrefix(path, root+`\`) {
 			out = append(out, p)
 		}

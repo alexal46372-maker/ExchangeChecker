@@ -1,6 +1,7 @@
 package wininstall
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -224,7 +225,8 @@ func TestCHK_SETUP_09_StartServiceFailureRollsBack(t *testing.T) {
 	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: `C:\EC`}
 	f.Service = ServiceInfo{
 		Exists: true, Running: true, AutoStart: true,
-		ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`, Description: "old desc",
+		ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`, Description: "old desc", DescriptionOK: true,
+		DisplayName: "Old Display Name",
 	}
 	oldSvc := []byte("old-svc-bytes")
 	f.Files[`C:\EC\`+config.ServiceExeName] = append([]byte(nil), oldSvc...)
@@ -240,6 +242,18 @@ func TestCHK_SETUP_09_StartServiceFailureRollsBack(t *testing.T) {
 	}
 	if indexOf(f.Steps, "RestoreBackup|") < 0 {
 		t.Fatalf("expected RestoreBackup: %v", f.Steps)
+	}
+	// V2 is force-stopped before any file is restored (locked exe)
+	fs := indexOf(f.Steps, "ForceStopService|")
+	if fs < 0 || fs > indexOf(f.Steps, "RestoreBackup|") {
+		t.Fatalf("ForceStopService must precede RestoreBackup: %v", f.Steps)
+	}
+	last := f.Specs[len(f.Specs)-1]
+	if last.DisplayName != "Old Display Name" || last.Description != "old desc" {
+		t.Fatalf("prev spec not restored: %+v", last)
+	}
+	if errors.Is(res.Err, ErrRollbackIncomplete) {
+		t.Fatalf("complete rollback reported as incomplete: %v", res.Err)
 	}
 	if indexOf(f.Steps, "WriteUninstallKey|") < 0 {
 		t.Fatal("expected uninstall key writes")
@@ -323,6 +337,35 @@ func TestCHK_SETUP_09_NewFileRemovedOnRollback(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("expected RemoveFile of new tray on rollback: %v", f.Steps)
+		}
+	}
+}
+
+func TestCHK_SETUP_09_RollbackIncompleteReported(t *testing.T) {
+	f := newFake()
+	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: `C:\EC`}
+	f.Service = ServiceInfo{
+		Exists: true, Running: true, AutoStart: true,
+		ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`, // description unreadable
+	}
+	f.Files[`C:\EC\`+config.ServiceExeName] = []byte("old")
+	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now())
+	f.FailAt = "StartService|"
+	f.FailOnce = true
+	f.FailAlso = "RestoreBackup|"
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, &memLog{})
+	if res.Code != ExitError || !errors.Is(res.Err, ErrRollbackIncomplete) {
+		t.Fatalf("code=%d err=%v: want ExitError + rollback incomplete", res.Code, res.Err)
+	}
+	if !strings.Contains(res.Err.Error(), "rollback incomplete") {
+		t.Fatalf("user message lacks rollback status: %v", res.Err)
+	}
+	for _, s := range f.Specs[1:] { // rollback spec
+		if s.Description != "" {
+			t.Fatalf("unknown old description must not be written: %+v", s)
 		}
 	}
 }

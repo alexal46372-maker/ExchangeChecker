@@ -14,6 +14,7 @@ var (
 	procGetWindowsDirectoryW = modkernel32.NewProc("GetWindowsDirectoryW")
 	procWaitForSingleObject  = modkernel32.NewProc("WaitForSingleObject")
 	procOpenProcess          = modkernel32.NewProc("OpenProcess")
+	procGetLongPathNameW     = modkernel32.NewProc("GetLongPathNameW")
 )
 
 const (
@@ -109,4 +110,24 @@ func WaitProcessExit(pid uint32, timeoutMs uint32) error {
 		return fmt.Errorf("wait process %d: timeout", pid)
 	}
 	return nil
+}
+
+// LongPath expands 8.3 components (e.g. C:\Users\RUNNER~1) with
+// GetLongPathNameW; on failure the input is returned unchanged.
+func LongPath(p string) string {
+	in, err := syscall.UTF16PtrFromString(p)
+	if err != nil {
+		return p
+	}
+	buf := make([]uint16, 512)
+	for {
+		r, _, _ := callProc(procGetLongPathNameW, uintptr(unsafe.Pointer(in)), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+		if r == 0 {
+			return p
+		}
+		if int(r) < len(buf) {
+			return syscall.UTF16ToString(buf[:r])
+		}
+		buf = make([]uint16, r+1)
+	}
 }

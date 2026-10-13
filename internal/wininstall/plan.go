@@ -43,12 +43,27 @@ type undoStack []func() error
 
 func (u *undoStack) push(f func() error) { *u = append(*u, f) }
 
-func (u undoStack) run(log Logger) {
+// run executes the undo journal in reverse; it returns the failed steps
+// (empty = rollback complete).
+func (u undoStack) run(log Logger) []error {
+	var errs []error
 	for i := len(u) - 1; i >= 0; i-- {
 		if err := u[i](); err != nil {
 			log.Printf("rollback: %v", err)
+			errs = append(errs, err)
 		}
 	}
+	return errs
+}
+
+// ErrRollbackIncomplete marks a Result whose rollback left changes behind.
+var ErrRollbackIncomplete = errors.New("rollback incomplete")
+
+func withRollback(err error, errs []error) error {
+	if len(errs) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w; %w: %v", err, ErrRollbackIncomplete, joinErrs(errs))
 }
 
 // Install runs the install / reinstall plan (silent core of 7b; the
@@ -120,7 +135,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			} else {
 				log.Printf("rolling back the upgrade")
 			}
-			undo.run(log)
+			err = withRollback(err, undo.run(log))
 		}
 		return fail(err)
 	}
@@ -205,9 +220,17 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		ResetPeriod: FailureResetPeriod, FailureDelays: FailureDelays, SDDL: ServiceSDDL,
 	}
 	if svc.Exists {
+		prevDesc := ""
+		if svc.DescriptionOK {
+			prevDesc = svc.Description // "" = unknown: UpdateService leaves it
+		}
+		prevName := svc.DisplayName
+		if prevName == "" {
+			prevName = version.ProductName
+		}
 		prev := ServiceSpec{
-			Name: model.ServiceName, DisplayName: version.ProductName,
-			ImagePath: svc.ImagePath, Description: svc.Description,
+			Name: model.ServiceName, DisplayName: prevName,
+			ImagePath: svc.ImagePath, Description: prevDesc,
 			AutoStart:   svc.AutoStart,
 			ResetPeriod: FailureResetPeriod, FailureDelays: FailureDelays, SDDL: ServiceSDDL,
 		}
@@ -268,18 +291,24 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			res.Err = errf("start service (see "+joinDir(c.DataDir, `logs\exchsvc.log`)+")", err)
 			log.Printf("ERROR: %v", res.Err)
 			if !fresh {
+				// V2 may hang in START_PENDING and keep its exe locked: stop it
+				// (terminate our own svc exe if needed) before restoring files
+				if ferr := sys.ForceStopService(model.ServiceName, dir); ferr != nil {
+					warn("stop failed V2 service: %v", ferr)
+				}
 				log.Printf("rolling back the upgrade after StartService failure")
-				undo.run(log)
+				if errs := undo.run(log); len(errs) > 0 {
+					res.Err = withRollback(res.Err, errs)
+					log.Printf("ERROR: rollback incomplete: %v", joinErrs(errs))
+				}
 			}
 			res.Code = ExitError
 			return res
 		}
-		// Start succeeded: drop the "restart old service" undo entry's effect by
-		// clearing undo only for bak removal path — keep undo unused on success.
 	}
-	// Drop *.bak: after successful StartService when wasRunning; otherwise after
-	// registrations when the service was not running (no start to wait for).
-	if !fresh && (wasRunning && start || !wasRunning) {
+	// Drop *.bak on upgrade: here the V2 service either started successfully
+	// or was not running before (nothing to wait for).
+	if !fresh {
 		for _, p := range bakPaths {
 			if err := sys.RemoveBackup(p); err != nil {
 				warn("remove backup %s: %v", p, err)

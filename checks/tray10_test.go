@@ -152,7 +152,7 @@ var winAPIMinVersion = map[string]float64{
 	"QueryServiceObjectSecurity": 5.0, "SetServiceObjectSecurity": 5.0,
 	"StartServiceW": 5.0, "ControlService": 5.0, "DeleteService": 5.0,
 	"GetDriveTypeW": 5.0, "GetDiskFreeSpaceExW": 5.0, "GetWindowsDirectoryW": 5.0,
-	"OpenProcess": 5.0, "WaitForSingleObject": 5.0,
+	"OpenProcess": 5.0, "GetLongPathNameW": 5.0, "WaitForSingleObject": 5.0,
 	"ProcessIdToSessionId": 5.0, "GetCurrentProcessId": 5.0,
 	"CreateToolhelp32Snapshot": 5.0, "Process32FirstW": 5.0, "Process32NextW": 5.0,
 	"TerminateProcess": 5.0, "QueryFullProcessImageNameW": 6.0,

@@ -59,9 +59,17 @@ func TestCHK_SQL_07_DatabasesGrantIntegration(t *testing.T) {
 		if _, err := sa.DB().ExecContext(ctx, gs.SQL); err == nil || !strings.Contains(err.Error(), "replace") {
 			t.Fatalf("placeholder accepted: %v", err)
 		}
+		long := strings.Replace(gs.SQL, "N'"+gs.PasswordPlaceholder+"'", "N'"+strings.Repeat("x", 129)+"'", 1)
+		if _, err := sa.DB().ExecContext(ctx, long); err == nil || !strings.Contains(err.Error(), "128") {
+			t.Fatalf("long password accepted: %v", err)
+		}
+		filled, err := model.SQLGrantFillPassword(gs, pw)
+		if err != nil {
+			t.Fatal(err)
+		}
 		script := strings.Replace(gs.SQL, "N'"+gs.PasswordPlaceholder+"'", "N'"+pw+"'", 1)
-		for i := 0; i < 2; i++ { // idempotent
-			if _, err := sa.DB().ExecContext(ctx, script); err != nil {
+		for i, sc := range []string{script, filled} { // idempotent
+			if _, err := sa.DB().ExecContext(ctx, sc); err != nil {
 				t.Fatalf("%q run %d: %v", login, i, err)
 			}
 		}

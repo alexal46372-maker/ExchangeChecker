@@ -12,6 +12,8 @@ const (
 	ValSQLInstanceName = "validation.sql_instance_name"
 	// ValSQLPrincipal: {2} = reason (SQLPrincipal* constants).
 	ValSQLPrincipal = "validation.sql_principal"
+	// ValSQLGrantPassword: {2} = reason (too_long / control_char).
+	ValSQLGrantPassword = "validation.sql_grant_password"
 )
 
 var sqlWizardMessages = map[string]LocalizedText{
@@ -30,7 +32,9 @@ var sqlWizardMessages = map[string]LocalizedText{
 	MsgSQLCandCounters:      {"Только счётчики сообщений, без времени", "Message counters only, no times"},
 	MsgSQLCandIncomplete:    {"Неполный вариант (нет времени отправки/приёма или точек)", "Incomplete (no send/receive time or no points)"},
 	MsgSQLCandLowScore:      {"Низкая уверенность", "Low confidence"},
-	ValSQLBrowseHost:        {"Поле «{0}»: укажите имя компьютера или IP-адрес.", "Field \"{0}\": enter a computer name or an IP address."},
+	ValSQLGrantPassword: {"Поле «{0}»: недопустимый пароль ({2}): до 128 символов, без управляющих символов.",
+		"Field \"{0}\": invalid password ({2}): up to 128 characters, no control characters."},
+	ValSQLBrowseHost: {"Поле «{0}»: укажите имя компьютера или IP-адрес.", "Field \"{0}\": enter a computer name or an IP address."},
 	ValSQLInstanceName: {"Поле «{0}»: имя экземпляра — до {2} символов, начинается с буквы, _ или #.",
 		"Field \"{0}\": the instance name has up to {2} characters and starts with a letter, _ or #."},
 	ValSQLPrincipal: {"Поле «{0}»: недопустимое имя ({2}). Windows: ДОМЕН\\ИМЯ или ДОМЕН\\КОМПЬЮТЕР$; SQL-логин без «\\»; до 128 символов, без управляющих символов и пробелов по краям.",
@@ -52,5 +56,5 @@ func SQLWizardMessageKeys() []string {
 
 // SQLWizardValidationKeys lists the phase 9 validation.sql_* keys.
 func SQLWizardValidationKeys() []string {
-	return []string{ValSQLBrowseHost, ValSQLInstanceName, ValSQLPrincipal}
+	return []string{ValSQLBrowseHost, ValSQLInstanceName, ValSQLPrincipal, ValSQLGrantPassword}
 }

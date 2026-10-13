@@ -1,6 +1,6 @@
 package model
 
-// Phase 9 (PLAN §12 p. 99, CHK-SQL-09): "what to do" texts for a failed
+// Phase 9 (PLAN §12 p. 108, CHK-SQL-09): "what to do" texts for a failed
 // connection test, per sqlcheck.ConnCategory and per sql.tls_* key
 // (IPC sql_diagnose; driver-independent). Control names follow the tray
 // settings window (phase 8, CHK-TRAY-14).

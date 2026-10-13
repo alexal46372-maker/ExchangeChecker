@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// Phase 9 (PLAN §12 p. 99, CHK-SQL-09): a T-SQL script that a SQL Server
+// Phase 9 (PLAN §12 p. 108, CHK-SQL-09): a T-SQL script that a SQL Server
 // administrator runs (SSMS, sqlcmd) to give Exchange Checker read-only
 // access to one database: login (SQL or Windows) if missing, database
 // user if missing, role db_datareader. SQL Server 2005/2008 compatible
@@ -184,7 +184,7 @@ func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
 		w("-- Replace " + SQLGrantPasswordPlaceholder + " below with the password of the login first.")
 	}
 	w("SET NOCOUNT ON;",
-		"DECLARE @login sysname, @db sysname, @password nvarchar(128), @sql nvarchar(max);",
+		"DECLARE @login sysname, @db sysname, @password nvarchar(max), @sql nvarchar(max);",
 		"SET @login = "+sqlNLiteral(r.Principal)+";",
 		"SET @db = "+sqlNLiteral(r.Database)+";")
 	if !win {
@@ -192,6 +192,11 @@ func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
 			"IF @password IS NULL OR LEN(@password) = 0 OR @password = N'{{' + N'PASSWORD}}'",
 			"BEGIN",
 			"    RAISERROR(N'Exchange Checker: replace "+SQLGrantPasswordPlaceholder+" with the password of the login.', 16, 1);",
+			"    RETURN;",
+			"END;",
+			"IF LEN(@password) > 128",
+			"BEGIN",
+			"    RAISERROR(N'Exchange Checker: the password is longer than 128 characters.', 16, 1);",
 			"    RETURN;",
 			"END;")
 	}
@@ -233,10 +238,51 @@ func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
 		res.Notes = append(res.Notes,
 			LocalizedText{"Замените " + SQLGrantPasswordPlaceholder + " надёжным паролем (без этого скрипт остановится с ошибкой). Пароль в скрипт программой не подставляется и нигде не сохраняется; после запуска службы введите его в трее.",
 				"Replace " + SQLGrantPasswordPlaceholder + " with a strong password (the script stops with an error otherwise). The program never puts the password into the script or stores it; enter it in the tray after the service starts."},
+			LocalizedText{"Пароль пишется внутри N'…': каждый апостроф (') в пароле нужно удвоить (''). Длина — не более 128 символов, иначе скрипт остановится с ошибкой.",
+				"The password goes inside N'…': double every apostrophe (') in it (''). At most 128 characters, otherwise the script stops with an error."},
 			LocalizedText{"CHECK_POLICY = ON применяет политику паролей Windows (сложность, блокировка); CHECK_EXPIRATION = OFF — пароль не истекает, иначе опрос остановится.",
 				"CHECK_POLICY = ON applies the Windows password policy (complexity, lockout); CHECK_EXPIRATION = OFF — the password does not expire, otherwise polling would stop."},
 			LocalizedText{"На сервере должен быть включён смешанный режим проверки подлинности (SQL Server and Windows Authentication mode).",
 				"The server must use mixed mode authentication (SQL Server and Windows Authentication mode)."})
 	}
 	return res, nil
+}
+
+// MaxSQLPasswordLen: SQL Server passwords are at most 128 characters.
+const MaxSQLPasswordLen = 128
+
+// ValidateSQLGrantPassword checks a password the user wants to put into a
+// grant script locally (SQLGrantFillPassword): non-empty, valid UTF-8, no
+// control characters, at most 128 characters. Errors: *FieldError
+// "password" with ValSQLGrantPassword and a reason (empty_part is not
+// used; too_long / control_char / required).
+func ValidateSQLGrantPassword(pw string) error {
+	switch {
+	case pw == "":
+		return fieldErr("password", ValRequired, "password is required")
+	case !utf8.ValidString(pw) || strings.IndexFunc(pw, unicode.IsControl) >= 0:
+		return fieldErr("password", ValSQLGrantPassword, "password: control character", SQLPrincipalControl)
+	case utf8.RuneCountInString(pw) > MaxSQLPasswordLen:
+		return fieldErr("password", ValSQLGrantPassword, "password: longer than 128 characters", SQLPrincipalTooLong)
+	}
+	return nil
+}
+
+// SQLGrantFillPassword returns the script with the placeholder replaced by
+// pw as T-SQL literal content (apostrophes doubled). For local display
+// only (EC Tray): the service never builds, stores or logs a script with
+// a password (POLICY §9); SQLGrantRequest has no password field on
+// purpose.
+func SQLGrantFillPassword(s SQLGrantScript, pw string) (string, error) {
+	if s.PasswordPlaceholder == "" {
+		return "", fieldErr("password", ValConflict, "password: the script has no password (Windows login)")
+	}
+	if err := ValidateSQLGrantPassword(pw); err != nil {
+		return "", err
+	}
+	lit := "N'" + s.PasswordPlaceholder + "';"
+	if strings.Count(s.SQL, lit) != 1 {
+		return "", fieldErr("password", ValConflict, "password: placeholder not found")
+	}
+	return strings.Replace(s.SQL, lit, "N'"+strings.ReplaceAll(pw, "'", "''")+"';", 1), nil
 }

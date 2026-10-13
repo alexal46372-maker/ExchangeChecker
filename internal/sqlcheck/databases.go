@@ -8,7 +8,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// Phase 9 (PLAN §12 p. 97, CHK-SQL-07): the database list of the
+// Phase 9 (PLAN §12 p. 106, CHK-SQL-07): the database list of the
 // connection wizard. Read-only, no session SET; SQL Server 2005/2008
 // compatible (CHK-SQL-05). Only user databases (database_id > 4) that are
 // ONLINE (state 0) and that the login may open (HAS_DBACCESS = 1).

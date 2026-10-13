@@ -1,6 +1,6 @@
 package model
 
-// Phase 9 (PLAN §12 p. 98, CHK-SQL-08): automatic choice of the Discovery
+// Phase 9 (PLAN §12 p. 107, CHK-SQL-08): automatic choice of the Discovery
 // candidate. The wizard may apply a candidate without asking only when the
 // result is unambiguous: one exchange plan, a strong best candidate and a
 // clear margin over the runner-up. Thresholds are in Discovery score

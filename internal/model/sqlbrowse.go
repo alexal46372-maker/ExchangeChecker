@@ -7,7 +7,7 @@ import (
 	"unicode"
 )
 
-// Phase 9 (connection wizard, EC SQL part; PLAN §12 p. 96, CHK-SQL-06):
+// Phase 9 (connection wizard, EC SQL part; PLAN §12 p. 105, CHK-SQL-06):
 // SQL Server instances found through the SQL Server Browser service
 // (SSRP over UDP 1434). Driver-independent request / result for the IPC
 // command sql_browse (EC Service -> EC Tray).
@@ -17,8 +17,8 @@ const (
 	// DefaultSQLBrowseTimeoutMs: how long responses are collected.
 	DefaultSQLBrowseTimeoutMs = 2000
 	// MinSQLBrowseTimeoutMs / MaxSQLBrowseTimeoutMs bound TimeoutMs.
-	MinSQLBrowseTimeoutMs = 200
-	MaxSQLBrowseTimeoutMs = 15000
+	MinSQLBrowseTimeoutMs = 500
+	MaxSQLBrowseTimeoutMs = 5000
 	// MaxSQLBrowseInstances caps the instances of one result (Truncated).
 	MaxSQLBrowseInstances = 256
 	// MaxSQLBrowseHostLen: host name / IP literal length.
@@ -74,7 +74,7 @@ func (i SQLServerInstance) Server() string {
 // SQLBrowseResult is the answer of sql_browse.
 type SQLBrowseResult struct {
 	Instances []SQLServerInstance `json:"instances"`
-	// Responders is the number of distinct addresses that answered.
+	// Responders is the number of distinct ip:port sources that answered.
 	Responders int `json:"responders"`
 	// Truncated: more than MaxSQLBrowseInstances instances answered.
 	Truncated bool `json:"truncated"`
@@ -84,6 +84,8 @@ type SQLBrowseResult struct {
 	// timeout; that alone is not partial.
 	Partial   bool `json:"partial"`
 	Malformed int  `json:"malformed,omitempty"`
+	// Ignored: answers from addresses no request went to (addressed mode).
+	Ignored int `json:"ignored,omitempty"`
 }
 
 // Timeout returns TimeoutMs or the default.

@@ -9,7 +9,7 @@ import (
 
 // CHK-SQL-06: browse request validation and limits.
 func TestCHK_SQL_06_BrowseRequest(t *testing.T) {
-	ok := []SQLBrowseRequest{{}, {Host: "srv-1c.corp.local"}, {Host: "10.0.0.5", Instance: "SQL2008"}, {TimeoutMs: 200}}
+	ok := []SQLBrowseRequest{{}, {Host: "srv-1c.corp.local"}, {Host: "10.0.0.5", Instance: "SQL2008"}, {TimeoutMs: 500}}
 	for _, r := range ok {
 		if err := r.Validate(); err != nil {
 			t.Errorf("%+v: %v", r, err)
@@ -160,7 +160,7 @@ const goldenWindowsGrant = `-- Exchange Checker: read-only access (role db_datar
 -- SQL Server 2005 / 2008 and newer. Safe to run again. Run as a member of sysadmin
 -- (or securityadmin + db_owner of the database).
 SET NOCOUNT ON;
-DECLARE @login sysname, @db sysname, @password nvarchar(128), @sql nvarchar(max);
+DECLARE @login sysname, @db sysname, @password nvarchar(max), @sql nvarchar(max);
 SET @login = N'CORP\EC-HOST$';
 SET @db = N'buh_2008';
 IF DB_ID(@db) IS NULL
@@ -200,6 +200,27 @@ func TestCHK_SQL_09_GrantScript(t *testing.T) {
 	sq, err := SQLGrantScriptFor(SQLGrantRequest{Principal: "ec_reader", Database: "buh"})
 	if err != nil || sq.PasswordPlaceholder != SQLGrantPasswordPlaceholder || strings.Count(sq.SQL, SQLGrantPasswordPlaceholder) < 1 || !strings.Contains(sq.SQL, "CHECK_POLICY = ON") {
 		t.Fatalf("%v %q", err, sq.SQL)
+	}
+	// Password helper (local display only): apostrophes doubled, length.
+	filled, err := SQLGrantFillPassword(sq, "pa'ss")
+	if err != nil || !strings.Contains(filled, "SET @password = N'pa''ss';") || strings.Contains(filled, SQLGrantPasswordPlaceholder+"';") {
+		t.Errorf("fill: %v", err)
+	}
+	if !strings.Contains(sq.SQL, "LEN(@password) > 128") {
+		t.Error("no length guard in the script")
+	}
+	var pe *FieldError
+	if _, err := SQLGrantFillPassword(sq, strings.Repeat("x", 129)); !errors.As(err, &pe) || pe.Key != ValSQLGrantPassword || pe.Args[0] != SQLPrincipalTooLong {
+		t.Errorf("long: %v", err)
+	}
+	if _, err := SQLGrantFillPassword(sq, "a\nb"); !errors.As(err, &pe) || pe.Args[0] != SQLPrincipalControl {
+		t.Errorf("control: %v", err)
+	}
+	if _, err := SQLGrantFillPassword(s, "x"); err == nil {
+		t.Error("windows script has no password")
+	}
+	if ValidateSQLGrantPassword(strings.Repeat("я", 128)) != nil || ValidateSQLGrantPassword("") == nil {
+		t.Error("validate")
 	}
 	// SQL 2008 compatibility of both variants: sqlcheck TestCHK_SQL_09_GrantCompat.
 	// Injection: names only appear inside N'' literals with ' doubled.

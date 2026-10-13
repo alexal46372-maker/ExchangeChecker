@@ -16,8 +16,9 @@ const (
 	// IPCRequest.ProfileID. Reply MsgOK with Result ResultAccepted /
 	// ResultCheckCoalesced and CheckSeq, or MsgError rate_limited with
 	// RetryAfterMs. Completion rule (normative for EC Tray, accepted and
-	// coalesced alike): the first status with seq > checkSeq.
-	// StatusSnapshot.LastCheckSeq is informational. poll_now is unchanged (architect decision 5); EC Tray
+	// coalesced alike): a status with lastCheckSeq >= checkSeq (exact; a
+	// coalesced check may complete one poll later). The status seq is not
+	// a completion signal. poll_now is unchanged (architect decision 5); EC Tray
 	// should switch its "check now" action from poll_now to check_now.
 	CmdCheckNow = "check_now"
 	// CmdEventsSince returns the transition events after
@@ -39,8 +40,8 @@ const (
 )
 
 // ResultCheckCoalesced: check_now merged into a running or queued poll of
-// the same profile(s); nothing new was started. Wait for a status with
-// seq > checkSeq.
+// the same profile(s); nothing new was started. Complete when a status has
+// lastCheckSeq >= checkSeq (possibly one poll later).
 const ResultCheckCoalesced = "coalesced"
 
 // TruncatedScan: a history page stopped after its scan budget (lines /
@@ -225,8 +226,8 @@ type HistoryPage struct {
 // CheckResult is the monitor's answer to check_now.
 type CheckResult struct {
 	Coalesced bool
-	// CheckSeq: the result is contained in the first status with
-	// seq > CheckSeq.
+	// CheckSeq numbers the request (its own counter, independent of the
+	// status seq): complete when StatusSnapshot.LastCheckSeq >= CheckSeq.
 	CheckSeq uint64
 }
 

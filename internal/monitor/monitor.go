@@ -339,9 +339,13 @@ type Monitor struct {
 	runID     string
 	ring      eventRing
 	// phase 9: when a point / profile left ok (recovered durationMin, mu),
-	// check_now sequence requested / included (mu)
+	// check_now (CHK-SVC-04, mu): checkCounter numbers the requests,
+	// checkPend holds the newest pending CheckSeq per scope ("" = all
+	// profiles, else a profile id), lastCheckSeq: every check with
+	// CheckSeq <= lastCheckSeq is contained in the published status
 	raisedAt     map[string]time.Time
-	checkReqSeq  uint64
+	checkCounter uint64
+	checkPend    map[string]uint64
 	lastCheckSeq uint64
 }
 
@@ -981,7 +985,7 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 		}
 	}
 	settings := m.cfg.Settings
-	reqSeq := m.checkReqSeq // phase 9: check_now requests covered by this poll
+	m.takeChecksLocked(only) // phase 9: check_now requests covered by this poll
 	m.mu.Unlock()
 	interval := m.interval()
 	sem := make(chan struct{}, m.opt.MaxConcurrent)
@@ -1034,9 +1038,7 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 		if only == nil {
 			m.lastCycle = now // a full cycle completed (CHK-IPC-04)
 		}
-		if reqSeq > m.lastCheckSeq {
-			m.lastCheckSeq = reqSeq
-		}
+		m.settleChecksLocked()
 		return polled
 	})
 	if only == nil {

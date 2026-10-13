@@ -171,7 +171,7 @@ func (p Profile) DisplayName() string {
 // EffectivePort is the TCP port the driver connects to: Port when set;
 // otherwise DefaultSQLPort (1433) for a plain host, and 0 for
 // "host\instance", whose port the SQL Browser (UDP 1434) resolves
-// (phase 8, CHK-MODEL-02; the same rule as sqlcheck.driverConfig).
+// (phase 8, CHK-MODEL-01; the same rule as sqlcheck.driverConfig).
 func (p Profile) EffectivePort() int {
 	_, inst := splitHostInstance(p.Server)
 	return identityPort(p.Port, inst)

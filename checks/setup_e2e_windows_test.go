@@ -472,6 +472,22 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if _, err := os.Stat(lnk); !os.IsNotExist(err) {
 		t.Fatalf("shortcut still present after uninstall: %v", err)
 	}
+	// final (7e): Uninstall key, Event Log source and product files are gone
+	// (the uninstaller exe itself may be pending delete on reboot after 3010)
+	if inst3, err := sys.ReadInstalled(); err != nil || inst3.Present {
+		t.Fatalf("Uninstall key after uninstall: %+v %v", inst3, err)
+	}
+	if ok, err := winapi.RegKeyExistsView(winapi.HKEY_LOCAL_MACHINE, wininstall.EventLogKeyPath, view); err != nil || ok {
+		t.Fatalf("Event Log source key after uninstall: exists=%v %v", ok, err)
+	}
+	for _, n := range []string{config.ServiceExeName, config.TrayExeName} {
+		if _, err := os.Stat(filepath.Join(dir, n)); !os.IsNotExist(err) {
+			t.Fatalf("%s still present after uninstall: %v", n, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, config.UninstallExeName)); err == nil && code != wininstall.ExitRebootRequired {
+		t.Fatalf("%s still present after uninstall exit %d", config.UninstallExeName, code)
+	}
 
 	// reinstall then purge via uninstall.exe
 	code = run(setup, "/S", "/DIR="+dirArg, "/NOSTART", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-reinst.log"))

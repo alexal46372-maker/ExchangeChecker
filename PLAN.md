@@ -595,11 +595,11 @@ Wizard Win32 (страницы):
 - **G2/G3 в службе (CHK-IPC-08, CHK-IPC-09; §6.2, §12 п. 74) ✅:** `discover`, `discover_by_value`, `list_node_points`, `check_mapping` — только админ, асинхронно с `cancel`, лимиты (1 тяжёлая, пул 2, одна на профиль, брошенные ≤ 2), жёсткий предел 100 с, ответы ≤ 64 КиБ, ручной SQL — `Compat2008Violations` до `PreviewMapping`
 - EC Tray 6d (Discovery UI по capabilities) — ✅ (фаза 6 трея); прогресс `discover_progress` — по запросу
 
-### Фаза 7 — Инсталлятор
+### Фаза 7 — Инсталлятор ✅ (7a–7e; решения — §12 п. 90, план — `docs/PHASE7.md`)
 
 - `cmd/exchsetup` + `internal/wininstall`
 - HKLM Run `ExchangeCheckerTray`: при установке — стартовое значение (`"<папка>\ExchangeCheckerTray.exe"`, 64-битное представление), при деинсталляции — удалить (§12 п. 72); дальше значение ведёт служба по `trayAutostart` (CHK-CFG-04)
-- check: `CHK-SETUP-01`
+- checks (все implemented, `checks/CHECKS.md`): `CHK-RES-01`, `CHK-VER-01`, `CHK-SETUP-01`…`CHK-SETUP-12`, `CHK-DELIV-01`; payload gzip (stdlib), zip поставки собирается и проверяется в CI без загрузки (7e)
 - **EC Tray T1 (подфаза 7c, PLAN-phase7 §7.3/§10.3) ✅ (`CHK-TRAY-11`):** выход трея по `RegisterWindowMessageW(model.TrayExitMessage = "ExchangeChecker.TrayExit")` — главное скрытое окно → `App.Exit()` (значок удаляется, NIM_DELETE), окна `--settings` и Discovery закрываются сразу без вопросов (открытый вопрос отвечает «Нет», после него вопросов нет); `WM_CLOSE` главного окна тоже → `App.Exit()`. Межсеансовое событие (T2) и `.syso` (T3) — не сделаны Контракт доставки: сообщение, отправленное главному окну трея, **никогда** не получает отдельный процесс `--settings`; поэтому инсталлятор шлёт его `HWND_BROADCAST` либо каждому классу — `model.TrayWindowClass` (`ExchangeCheckerTray`), `model.TraySettingsClass` (`ExchangeCheckerTraySettings`; окно только для чтения — `model.TraySettingsViewClass`) и `model.TrayDiscoveryClass` (`ExchangeCheckerTrayDiscovery`). `App.Exit` удаляет значок до ожидания сессии и ждёт её не дольше 2 с (§12 пп. 87–89)
 - План и решения: `docs/PHASE7.md`, §12 п. 90. Подфазы (каждая — зелёный CI):
   - **7a ✅** версия (`var Version`, `-X`), ресурсы без внешних тулов (`internal/winres`, `tools/mkres`; `.syso` setup и службы с VERSIONINFO, манифестами, MESSAGETABLE), имена exe в `internal/config`, release-like build в CI — `CHK-RES-01`, `CHK-VER-01`, `CHK-SETUP-11`;
@@ -687,7 +687,7 @@ Wizard Win32 (страницы):
 48. **Строка состояния службы** — неактивный пункт меню над списком баз.
 49. **Цвет базы** — цветной квадрат через `MENUITEMINFO.hbmpItem` (32-бит DIB), без owner-draw; цвет продублирован текстом статуса (доступность).
 50. **Окно тревоги:** закрытие только глушит звук до следующей смены статуса; подтверждение — отдельная кнопка «Подтвердить».
-51. **Ресурсы трея:** `.syso` хранится в репозитории вместе с исходными `.ico`, `.manifest` и короткой заметкой о пересборке (`cmd/exchtray/RESOURCES.md`); генератор в go.mod не добавляется. Манифест: asInvoker, Common Controls v6, supportedOS Win7+. (Фаза 7a: `.syso` setup и службы генерирует `tools/mkres` на `internal/winres` — std-only, в go.mod ничего не добавлено, п. 90; трей переходит на mkres в 7e.)
+51. **Ресурсы трея:** `.syso` хранится в репозитории вместе с исходными `.ico`, `.manifest` и короткой заметкой о пересборке (`cmd/exchtray/RESOURCES.md`); генератор в go.mod не добавляется. Манифест: asInvoker, Common Controls v6, supportedOS Win7+. (Фаза 7a: `.syso` setup и службы генерирует `tools/mkres` на `internal/winres` — std-only, в go.mod ничего не добавлено, п. 90; переход трея на mkres (T3, EC Tray) в 7e не выполнен — остаётся открытым пунктом EC Tray.)
 52. **G7 обязателен:** до первой команды трей сравнивает PID сервера канала (`GetNamedPipeServerProcessId`) с PID службы из SCM (`QueryServiceStatusEx`); при несовпадении пароль не отправляется, показывается ошибка. Служба создаёт канал с `FILE_FLAG_FIRST_PIPE_INSTANCE` (сторона службы).
 53. **Общие настройки** — в фазе 6, подфаза 6e. Язык — на пользователя в HKCU-ключе трея, без прав администратора.
 54. **Сохранение профиля с Windows-аутентификацией** удаляет сохранённый пароль (сторона службы).

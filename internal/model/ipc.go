@@ -334,7 +334,8 @@ type IPCMessage struct {
 	History *HistoryPage `json:"history,omitempty"`
 	// RetryAfterMs: rate_limited reply of check_now.
 	RetryAfterMs int64 `json:"retryAfterMs,omitempty"`
-	// CheckSeq: check_now reply (always present there).
+	// CheckSeq: check_now reply (always present there); complete when a
+	// status has lastCheckSeq >= checkSeq.
 	CheckSeq *uint64 `json:"checkSeq,omitempty"`
 	// Events / RunID / LastID / ResetRequired of a MsgEvents reply (Truncated is
 	// shared): LastID is the ID of the last event in Events, or the

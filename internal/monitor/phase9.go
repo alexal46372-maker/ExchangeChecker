@@ -121,11 +121,12 @@ const (
 // one per model.CheckAllInterval for all profiles and one per
 // model.CheckProfileInterval per profile (also not within
 // CheckProfileInterval after a check of all profiles); a refused check is
-// rate_limited with RetryAfterMs. CheckSeq: the result is in the first
-// status with seq > CheckSeq. poll_now is not affected.
+// rate_limited with RetryAfterMs. CheckSeq numbers the request (its own
+// counter, not the status seq); the check is complete when a status has
+// LastCheckSeq >= CheckSeq (the only completion rule). poll_now is not
+// affected.
 func (m *Monitor) CheckNow(profileID string) (model.CheckResult, error) {
 	m.mu.Lock()
-	seq := m.seq
 	found, enabled := false, false
 	for _, p := range m.cfg.Profiles {
 		if p.ID == profileID {
@@ -147,15 +148,8 @@ func (m *Monitor) CheckNow(profileID string) (model.CheckResult, error) {
 	now := m.opt.Now()
 	m.cmdMu.Lock()
 	defer m.cmdMu.Unlock()
-	res := model.CheckResult{CheckSeq: seq}
-	m.mu.Lock()
-	if seq > m.checkReqSeq {
-		m.checkReqSeq = seq
-	}
-	m.mu.Unlock()
 	if m.pendAll || (profileID != "" && (m.pendIDs[profileID] || (e != nil && e.busyNow()))) {
-		res.Coalesced = true
-		return res, nil
+		return model.CheckResult{Coalesced: true, CheckSeq: m.registerCheck(profileID)}, nil
 	}
 	var wait time.Duration
 	check := func(key string, d time.Duration) {
@@ -184,9 +178,49 @@ func (m *Monitor) CheckNow(profileID string) (model.CheckResult, error) {
 		m.checkLast[checkKeyProfile+profileID] = now
 		m.pendIDs[profileID] = true
 	}
+	res := model.CheckResult{CheckSeq: m.registerCheck(profileID)}
 	select {
 	case m.pollNow <- struct{}{}:
 	default:
 	}
 	return res, nil
+}
+
+// registerCheck numbers an accepted / coalesced check_now of scope
+// profileID ("" = all) and marks it pending (cmdMu held).
+func (m *Monitor) registerCheck(profileID string) uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.checkCounter++
+	if m.checkPend == nil {
+		m.checkPend = map[string]uint64{}
+	}
+	m.checkPend[profileID] = m.checkCounter
+	return m.checkCounter
+}
+
+// takeChecksLocked removes the pending checks a poll starting now covers:
+// all of them for a full cycle (only == nil), else those of the polled
+// profiles (m.mu held). A check registered later stays pending: the poll
+// that started before it does not complete it.
+func (m *Monitor) takeChecksLocked(only map[string]bool) {
+	for scope := range m.checkPend {
+		if only == nil || (scope != "" && only[scope]) {
+			delete(m.checkPend, scope)
+		}
+	}
+}
+
+// settleChecksLocked advances lastCheckSeq when a poll is published: every
+// check below the oldest still pending one is complete (m.mu held).
+func (m *Monitor) settleChecksLocked() {
+	done := m.checkCounter
+	for _, s := range m.checkPend {
+		if s-1 < done {
+			done = s - 1
+		}
+	}
+	if done > m.lastCheckSeq {
+		m.lastCheckSeq = done
+	}
 }

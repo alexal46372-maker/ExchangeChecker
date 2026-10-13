@@ -28,10 +28,9 @@ func TestCHK_SVC_04_CheckNow(t *testing.T) {
 	m := New(baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(),
 		Profiles: []model.Profile{prof("db1"), off}}), clk))
 	m.LoadConfig()
-	seq := m.Snapshot().Seq
 	r, err := m.CheckNow("db1")
-	if err != nil || r.Coalesced || r.CheckSeq != seq {
-		t.Fatalf("first: %+v %v (seq %d)", r, err, seq)
+	if err != nil || r.Coalesced || r.CheckSeq != 1 {
+		t.Fatalf("first: %+v %v", r, err)
 	}
 	if r, err := m.CheckNow("db1"); err != nil || !r.Coalesced {
 		t.Fatalf("queued poll must coalesce: %+v %v", r, err)
@@ -220,5 +219,52 @@ func TestCHK_CFG_05_SaveProfileTarget(t *testing.T) {
 	_, err := e.m.SaveProfile(q, "pw3", false, e.rev(), "acct")
 	if ie := p9IPCErr(t, err); ie.Key != model.MsgMonitorProfileInvalid || len(ie.Args) < 2 || ie.Args[0] != "server" || ie.Args[1] != model.ValSQLServerForbidden {
 		t.Errorf("np: %+v", ie)
+	}
+}
+
+// TestCHK_SVC_04_LastCheckSeq — the completion rule lastCheckSeq >=
+// checkSeq: not reached by an unrelated status (publish without a poll)
+// nor by a poll of another profile, reached once the requested poll is
+// published; a check registered later stays pending; a full cycle
+// completes every check.
+func TestCHK_SVC_04_LastCheckSeq(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	m := New(baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(),
+		Profiles: []model.Profile{prof("db1"), prof("db2")}}), clk))
+	m.LoadConfig()
+	ctx := context.Background()
+	m.pollAll(ctx)
+	r1, err := m.CheckNow("db1")
+	if err != nil || r1.CheckSeq == 0 {
+		t.Fatal(r1, err)
+	}
+	last := func() uint64 { return m.Snapshot().LastCheckSeq }
+	m.publish(nil) // a status for another reason (ack, config)
+	if last() >= r1.CheckSeq {
+		t.Fatal("completed by an unrelated status")
+	}
+	m.pollSome(ctx, map[string]bool{"db2": true})
+	if last() >= r1.CheckSeq {
+		t.Fatal("completed by a poll of another profile")
+	}
+	clk.Add(11 * time.Second)
+	r2, err := m.CheckNow("db2")
+	if err != nil || r2.CheckSeq <= r1.CheckSeq {
+		t.Fatal(r2, err)
+	}
+	m.takePending()
+	m.pollSome(ctx, map[string]bool{"db1": true})
+	if l := last(); l < r1.CheckSeq || l >= r2.CheckSeq {
+		t.Fatalf("after db1 poll: last %d, want >= %d and < %d", l, r1.CheckSeq, r2.CheckSeq)
+	}
+	clk.Add(31 * time.Second)
+	r3, err := m.CheckNow("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.takePending()
+	m.pollAll(ctx)
+	if l := last(); l < r3.CheckSeq || l < r2.CheckSeq {
+		t.Fatalf("after a full cycle: last %d < %d", l, r3.CheckSeq)
 	}
 }

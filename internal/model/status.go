@@ -81,12 +81,11 @@ type StatusSnapshot struct {
 	// ServerNow: service clock when the snapshot was sent (RFC 3339 with
 	// the +03:00 offset, phase 9).
 	ServerNow time.Time `json:"serverNow"`
-	// LastCheckSeq (informational, phase 9 CHK-SVC-04): the highest
-	// check_now CheckSeq whose requested poll is included in this
-	// snapshot; 0 = none. The completion rule of check_now is seq >
-	// checkSeq (model.CmdCheckNow); a status pushed meanwhile for another
-	// reason (ack, another profile's poll) also satisfies it, so a client
-	// that needs the fresh poll itself may also compare LastCheckSeq.
+	// LastCheckSeq (phase 9, CHK-SVC-04): every check_now with CheckSeq <=
+	// LastCheckSeq has its requested poll included in this snapshot; 0 =
+	// none. The only completion rule of check_now: LastCheckSeq >=
+	// checkSeq. A status pushed for another reason (ack, a poll of another
+	// profile) does not advance it.
 	LastCheckSeq uint64 `json:"lastCheckSeq,omitempty"`
 	// Level is the worst level of all enabled profiles.
 	Level    AlertLevel        `json:"level"`

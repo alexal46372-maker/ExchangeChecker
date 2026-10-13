@@ -13,7 +13,8 @@ func TestCHK_SQL_06_SSRPDecodeACP(t *testing.T) {
 	if got := ssrpDecode([]byte("SRV-A;SQL2008")); got != "SRV-A;SQL2008" {
 		t.Errorf("ascii: %q", got)
 	}
-	acp, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetACP").Call()
+	getACP := syscall.NewLazyDLL("kernel32.dll").NewProc("GetACP")
+	acp := findCall(getACP)
 	got := ssrpDecode([]byte{'S', 0xC0, 'X'})
 	if !utf8.ValidString(got) || got == "" {
 		t.Fatalf("%q", got)

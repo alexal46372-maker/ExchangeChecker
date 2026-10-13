@@ -20,6 +20,18 @@ var (
 
 const cpACP = 0
 
+// findCall resolves p with Find before calling it (a missing export is an
+// error, never a panic), like winapi.callProc (CHK-TRAY-10).
+//
+//go:uintptrescapes
+func findCall(p *syscall.LazyProc, a ...uintptr) uintptr {
+	if p.Find() != nil {
+		return 0
+	}
+	r, _, _ := p.Call(a...)
+	return r
+}
+
 // ssrpDecode converts SSRP bytes to UTF-8 (ASCII unchanged; invalid
 // input is dropped later by ssrpValue).
 func ssrpDecode(b []byte) string {
@@ -33,12 +45,12 @@ func ssrpDecode(b []byte) string {
 	if ascii || len(b) == 0 {
 		return string(b)
 	}
-	n, _, _ := procMultiByteToWideChar.Call(cpACP, 0, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), 0, 0)
+	n := findCall(procMultiByteToWideChar, cpACP, 0, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), 0, 0)
 	if n == 0 || n > uintptr(len(b)) {
 		return string(b)
 	}
 	w := make([]uint16, n)
-	n, _, _ = procMultiByteToWideChar.Call(cpACP, 0, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), uintptr(unsafe.Pointer(&w[0])), n)
+	n = findCall(procMultiByteToWideChar, cpACP, 0, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), uintptr(unsafe.Pointer(&w[0])), n)
 	if n == 0 {
 		return string(b)
 	}

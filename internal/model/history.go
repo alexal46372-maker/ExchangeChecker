@@ -15,7 +15,9 @@ const (
 	// CmdCheckNow asks for an immediate poll of every profile ("") or of
 	// IPCRequest.ProfileID. Reply MsgOK with Result ResultAccepted /
 	// ResultCheckCoalesced and CheckSeq, or MsgError rate_limited with
-	// RetryAfterMs. poll_now is unchanged (architect decision 5); EC Tray
+	// RetryAfterMs. Completion rule (normative for EC Tray, accepted and
+	// coalesced alike): the first status with seq > checkSeq.
+	// StatusSnapshot.LastCheckSeq is informational. poll_now is unchanged (architect decision 5); EC Tray
 	// should switch its "check now" action from poll_now to check_now.
 	CmdCheckNow = "check_now"
 	// CmdEventsSince returns the transition events after

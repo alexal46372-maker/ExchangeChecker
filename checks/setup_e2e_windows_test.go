@@ -319,7 +319,7 @@ func assertProtectedSYBA(t *testing.T, label, sddl string) {
 	if !strings.Contains(sddl[:ctrlEnd], "AI") {
 		t.Fatalf("%s DACL missing AI (want P/AI): %s", label, sddl)
 	}
-	re := regexp.MustCompile(`\([^;]*;[^;]*;[^;]*;([^)]+)\)`)
+	re := regexp.MustCompile(`\((?:[^;]*;){5}([^)]+)\)`)
 	m := re.FindAllStringSubmatch(sddl, -1)
 	if len(m) == 0 {
 		t.Fatalf("%s DACL has no ACEs: %s", label, sddl)

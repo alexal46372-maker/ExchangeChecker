@@ -25,10 +25,10 @@ type databaseLister interface {
 
 // fieldRequestError turns a validation error into invalid_request with
 // errorKey monitor.bad_request and errorArgs [field, validation key,
-// args...] (the profile_invalid convention).
+// args...] (the profile_invalid convention); field "" = the error's own.
 func fieldRequestError(err error, field string) error {
 	if fe := model.AsFieldError(err); fe != nil {
-		if fe.Field != "" {
+		if field == "" {
 			field = fe.Field
 		}
 		return &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest, Message: err.Error(),

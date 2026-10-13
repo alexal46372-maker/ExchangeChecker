@@ -167,7 +167,7 @@ func ValidateSQLServerAddr(addr string) error {
 	if why == "" {
 		return nil
 	}
-	return fieldErr("server", ValSQLServerForbidden, "server: named pipe / LPC / DAC / UNC targets are not allowed ("+why+")", why)
+	return fieldErr("server", ValSQLServerForbidden, "server: protocol prefixes, named pipes and UNC paths are not allowed ("+why+")", why)
 }
 
 func sqlServerForbidden(addr string) string {

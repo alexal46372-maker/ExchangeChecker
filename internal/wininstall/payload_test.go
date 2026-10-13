@@ -9,9 +9,14 @@ import (
 
 func gz(t *testing.T, n int) []byte {
 	var b bytes.Buffer
+	t.Helper()
 	w := gzip.NewWriter(&b)
-	w.Write(bytes.Repeat([]byte{'x'}, n))
-	w.Close()
+	if _, err := w.Write(bytes.Repeat([]byte{'x'}, n)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	return b.Bytes()
 }
 

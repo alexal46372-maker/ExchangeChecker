@@ -340,3 +340,16 @@ const ErrServiceExists syscall.Errno = 1073
 
 // ErrServiceCannotAcceptCtrl is ERROR_SERVICE_CANNOT_ACCEPT_CTRL (1061).
 const ErrServiceCannotAcceptCtrl syscall.Errno = 1061
+
+// ServiceMarkedForDelete reports whether svc is marked for deletion
+// (ChangeServiceConfigW with SERVICE_NO_CHANGE → ERROR_SERVICE_MARKED_FOR_DELETE).
+func ServiceMarkedForDelete(svc ServiceHandle) bool {
+	r, _, e := callProc(procChangeServiceConfigW, uintptr(svc),
+		uintptr(ServiceNoChange), uintptr(ServiceNoChange), uintptr(ServiceNoChange),
+		0, 0, 0, 0, 0, 0, 0)
+	if r != 0 {
+		return false
+	}
+	en, ok := e.(syscall.Errno)
+	return ok && en == ErrServiceMarkedForDelete
+}

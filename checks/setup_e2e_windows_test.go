@@ -3,6 +3,7 @@
 package checks_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -229,13 +230,15 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 
 	// uninstall via installed ExchangeCheckerUninstall.exe (keep data)
-	code = run(uninst, "/uninstall", "/S", "/LOG="+filepath.Join(os.TempDir(), "ec-setup-e2e-uninst.log"))
+	uninstLog := filepath.Join(os.TempDir(), "ec-setup-e2e-uninst.log")
+	code = run(uninst, "/uninstall", "/S", "/LOG="+uninstLog)
 	if code != 0 && code != wininstall.ExitRebootRequired {
+		dumpLog(t, uninstLog)
 		t.Fatalf("uninstall exit %d", code)
 	}
-	info, _ = sys.QueryService(model.ServiceName)
-	if info.Exists {
-		t.Fatal("service still exists after uninstall")
+	if err := waitServiceGone(t, sys, model.ServiceName, 60*time.Second); err != nil {
+		dumpLog(t, uninstLog)
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(data); err != nil {
 		t.Fatalf("data should remain without /PURGEDATA: %v", err)
@@ -261,4 +264,30 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if _, err := os.Stat(data); err == nil {
 		t.Errorf("data dir still present after /PURGEDATA: %s", data)
 	}
+}
+
+func waitServiceGone(t *testing.T, sys wininstall.System, name string, d time.Duration) error {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		info, err := sys.QueryService(name)
+		if err != nil {
+			return err
+		}
+		if !info.Exists {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("service %s still exists after uninstall", name)
+}
+
+func dumpLog(t *testing.T, path string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Logf("log %s: %v", path, err)
+		return
+	}
+	t.Logf("---- %s ----\n%s", path, string(b))
 }

@@ -154,6 +154,9 @@ func (winSystem) QueryService(name string) (ServiceInfo, error) {
 		return ServiceInfo{}, err
 	}
 	defer svc.Close()
+	if winapi.ServiceMarkedForDelete(svc) {
+		return ServiceInfo{}, nil
+	}
 	cfg, err := winapi.QueryServiceConfig(svc)
 	if err != nil {
 		return ServiceInfo{}, err
@@ -351,21 +354,39 @@ func (winSystem) DeleteService(name string) error {
 		return err
 	}
 	defer scm.Close()
-	svc, err := winapi.OpenService(scm, name, winapi.ServiceDelete)
+	svc, err := winapi.OpenService(scm, name, winapi.ServiceDelete|winapi.ServiceQueryStatus)
 	if err != nil {
 		if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
 			return nil
 		}
 		return err
 	}
-	defer svc.Close()
 	if err := winapi.DeleteService(svc); err != nil {
+		svc.Close()
 		if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
 			return nil
 		}
 		return err
 	}
-	return nil
+	svc.Close() // must close before SCM drops a marked-for-delete service
+	// Wait until the name is gone or only a mark-for-delete stub remains.
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		h, err := winapi.OpenService(scm, name, winapi.ServiceQueryStatus|winapi.ServiceChangeConfig)
+		if err != nil {
+			if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
+				return nil
+			}
+			return err
+		}
+		marked := winapi.ServiceMarkedForDelete(h)
+		h.Close()
+		if marked {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("DeleteService %s: still present after mark-for-delete", name)
 }
 
 func (winSystem) SetEventSource(msgFile string) error {

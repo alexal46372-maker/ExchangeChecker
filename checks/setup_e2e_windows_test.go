@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -169,9 +170,19 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		if err != nil || len(faBuf) < int(unsafe.Sizeof(winapi.ServiceFailureActionsW{})) {
 			t.Fatalf("failure actions: %v len=%d", err, len(faBuf))
 		}
-		reset := uint32(faBuf[0]) | uint32(faBuf[1])<<8 | uint32(faBuf[2])<<16 | uint32(faBuf[3])<<24
-		if reset != 86400 {
-			t.Fatalf("failure ResetPeriod=%d want 86400", reset)
+		fa := (*winapi.ServiceFailureActionsW)(unsafe.Pointer(&faBuf[0]))
+		if fa.ResetPeriod != 86400 {
+			t.Fatalf("failure ResetPeriod=%d want 86400", fa.ResetPeriod)
+		}
+		if fa.ActionsLen != 3 || fa.Actions == nil {
+			t.Fatalf("failure actions: len=%d ptr=%v", fa.ActionsLen, fa.Actions)
+		}
+		actions := unsafe.Slice(fa.Actions, fa.ActionsLen)
+		wantDelays := []uint32{60000, 120000, 300000}
+		for i, want := range wantDelays {
+			if actions[i].Type != winapi.SCActionRestart || actions[i].Delay != want {
+				t.Fatalf("failure action[%d]=%+v want RESTART delay=%d", i, actions[i], want)
+			}
 		}
 		sddl, err := winapi.ServiceDACL(svc)
 		if err != nil {
@@ -189,14 +200,13 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("data DACL: %s", dataDACL)
-	if strings.Contains(dataDACL, "BU") || strings.Contains(dataDACL, "S-1-5-32-545") {
-		t.Fatalf("Users on ProgramData: %s", dataDACL)
-	}
+	assertProtectedSYBA(t, "ProgramData", dataDACL)
 	instDACL, err := winapi.FileDACL(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("install DACL: %s", instDACL)
+	assertInstallDACL(t, instDACL)
 
 	// Uninstall key: no Publisher; QuietUninstallString present
 	view := uint32(winapi.KEY_WOW64_64KEY)
@@ -293,4 +303,72 @@ func dumpLog(t *testing.T, path string) {
 		return
 	}
 	t.Logf("---- %s ----\n%s", path, string(b))
+}
+
+// assertProtectedSYBA: DACL starts with D:P (protected), ACEs only for SY and BA
+// (aliases or well-known SIDs S-1-5-18 / S-1-5-32-544).
+func assertProtectedSYBA(t *testing.T, label, sddl string) {
+	t.Helper()
+	if !strings.HasPrefix(sddl, "D:P") {
+		t.Fatalf("%s DACL not protected (want D:P…): %s", label, sddl)
+	}
+	ctrlEnd := strings.Index(sddl, "(")
+	if ctrlEnd < 0 {
+		ctrlEnd = len(sddl)
+	}
+	if !strings.Contains(sddl[:ctrlEnd], "AI") {
+		t.Fatalf("%s DACL missing AI (want P/AI): %s", label, sddl)
+	}
+	re := regexp.MustCompile(`\([^;]*;[^;]*;[^;]*;([^)]+)\)`)
+	m := re.FindAllStringSubmatch(sddl, -1)
+	if len(m) == 0 {
+		t.Fatalf("%s DACL has no ACEs: %s", label, sddl)
+	}
+	okSID := map[string]bool{
+		"SY": true, "BA": true,
+		"S-1-5-18": true, "S-1-5-32-544": true,
+	}
+	seenSY, seenBA := false, false
+	for _, g := range m {
+		sid := strings.ToUpper(g[1])
+		if sid == "SY" || sid == "S-1-5-18" {
+			seenSY = true
+		}
+		if sid == "BA" || sid == "S-1-5-32-544" {
+			seenBA = true
+		}
+		if !okSID[sid] && !okSID[g[1]] {
+			// also accept mixed-case SID forms already uppercased
+			if !(sid == "SY" || sid == "BA" || sid == "S-1-5-18" || sid == "S-1-5-32-544") {
+				t.Fatalf("%s DACL has non-SY/BA ACE %q: %s", label, g[1], sddl)
+			}
+		}
+	}
+	if !seenSY || !seenBA {
+		t.Fatalf("%s DACL missing SY or BA: %s", label, sddl)
+	}
+}
+
+// assertInstallDACL: protected + SY + BA + BU FRFX (0x1200a9 or FRFX).
+func assertInstallDACL(t *testing.T, sddl string) {
+	t.Helper()
+	if !strings.HasPrefix(sddl, "D:P") {
+		t.Fatalf("install DACL not protected: %s", sddl)
+	}
+	ctrlEnd := strings.Index(sddl, "(")
+	if ctrlEnd < 0 {
+		ctrlEnd = len(sddl)
+	}
+	if !strings.Contains(sddl[:ctrlEnd], "AI") {
+		t.Fatalf("install DACL missing AI (want P/AI): %s", sddl)
+	}
+	if !strings.Contains(sddl, "SY") || !strings.Contains(sddl, "BA") {
+		t.Fatalf("install DACL missing SY/BA: %s", sddl)
+	}
+	if !strings.Contains(sddl, "BU") && !strings.Contains(sddl, "S-1-5-32-545") {
+		t.Fatalf("install DACL missing Users: %s", sddl)
+	}
+	if !strings.Contains(sddl, "FRFX") && !strings.Contains(sddl, "0x1200a9") && !strings.Contains(strings.ToLower(sddl), "0x1200a9") {
+		t.Fatalf("install DACL Users ACE is not FRFX/0x1200a9: %s", sddl)
+	}
 }

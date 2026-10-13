@@ -173,3 +173,49 @@ func TestCHK_POL_01_NoOSExec(t *testing.T) {
 		t.Fatalf("scan found only %d .go files", files)
 	}
 }
+
+// TestCHK_POL_01_NoStartProcess — cmd/, internal/, tools/ (including _test.go)
+// must not start helper processes via os.StartProcess, syscall.StartProcess,
+// syscall.CreateProcess, or NewProc("CreateProcess…"). checks/ tests may
+// (CHK-SETUP-07 rename). CreateProcessWithTokenW for launching the tray
+// (phase 7d) is not exempted here yet.
+func TestCHK_POL_01_NoStartProcess(t *testing.T) {
+	root := findModuleRoot(t)
+	re := regexp.MustCompile(
+		`os\.StartProcess|` +
+			`syscall\.StartProcess|` +
+			`syscall\.CreateProcess|` +
+			`NewProc\("CreateProcess[^"]*"\)`,
+	)
+	// Self-check: the scanner must catch a probe.
+	probe := "package p\nfunc f(){ os.StartProcess(\"x\", nil, nil) }\n"
+	if !re.MatchString(probe) {
+		t.Fatal("CHK-POL-01: scan does not detect os.StartProcess")
+	}
+	probe2 := `package p` + "\n" + `var _ = mod.NewProc("CreateProcessWithTokenW")` + "\n"
+	if !re.MatchString(probe2) {
+		t.Fatal("CHK-POL-01: scan does not detect NewProc(\"CreateProcess…\")")
+	}
+	files := 0
+	for _, d := range []string{"cmd", "internal", "tools"} {
+		filepath.Walk(filepath.Join(root, d), func(p string, fi os.FileInfo, err error) error {
+			if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".go") {
+				return err
+			}
+			files++
+			b, err := os.ReadFile(p)
+			if err != nil {
+				t.Error(err)
+				return nil
+			}
+			if re.Match(b) {
+				rel, _ := filepath.Rel(root, p)
+				t.Errorf("CHK-POL-01: %s starts a process (os/syscall.StartProcess or CreateProcess NewProc); allowed only in checks/ tests", filepath.ToSlash(rel))
+			}
+			return nil
+		})
+	}
+	if files < 100 {
+		t.Fatalf("scan found only %d .go files", files)
+	}
+}

@@ -257,8 +257,9 @@ type manifest struct {
 }
 
 // TestCHK_TRAY_10_Manifest — the tray manifest is asInvoker, uses Common
-// Controls v6, declares Windows 7+, and the committed .syso was built from
-// it (PLAN §12).
+// Controls v6, declares Windows 7+, and the committed .syso (tools/mkres,
+// phase 7e T3) was built from it; byte freshness and VERSIONINFO are
+// TestCHK_RES_01_CommittedSysoFresh / TestCHK_VER_01_Built.
 func TestCHK_TRAY_10_Manifest(t *testing.T) {
 	root := findModuleRoot(t)
 	dir := filepath.Join(root, "cmd", "exchtray")
@@ -299,7 +300,7 @@ func TestCHK_TRAY_10_Manifest(t *testing.T) {
 	// a Windows checkout may turn LF into CRLF; the .syso holds the LF file
 	lf := bytes.ReplaceAll(bytes.TrimSpace(raw), []byte("\r\n"), []byte("\n"))
 	if !bytes.Contains(syso, lf) {
-		t.Error("rsrc_windows_amd64.syso is stale: rebuild it from exchtray.manifest (cmd/exchtray/RESOURCES.md)")
+		t.Error("rsrc_windows_amd64.syso is stale: run go run ./tools/mkres (cmd/exchtray/RESOURCES.md)")
 	}
 	ico, err := os.ReadFile(filepath.Join(dir, "exchtray.ico"))
 	if err != nil || len(ico) < 6 || ico[2] != 1 || ico[4] < 3 {

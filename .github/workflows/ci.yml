@@ -11,7 +11,7 @@
 # CHK-IPC-01, CHK-TRAY-01..06 — linux job: -race for internal/trayipc, internal/trayui,
 # internal/trayalert, internal/traysettings.
 # CHK-RES-01, CHK-VER-01, CHK-SETUP-11 (phase 7a/7b) — both jobs: the committed .syso of
-# cmd/exchsetup and cmd/exchsvc match tools/mkres; a release-like build (service, tray,
+# cmd/exchsetup, cmd/exchsvc and (7e, T3) cmd/exchtray match tools/mkres; a release-like build (service, tray,
 # uninstaller without payload, setup with -tags payload embedding them, -X version
 # 0.0.0-ci.<run_number>, .syso regenerated with that version in the job's working copy
 # only) is inspected by checks/ (EC_BUILD_DIR); go vet -tags payload; the exe files stay

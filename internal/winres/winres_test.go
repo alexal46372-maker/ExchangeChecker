@@ -97,10 +97,12 @@ func TestCHK_RES_01_COFF(t *testing.T) {
 }
 
 // TestCHK_RES_01_ParsesRsrcOutput — the parser reads the tray .syso made by
-// akavel/rsrc (independent writer): manifest text and all three icons.
+// akavel/rsrc v0.10.2 in phase 6a (independent writer, kept as testdata
+// since the tray moved to tools/mkres in 7e T3): manifest text and all
+// three icons.
 func TestCHK_RES_01_ParsesRsrcOutput(t *testing.T) {
 	dir := filepath.Join("..", "..", "cmd", "exchtray")
-	obj, err := os.ReadFile(filepath.Join(dir, "rsrc_windows_amd64.syso"))
+	obj, err := os.ReadFile(filepath.Join("testdata", "akavel_rsrc_tray.syso"))
 	if err != nil {
 		t.Fatal(err)
 	}

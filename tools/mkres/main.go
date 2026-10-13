@@ -1,16 +1,17 @@
 // Command mkres generates the committed Windows resource objects
-// (rsrc_windows_amd64.syso) of ExchangeCheckerSetup.exe (cmd/exchsetup) and
-// ExchangeCheckerSvc.exe (cmd/exchsvc) with internal/winres — standard
+// (rsrc_windows_amd64.syso) of ExchangeCheckerSetup.exe (cmd/exchsetup),
+// ExchangeCheckerSvc.exe (cmd/exchsvc) and ExchangeCheckerTray.exe
+// (cmd/exchtray, phase 7e T3) with internal/winres — standard
 // library only, no rc.exe / mc.exe / third-party generator (PLAN §12 п. 51,
 // phase 7a, decision 10). It is a developer / CI tool, not part of the
 // product graph.
 //
-//	go run ./tools/mkres                 # rewrite both .syso for version.Version (0.0.0-dev)
+//	go run ./tools/mkres                 # rewrite every .syso for version.Version (0.0.0-dev)
 //	go run ./tools/mkres -version 0.0.0-ci.42   # release-like build in CI (not committed)
 //	go run ./tools/mkres -check          # exit 1 if a committed .syso is stale
 //
-// The tray (cmd/exchtray) still uses its akavel/rsrc .syso; it moves to
-// mkres in phase 7e (T3, EC Tray).
+// The tray replaced its akavel/rsrc .syso of phase 6a in phase 7e (T3):
+// the same manifest and icon, plus VERSIONINFO.
 //
 // Check ID: CHK-RES-01, CHK-VER-01.
 package main
@@ -53,6 +54,11 @@ func targets() []target {
 			Dir: "cmd/exchsvc", Manifest: "exchsvc.manifest",
 			Description: version.ProductName + " Service", Internal: "exchsvc", Original: config.ServiceExeName,
 			Messages: true,
+		},
+		{
+			Dir: "cmd/exchtray", Manifest: "exchtray.manifest",
+			Icon:        "cmd/exchtray/exchtray.ico",
+			Description: version.ProductName + " Tray", Internal: "exchtray", Original: config.TrayExeName,
 		},
 	}
 }

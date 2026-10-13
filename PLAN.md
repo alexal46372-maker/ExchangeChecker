@@ -607,6 +607,7 @@ Wizard Win32 (страницы):
   - 7c обновление поверх — `CHK-SETUP-09`, `CHK-TRAY-11` (EC Tray), `CHK-SETUP-12`;
   - 7d мастер UI, ярлык, RU/EN, запуск трея без повышения — `CHK-SETUP-08`, `CHK-SETUP-10`;
   - 7e zip в CI без загрузки, T3 (трей на mkres), финальный E2E — `CHK-DELIV-01`, `CHK-SETUP-12`.
+  - **EC Tray T3 (7e) — на ревью:** `.syso` трея генерирует `tools/mkres` (`internal/winres`): тот же манифест (asInvoker, comctl v6, Win7+, без dpiAware) и значок, плюс VERSIONINFO (`Exchange Checker Tray`, `exchtray`, `config.TrayExeName`); `TestCHK_VER_01_Built` проверяет VERSIONINFO трея, как setup и службы; akavel/rsrc больше не нужен (`CHK-RES-01`, `CHK-VER-01`, `CHK-TRAY-10`).
 
 ### Фаза 8 — Поставка
 

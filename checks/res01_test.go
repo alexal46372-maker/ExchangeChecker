@@ -69,6 +69,7 @@ func TestCHK_RES_01_LinkedExe(t *testing.T) {
 	for _, c := range []struct{ dir, ld string }{
 		{"cmd/exchsetup", "-H windowsgui -X " + versionVar + "=" + v},
 		{"cmd/exchsvc", "-X " + versionVar + "=" + v},
+		{"cmd/exchtray", "-H windowsgui -X " + versionVar + "=" + v},
 	} {
 		exe := filepath.Join(tmp, filepath.Base(c.dir)+".exe")
 		goBuild(t, root, exe, "./"+c.dir, c.ld)
@@ -77,7 +78,7 @@ func TestCHK_RES_01_LinkedExe(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: linked resources differ from the .syso (%d vs %d)", c.dir, len(got), len(want))
 		}
-		if c.dir == "cmd/exchsvc" {
+		if c.dir != "cmd/exchsetup" {
 			if !bytes.Contains(img, []byte(v)) {
 				t.Errorf("CHK-VER-01: -X %s=%s not applied to %s", versionVar, v, c.dir)
 			}
@@ -160,18 +161,22 @@ func TestCHK_RES_01_Built(t *testing.T) {
 	}
 }
 
-// TestCHK_VER_01_Built — VERSIONINFO of setup and service = EC_BUILD_VERSION
-// (FILEVERSION per winres.ParseVersion), and -X put the version string
-// into service and tray (the tray gets VERSIONINFO in 7e, T3).
+// TestCHK_VER_01_Built — VERSIONINFO of setup, service and tray (7e, T3)
+// = EC_BUILD_VERSION (FILEVERSION per winres.ParseVersion, the
+// pre-release flag), every string (ProductName, FileDescription,
+// InternalName, OriginalFilename, both versions; no CompanyName /
+// LegalCopyright, decision 5), and -X put the version string into
+// service and tray.
 func TestCHK_VER_01_Built(t *testing.T) {
 	dir, ver := built(t)
 	fv, pre, err := winres.ParseVersion(ver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []struct{ name, orig string }{
-		{"ExchangeCheckerSetup.exe", "ExchangeCheckerSetup.exe"},
-		{"ExchangeCheckerSvc.exe", "ExchangeCheckerSvc.exe"},
+	for _, c := range []struct{ name, desc, internal string }{
+		{"ExchangeCheckerSetup.exe", "Exchange Checker Setup", "exchsetup"},
+		{"ExchangeCheckerSvc.exe", "Exchange Checker Service", "exchsvc"},
+		{"ExchangeCheckerTray.exe", "Exchange Checker Tray", "exchtray"},
 	} {
 		res, _, _ := peResources(t, filepath.Join(dir, c.name))
 		v, ok := winres.Find(res, winres.TypeVersion)
@@ -184,8 +189,15 @@ func TestCHK_VER_01_Built(t *testing.T) {
 			t.Fatal(err)
 		}
 		if pv.Strings["ProductVersion"] != ver || pv.Strings["FileVersion"] != ver || pv.FileVersion != fv ||
-			pv.ProductVersion != fv || (pv.FileFlags&2 != 0) != pre || pv.Strings["OriginalFilename"] != c.orig {
+			pv.ProductVersion != fv || (pv.FileFlags&2 != 0) != pre {
 			t.Errorf("%s: VERSIONINFO %+v, want %s (%v)", c.name, pv, ver, fv)
+		}
+		want := map[string]string{
+			"FileVersion": ver, "ProductVersion": ver, "ProductName": "Exchange Checker",
+			"FileDescription": c.desc, "InternalName": c.internal, "OriginalFilename": c.name,
+		}
+		if !reflect.DeepEqual(pv.Strings, want) {
+			t.Errorf("%s: VERSIONINFO strings %q, want %q", c.name, pv.Strings, want)
 		}
 	}
 	for _, name := range []string{"ExchangeCheckerSvc.exe", "ExchangeCheckerTray.exe"} {

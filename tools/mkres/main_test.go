@@ -118,3 +118,60 @@ func TestCHK_RES_01_MessageTableIDs(t *testing.T) {
 		}
 	}
 }
+
+// TestCHK_RES_01_TrayTarget — phase 7e T3: the tray .syso keeps the 6a
+// manifest (the LF text of exchtray.manifest) and every image of
+// exchtray.ico, and adds VERSIONINFO for config.TrayExeName.
+func TestCHK_RES_01_TrayTarget(t *testing.T) {
+	var tg *target
+	for _, x := range targets() {
+		if x.Dir == "cmd/exchtray" {
+			x := x
+			tg = &x
+		}
+	}
+	if tg == nil || tg.Original != "ExchangeCheckerTray.exe" || tg.Messages {
+		t.Fatalf("tray target %+v", tg)
+	}
+	out, err := build(root, *tg, "0.0.0-dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := winres.ParseSyso(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	man, _ := os.ReadFile(filepath.Join(root, "cmd", "exchtray", "exchtray.manifest"))
+	man = append(bytes.ReplaceAll(bytes.TrimSpace(man), []byte("\r\n"), []byte("\n")), '\n')
+	if m, ok := winres.Find(res, winres.TypeManifest); !ok || !bytes.Equal(m.Data, man) {
+		t.Error("tray manifest differs from exchtray.manifest")
+	}
+	ico, _ := os.ReadFile(filepath.Join(root, "cmd", "exchtray", "exchtray.ico"))
+	want, err := winres.IconResources(ico, 1, 1, winres.LangEnUS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, w := range want {
+		for _, r := range res {
+			if r.Type == w.Type && r.ID == w.ID && bytes.Equal(r.Data, w.Data) {
+				n++
+			}
+		}
+	}
+	if n != len(want) || len(want) != 4 {
+		t.Errorf("tray icon resources: %d of %d", n, len(want))
+	}
+	v, ok := winres.Find(res, winres.TypeVersion)
+	if !ok {
+		t.Fatal("no VERSIONINFO")
+	}
+	pv, err := winres.ParseVersionInfo(v.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pv.Strings["FileDescription"] != "Exchange Checker Tray" || pv.Strings["InternalName"] != "exchtray" ||
+		pv.Strings["OriginalFilename"] != "ExchangeCheckerTray.exe" || pv.FileFlags&2 == 0 {
+		t.Errorf("tray VERSIONINFO %+v", pv)
+	}
+}

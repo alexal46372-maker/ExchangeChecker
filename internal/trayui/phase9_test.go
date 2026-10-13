@@ -104,6 +104,11 @@ func TestExport(t *testing.T) {
 	if strings.Count(s, "\r\n") != 4 {
 		t.Fatalf("csv lines: %q", s)
 	}
+	for in, want := range map[string]string{"\t=1": "'\t=1", "\r=1": "\"'\r=1\"", "+1": "'+1", "-1": "'-1", "@a": "'@a", "a\tb": "a\tb", "": ""} {
+		if got := csvCell(in); got != want {
+			t.Errorf("csvCell(%q) = %q, want %q", in, got, want)
+		}
+	}
 	h := string(ExportHTML(rows, "en", now))
 	if !strings.Contains(h, "&lt;HR&gt;") || strings.Contains(h, "<HR>") || !strings.Contains(h, `<meta charset="utf-8">`) ||
 		!strings.Contains(h, "#f8d0d0") || !strings.Contains(h, "13.10.2026 12:00") || strings.Contains(h, "<script") {

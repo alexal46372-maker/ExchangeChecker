@@ -79,6 +79,8 @@ type Options struct {
 	// BalloonStore keeps the per-user balloon switch (nil = on, not
 	// stored; phase 9a, CHK-TRAY-18).
 	BalloonStore BalloonStore
+	// Log receives tray log lines (nil = package log; tests: a fake).
+	Log func(line string)
 	// HiddenStatus keeps the «Состояние» window hidden (tests).
 	HiddenStatus bool
 }

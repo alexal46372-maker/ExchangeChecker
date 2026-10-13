@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -24,10 +25,11 @@ import (
 
 type memBalloonStore struct {
 	on    bool
+	err   error
 	saved []bool
 }
 
-func (m *memBalloonStore) Load() (bool, error) { return m.on, nil }
+func (m *memBalloonStore) Load() (bool, error) { return m.on, m.err }
 func (m *memBalloonStore) Save(on bool) error  { m.saved = append(m.saved, on); return nil }
 
 // pollService counts poll_now.
@@ -119,6 +121,20 @@ func TestCHK_TRAY_18_Balloons(t *testing.T) {
 	pumpFor(100 * time.Millisecond)
 	if len(app.Balloons()) != 3 {
 		t.Error("balloon shown while off")
+	}
+	// a read error (not "missing") is logged, the default (on) is kept
+	var lines []string
+	app.opt.Log = func(l string) { lines = append(lines, l) }
+	app.opt.BalloonStore = &memBalloonStore{err: syscall.ERROR_ACCESS_DENIED}
+	app.loadBalloonPref()
+	if !app.BalloonsEnabled() || len(lines) != 1 || !strings.Contains(lines[0], "Balloons") {
+		t.Errorf("read error: %v %q", app.BalloonsEnabled(), lines)
+	}
+	lines = nil
+	app.opt.BalloonStore = &memBalloonStore{on: false}
+	app.loadBalloonPref()
+	if app.BalloonsEnabled() || len(lines) != 0 {
+		t.Errorf("no error: %v %q", app.BalloonsEnabled(), lines)
 	}
 	if got := truncU16(strings.Repeat("я", 300), 255); len(got) != 255 || got[254] != 0x2026 {
 		t.Errorf("truncate %d", len(got))

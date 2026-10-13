@@ -15,9 +15,10 @@ import (
 // self-contained HTML page (escaped, no scripts, no external resources).
 
 // csvCell quotes a cell when it holds ;, ", CR or LF; a leading =, +, -,
-// @ gets a ' so Excel does not run it as a formula (CSV injection).
+// @, TAB or CR gets a ' so Excel does not run it as a formula (CSV
+// injection, OWASP).
 func csvCell(s string) string {
-	if s != "" && strings.ContainsRune("=+-@", rune(s[0])) {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
 		s = "'" + s
 	}
 	if strings.ContainsAny(s, ";\"\r\n") {

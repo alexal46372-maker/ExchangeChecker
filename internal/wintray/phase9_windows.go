@@ -5,6 +5,7 @@ package wintray
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
@@ -63,9 +64,26 @@ const pollNowTimeout = 10 * time.Second
 
 func (a *App) loadBalloonPref() {
 	a.balloonsOn = true
-	if a.opt.BalloonStore != nil {
-		a.balloonsOn, _ = a.opt.BalloonStore.Load()
+	if a.opt.BalloonStore == nil {
+		return
 	}
+	on, err := a.opt.BalloonStore.Load()
+	if err != nil {
+		// a missing key / value is not an error (Load returns on, nil);
+		// anything else is logged and the default (on) is kept
+		a.logf("tray: balloon switch: read HKCU %s\\%s: %v (using on)", LangKey, BalloonsValue, err)
+		on = true
+	}
+	a.balloonsOn = on
+}
+
+// logf writes a line to the tray log (Options.Log; nil = package log).
+func (a *App) logf(format string, args ...interface{}) {
+	if a.opt.Log != nil {
+		a.opt.Log(fmt.Sprintf(format, args...))
+		return
+	}
+	log.Printf(format, args...)
 }
 
 // BalloonsEnabled / SetBalloons: the switch of the right menu.

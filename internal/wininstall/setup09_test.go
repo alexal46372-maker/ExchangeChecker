@@ -369,3 +369,56 @@ func TestCHK_SETUP_09_RollbackIncompleteReported(t *testing.T) {
 		}
 	}
 }
+
+func TestCHK_SETUP_09_RollbackV2TerminateWarns909(t *testing.T) {
+	f := newFake()
+	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: `C:\EC`}
+	f.Service = ServiceInfo{Exists: true, Running: true, AutoStart: true, ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`}
+	f.Files[`C:\EC\`+config.ServiceExeName] = []byte("old")
+	f.FailAt = "StartService|"
+	f.FailOnce = true
+	lg := &memLog{}
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, lg)
+	if res.Code != ExitError {
+		t.Fatalf("code=%d", res.Code)
+	}
+	found := false
+	for _, l := range lg.lines {
+		if strings.HasPrefix(l, "WARNING:") && strings.Contains(l, "90.9") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("90.9 exception not logged at WARNING: %v", lg.lines)
+	}
+	// the pre-upgrade service is only stopped normally (consent rule kept)
+	if indexOf(f.Steps, "ForceStopService|") < indexOf(f.Steps, "StopService|") {
+		t.Fatalf("old service must be stopped via StopService first: %v", f.Steps)
+	}
+}
+
+func TestCHK_SETUP_09_DirLongPath(t *testing.T) {
+	f := newFake()
+	f.Long = map[string]string{`C:\PROGRA~1\EC`: `C:\Program Files\EC`}
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true, Dir: `C:\PROGRA~1\EC`, NoStart: true}, DefaultDir: `C:\X`,
+		DataDir: `C:\ProgramData\ExchangeChecker`, Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, &memLog{})
+	if res.Dir != `C:\Program Files\EC` {
+		t.Fatalf("dir=%q code=%d err=%v", res.Dir, res.Code, res.Err)
+	}
+}
+
+func TestCHK_SETUP_09_UninstallSelfExeLongPath(t *testing.T) {
+	f := newFake()
+	short := `C:\PROGRA~1\EC\` + config.UninstallExeName
+	f.Long = map[string]string{short: `C:\Program Files\EC\` + config.UninstallExeName}
+	f.Installed = Installed{Present: true} // key without InstallLocation
+	res := Uninstall(f, UninstallConfig{DataDir: `C:\ProgramData\ExchangeChecker`, SelfExe: short}, &memLog{})
+	if res.Dir != `C:\Program Files\EC` {
+		t.Fatalf("dir=%q err=%v", res.Dir, res.Err)
+	}
+}

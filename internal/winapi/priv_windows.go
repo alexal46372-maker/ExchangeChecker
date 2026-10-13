@@ -58,7 +58,12 @@ func lastError() syscall.Errno {
 // After a successful AdjustTokenPrivileges, ERROR_NOT_ALL_ASSIGNED (1300)
 // means one or more privileges were not held — treated as failure. The
 // caller (TakeOwnershipTree) may still try SetFileOwner without them.
-func EnablePrivileges(names ...string) error {
+func EnablePrivileges(names ...string) error { return adjustPrivileges(sePrivilegeEnabled, names) }
+
+// DisablePrivileges turns the named privileges off again (attributes 0).
+func DisablePrivileges(names ...string) error { return adjustPrivileges(0, names) }
+
+func adjustPrivileges(attr uint32, names []string) error {
 	var tok syscall.Token
 	proc, _ := syscall.GetCurrentProcess()
 	r, _, e := callProc(procOpenProcessToken, uintptr(proc), tokenAdjustPrivileges|tokenQuery, uintptr(unsafe.Pointer(&tok)))
@@ -72,7 +77,7 @@ func EnablePrivileges(names ...string) error {
 		if r == 0 {
 			return fmt.Errorf("LookupPrivilegeValue %s: %w", name, lastErr(e))
 		}
-		tp := tokenPrivileges1{PrivilegeCount: 1, Privileges: luidAndAttributes{Luid: id, Attributes: sePrivilegeEnabled}}
+		tp := tokenPrivileges1{PrivilegeCount: 1, Privileges: luidAndAttributes{Luid: id, Attributes: attr}}
 		// MSDN: SetLastError(0) before AdjustTokenPrivileges so a true return
 		// with ERROR_NOT_ALL_ASSIGNED is distinguishable from a clean success.
 		setLastError(0)

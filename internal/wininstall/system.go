@@ -76,7 +76,10 @@ type System interface {
 	// ForceStopService stops the service; if it stays START_PENDING / will
 	// not stop, it terminates only ExchangeCheckerSvc.exe processes whose
 	// image lives under installDir (rollback must not hit a locked file).
-	ForceStopService(name, installDir string) error
+	// Returned warnings (e.g. SeDebugPrivilege) are logged by the caller.
+	ForceStopService(name, installDir string) (warnings []string, err error)
+	// LongPath expands 8.3 components (identity on non-Windows / fakes).
+	LongPath(p string) string
 	DeleteService(name string) error
 
 	// registry (HKLM, 64-bit view)

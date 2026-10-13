@@ -109,6 +109,9 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		return fail(fmt.Errorf("installed version %s is newer than %s: downgrade refused (use /ALLOWDOWNGRADE)", inst.Version, c.Version))
 	}
 	dir := CleanDir(c.Opts.Dir)
+	if dir != "" {
+		dir = CleanDir(sys.LongPath(dir)) // /DIR may be an 8.3 name
+	}
 	if inst.Present {
 		if dir != "" && !strings.EqualFold(dir, CleanDir(inst.Dir)) {
 			warn("already installed in %s: /DIR=%s ignored (uninstall first to move)", inst.Dir, dir)
@@ -293,7 +296,15 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			if !fresh {
 				// V2 may hang in START_PENDING and keep its exe locked: stop it
 				// (terminate our own svc exe if needed) before restoring files
-				if ferr := sys.ForceStopService(model.ServiceName, dir); ferr != nil {
+				// PLAN §12 п. 90.9 exception: our own just-installed V2 may be
+				// terminated without consent (also in /S) — rollback is impossible
+				// otherwise. The pre-upgrade service still needs consent.
+				warn("rollback: stopping the just-installed service %s; if it does not stop, its process %s is terminated without confirmation (PLAN §12 п. 90.9 exception)", model.ServiceName, svcExe)
+				fw, ferr := sys.ForceStopService(model.ServiceName, dir)
+				for _, w := range fw {
+					warn("%s", w)
+				}
+				if ferr != nil {
 					warn("stop failed V2 service: %v", ferr)
 				}
 				log.Printf("rolling back the upgrade after StartService failure")
@@ -353,8 +364,12 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	if dir == "" && svc.Exists {
 		dir = ParentDir(ExePathFromImagePath(svc.ImagePath))
 	}
-	if dir == "" && c.SelfExe != "" && strings.EqualFold(filepath.Base(c.SelfExe), config.UninstallExeName) {
-		dir = filepath.Dir(c.SelfExe)
+	selfExe := c.SelfExe
+	if selfExe != "" {
+		selfExe = sys.LongPath(selfExe)
+	}
+	if dir == "" && selfExe != "" && strings.EqualFold(selfExe[strings.LastIndexAny(selfExe, `\/`)+1:], config.UninstallExeName) {
+		dir = ParentDir(selfExe)
 	}
 	res.Dir = dir
 	if svc.Exists {
@@ -381,7 +396,7 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 			step("remove "+n, err)
 		}
 		u := joinDir(dir, config.UninstallExeName)
-		if c.SelfExe != "" && strings.EqualFold(filepath.Clean(c.SelfExe), filepath.Clean(u)) {
+		if selfExe != "" && strings.EqualFold(filepath.Clean(selfExe), filepath.Clean(u)) {
 			reboot, err := sys.SelfDelete(c.SelfExe)
 			res.Reboot = res.Reboot || reboot
 			step("remove the uninstaller", err)

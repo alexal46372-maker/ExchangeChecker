@@ -434,16 +434,22 @@ func (winSystem) StopService(name string, timeout time.Duration) error {
 	return nil
 }
 
-func (s winSystem) ForceStopService(name, installDir string) error {
+func (winSystem) LongPath(p string) string {
+	if strings.Contains(p, "~") {
+		return winapi.LongPath(p)
+	}
+	return p
+}
+
+func (s winSystem) ForceStopService(name, installDir string) ([]string, error) {
+	var warns []string
 	stopErr := s.StopService(name, ForceStopTimeout)
-	// candidates: the SCM-reported pid (if its image is ours) + any
-	// ExchangeCheckerSvc.exe running from installDir (hung before the
-	// dispatcher connected: SCM may not know its pid)
+	// candidates: the SCM-reported pid + any ExchangeCheckerSvc.exe under
+	// installDir (hung before the dispatcher connected). Every candidate is
+	// re-verified on its own handle inside TerminatePID (PID reuse).
 	pids := map[uint32]bool{}
 	if _, pid, err := winapi.ServiceProcessID(name); err == nil && pid != 0 {
-		if img, err := winapi.ProcessImagePath(pid); err == nil && ownSvcImage(img, installDir) {
-			pids[pid] = true
-		}
+		pids[pid] = true
 	}
 	if procs, err := winapi.ProcessesInDir(installDir, config.ServiceExeName); err == nil {
 		for _, p := range procs {
@@ -453,31 +459,36 @@ func (s winSystem) ForceStopService(name, installDir string) error {
 	if len(pids) == 0 {
 		if stopErr != nil {
 			if info, err := s.QueryService(name); err == nil && !info.Running {
-				return nil
+				return warns, nil
 			}
 		}
-		return stopErr
+		return warns, stopErr
 	}
-	_ = winapi.EnablePrivileges("SeDebugPrivilege")
+	if err := winapi.EnablePrivileges("SeDebugPrivilege"); err != nil {
+		warns = append(warns, fmt.Sprintf("SeDebugPrivilege not enabled: %v", err))
+	} else {
+		defer func() {
+			if err := winapi.DisablePrivileges("SeDebugPrivilege"); err != nil {
+				warns = append(warns, fmt.Sprintf("SeDebugPrivilege not disabled: %v", err))
+			}
+		}()
+	}
+	own := filepath.Join(installDir, config.ServiceExeName)
+	match := func(img string) bool { return winapi.SameImage(img, own) }
 	var errs []string
 	for pid := range pids {
-		if err := winapi.TerminatePID(pid); err != nil {
-			errs = append(errs, fmt.Sprintf("terminate pid %d: %v", pid, err))
-			continue
+		err := winapi.TerminatePID(pid, match, 15000)
+		if errors.Is(err, winapi.ErrImageMismatch) {
+			continue // not our exe (or pid reused): never touched
 		}
-		if err := winapi.WaitProcessExit(pid, 15000); err != nil {
-			errs = append(errs, fmt.Sprintf("wait pid %d: %v", pid, err))
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("terminate pid %d: %v", pid, err))
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("force stop %s: %s", name, strings.Join(errs, "; "))
+		return warns, fmt.Errorf("force stop %s: %s", name, strings.Join(errs, "; "))
 	}
-	return nil
-}
-
-func ownSvcImage(img, installDir string) bool {
-	want := strings.ToLower(filepath.Clean(winapi.LongPath(filepath.Join(installDir, config.ServiceExeName))))
-	return strings.ToLower(filepath.Clean(winapi.LongPath(img))) == want
+	return warns, nil
 }
 
 func (winSystem) DeleteService(name string) error {
@@ -681,14 +692,13 @@ func (winSystem) StopTray(installDir string) error {
 	}
 
 	var first error
+	trayImg := filepath.Join(installDir, config.TrayExeName)
 	term := func(pid uint32, why string) {
-		if err := winapi.TerminatePID(pid); err != nil {
-			if first == nil {
-				first = fmt.Errorf("stop tray pid %d (%s): %w", pid, why, err)
-			}
-			return
+		// one handle: verify image, terminate, wait (PID reuse safe)
+		err := winapi.TerminatePID(pid, func(img string) bool { return winapi.SameImage(img, trayImg) }, 5000)
+		if err != nil && !errors.Is(err, winapi.ErrImageMismatch) && first == nil {
+			first = fmt.Errorf("stop tray pid %d (%s): %w", pid, why, err)
 		}
-		_ = winapi.WaitProcessExit(pid, 5000)
 	}
 	for _, pid := range other {
 		term(pid, "other session")

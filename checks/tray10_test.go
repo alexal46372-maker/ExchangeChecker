@@ -155,7 +155,8 @@ var winAPIMinVersion = map[string]float64{
 	"OpenProcess": 5.0, "GetLongPathNameW": 5.0, "WaitForSingleObject": 5.0,
 	"ProcessIdToSessionId": 5.0, "GetCurrentProcessId": 5.0,
 	"CreateToolhelp32Snapshot": 5.0, "Process32FirstW": 5.0, "Process32NextW": 5.0,
-	"TerminateProcess": 5.0, "QueryFullProcessImageNameW": 6.0,
+	"TerminateProcess": 5.0, "QueryFullProcessImageNameW": 6.0, // + PROCESS_QUERY_LIMITED_INFORMATION (Vista+, NT 6.0; target 6.1 OK)
+
 	"SendMessageTimeoutW": 5.0,
 	"OpenProcessToken":    5.0, "LookupPrivilegeValueW": 5.0, "AdjustTokenPrivileges": 5.0,
 	"SetLastError": 5.0, "GetLastError": 5.0,

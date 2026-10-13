@@ -3,6 +3,7 @@
 package winapi
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -89,6 +90,10 @@ func ProcessImagePath(pid uint32) (string, error) {
 		return "", err
 	}
 	defer syscall.CloseHandle(h)
+	return imagePathOf(h)
+}
+
+func imagePathOf(h syscall.Handle) (string, error) {
 	buf := make([]uint16, 32768)
 	n := uint32(len(buf))
 	r, _, e := callProc(procQueryFullProcessImageNameW, uintptr(h), 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&n)))
@@ -98,18 +103,56 @@ func ProcessImagePath(pid uint32) (string, error) {
 	return syscall.UTF16ToString(buf[:n]), nil
 }
 
-// TerminatePID wraps TerminateProcess.
-func TerminatePID(pid uint32) error {
-	h, err := OpenProcess(ProcessTerminate|ProcessSynchronize, pid)
+// ErrImageMismatch: the pid now belongs to another image (PID reuse).
+var ErrImageMismatch = errors.New("winapi: process image does not match (pid reused?)")
+
+// TerminatePID opens pid ONCE with
+// PROCESS_QUERY_LIMITED_INFORMATION|PROCESS_TERMINATE|SYNCHRONIZE (NT 6.0+),
+// checks the image via QueryFullProcessImageNameW on that handle (match
+// must accept it, otherwise ErrImageMismatch and nothing is killed), then
+// TerminateProcess and WaitForSingleObject(waitMs) on the same handle, so
+// a reused pid can never be hit.
+func TerminatePID(pid uint32, match func(image string) bool, waitMs uint32) error {
+	h, err := OpenProcess(ProcessQueryLimitedInfo|ProcessTerminate|ProcessSynchronize, pid)
 	if err != nil {
 		return err
 	}
 	defer syscall.CloseHandle(h)
+	img, err := imagePathOf(h)
+	if err != nil {
+		return err
+	}
+	if match == nil || !match(img) {
+		return fmt.Errorf("%w: pid %d is %s", ErrImageMismatch, pid, img)
+	}
 	r, _, e := callProc(procTerminateProcess, uintptr(h), 1)
 	if r == 0 {
 		return lastErr(e)
 	}
+	if waitMs > 0 {
+		ev, err := WaitForSingleObject(h, waitMs)
+		if err != nil {
+			return err
+		}
+		if ev == WaitTimeout {
+			return fmt.Errorf("winapi: pid %d did not exit within %d ms", pid, waitMs)
+		}
+	}
 	return nil
+}
+
+// SameImage reports whether image is exactly want (case-insensitive,
+// 8.3 names expanded).
+func SameImage(image, want string) bool {
+	return strings.EqualFold(filepath.Clean(longIfShort(image)), filepath.Clean(longIfShort(want)))
+}
+
+// longIfShort calls GetLongPathNameW only for paths with an 8.3 component.
+func longIfShort(p string) string {
+	if strings.Contains(p, "~") {
+		return LongPath(p)
+	}
+	return p
 }
 
 // SendMessageTimeout wraps SendMessageTimeoutW.
@@ -139,7 +182,7 @@ func ProcessesInDir(installDir string, exeNames ...string) ([]Process, error) {
 		want[strings.ToLower(n)] = true
 	}
 	// 8.3 vs long names: QueryFullProcessImageName returns the long form
-	root := strings.ToLower(filepath.Clean(LongPath(installDir)))
+	root := strings.ToLower(filepath.Clean(longIfShort(installDir)))
 	var out []Process
 	for _, p := range all {
 		if !want[strings.ToLower(p.Exe)] {
@@ -148,7 +191,7 @@ func ProcessesInDir(installDir string, exeNames ...string) ([]Process, error) {
 		if p.Path == "" {
 			continue
 		}
-		path := strings.ToLower(filepath.Clean(LongPath(p.Path)))
+		path := strings.ToLower(filepath.Clean(longIfShort(p.Path)))
 		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) || strings.HasPrefix(path, root+`\`) {
 			out = append(out, p)
 		}

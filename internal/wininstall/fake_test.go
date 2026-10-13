@@ -32,6 +32,7 @@ type recordingSystem struct {
 	WriteReboot bool   // WriteFile returns reboot=true
 	FailAlso    string // second prefix that always fails (e.g. a rollback step)
 	Specs       []ServiceSpec
+	Long        map[string]string // LongPath mapping (8.3 → long)
 }
 
 func newFake() *recordingSystem {
@@ -256,14 +257,21 @@ func (f *recordingSystem) StopService(name string, timeout time.Duration) error 
 	return nil
 }
 
-func (f *recordingSystem) ForceStopService(name, dir string) error {
+func (f *recordingSystem) ForceStopService(name, dir string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.step("ForceStopService|%s", name); err != nil {
-		return err
+		return nil, err
 	}
 	f.Service.Running = false
-	return nil
+	return nil, nil
+}
+
+func (f *recordingSystem) LongPath(p string) string {
+	if l, ok := f.Long[p]; ok {
+		return l
+	}
+	return p
 }
 
 func (f *recordingSystem) DeleteService(name string) error {

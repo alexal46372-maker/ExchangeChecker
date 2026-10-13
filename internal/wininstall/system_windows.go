@@ -462,8 +462,6 @@ func (winSystem) DeleteUserKey() error {
 	return winapi.RegDeleteKey(winapi.HKEY_CURRENT_USER, UserKeyPath)
 }
 
-// silence unused import of model in case of future use
-
 func (winSystem) StopTray(installDir string) error {
 	if installDir == "" {
 		return nil
@@ -471,7 +469,18 @@ func (winSystem) StopTray(installDir string) error {
 	msg := winapi.RegisterWindowMessage(model.TrayExitMessage)
 	if msg != 0 {
 		winapi.BroadcastMessage(msg, 2000)
-		time.Sleep(500 * time.Millisecond)
+	}
+	// Wait a few seconds for trays that honour TrayExitMessage to exit.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		procs, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
+		if err != nil {
+			return err
+		}
+		if len(procs) == 0 {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 	procs, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
 	if err != nil {

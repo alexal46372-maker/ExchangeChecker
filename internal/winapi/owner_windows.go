@@ -74,14 +74,14 @@ func SetFileOwner(path, sidString string) error {
 // TakeOwnershipTree sets the owner of path and every descendant to
 // SIDAdministrators when the current owner is neither SYSTEM nor
 // Administrators. Enables SeTakeOwnershipPrivilege and SeRestorePrivilege
-// first. FileOwnerSID failures are returned as a joined warning error
-// (caller logs them); the walk continues. changed is true when at least
-// one owner was foreign and was changed.
+// first; if that fails, the walk still tries SetFileOwner (may succeed when
+// the process is already the owner or an elevated admin). FileOwnerSID
+// failures are returned as a joined warning error (caller logs them).
 func TakeOwnershipTree(path string) (changed bool, err error) {
-	if err := EnablePrivileges("SeTakeOwnershipPrivilege", "SeRestorePrivilege"); err != nil {
-		return false, fmt.Errorf("enable ownership privileges: %w", err)
-	}
 	var warns []string
+	if err := EnablePrivileges("SeTakeOwnershipPrivilege", "SeRestorePrivilege"); err != nil {
+		warns = append(warns, fmt.Sprintf("privileges: %v (continuing owner change)", err))
+	}
 	walk := func(p string, _ os.FileInfo, werr error) error {
 		if werr != nil {
 			warns = append(warns, fmt.Sprintf("%s: walk: %v", p, werr))

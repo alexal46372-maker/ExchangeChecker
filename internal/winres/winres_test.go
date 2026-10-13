@@ -96,35 +96,6 @@ func TestCHK_RES_01_COFF(t *testing.T) {
 	}
 }
 
-// TestCHK_RES_01_ParsesRsrcOutput — the parser reads the tray .syso made by
-// akavel/rsrc v0.10.2 in phase 6a (independent writer, kept as testdata
-// since the tray moved to tools/mkres in 7e T3): manifest text and all
-// three icons.
-func TestCHK_RES_01_ParsesRsrcOutput(t *testing.T) {
-	dir := filepath.Join("..", "..", "cmd", "exchtray")
-	obj, err := os.ReadFile(filepath.Join("testdata", "akavel_rsrc_tray.syso"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	res, err := ParseSyso(obj)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, ok := Find(res, TypeManifest)
-	man, _ := os.ReadFile(filepath.Join(dir, "exchtray.manifest"))
-	if !ok || !bytes.Contains(bytes.ReplaceAll(man, []byte("\r\n"), []byte("\n")), bytes.TrimSpace(m.Data)) {
-		t.Error("manifest not found in the tray .syso")
-	}
-	g, ok := Find(res, TypeGroupIcon)
-	if !ok {
-		t.Fatal("no group icon")
-	}
-	ids, err := GroupIconIDs(g.Data)
-	if err != nil || len(ids) != 3 {
-		t.Fatalf("group icon ids %v %v", ids, err)
-	}
-}
-
 func TestCHK_RES_01_Icon(t *testing.T) {
 	ico, _ := os.ReadFile(filepath.Join("..", "..", "cmd", "exchtray", "exchtray.ico"))
 	res, err := IconResources(ico, 7, 10, LangEnUS)

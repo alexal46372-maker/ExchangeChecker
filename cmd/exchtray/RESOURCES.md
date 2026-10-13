@@ -29,7 +29,3 @@ go run ./tools/mkres -check   # код 1, если закоммиченный .s
 Закоммиченный `.syso` — для `0.0.0-dev`; шаг CI «release-like build»
 перегенерирует его с `-version 0.0.0-ci.N` (или версией тега) только в рабочей
 копии job. Проверки: `go test ./tools/mkres ./checks -run 'CHK_RES_01|CHK_VER_01|CHK_TRAY_10'`.
-
-Прежний `.syso` фазы 6a (akavel/rsrc) сохранён как
-`internal/winres/testdata/akavel_rsrc_tray.syso` — образец независимого
-генератора для теста разборщика (`TestCHK_RES_01_ParsesRsrcOutput`).

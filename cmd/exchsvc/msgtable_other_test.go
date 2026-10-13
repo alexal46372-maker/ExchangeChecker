@@ -50,12 +50,23 @@ func TestCHK_SVC_02_MessageTable(t *testing.T) {
 		}
 		return le.Uint32(rsrc[o:])
 	}
-	// entries of a resource directory at o: id -> OffsetToData
+	// entries of a resource directory at o: numeric id -> OffsetToData;
+	// named entries (high bit of Name set) are skipped (Вика)
 	dir := func(o int) map[uint32]uint32 {
+		if o < 0 || o+16 > len(rsrc) {
+			t.Fatalf("CHK-SVC-02: directory at %d out of .rsrc", o)
+		}
 		n := int(le.Uint16(rsrc[o+12:])) + int(le.Uint16(rsrc[o+14:]))
+		if o+16+8*n > len(rsrc) {
+			t.Fatalf("CHK-SVC-02: directory at %d: %d entries out of .rsrc", o, n)
+		}
 		m := map[uint32]uint32{}
 		for i := 0; i < n; i++ {
-			m[u32(o+16+8*i)] = u32(o + 16 + 8*i + 4)
+			name := u32(o + 16 + 8*i)
+			if name&0x80000000 != 0 {
+				continue
+			}
+			m[name] = u32(o + 16 + 8*i + 4)
 		}
 		return m
 	}
@@ -78,14 +89,23 @@ func TestCHK_SVC_02_MessageTable(t *testing.T) {
 				t.Errorf("CHK-SVC-02: message table language %#x, want LANG_NEUTRAL", lang)
 			}
 			doff, dsz := int(u32(int(de))), int(u32(int(de)+4))
-			if doff+dsz > len(rsrc) {
+			if doff < 0 || dsz < 4 || doff+dsz > len(rsrc) {
 				t.Fatal("CHK-SVC-02: data out of .rsrc")
 			}
 			d := rsrc[doff : doff+dsz]
 			nb := int(le.Uint32(d))
+			if nb < 0 || 4+12*nb > len(d) {
+				t.Fatalf("CHK-SVC-02: %d message blocks out of the resource", nb)
+			}
 			for i := 0; i < nb; i++ {
 				lo, hi, eo := le.Uint32(d[4+12*i:]), le.Uint32(d[8+12*i:]), int(le.Uint32(d[12+12*i:]))
+				if hi < lo || hi-lo > 0xFFFF {
+					t.Fatalf("CHK-SVC-02: bad block %d..%d", lo, hi)
+				}
 				for id := lo; id <= hi; id++ {
+					if eo < 0 || eo+4 > len(d) {
+						t.Fatalf("CHK-SVC-02: entry of id %d out of the resource", id)
+					}
 					l, fl := int(le.Uint16(d[eo:])), le.Uint16(d[eo+2:])
 					if l < 4 || eo+l > len(d) {
 						t.Fatalf("CHK-SVC-02: bad entry for id %d", id)

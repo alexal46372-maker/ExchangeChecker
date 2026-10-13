@@ -11,6 +11,7 @@ import (
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/alert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/history"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/monitor"
@@ -54,6 +55,9 @@ type appConfig struct {
 	// TrayCommand overrides the Run value (tests); "" = the quoted full
 	// path of ExchangeCheckerTray.exe next to the service executable.
 	TrayCommand string
+	// SecureHistory overrides the DACL of the history folder (tests; nil =
+	// secureHistoryDir: protected SYSTEM + Administrators on Windows).
+	SecureHistory func(dir string) error
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -154,6 +158,16 @@ func runService(ctx context.Context, ac appConfig) error {
 	if test == nil {
 		test = monitor.SQLTest
 	}
+	// phase 9 (CHK-SVC-03): poll history under <dir>\history, SYSTEM +
+	// Administrators only; a failure disables the history (logged), the
+	// service keeps monitoring
+	secureHist := ac.SecureHistory
+	if secureHist == nil {
+		secureHist = secureHistoryDir
+	}
+	hist := history.Open(history.Options{Dir: filepath.Join(ac.Dir, model.HistoryDir), Prepare: secureHist, Now: ac.Now, Log: log})
+	defer hist.Close()
+
 	var srv *ipc.Server
 	mon := monitor.New(monitor.Options{
 		Source:    monitor.FileConfig{Store: store},
@@ -185,17 +199,22 @@ func runService(ctx context.Context, ac appConfig) error {
 		Sink: alert.Multi{
 			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),
+			hist, // transition records of the history (CHK-SVC-03)
 		},
 		// config-load failures and hung readers (already rate-limited by
 		// the monitor) -> Event Log warning (CHK-MON-10, CHK-MON-13)
-		Warn:         func(msg string) { report(alert.EventTypeWarning, alert.EventIDInternal, msg) },
-		OnSnapshot:   func(s model.StatusSnapshot) { srv.PublishStatus(s) },
+		Warn: func(msg string) { report(alert.EventTypeWarning, alert.EventIDInternal, msg) },
+		OnSnapshot: func(s model.StatusSnapshot) {
+			srv.PublishStatus(s)
+			hist.RecordSnapshot(s) // profiles polled since the last snapshot
+		},
 		Now:          ac.Now,
 		PollInterval: ac.PollInterval,
 		ConfigCheck:  ac.ConfigCheck,
 	})
 	srv = ipc.NewServer(mon, log)
 	srv.Authorize = ac.Authorize
+	srv.History = historySource{h: hist, mon: mon}
 	if autostart != nil {
 		// get_status.trayAutostartError + capability tray_autostart_status
 		srv.TrayAutostartError = autostart.ErrorCode

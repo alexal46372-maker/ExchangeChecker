@@ -26,7 +26,12 @@ func TestCHK_CFG_05_ValidateSQLServerAddr(t *testing.T) {
 		`\.\pipe\sql`:             "backslash",
 		"srv":                     "",
 		`srv\INST`:                "",
-		"tcp:srv":                 "",
+		"tcp:srv":                 "tcp",
+		"TCP:srv,1433":            "tcp",
+		"sm:srv":                  "sm",
+		"Via:srv":                 "via",
+		"/srv":                    "slash",
+		"tcpserver":               "",
 		"10.0.0.1":                "",
 		"pipeline-host":           "",
 	} {

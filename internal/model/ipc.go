@@ -135,6 +135,9 @@ type IPCError struct {
 	// RetryAfterMs is copied into IPCMessage.RetryAfterMs (rate_limited
 	// of check_now, phase 9).
 	RetryAfterMs int64
+	// Info is copied into IPCMessage.ErrorInfo (SQL errors of the
+	// interactive and wizard commands, phase 9 CHK-IPC-10).
+	Info *SQLErrorInfo
 }
 
 func (e *IPCError) Error() string { return e.Message }
@@ -195,6 +198,21 @@ type IPCRequest struct {
 	SinceID uint64     `json:"sinceId,omitempty"`
 	// Bucket: history aggregation (HistoryBucket1m / 5m / 1h), "" = records.
 	Bucket string `json:"bucket,omitempty"`
+	// Phase 9 wizard (CHK-IPC-10): sql_browse Host / Instance / TimeoutMs
+	// (Limit shared); sql_diagnose Category + ErrorKey or Code + TLSKey;
+	// sql_grant_script Principal, Windows / Auth, Database, Tables.
+	Host      string   `json:"host,omitempty"`
+	Instance  string   `json:"instance,omitempty"`
+	TimeoutMs int      `json:"timeoutMs,omitempty"`
+	Category  string   `json:"category,omitempty"`
+	ErrorKey  string   `json:"errorKey,omitempty"`
+	Code      string   `json:"code,omitempty"`
+	TLSKey    string   `json:"tlsKey,omitempty"`
+	Principal string   `json:"principal,omitempty"`
+	Windows   bool     `json:"windows,omitempty"`
+	Auth      string   `json:"auth,omitempty"`
+	Database  string   `json:"database,omitempty"`
+	Tables    []string `json:"tables,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -327,4 +345,14 @@ type IPCMessage struct {
 	RunID         string       `json:"runId,omitempty"`
 	LastID        *uint64      `json:"lastId,omitempty"`
 	ResetRequired bool         `json:"resetRequired,omitempty"`
+	// Phase 9 wizard replies (CHK-IPC-10): SQLBrowse / SQLDatabases /
+	// SQLDiagnosis / SQLGrantScript; AutoPick of a discovery reply
+	// (model.SQLAutoPickFor over the returned candidates); ErrorInfo of
+	// a SQL error (stable code, diagnosis key, SQL error number).
+	SQLBrowse      *SQLBrowseResult    `json:"sqlBrowse,omitempty"`
+	SQLDatabases   *SQLDatabasesResult `json:"sqlDatabases,omitempty"`
+	SQLDiagnosis   *SQLDiagnosis       `json:"sqlDiagnosis,omitempty"`
+	SQLGrantScript *SQLGrantScript     `json:"sqlGrantScript,omitempty"`
+	AutoPick       *SQLAutoPick        `json:"autoPick,omitempty"`
+	ErrorInfo      *SQLErrorInfo       `json:"errorInfo,omitempty"`
 }

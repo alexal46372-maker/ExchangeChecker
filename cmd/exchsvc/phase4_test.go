@@ -140,8 +140,9 @@ func TestCHK_IPC_02_ServiceAckAndTest(t *testing.T) {
 	// phase 6 adds cancel, config_read, config_write and (G2/G3,
 	// CHK-IPC-08/09) discover, discover_by_value, node_points,
 	// check_mapping; phase 9 (CHK-SVC-03/04/05) history, check_now,
-	// events_since
-	if hello.Version != 2 || len(hello.Capabilities) != 13 || hello.Heartbeat == nil {
+	// events_since; CHK-IPC-10 sql_browse, sql_databases, sql_diagnose,
+	// sql_grant_script
+	if hello.Version != 2 || len(hello.Capabilities) != 17 || hello.Heartbeat == nil {
 		t.Fatalf("hello %+v", hello)
 	}
 	snap := s.polled(t)

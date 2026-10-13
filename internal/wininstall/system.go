@@ -78,6 +78,11 @@ type System interface {
 	// image lives under installDir (rollback must not hit a locked file).
 	// Returned warnings (e.g. SeDebugPrivilege) are logged by the caller.
 	ForceStopService(name, installDir string) (warnings []string, err error)
+	// Start-menu shortcut (§6.3, CHK-SETUP-08): CSIDL_COMMON_PROGRAMS\
+	// Exchange Checker\Exchange Checker.lnk → trayExe (COM IShellLinkW).
+	CreateStartShortcut(trayExe, workDir, description string) (lnk string, err error)
+	// DeleteStartShortcut removes the .lnk and its folder (missing = ok).
+	DeleteStartShortcut() error
 	// LongPath expands 8.3 components (identity on non-Windows / fakes).
 	LongPath(p string) string
 	DeleteService(name string) error

@@ -434,6 +434,59 @@ func (winSystem) StopService(name string, timeout time.Duration) error {
 	return nil
 }
 
+// StartMenuFolder / ShortcutFile: §6.3.
+const (
+	StartMenuFolder = "Exchange Checker"
+	ShortcutFile    = "Exchange Checker.lnk"
+)
+
+func startMenuDir() (string, error) {
+	progs, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_PROGRAMS)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(progs, StartMenuFolder), nil
+}
+
+func (winSystem) CreateStartShortcut(trayExe, workDir, desc string) (string, error) {
+	dir, err := startMenuDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	lnk := filepath.Join(dir, ShortcutFile)
+	err = winapi.WithCOM(func() error {
+		return winapi.CreateShortcut(lnk, winapi.ShortcutSpec{
+			Target: trayExe, WorkDir: workDir, Description: desc, Icon: trayExe, IconIndex: 0,
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+	winapi.SHChangeNotifyDir(dir)
+	return lnk, nil
+}
+
+func (winSystem) DeleteStartShortcut() error {
+	dir, err := startMenuDir()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(dir, ShortcutFile)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Remove(dir); err != nil && !os.IsNotExist(err) {
+		// a non-empty folder (user files) is left alone
+		if ents, rerr := os.ReadDir(dir); rerr != nil || len(ents) == 0 {
+			return err
+		}
+	}
+	winapi.SHChangeNotifyDir(filepath.Dir(dir))
+	return nil
+}
+
 func (winSystem) LongPath(p string) string {
 	if strings.Contains(p, "~") {
 		return winapi.LongPath(p)

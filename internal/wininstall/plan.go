@@ -274,6 +274,18 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			undo.push(sys.DeleteTrayRun)
 		}
 	}
+	// 7b. Start-menu shortcut (§6.3) — not fatal; kept on upgrade unless
+	// re-created; /NOSHORTCUT leaves an existing one alone
+	if !c.Opts.NoShortcut {
+		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, T(c.Lang, "setup.shortcut.desc")); err != nil {
+			warn("start menu shortcut: %v", err)
+		} else {
+			log.Printf("shortcut %s", lnk)
+			if fresh {
+				undo.push(sys.DeleteStartShortcut)
+			}
+		}
+	}
 	// 8. Uninstall key — journal previous values (DisplayVersion etc.) for rollback
 	if !fresh {
 		if prevVals, err := sys.ReadUninstallKey(); err != nil {
@@ -339,6 +351,24 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	return res
 }
 
+// Detect reads what is installed and how newVer would be applied (wizard
+// page 1; Install repeats the same logic).
+func Detect(sys System, newVer string) (Installed, ServiceInfo, Mode, error) {
+	inst, err := sys.ReadInstalled()
+	if err != nil {
+		return inst, ServiceInfo{}, "", errf("read Uninstall key", err)
+	}
+	svc, err := sys.QueryService(model.ServiceName)
+	if err != nil {
+		return inst, svc, "", errf("query service", err)
+	}
+	if !inst.Present && svc.Exists {
+		inst = Installed{Present: true, Dir: ParentDir(ExePathFromImagePath(svc.ImagePath))}
+	}
+	mode, _ := Decide(inst.Version, newVer, inst.Present)
+	return inst, svc, mode, nil
+}
+
 // UninstallConfig is the input of Uninstall.
 type UninstallConfig struct {
 	DataDir   string
@@ -391,6 +421,7 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	}
 	step("delete HKLM Run "+config.TrayRunValue, sys.DeleteTrayRun())
 	step("delete event log source", sys.DeleteEventSource())
+	step("delete start menu shortcut", sys.DeleteStartShortcut())
 	if dir != "" {
 		if err := ValidateDir(dir, c.DataDir); err != nil {
 			step("install folder", err)

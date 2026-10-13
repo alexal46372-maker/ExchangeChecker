@@ -33,12 +33,23 @@ func run(args []string) int {
 	}
 	defer logCloser()
 	logf("Exchange Checker setup %s starting", version.Version)
+	lang := wininstall.NormLang(opts.Lang)
+	if opts.Lang == "" {
+		lang = wininstall.NormLang(winapi.UserUILanguage())
+	}
+	// interactive only: a message box for fatal start-up errors (never in /S)
+	fatal := func(key string) int {
+		logf("ERROR: %s", wininstall.T("en", key))
+		if !opts.Silent {
+			winapi.MessageBox(0, wininstall.T(lang, key), "Exchange Checker", 0x10 /*MB_ICONERROR*/)
+		}
+		return wininstall.ExitError
+	}
 
 	if admin, err := winapi.ProcessIsAdmin(); err != nil {
 		logf("WARNING: admin check: %v", err)
 	} else if !admin {
-		logf("ERROR: administrator rights required")
-		return wininstall.ExitError
+		return fatal("setup.err.admin")
 	}
 
 	mu, already, err := winapi.CreateMutex(wininstall.SetupMutexName)
@@ -48,58 +59,133 @@ func run(args []string) int {
 	}
 	defer syscall.CloseHandle(mu)
 	if already {
-		logf("ERROR: another setup is running")
-		return wininstall.ExitError
+		return fatal("setup.err.running")
 	}
 
 	sys := wininstall.NewSystem()
-	lang := opts.Lang
-	if lang == "" {
-		lang = winapi.UserUILanguage()
-	}
 
 	if opts.Uninstall {
+		purge := opts.PurgeData
+		if !opts.Silent {
+			ok, p, err := wininstall.ConfirmUninstall(lang)
+			if err != nil {
+				logf("ERROR: confirmation window: %v", err)
+				return wininstall.ExitError
+			}
+			if !ok {
+				logf("cancelled by the user; exit %d", wininstall.ExitCancelled)
+				return wininstall.ExitCancelled
+			}
+			purge = purge || p
+		}
 		self, _ := os.Executable()
 		res := wininstall.Uninstall(sys, wininstall.UninstallConfig{
-			DataDir: config.DefaultDir(), SelfExe: self, PurgeData: opts.PurgeData,
+			DataDir: config.DefaultDir(), SelfExe: self, PurgeData: purge,
 		}, printfLogger(logf))
 		if res.Err != nil {
 			logf("ERROR: %v", res.Err)
 		}
 		logf("exit %d", res.Code)
+		if !opts.Silent {
+			msg := wininstall.T(lang, "setup.uninstall.done")
+			switch {
+			case res.Err != nil:
+				msg = wininstall.T(lang, "setup.uninstall.error", res.Err.Error(), logPath)
+			case res.Code == wininstall.ExitRebootRequired:
+				msg = wininstall.T(lang, "setup.uninstall.reboot")
+			}
+			winapi.MessageBox(0, msg, wininstall.T(lang, "setup.uninstall.title"), 0x40 /*MB_ICONINFORMATION*/)
+		}
 		return res.Code
 	}
 
-	if !opts.Silent {
-		logf("ERROR: interactive wizard not yet available; use /S for silent install")
+	defaultDir := filepath.Join(os.Getenv("ProgramFiles"), "ExchangeChecker")
+	if pf, err := winapi.SHGetFolderPath(winapi.CSIDL_PROGRAM_FILES); err == nil && pf != "" {
+		defaultDir = filepath.Join(pf, "ExchangeChecker")
+	}
+	install := func(o wininstall.Options, lg wininstall.Logger) wininstall.Result {
+		res := wininstall.Install(sys, wininstall.InstallConfig{
+			Opts:       o,
+			DefaultDir: defaultDir,
+			DataDir:    config.DefaultDir(),
+			Files:      payloadFiles(),
+			Version:    version.Version,
+			Lang:       lang,
+			Now:        time.Now(),
+		}, lg)
+		if res.Err != nil {
+			logf("ERROR: %v", res.Err)
+		}
+		logf("exit %d", res.Code)
+		return res
+	}
+	if opts.Silent {
+		// silent: no window, no message box, no tray launch (§1.3, §D.8)
+		return install(opts, printfLogger(logf)).Code
+	}
+	return runWizard(sys, opts, lang, defaultDir, install, logf)
+}
+
+func runWizard(sys wininstall.System, opts wininstall.Options, lang, defaultDir string,
+	install func(wininstall.Options, wininstall.Logger) wininstall.Result, logf func(string, ...interface{})) int {
+	inst, svc, mode, err := wininstall.Detect(sys, version.Version)
+	if err != nil {
+		logf("WARNING: detect: %v", err)
+	}
+	dir, locked := defaultDir, false
+	if opts.Dir != "" {
+		dir = opts.Dir
+	}
+	if inst.Present && inst.Dir != "" {
+		dir, locked = inst.Dir, true
+	}
+	st := wininstall.NewWizardState(lang, version.Version, mode, inst.Version, dir, locked, config.DefaultDir(), svc.Running)
+	st.CheckDrive = sys.CheckFixedDrive
+	out, err := wininstall.RunWizard(wininstall.WizardConfig{
+		State: st, Base: opts, LogPath: logPath,
+		Run: func(o wininstall.Options, progress func(string)) wininstall.Result {
+			return install(o, printfLogger(func(format string, a ...interface{}) {
+				logf(format, a...)
+				progress(fmt.Sprintf(format, a...))
+			}))
+		},
+	})
+	if err != nil {
+		logf("ERROR: wizard: %v", err)
 		return wininstall.ExitError
 	}
-
-	files := payloadFiles()
-	res := wininstall.Install(sys, wininstall.InstallConfig{
-		Opts:       opts,
-		DefaultDir: filepath.Join(os.Getenv("ProgramFiles"), "ExchangeChecker"),
-		DataDir:    config.DefaultDir(),
-		Files:      files,
-		Version:    version.Version,
-		Lang:       lang,
-		Now:        time.Now(),
-	}, printfLogger(logf))
-	if res.Err != nil {
-		logf("ERROR: %v", res.Err)
+	if out.Cancelled {
+		logf("cancelled by the user; exit %d", wininstall.ExitCancelled)
+		return wininstall.ExitCancelled
 	}
-	logf("exit %d", res.Code)
-	return res.Code
+	if out.LaunchTray {
+		trayDir := st.Dir
+		if out.Result.Dir != "" {
+			trayDir = out.Result.Dir
+		}
+		tray := filepath.Join(trayDir, config.TrayExeName)
+		if err := winapi.LaunchAsShellUser(tray, trayDir); err != nil {
+			logf("WARNING: tray launch: %v", err)
+			winapi.MessageBox(0, wininstall.T(lang, "setup.finish.trayfail"), "Exchange Checker", 0x40)
+		} else {
+			logf("tray started (explorer.exe token): %s", tray)
+		}
+	}
+	return out.Result.Code
 }
 
 type printfLogger func(string, ...interface{})
 
 func (f printfLogger) Printf(format string, args ...interface{}) { f(format, args...) }
 
+// logPath is the setup log in use (shown on the Finish page).
+var logPath string
+
 func openLog(path string) (func(string, ...interface{}), func(), error) {
 	if path == "" {
 		path = filepath.Join(os.TempDir(), fmt.Sprintf("ExchangeCheckerSetup-%s.log", time.Now().Format("20060102-150405")))
 	}
+	logPath = path
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, nil, err

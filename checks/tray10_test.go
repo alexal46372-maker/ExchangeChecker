@@ -159,6 +159,11 @@ var winAPIMinVersion = map[string]float64{
 
 	"SendMessageTimeoutW": 5.0,
 	"OpenProcessToken":    5.0, "LookupPrivilegeValueW": 5.0, "AdjustTokenPrivileges": 5.0,
+	// phase 7d wizard / shortcut / tray launch (docs/PHASE7.md App. A)
+	"CoInitializeEx": 5.0, "CoUninitialize": 5.0, "CoCreateInstance": 5.0, "CoTaskMemFree": 5.0,
+	"OleInitialize": 5.0, "OleUninitialize": 5.0,
+	"SHGetFolderPathW": 5.0, "SHChangeNotify": 5.0, "SHBrowseForFolderW": 5.0, "SHGetPathFromIDListW": 5.0,
+	"InitCommonControlsEx": 5.0, "MoveWindow": 5.0, "DuplicateTokenEx": 5.0, "CreateProcessWithTokenW": 6.0,
 	"SetLastError": 5.0, "GetLastError": 5.0,
 }
 

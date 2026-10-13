@@ -34,15 +34,19 @@ func (stubSystem) UpdateService(ServiceSpec, bool) error             { return Er
 func (stubSystem) StartService(string, time.Duration) error          { return ErrNotWindows }
 func (stubSystem) StopService(string, time.Duration) error           { return ErrNotWindows }
 func (stubSystem) ForceStopService(string, string) ([]string, error) { return nil, ErrNotWindows }
-func (stubSystem) LongPath(p string) string                          { return p }
-func (stubSystem) DeleteService(string) error                        { return ErrNotWindows }
-func (stubSystem) SetEventSource(string) error                       { return ErrNotWindows }
-func (stubSystem) DeleteEventSource() error                          { return ErrNotWindows }
-func (stubSystem) ApplyTrayRun(string, string) (string, error)       { return "", ErrNotWindows }
-func (stubSystem) DeleteTrayRun() error                              { return ErrNotWindows }
-func (stubSystem) StopTray(string) ([]string, error)                 { return nil, ErrNotWindows }
-func (stubSystem) WriteUninstallKey([]RegValue) error                { return ErrNotWindows }
-func (stubSystem) ReadUninstallKey() ([]RegValue, error)             { return nil, ErrNotWindows }
-func (stubSystem) DeleteUninstallKey() error                         { return ErrNotWindows }
-func (stubSystem) ReadInstalled() (Installed, error)                 { return Installed{}, ErrNotWindows }
-func (stubSystem) DeleteUserKey() error                              { return ErrNotWindows }
+func (stubSystem) CreateStartShortcut(string, string, string) (string, error) {
+	return "", ErrNotWindows
+}
+func (stubSystem) DeleteStartShortcut() error                  { return ErrNotWindows }
+func (stubSystem) LongPath(p string) string                    { return p }
+func (stubSystem) DeleteService(string) error                  { return ErrNotWindows }
+func (stubSystem) SetEventSource(string) error                 { return ErrNotWindows }
+func (stubSystem) DeleteEventSource() error                    { return ErrNotWindows }
+func (stubSystem) ApplyTrayRun(string, string) (string, error) { return "", ErrNotWindows }
+func (stubSystem) DeleteTrayRun() error                        { return ErrNotWindows }
+func (stubSystem) StopTray(string) ([]string, error)           { return nil, ErrNotWindows }
+func (stubSystem) WriteUninstallKey([]RegValue) error          { return ErrNotWindows }
+func (stubSystem) ReadUninstallKey() ([]RegValue, error)       { return nil, ErrNotWindows }
+func (stubSystem) DeleteUninstallKey() error                   { return ErrNotWindows }
+func (stubSystem) ReadInstalled() (Installed, error)           { return Installed{}, ErrNotWindows }
+func (stubSystem) DeleteUserKey() error                        { return ErrNotWindows }

@@ -180,11 +180,16 @@ func TestCHK_POL_01_NoOSExec(t *testing.T) {
 // syscall.CreateProcess / CreateProcessAsUser, or NewProc("CreateProcess…")
 // (string literal or same-file const). Import aliases are followed; comments
 // are ignored (go/ast). checks/ tests may (CHK-SETUP-07 rename).
-// CreateProcessWithTokenW for launching the tray (phase 7d) is not exempted.
+// Narrow exception (phase 7d, PLAN §12 п. 90.8): exactly
+// NewProc("CreateProcessWithTokenW") in internal/winapi/tokenlaunch_windows.go
+// (tray launch with the explorer.exe token after an interactive install);
+// everything else stays forbidden in that file too.
+const tokenLaunchFile = "internal/winapi/tokenlaunch_windows.go"
+
 func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 	root := findModuleRoot(t)
 
-	startsProcess := func(name string, src []byte) bool {
+	startsProcess := func(name string, src []byte, allowTokenLaunch bool) bool {
 		fset := token.NewFileSet()
 		f, err := parser.ParseFile(fset, name, src, 0)
 		if err != nil {
@@ -259,6 +264,9 @@ func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 				case *ast.Ident:
 					name = consts[a.Name]
 				}
+				if allowTokenLaunch && name == "CreateProcessWithTokenW" {
+					return true
+				}
 				if strings.HasPrefix(name, "CreateProcess") {
 					hit = true
 				}
@@ -281,15 +289,25 @@ func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 		{"dot_os.go", "package p\nimport . \"os\"\nfunc f(){ StartProcess(\"a\", nil, nil) }\n"},
 	}
 	for _, p := range probes[:5] {
-		if !startsProcess(p.name, []byte(p.src)) {
+		if !startsProcess(p.name, []byte(p.src), false) {
 			t.Fatalf("CHK-POL-01: scan does not detect probe %s", p.name)
 		}
 	}
-	if !startsProcess(probes[6].name, []byte(probes[6].src)) {
+	if !startsProcess(probes[6].name, []byte(probes[6].src), false) {
 		t.Fatal("CHK-POL-01: scan does not detect dot-import of os")
 	}
-	if startsProcess(probes[5].name, []byte(probes[5].src)) {
+	if startsProcess(probes[5].name, []byte(probes[5].src), false) {
 		t.Fatal("CHK-POL-01: scan flags comment-only mention")
+	}
+
+	// the exception is exactly one export: CreateProcessW / os.StartProcess
+	// are still caught in the exempted file
+	if !startsProcess("x.go", []byte("package p\nvar _ = mod.NewProc(\"CreateProcessW\")\n"), true) ||
+		!startsProcess("y.go", []byte("package p\nimport \"os\"\nfunc f(){ os.StartProcess(\"a\", nil, nil) }\n"), true) {
+		t.Fatal("CHK-POL-01: token-launch exception is too wide")
+	}
+	if startsProcess("z.go", []byte("package p\nvar _ = mod.NewProc(\"CreateProcessWithTokenW\")\n"), true) {
+		t.Fatal("CHK-POL-01: token-launch exception not applied")
 	}
 
 	files := 0
@@ -304,8 +322,8 @@ func TestCHK_POL_01_NoStartProcess(t *testing.T) {
 				t.Error(err)
 				return nil
 			}
-			if startsProcess(p, b) {
-				rel, _ := filepath.Rel(root, p)
+			rel, _ := filepath.Rel(root, p)
+			if startsProcess(p, b, filepath.ToSlash(rel) == tokenLaunchFile) {
 				t.Errorf("CHK-POL-01: %s starts a process (os/syscall.StartProcess or CreateProcess); allowed only in checks/ tests", filepath.ToSlash(rel))
 			}
 			return nil

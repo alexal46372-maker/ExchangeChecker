@@ -33,7 +33,8 @@ type recordingSystem struct {
 	FailAlso    string // second prefix that always fails (e.g. a rollback step)
 	Specs       []ServiceSpec
 	Long        map[string]string
-	TrayWarn    []string // LongPath mapping (8.3 → long)
+	TrayWarn    []string
+	Shortcut    string // target of the start-menu shortcut ("" = none) // LongPath mapping (8.3 → long)
 }
 
 func newFake() *recordingSystem {
@@ -266,6 +267,26 @@ func (f *recordingSystem) ForceStopService(name, dir string) ([]string, error) {
 	}
 	f.Service.Running = false
 	return nil, nil
+}
+
+func (f *recordingSystem) CreateStartShortcut(trayExe, workDir, desc string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("CreateStartShortcut|%s|%s", trayExe, workDir); err != nil {
+		return "", err
+	}
+	f.Shortcut = trayExe
+	return `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Exchange Checker\Exchange Checker.lnk`, nil
+}
+
+func (f *recordingSystem) DeleteStartShortcut() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("DeleteStartShortcut"); err != nil {
+		return err
+	}
+	f.Shortcut = ""
+	return nil
 }
 
 func (f *recordingSystem) LongPath(p string) string {

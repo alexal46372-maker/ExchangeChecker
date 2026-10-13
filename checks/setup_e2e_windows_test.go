@@ -245,6 +245,21 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		t.Fatalf("HKLM Run=%q ok=%v want %q", runVal, runOK, wantRun)
 	}
 
+	// Start-menu shortcut (CHK-SETUP-08): created by the silent install
+	progs, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_PROGRAMS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lnk := filepath.Join(progs, wininstall.StartMenuFolder, wininstall.ShortcutFile)
+	var sc winapi.ShortcutSpec
+	if err := winapi.WithCOM(func() error { var e error; sc, e = winapi.ReadShortcut(lnk); return e }); err != nil {
+		t.Fatalf("shortcut %s: %v", lnk, err)
+	}
+	if !winapi.SameImage(sc.Target, filepath.Join(dir, config.TrayExeName)) {
+		t.Fatalf("shortcut target %q", sc.Target)
+	}
+	t.Logf("shortcut ok: %s -> %s", lnk, sc.Target)
+
 	// --- upgrade / rollback E2E (CHK-SETUP-12 / 7c) ---
 	setupV2 := os.Getenv("EC_SETUP_EXE_V2")
 	if setupV2 == "" {
@@ -449,6 +464,9 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 	if runOK {
 		t.Fatalf("HKLM Run still present after uninstall: %q", runVal)
+	}
+	if _, err := os.Stat(lnk); !os.IsNotExist(err) {
+		t.Fatalf("shortcut still present after uninstall: %v", err)
 	}
 
 	// reinstall then purge via uninstall.exe

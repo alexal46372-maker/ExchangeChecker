@@ -40,8 +40,8 @@ const (
 	MB_ICONINFORMATION = 0x00000040
 )
 
-// TOOLINFOW is TTTOOLINFOW (x64: 72 bytes, the comctl32 v6 layout with
-// lpReserved).
+// TOOLINFOW is TTTOOLINFOW (x64: 72 bytes with lpReserved; cbSize is the
+// V2 size, 64, see SendToolInfo).
 type TOOLINFOW struct {
 	Size     uint32
 	Flags    uint32
@@ -68,7 +68,9 @@ func InitTooltips() bool {
 func SendToolInfo(tip uintptr, msg uint32, owner, ctrl uintptr, text string) uintptr {
 	t := UTF16Ptr(text)
 	ti := TOOLINFOW{Flags: TTF_IDISHWND | TTF_SUBCLASS, Hwnd: owner, ID: ctrl, Text: t}
-	ti.Size = uint32(unsafe.Sizeof(ti))
+	// TTTOOLINFOW_V2_SIZE (without lpReserved): accepted by comctl32 v6
+	// (the tray manifest) and by v5 (test binaries without a manifest)
+	ti.Size = uint32(unsafe.Offsetof(ti.Reserved))
 	r, _, _ := callProc(procSendMessageW, tip, uintptr(msg), 0, uintptr(unsafe.Pointer(&ti)))
 	runtime.KeepAlive(t)
 	runtime.KeepAlive(&ti)
@@ -76,7 +78,8 @@ func SendToolInfo(tip uintptr, msg uint32, owner, ctrl uintptr, text string) uin
 }
 
 // SetCueBanner sets the grey hint of an edit box shown while it is empty
-// (also while focused).
+// (also while focused). Needs comctl32 v6 (the tray manifest); false
+// without it (e.g. a test binary).
 func SetCueBanner(edit uintptr, text string) bool {
 	t := UTF16Ptr(text)
 	r, _, _ := callProc(procSendMessageW, edit, EM_SETCUEBANNER, 1, uintptr(unsafe.Pointer(t)))

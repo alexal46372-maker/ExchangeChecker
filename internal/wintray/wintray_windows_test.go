@@ -335,6 +335,8 @@ func TestCHK_TRAY_10_StructSizes(t *testing.T) {
 		{"FLASHWINFO", unsafe.Sizeof(winapi.FLASHWINFO{}), 32},
 		{"ICONINFO", unsafe.Sizeof(winapi.ICONINFO{}), 32},
 		{"SHELLEXECUTEINFOW", unsafe.Sizeof(winapi.SHELLEXECUTEINFOW{}), 112},
+		{"TOOLINFOW", unsafe.Sizeof(winapi.TOOLINFOW{}), 72},
+		{"TTTOOLINFOW_V2_SIZE", unsafe.Offsetof(winapi.TOOLINFOW{}.Reserved), 64},
 	}
 	for _, c := range cases {
 		if c.got != c.want {

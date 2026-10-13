@@ -79,16 +79,24 @@ func TestCHK_TRAY_17_SettingsDefaults(t *testing.T) {
 	w := openAdmin(t, app)
 	w.click(t, idSetAdd)
 	PumpPending()
-	if w.text(idSetPort) != "" || winapi.CueBanner(w.ctl[idSetPort]) != "1433 или пусто для SQL Browser" {
-		t.Errorf("port %q cue %q", w.text(idSetPort), winapi.CueBanner(w.ctl[idSetPort]))
+	if w.text(idSetPort) != "" || w.cues[idSetPort] != "1433 или пусто для SQL Browser" {
+		t.Errorf("port %q cue %q", w.text(idSetPort), w.cues[idSetPort])
+	}
+	// EM_GETCUEBANNER answers only with comctl32 v6 (the exchtray
+	// manifest, CHK-RES-01); the test binary has none, so it is checked
+	// when available
+	for id, want := range w.cues {
+		if got := winapi.CueBanner(w.ctl[id]); got != "" && got != want {
+			t.Errorf("cue %d: %q, want %q", id, got, want)
+		}
 	}
 	if w.text(idSetWarn) != "30" || w.text(idSetError) != "60" ||
 		w.text(idSetConnTO) != fmt.Sprint(model.DefaultConnectTimeoutSec) || w.text(idSetQueryTO) != fmt.Sprint(model.DefaultQueryTimeoutSec) {
 		t.Errorf("defaults %q %q %q %q", w.text(idSetWarn), w.text(idSetError), w.text(idSetConnTO), w.text(idSetQueryTO))
 	}
-	if winapi.CueBanner(w.ctl[idSetWarn]) != i18n.T(i18n.KeySetThreshCue, i18n.RU) ||
-		!strings.Contains(winapi.CueBanner(w.ctl[idSetConnTO]), "15") || !strings.Contains(winapi.CueBanner(w.ctl[idSetQueryTO]), "30") {
-		t.Errorf("cues %q %q", winapi.CueBanner(w.ctl[idSetWarn]), winapi.CueBanner(w.ctl[idSetConnTO]))
+	if w.cues[idSetWarn] != i18n.T(i18n.KeySetThreshCue, i18n.RU) || w.cues[idSetError] != w.cues[idSetWarn] ||
+		!strings.Contains(w.cues[idSetConnTO], "15") || !strings.Contains(w.cues[idSetQueryTO], "30") {
+		t.Errorf("cues %q", w.cues)
 	}
 }
 

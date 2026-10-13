@@ -175,6 +175,17 @@ type settingsWindow struct {
 	exiting bool
 	updates int       // update calls (test hook)
 	tips    *tooltips // CHK-TRAY-15
+	// cues: cue banners set on the edit boxes (CHK-TRAY-17; EM_SETCUEBANNER
+	// itself needs comctl32 v6 of the tray manifest)
+	cues map[int32]string
+}
+
+func (w *settingsWindow) setCue(id int32, text string) {
+	if w.cues == nil {
+		w.cues = map[int32]string{}
+	}
+	w.cues[id] = text
+	winapi.SetCueBanner(w.ctl[id], text)
 }
 
 // settingsTips are the tooltips of the settings window controls (phase 8,
@@ -421,11 +432,11 @@ func (w *settingsWindow) build() {
 		winapi.SendMessageString(w.ctl[idSetPreset], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
 	// grey hints of empty boxes (phase 8, CHK-TRAY-12)
-	winapi.SetCueBanner(w.ctl[idSetPort], w.t(i18n.KeySetPortCue))
-	winapi.SetCueBanner(w.ctl[idSetWarn], w.t(i18n.KeySetThreshCue))
-	winapi.SetCueBanner(w.ctl[idSetError], w.t(i18n.KeySetThreshCue))
-	winapi.SetCueBanner(w.ctl[idSetConnTO], fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultConnectTimeoutSec))
-	winapi.SetCueBanner(w.ctl[idSetQueryTO], fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultQueryTimeoutSec))
+	w.setCue(idSetPort, w.t(i18n.KeySetPortCue))
+	w.setCue(idSetWarn, w.t(i18n.KeySetThreshCue))
+	w.setCue(idSetError, w.t(i18n.KeySetThreshCue))
+	w.setCue(idSetConnTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultConnectTimeoutSec))
+	w.setCue(idSetQueryTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultQueryTimeoutSec))
 	w.tips = newTooltips(w.hwnd)
 	for id, h := range w.ctl {
 		if key, ok := settingsTips[id]; ok {
@@ -607,7 +618,8 @@ func (w *settingsWindow) readForm() {
 	f.ClearPassword, f.TLS10, f.Enabled = w.check(idSetClearPw), w.check(idSetTLS10), w.check(idSetEnabled)
 	// the trust box is shown cleared and disabled where it has no effect
 	// (CHK-TRAY-13); its value is kept for «Весь сеанс (TLS)»
-	if traysettings.TrustApplies(f.Encrypt) {
+	// (read only while the box is enabled, i.e. before a mode change)
+	if winapi.IsWindowEnabled(w.ctl[idSetTrust]) {
 		f.TrustServerCert = w.check(idSetTrust)
 	}
 	if i := int(winapi.SendMessage(w.ctl[idSetPreset], winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(traysettings.PresetChoices) {

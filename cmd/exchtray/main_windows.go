@@ -50,10 +50,11 @@ func run() int {
 	defer release()
 
 	app, err := wintray.NewApp(wintray.Options{
-		Lang:      lang,
-		LangPref:  langPref,
-		LangStore: wintray.RegistryLangStore{},
-		Session:   session,
+		Lang:         lang,
+		LangPref:     langPref,
+		LangStore:    wintray.RegistryLangStore{},
+		BalloonStore: wintray.RegistryBalloonStore{},
+		Session:      session,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "exchtray:", err)

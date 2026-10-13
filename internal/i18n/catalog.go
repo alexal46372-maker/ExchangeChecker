@@ -348,8 +348,96 @@ const (
 	KeyTipAboutOK         = "tip.about.ok"
 )
 
+// Phase 9a (CHK-TRAY-18..21).
+const (
+	KeyBalloonOverdueTitle   = "balloon.overdue_title"
+	KeyBalloonRecoveredTitle = "balloon.recovered_title"
+	KeyBalloonOverdue        = "balloon.overdue"
+	KeyBalloonOverdueNoLag   = "balloon.overdue_nolag"
+	KeyBalloonRecovered      = "balloon.recovered"
+	KeyBalloonSummary        = "balloon.summary"
+	KeyMenuBalloons          = "menu.balloons"
+	KeyMenuStatusWin         = "menu.status_window"
+	KeyMenuCheckNow          = "menu.check_now"
+	KeyStTitle               = "st.title"
+	KeyStDatabase            = "st.database"
+	KeyStPoint               = "st.point"
+	KeyStPlan                = "st.plan"
+	KeyStFresh               = "st.fresh"
+	KeyStAgo                 = "st.ago"
+	KeyStState               = "st.state"
+	KeyStSend                = "st.send"
+	KeyStRecv                = "st.recv"
+	KeyStNote                = "st.note"
+	KeyStDisabled            = "st.disabled"
+	KeyStNotPolled           = "st.not_polled"
+	KeyStExportedAt          = "st.exported_at"
+	KeyStExportCSV           = "st.export_csv"
+	KeyStExportHTML          = "st.export_html"
+	KeyStClose               = "st.close"
+	KeyStSaved               = "st.saved"
+	KeyStSaveFailed          = "st.save_failed"
+	KeyStCheckQueued         = "st.check_queued"
+	KeyStCheckFailed         = "st.check_failed"
+	KeyStNoData              = "st.no_data"
+	KeyStFilterCSV           = "st.filter_csv"
+	KeyStFilterHTML          = "st.filter_html"
+	KeyTipStList             = "tip.st_list"
+	KeyTipCheckNow           = "tip.check_now"
+	KeyTipExportCSV          = "tip.export_csv"
+	KeyTipExportHTML         = "tip.export_html"
+	KeyTipStInfo             = "tip.st_info"
+	KeyTipClose              = "tip.st_close"
+	KeyAgoNow                = "ago.now"
+	KeyAgoMin                = "ago.min"
+	KeyAgoHours              = "ago.hours"
+	KeyAgoDays               = "ago.days"
+)
+
 var catalog = map[string][2]string{ // key -> {ru, en}
-	KeyAppName: {"Exchange Checker", "Exchange Checker"},
+	KeyBalloonOverdueTitle:   {"Просрочка обмена", "Exchange overdue"},
+	KeyBalloonRecoveredTitle: {"Обмен восстановлен", "Exchange recovered"},
+	KeyBalloonOverdue:        {"%s: нет обмена %d мин (%s)", "%s: no exchange for %d min (%s)"},
+	KeyBalloonOverdueNoLag:   {"%s: %s", "%s: %s"},
+	KeyBalloonRecovered:      {"%s: обмен снова в норме", "%s: exchange is OK again"},
+	KeyBalloonSummary:        {"Просрочено точек: %d, восстановлено: %d", "Points overdue: %d, recovered: %d"},
+	KeyMenuBalloons:          {"Уведомления о просрочке", "Overdue notifications"},
+	KeyMenuStatusWin:         {"Состояние…", "Status…"},
+	KeyMenuCheckNow:          {"Проверить сейчас", "Check now"},
+	KeyStTitle:               {"Состояние", "Status"},
+	KeyStDatabase:            {"База", "Database"},
+	KeyStPoint:               {"Точка", "Point"},
+	KeyStPlan:                {"План обмена", "Exchange plan"},
+	KeyStFresh:               {"Последний обмен", "Last exchange"},
+	KeyStAgo:                 {"Давность", "Age"},
+	KeyStState:               {"Состояние", "State"},
+	KeyStSend:                {"Отправка", "Sent"},
+	KeyStRecv:                {"Приём", "Received"},
+	KeyStNote:                {"Примечание", "Note"},
+	KeyStDisabled:            {"отключена", "disabled"},
+	KeyStNotPolled:           {"ещё не опрошена", "not polled yet"},
+	KeyStExportedAt:          {"Выгружено", "Exported"},
+	KeyStExportCSV:           {"Экспорт CSV…", "Export CSV…"},
+	KeyStExportHTML:          {"Экспорт HTML…", "Export HTML…"},
+	KeyStClose:               {"Закрыть", "Close"},
+	KeyStSaved:               {"Сохранено: %s", "Saved: %s"},
+	KeyStSaveFailed:          {"Не удалось сохранить: %s", "Could not save: %s"},
+	KeyStCheckQueued:         {"Проверка запрошена", "Check requested"},
+	KeyStCheckFailed:         {"Проверка не запрошена: %s", "Check not requested: %s"},
+	KeyStNoData:              {"Нет данных от службы", "No data from the service"},
+	KeyStFilterCSV:           {"CSV (;)", "CSV (;)"},
+	KeyStFilterHTML:          {"Страница HTML", "HTML page"},
+	KeyTipStList:             {"Все базы и точки обмена: цвет — состояние, давность — сколько минут назад был последний обмен", "All databases and exchange points: colour is the state, age is how long ago the last exchange was"},
+	KeyTipCheckNow:           {"Опросить все базы сейчас, не дожидаясь интервала (не чаще раза в 10 с)", "Poll all databases now without waiting for the interval (at most once per 10 s)"},
+	KeyTipExportCSV:          {"Сохранить таблицу в CSV для Excel (UTF-8, разделитель «;»)", "Save the table as CSV for Excel (UTF-8, separator \";\")"},
+	KeyTipExportHTML:         {"Сохранить таблицу как страницу HTML с цветами", "Save the table as an HTML page with colours"},
+	KeyTipStInfo:             {"Результат последнего действия: проверка, экспорт", "Result of the last action: check, export"},
+	KeyTipClose:              {"Закрыть окно", "Close the window"},
+	KeyAgoNow:                {"только что", "just now"},
+	KeyAgoMin:                {"%d мин назад", "%d min ago"},
+	KeyAgoHours:              {"%d ч %d мин назад", "%d h %d min ago"},
+	KeyAgoDays:               {"%d дн. назад", "%d days ago"},
+	KeyAppName:               {"Exchange Checker", "Exchange Checker"},
 
 	KeySvcConnecting:    {"Подключение к службе…", "Connecting to the service…"},
 	KeySvcNotRunning:    {"Служба Exchange Checker не запущена", "The Exchange Checker service is not running"},

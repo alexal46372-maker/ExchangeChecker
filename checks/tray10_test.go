@@ -165,6 +165,9 @@ var winAPIMinVersion = map[string]float64{
 	"SHGetFolderPathW": 5.0, "SHChangeNotify": 5.0, "SHBrowseForFolderW": 5.0, "SHGetPathFromIDListW": 5.0,
 	"InitCommonControlsEx": 5.0, "MoveWindow": 5.0, "DuplicateTokenEx": 5.0, "CreateProcessWithTokenW": 6.0,
 	"SetLastError": 5.0, "GetLastError": 5.0,
+	// phase 9a «Состояние» window: NM_CUSTOMDRAW copy (kernel32) and the
+	// export save dialog (comdlg32) (CHK-TRAY-19 / CHK-TRAY-21)
+	"RtlMoveMemory": 5.0, "GetSaveFileNameW": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

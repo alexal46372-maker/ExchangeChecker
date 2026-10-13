@@ -17,6 +17,8 @@ var (
 	procTerminateProcess           = modkernel32.NewProc("TerminateProcess")
 	procQueryFullProcessImageNameW = modkernel32.NewProc("QueryFullProcessImageNameW")
 	procSendMessageTimeoutW        = moduser32.NewProc("SendMessageTimeoutW")
+	procProcessIdToSessionId       = modkernel32.NewProc("ProcessIdToSessionId")
+	procGetCurrentProcessId        = modkernel32.NewProc("GetCurrentProcessId")
 )
 
 const (
@@ -151,4 +153,25 @@ func ProcessesInDir(installDir string, exeNames ...string) ([]Process, error) {
 		}
 	}
 	return out, nil
+}
+
+// ProcessSessionID returns the RD session of pid (ProcessIdToSessionId).
+func ProcessSessionID(pid uint32) (uint32, error) {
+	var sid uint32
+	r, _, e := callProc(procProcessIdToSessionId, uintptr(pid), uintptr(unsafe.Pointer(&sid)))
+	if r == 0 {
+		return 0, lastErr(e)
+	}
+	return sid, nil
+}
+
+// CurrentProcessID wraps GetCurrentProcessId.
+func CurrentProcessID() uint32 {
+	r, _, _ := callProc(procGetCurrentProcessId)
+	return uint32(r)
+}
+
+// CurrentSessionID is ProcessSessionID of the calling process.
+func CurrentSessionID() (uint32, error) {
+	return ProcessSessionID(CurrentProcessID())
 }

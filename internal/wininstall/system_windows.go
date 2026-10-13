@@ -67,6 +67,49 @@ func (winSystem) WriteFile(path string, data []byte) error {
 	return nil
 }
 
+func (winSystem) BackupFile(path string) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if st.IsDir() {
+		return fmt.Errorf("backup %s: is a directory", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	bak := path + ".bak"
+	return os.WriteFile(bak, data, 0o644)
+}
+
+func (winSystem) RestoreBackup(path string) error {
+	bak := path + ".bak"
+	data, err := os.ReadFile(bak)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := config.WriteFileAtomic(filepath.Dir(path), filepath.Base(path), data, 0o644); err != nil {
+		return err
+	}
+	_ = os.Remove(bak)
+	return nil
+}
+
+func (winSystem) RemoveBackup(path string) error {
+	err := os.Remove(path + ".bak")
+	if err == nil || os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 func (winSystem) RemoveFile(path string) (bool, error) {
 	err := os.Remove(path)
 	if err == nil || os.IsNotExist(err) {
@@ -467,34 +510,74 @@ func (winSystem) StopTray(installDir string) error {
 		return nil
 	}
 	msg := winapi.RegisterWindowMessage(model.TrayExitMessage)
-	if msg != 0 {
-		winapi.BroadcastMessage(msg, 2000)
-	}
-	// Wait a few seconds for trays that honour TrayExitMessage to exit.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		procs, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
-		if err != nil {
-			return err
-		}
-		if len(procs) == 0 {
-			return nil
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	selfSess, _ := winapi.CurrentSessionID()
+
 	procs, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
 	if err != nil {
 		return err
 	}
-	var first error
+	var list []TrayProc
 	for _, p := range procs {
-		if err := winapi.TerminatePID(p.PID); err != nil {
-			if first == nil {
-				first = fmt.Errorf("stop tray pid %d: %w", p.PID, err)
-			}
-			continue
+		s := uint32(0xffffffff) // unknown session → terminate path via Split
+		if sid, e := winapi.ProcessSessionID(p.PID); e == nil {
+			s = sid
 		}
-		_ = winapi.WaitProcessExit(p.PID, 5000)
+		list = append(list, TrayProc{PID: p.PID, Session: s})
+	}
+	post, other := SplitTrayStop(selfSess, list)
+
+	if msg != 0 {
+		want := map[uint32]bool{}
+		for _, pid := range post {
+			want[pid] = true
+		}
+		if len(want) > 0 {
+			for _, class := range []string{
+				model.TrayWindowClass, model.TraySettingsClass,
+				model.TraySettingsViewClass, model.TrayDiscoveryClass,
+			} {
+				for _, hwnd := range winapi.EnumWindowsByClass(class) {
+					if want[winapi.WindowProcessID(hwnd)] {
+						winapi.PostMessage(hwnd, msg, 0, 0)
+					}
+				}
+			}
+		}
+		// Broadcast also reaches a separate --settings process (CHK-TRAY-11).
+		winapi.BroadcastMessage(msg, 2000)
+	}
+
+	var first error
+	term := func(pid uint32, why string) {
+		if err := winapi.TerminatePID(pid); err != nil {
+			if first == nil {
+				first = fmt.Errorf("stop tray pid %d (%s): %w", pid, why, err)
+			}
+			return
+		}
+		_ = winapi.WaitProcessExit(pid, 5000)
+	}
+	for _, pid := range other {
+		term(pid, "other session")
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		left, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
+		if err != nil {
+			return err
+		}
+		if len(left) == 0 {
+			return first
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	left, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
+	if err != nil {
+		return err
+	}
+	for _, p := range left {
+		term(p.PID, "after wait")
 	}
 	return first
 }

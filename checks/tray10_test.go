@@ -117,7 +117,7 @@ var winAPIMinVersion = map[string]float64{
 	// user32
 	"CreateIconIndirect": 5.0, "CreatePopupMenu": 5.0, "CreateWindowExW": 5.0, "DefWindowProcW": 5.0,
 	"DestroyIcon": 5.0, "DestroyMenu": 5.0, "DestroyWindow": 5.0, "DispatchMessageW": 5.0,
-	"FindWindowW": 5.0, "GetCursorPos": 5.0, "GetDlgItem": 5.0, "GetMenuItemCount": 5.0,
+	"FindWindowW": 5.0, "FindWindowExW": 5.0, "GetWindowThreadProcessId": 5.0, "GetCursorPos": 5.0, "GetDlgItem": 5.0, "GetMenuItemCount": 5.0,
 	"GetMenuItemInfoW": 5.0, "GetMessageW": 5.0, "GetSubMenu": 5.0, "GetSystemMetrics": 5.0,
 	"GetWindowTextLengthW": 5.0, "GetWindowTextW": 5.0, "InsertMenuItemW": 5.0, "IsWindow": 5.0,
 	"LoadCursorW": 5.0, "PeekMessageW": 5.0, "PostMessageW": 5.0, "PostQuitMessage": 5.0,
@@ -153,6 +153,7 @@ var winAPIMinVersion = map[string]float64{
 	"StartServiceW": 5.0, "ControlService": 5.0, "DeleteService": 5.0,
 	"GetDriveTypeW": 5.0, "GetDiskFreeSpaceExW": 5.0, "GetWindowsDirectoryW": 5.0,
 	"OpenProcess": 5.0, "WaitForSingleObject": 5.0,
+	"ProcessIdToSessionId": 5.0, "GetCurrentProcessId": 5.0,
 	"CreateToolhelp32Snapshot": 5.0, "Process32FirstW": 5.0, "Process32NextW": 5.0,
 	"TerminateProcess": 5.0, "QueryFullProcessImageNameW": 6.0,
 	"SendMessageTimeoutW": 5.0,

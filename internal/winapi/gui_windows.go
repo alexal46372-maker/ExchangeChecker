@@ -17,39 +17,41 @@ var (
 	modgdi32   = newSystemDLL("gdi32.dll")
 	modshell32 = newSystemDLL("shell32.dll")
 
-	procRegisterClassExW       = moduser32.NewProc("RegisterClassExW")
-	procUnregisterClassW       = moduser32.NewProc("UnregisterClassW")
-	procCreateWindowExW        = moduser32.NewProc("CreateWindowExW")
-	procDefWindowProcW         = moduser32.NewProc("DefWindowProcW")
-	procDestroyWindow          = moduser32.NewProc("DestroyWindow")
-	procIsWindow               = moduser32.NewProc("IsWindow")
-	procShowWindow             = moduser32.NewProc("ShowWindow")
-	procGetMessageW            = moduser32.NewProc("GetMessageW")
-	procPeekMessageW           = moduser32.NewProc("PeekMessageW")
-	procTranslateMessage       = moduser32.NewProc("TranslateMessage")
-	procDispatchMessageW       = moduser32.NewProc("DispatchMessageW")
-	procPostMessageW           = moduser32.NewProc("PostMessageW")
-	procPostQuitMessage        = moduser32.NewProc("PostQuitMessage")
-	procSendMessageW           = moduser32.NewProc("SendMessageW")
-	procCreatePopupMenu        = moduser32.NewProc("CreatePopupMenu")
-	procInsertMenuItemW        = moduser32.NewProc("InsertMenuItemW")
-	procDestroyMenu            = moduser32.NewProc("DestroyMenu")
-	procTrackPopupMenuEx       = moduser32.NewProc("TrackPopupMenuEx")
-	procGetMenuItemCount       = moduser32.NewProc("GetMenuItemCount")
-	procGetMenuItemInfoW       = moduser32.NewProc("GetMenuItemInfoW")
-	procGetSubMenu             = moduser32.NewProc("GetSubMenu")
-	procSetForegroundWindow    = moduser32.NewProc("SetForegroundWindow")
-	procGetCursorPos           = moduser32.NewProc("GetCursorPos")
-	procRegisterWindowMessageW = moduser32.NewProc("RegisterWindowMessageW")
-	procGetDlgItem             = moduser32.NewProc("GetDlgItem")
-	procGetWindowTextW         = moduser32.NewProc("GetWindowTextW")
-	procGetWindowTextLengthW   = moduser32.NewProc("GetWindowTextLengthW")
-	procFindWindowW            = moduser32.NewProc("FindWindowW")
-	procGetClassNameW          = moduser32.NewProc("GetClassNameW")
-	procLoadCursorW            = moduser32.NewProc("LoadCursorW")
-	procCreateIconIndirect     = moduser32.NewProc("CreateIconIndirect")
-	procDestroyIcon            = moduser32.NewProc("DestroyIcon")
-	procGetSystemMetrics       = moduser32.NewProc("GetSystemMetrics")
+	procRegisterClassExW         = moduser32.NewProc("RegisterClassExW")
+	procUnregisterClassW         = moduser32.NewProc("UnregisterClassW")
+	procCreateWindowExW          = moduser32.NewProc("CreateWindowExW")
+	procDefWindowProcW           = moduser32.NewProc("DefWindowProcW")
+	procDestroyWindow            = moduser32.NewProc("DestroyWindow")
+	procIsWindow                 = moduser32.NewProc("IsWindow")
+	procShowWindow               = moduser32.NewProc("ShowWindow")
+	procGetMessageW              = moduser32.NewProc("GetMessageW")
+	procPeekMessageW             = moduser32.NewProc("PeekMessageW")
+	procTranslateMessage         = moduser32.NewProc("TranslateMessage")
+	procDispatchMessageW         = moduser32.NewProc("DispatchMessageW")
+	procPostMessageW             = moduser32.NewProc("PostMessageW")
+	procPostQuitMessage          = moduser32.NewProc("PostQuitMessage")
+	procSendMessageW             = moduser32.NewProc("SendMessageW")
+	procCreatePopupMenu          = moduser32.NewProc("CreatePopupMenu")
+	procInsertMenuItemW          = moduser32.NewProc("InsertMenuItemW")
+	procDestroyMenu              = moduser32.NewProc("DestroyMenu")
+	procTrackPopupMenuEx         = moduser32.NewProc("TrackPopupMenuEx")
+	procGetMenuItemCount         = moduser32.NewProc("GetMenuItemCount")
+	procGetMenuItemInfoW         = moduser32.NewProc("GetMenuItemInfoW")
+	procGetSubMenu               = moduser32.NewProc("GetSubMenu")
+	procSetForegroundWindow      = moduser32.NewProc("SetForegroundWindow")
+	procGetCursorPos             = moduser32.NewProc("GetCursorPos")
+	procRegisterWindowMessageW   = moduser32.NewProc("RegisterWindowMessageW")
+	procGetDlgItem               = moduser32.NewProc("GetDlgItem")
+	procGetWindowTextW           = moduser32.NewProc("GetWindowTextW")
+	procGetWindowTextLengthW     = moduser32.NewProc("GetWindowTextLengthW")
+	procFindWindowW              = moduser32.NewProc("FindWindowW")
+	procFindWindowExW            = moduser32.NewProc("FindWindowExW")
+	procGetWindowThreadProcessId = moduser32.NewProc("GetWindowThreadProcessId")
+	procGetClassNameW            = moduser32.NewProc("GetClassNameW")
+	procLoadCursorW              = moduser32.NewProc("LoadCursorW")
+	procCreateIconIndirect       = moduser32.NewProc("CreateIconIndirect")
+	procDestroyIcon              = moduser32.NewProc("DestroyIcon")
+	procGetSystemMetrics         = moduser32.NewProc("GetSystemMetrics")
 
 	procCreateDIBSection = modgdi32.NewProc("CreateDIBSection")
 	procCreateBitmap     = modgdi32.NewProc("CreateBitmap")
@@ -541,4 +543,36 @@ func CreateMutex(name string) (h syscall.Handle, existed bool, err error) {
 		existed = true
 	}
 	return syscall.Handle(r), existed, nil
+}
+
+// FindWindowEx finds a child/top-level window (FindWindowExW). parent and
+// afterAfter may be 0. class may be "" (any). Returns 0 when none.
+func FindWindowEx(parent, after uintptr, class string) uintptr {
+	var cls uintptr
+	if class != "" {
+		cls = uintptr(unsafe.Pointer(UTF16Ptr(class)))
+	}
+	r, _, _ := callProc(procFindWindowExW, parent, after, cls, 0)
+	return r
+}
+
+// WindowProcessID returns the PID that owns hwnd (GetWindowThreadProcessId).
+func WindowProcessID(hwnd uintptr) uint32 {
+	var pid uint32
+	callProc(procGetWindowThreadProcessId, hwnd, uintptr(unsafe.Pointer(&pid)))
+	return pid
+}
+
+// EnumWindowsByClass returns every top-level window of the given class.
+func EnumWindowsByClass(class string) []uintptr {
+	var out []uintptr
+	var hwnd uintptr
+	for {
+		hwnd = FindWindowEx(0, hwnd, class)
+		if hwnd == 0 {
+			break
+		}
+		out = append(out, hwnd)
+	}
+	return out
 }

@@ -258,7 +258,6 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 			}
 			rel, _ := filepath.Rel(data, path)
 			rel = filepath.ToSlash(rel)
-			// logs grow while the service runs; config/secrets must stay put
 			if strings.HasPrefix(rel, "logs/") || strings.EqualFold(filepath.Ext(rel), ".log") {
 				return nil
 			}
@@ -282,13 +281,50 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if len(before) == 0 {
 		t.Fatal("ProgramData empty before upgrade")
 	}
-	v1 := inst.Version
+	if inst.Version != "1.0.0" {
+		t.Fatalf("V1 DisplayVersion=%q want 1.0.0", inst.Version)
+	}
+	// Start V1 tray from the install folder; upgrade must terminate it.
+	trayPath := filepath.Join(dir, config.TrayExeName)
+	trayProc, err := os.StartProcess(trayPath, []string{trayPath}, &os.ProcAttr{
+		Dir:   dir,
+		Files: []*os.File{nil, nil, nil},
+	})
+	if err != nil {
+		t.Fatalf("start V1 tray: %v", err)
+	}
+	trayPID := trayProc.Pid
+	t.Cleanup(func() { _ = trayProc.Kill(); _, _ = trayProc.Wait() })
+	time.Sleep(500 * time.Millisecond)
+
 	logU := filepath.Join(os.TempDir(), "ec-setup-e2e-upgrade.log")
 	code = run(setupV2, "/S", "/DIR="+dir, "/LOG="+logU, "/LANG=en")
 	if code != 0 {
 		dumpLog(t, logU)
 		t.Fatalf("upgrade exit %d; log %s", code, logU)
 	}
+	// tray must be gone (StopTray during upgrade)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		left, err := winapi.ProcessesInDir(dir, config.TrayExeName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		alive := false
+		for _, p := range left {
+			if int(p.PID) == trayPID {
+				alive = true
+			}
+		}
+		if !alive {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("V1 tray pid %d still running after upgrade", trayPID)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	_, _ = trayProc.Wait()
 	after := hashData()
 	for k, v := range before {
 		if after[k] != v {
@@ -299,14 +335,57 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if err != nil || !inst2.Present {
 		t.Fatalf("uninstall key after upgrade: %+v %v", inst2, err)
 	}
-	if inst2.Version == "" || inst2.Version == v1 {
-		t.Fatalf("DisplayVersion after V2=%q (was %q)", inst2.Version, v1)
+	if inst2.Version != "1.1.0" {
+		t.Fatalf("DisplayVersion after V2=%q want 1.1.0", inst2.Version)
 	}
 	info2, err := sys.QueryService(model.ServiceName)
 	if err != nil || !info2.Exists || !info2.Running {
 		t.Fatalf("service after upgrade: %+v err=%v", info2, err)
 	}
-	t.Logf("upgraded %s -> %s; ProgramData hashes stable (%d files)", v1, inst2.Version, len(before))
+	if !info2.AutoStart {
+		t.Fatal("start type not preserved (want AUTO) after upgrade")
+	}
+	t.Logf("upgraded 1.0.0 -> %s; tray terminated; ProgramData hashes stable (%d files)", inst2.Version, len(before))
+
+	// Real rollback: upgrade with a non-service binary as ExchangeCheckerSvc.exe
+	v2Svc, err := os.ReadFile(filepath.Join(dir, config.ServiceExeName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Sum := sha256.Sum256(v2Svc)
+	badFiles := map[string][]byte{}
+	for _, n := range wininstall.PayloadFiles {
+		b, err := os.ReadFile(filepath.Join(dir, n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		badFiles[n] = b
+	}
+	badFiles[config.ServiceExeName] = badFiles[config.TrayExeName] // not a service
+	res := wininstall.Install(sys, wininstall.InstallConfig{
+		Opts:       wininstall.Options{Silent: true},
+		DefaultDir: dir, DataDir: data, Files: badFiles,
+		Version: "1.2.0", Lang: "en", Now: time.Now(),
+	}, &e2eLog{t})
+	if res.Code != wininstall.ExitError {
+		t.Fatalf("bad upgrade code=%d err=%v (want exit 1 + rollback)", res.Code, res.Err)
+	}
+	inst3, err := sys.ReadInstalled()
+	if err != nil || !inst3.Present || inst3.Version != "1.1.0" {
+		t.Fatalf("after rollback DisplayVersion=%+v want 1.1.0: %v", inst3, err)
+	}
+	info3, err := sys.QueryService(model.ServiceName)
+	if err != nil || !info3.Exists || !info3.Running {
+		t.Fatalf("service after rollback: %+v err=%v", info3, err)
+	}
+	svcBytes, err := os.ReadFile(filepath.Join(dir, config.ServiceExeName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha256.Sum256(svcBytes) != v2Sum {
+		t.Fatal("svc file not restored to V2 image after rollback")
+	}
+	t.Logf("rollback ok: version=%s service running", inst3.Version)
 
 	// uninstall via installed ExchangeCheckerUninstall.exe (keep data)
 	uninstLog := filepath.Join(os.TempDir(), "ec-setup-e2e-uninst.log")
@@ -359,6 +438,12 @@ func waitServiceGone(t *testing.T, sys wininstall.System, name string, d time.Du
 		time.Sleep(200 * time.Millisecond)
 	}
 	return fmt.Errorf("service %s still exists after uninstall", name)
+}
+
+type e2eLog struct{ t *testing.T }
+
+func (e *e2eLog) Printf(format string, args ...interface{}) {
+	e.t.Logf(format, args...)
 }
 
 func dumpLog(t *testing.T, path string) {

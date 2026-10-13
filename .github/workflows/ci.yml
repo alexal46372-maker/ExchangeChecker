@@ -129,7 +129,8 @@ jobs:
             local X="-X github.com/alexal46372-maker/ExchangeChecker/internal/version.Version=$ver"
             local pay="$out/payload"
             mkdir -p "$pay"
-            GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerSvc.exe" ./cmd/exchsvc
+            # svc matches release-like build (console, no -H windowsgui)
+            GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="$X" -o "$pay/ExchangeCheckerSvc.exe" ./cmd/exchsvc
             GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerTray.exe" ./cmd/exchtray
             GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerUninstall.exe" ./cmd/exchsetup
             rm -rf cmd/exchsetup/payload

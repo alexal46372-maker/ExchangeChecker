@@ -70,6 +70,12 @@ type Options struct {
 	// «Отменить изменения?»); nil = MessageBoxW, default «Нет» (tests: a
 	// fake).
 	Confirm func(owner uintptr, text, caption string) bool
+	// Service controls the service from the «Служба» submenu; nil = the
+	// SCM for model.ServiceName (phase 8, CHK-TRAY-16; tests: a fake).
+	Service ServiceControl
+	// Notify shows a tray message (service start / stop result); nil =
+	// MessageBoxW (tests: a fake).
+	Notify func(text string, warn bool)
 }
 
 // exitWait bounds the wait for the session goroutine in Exit (well under
@@ -395,8 +401,10 @@ func (a *App) onNotify(ev uint32) {
 }
 
 // LeftMenu / RightMenu are the current menu models.
-func (a *App) LeftMenu() []trayui.Item  { return trayui.BuildLeftMenu(a.status, a.opt.Lang) }
-func (a *App) RightMenu() []trayui.Item { return trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref) }
+func (a *App) LeftMenu() []trayui.Item { return trayui.BuildLeftMenu(a.status, a.opt.Lang) }
+func (a *App) RightMenu() []trayui.Item {
+	return trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref, a.serviceState())
+}
 
 // ShowLeftMenu shows the databases menu at the cursor.
 func (a *App) ShowLeftMenu() { a.Command(trackMenu(a.hwnd, a.LeftMenu(), &a.squares)) }
@@ -421,6 +429,8 @@ func (a *App) Command(cmd int) {
 		a.Exit()
 	case trayui.CmdLangAuto, trayui.CmdLangRU, trayui.CmdLangEN:
 		a.SetLanguage(trayui.LangCommands[cmd])
+	case trayui.CmdSvcStart, trayui.CmdSvcStop:
+		a.serviceCommand(cmd == trayui.CmdSvcStart)
 	}
 }
 
@@ -506,7 +516,7 @@ func (a *App) ShowAbout(show bool) uintptr {
 	}
 	lang := a.opt.Lang
 	h, err := newAboutWindow(a.hwnd, trayui.AboutTitle(lang), trayui.AboutText(a.session.Status(), lang),
-		i18n.T(i18n.KeyAboutOK, lang), show, func() { a.about = 0 })
+		i18n.T(i18n.KeyAboutOK, lang), i18n.T(i18n.KeyTipAboutOK, lang), show, func() { a.about = 0 })
 	if err != nil {
 		return 0
 	}

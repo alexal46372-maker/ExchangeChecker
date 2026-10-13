@@ -71,6 +71,24 @@ var discMapEdits = []struct {
 	{idDiscPlanLabel, i18n.KeyDiscPlanLabel, "mapping.planLabel"},
 }
 
+// discoveryTips are the tooltips of the dialog controls (phase 8,
+// CHK-TRAY-15); the table / column boxes share KeyTipDiscField.
+var discoveryTips = map[int32]string{
+	idDiscFind: i18n.KeyTipDiscFind, idDiscPoints: i18n.KeyTipDiscPoints, idDiscCancel: i18n.KeyTipDiscCancel,
+	idDiscPoint: i18n.KeyTipDiscPoint, idDiscTime: i18n.KeyTipDiscTime, idDiscTol: i18n.KeyTipDiscTol,
+	idDiscByValue: i18n.KeyTipDiscByValue, idDiscList: i18n.KeyTipDiscList, idDiscDetails: i18n.KeyTipDiscDetails,
+	idDiscMode: i18n.KeyTipDiscMode, idDiscSchema: i18n.KeyTipDiscField, idDiscTable: i18n.KeyTipDiscField,
+	idDiscPointName: i18n.KeyTipDiscField, idDiscPointID: i18n.KeyTipDiscField, idDiscPointKey: i18n.KeyTipDiscField,
+	idDiscTimesTable: i18n.KeyTipDiscField, idDiscTimesLink: i18n.KeyTipDiscField, idDiscSend: i18n.KeyTipDiscField,
+	idDiscRecv: i18n.KeyTipDiscField, idDiscPlanLabel: i18n.KeyTipDiscPlanLabel, idDiscTemplate: i18n.KeyTipDiscTemplate,
+	idDiscYear: i18n.KeyTipDiscYear, idDiscKeep: i18n.KeyTipDiscKeep, idDiscAllPlans: i18n.KeyTipDiscAllPlans,
+	idDiscSQL: i18n.KeyTipDiscSQL, idDiscResult: i18n.KeyTipDiscResult, idDiscCheck: i18n.KeyTipDiscCheck,
+	idDiscApply: i18n.KeyTipDiscApply, idDiscClose: i18n.KeyTipDiscClose,
+}
+
+// discoveryOutputs are the static texts of the dialog (no tooltip).
+var discoveryOutputs = map[int32]bool{idDiscState: true, idDiscSource: true}
+
 // discFieldControl maps a mapping.* field (and the query field) to the
 // control highlighted by a check / request error.
 // mappings / mappings[i].* (additional plans) highlight «все планы
@@ -121,6 +139,7 @@ type discoveryDialog struct {
 	w    *settingsWindow
 	hwnd uintptr
 	ctl  map[int32]uintptr
+	tips *tooltips // CHK-TRAY-15
 	d    *traysettings.Discovery
 
 	profileID string // profile at opening (Apply refuses another one)
@@ -267,6 +286,12 @@ func (dd *discoveryDialog) build() {
 	}
 	for _, s := range traysettings.TemplateTitles(dd.w.cfg.lang) {
 		winapi.SendMessageString(dd.ctl[idDiscTemplate], winapi.CB_ADDSTRING, 0, s)
+	}
+	dd.tips = newTooltips(dd.hwnd)
+	for id, h := range dd.ctl {
+		if key, ok := discoveryTips[id]; ok {
+			dd.tips.set(h, dd.t(key))
+		}
 	}
 }
 

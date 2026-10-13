@@ -63,7 +63,15 @@ type Editor struct {
 	// Profile.Mappings while MapEdit is set.
 	MapEdit  *model.Mapping
 	MapsEdit []model.Mapping
+	// settingsCtx: the last request was save_settings (general page), so
+	// warnMinutes / errorMinutes of a reply are the general thresholds;
+	// otherwise they are the profile's own (phase 8, CHK-TRAY-14).
+	settingsCtx bool
 }
+
+// fromProfile fills the form with the inherited thresholds of the saved
+// general settings.
+func (e *Editor) fromProfile(p model.Profile) Form { return FromProfileIn(p, e.Settings) }
 
 // NewEditor returns an empty editor.
 func NewEditor(lang string, mode Mode) *Editor {
@@ -131,7 +139,7 @@ func (e *Editor) Select(i int) {
 	}
 	e.Sel = i
 	e.Base = e.Profiles[i]
-	e.Form = FromProfile(e.Base)
+	e.Form = e.fromProfile(e.Base)
 }
 
 // New starts a new profile with the defaults of model.NewProfile (SQL
@@ -141,7 +149,7 @@ func (e *Editor) New() {
 	e.Sel = -1
 	e.IsNew = true
 	e.Base = model.NewProfile("")
-	e.Form = FromProfile(e.Base)
+	e.Form = e.fromProfile(e.Base)
 }
 
 // HasProfile: a profile (saved or new) is being edited.
@@ -174,7 +182,7 @@ func (e *Editor) formDirty() bool {
 	if !e.HasProfile() {
 		return false
 	}
-	saved := FromProfile(e.Base)
+	saved := e.fromProfile(e.Base)
 	f := e.Form
 	if f.Auth == model.AuthWindows && saved.Auth == model.AuthWindows {
 		f.Login = saved.Login
@@ -195,7 +203,7 @@ func (e *Editor) ProfileUnsaved() bool {
 		return false
 	}
 	if e.IsNew {
-		return e.Form != FromProfile(e.Base) || e.MapEdit != nil
+		return e.Form != e.fromProfile(e.Base) || e.MapEdit != nil
 	}
 	return e.Dirty()
 }
@@ -214,6 +222,7 @@ func (e *Editor) Candidate() (model.Profile, *model.FieldError) {
 // mapping: test_profile and the Discovery commands need only the
 // connection, so an invalid mapping edit never blocks them.
 func (e *Editor) connCandidate() (model.Profile, *model.FieldError) {
+	e.settingsCtx = false
 	base := e.Base
 	base.Mapping, base.Mappings = model.Mapping{}, nil
 	return e.Form.Apply(base)
@@ -323,7 +332,16 @@ func (e *Editor) fieldLabel(path string) string {
 		"beep.enabled": i18n.KeyGenBeepEnabled, "beep.warningFreqHz": i18n.KeyGenWarnFreq, "beep.warningDurMs": i18n.KeyGenWarnDur,
 		"beep.errorFreqHz": i18n.KeyGenErrorFreq, "beep.errorDurMs": i18n.KeyGenErrorDur, "beep.gapMs": i18n.KeyGenGap,
 		"language": i18n.KeyGenLanguage, "trayAutostart": i18n.KeyGenAutostart,
+		"serverPreset": i18n.KeySetPreset, "connectTimeoutSec": i18n.KeySetConnTimeout, "queryTimeoutSec": i18n.KeySetQueryTimeout,
 	}[path]
+	if !e.settingsCtx { // the profile's own thresholds (phase 8)
+		switch path {
+		case "warnMinutes":
+			key = i18n.KeySetWarnMin
+		case "errorMinutes":
+			key = i18n.KeySetErrorMin
+		}
+	}
 	if key == "" {
 		return path
 	}
@@ -337,6 +355,18 @@ func (e *Editor) validationText(args []string) string {
 	}
 	a := append([]string(nil), args...)
 	a[0] = e.fieldLabel(a[0])
+	// parameters that name a field or a value get their label, never the
+	// raw JSON name (phase 8, CHK-TRAY-14): «Ошибка» must be greater than
+	// «Предупреждение», not "warnMinutes"
+	switch {
+	case args[1] == model.ValGreaterThan && len(a) > 2:
+		a[2] = e.fieldLabel(a[2])
+	case args[1] == model.ValPresetConflict && len(a) > 3:
+		if i := EncryptIndex(model.EncryptMode(a[2])); EncryptChoices[i] == model.EncryptMode(a[2]) {
+			a[2] = e.t(encryptKeys[i])
+		}
+		a[3] = e.t(presetKeys[PresetIndex(a[3])])
+	}
 	return model.FormatMessage(args[1], a, e.Lang)
 }
 
@@ -344,8 +374,28 @@ func (e *Editor) fieldProblem(fe *model.FieldError) *Problem {
 	if fe.Field == "" {
 		return &Problem{Text: fmt.Sprintf(e.t(i18n.KeySetFailed), fe.Msg)}
 	}
-	return &Problem{Text: e.validationText(fe.IPCArgs()), Field: FocusField(fe.Field, fe.Args)}
+	return &Problem{Text: e.validationText(fe.IPCArgs()), Field: e.focus(fe.Field, fe.Args)}
 }
+
+// focus is the control of a field error in the current request context.
+func (e *Editor) focus(path string, params []string) Field {
+	if e.settingsCtx {
+		return FocusField(path, params)
+	}
+	return FocusProfileField(path, params)
+}
+
+// encryptKeys / presetKeys are the combo box texts of EncryptChoices and
+// PresetChoices.
+var (
+	encryptKeys = []string{i18n.KeySetEncDisable, i18n.KeySetEncOptional, i18n.KeySetEncOn, i18n.KeySetEncStrict}
+	presetKeys  = []string{i18n.KeySetPreset2008, i18n.KeySetPresetNone}
+)
+
+// EncryptKeys / PresetKeys: catalog keys of the combo box items, in
+// EncryptChoices / PresetChoices order.
+func EncryptKeys() []string { return append([]string(nil), encryptKeys...) }
+func PresetKeys() []string  { return append([]string(nil), presetKeys...) }
 
 // fits checks the 64 KiB request limit before sending (the id is added
 // by the client; a 16-digit one is assumed).
@@ -374,6 +424,7 @@ func (e *Editor) SaveRequest(password string) (model.IPCRequest, *Problem) {
 	if e.Revision == "" {
 		return model.IPCRequest{}, &Problem{Text: e.t(i18n.KeySetNoRevision), Reload: true}
 	}
+	e.settingsCtx = false
 	p, fe := e.Candidate()
 	if fe != nil {
 		return model.IPCRequest{}, e.fieldProblem(fe)
@@ -619,7 +670,7 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 		if detail != "" && m.ErrorKey != model.MsgTestPasswordRequired {
 			text += " " + detail
 		}
-		return &Problem{Text: text, Field: FocusField(path, params)}
+		return &Problem{Text: text, Field: e.focus(path, params)}
 	case model.ErrCodeRateLimited:
 		return &Problem{Text: base + " " + e.t(i18n.KeySetRateHint)}
 	}

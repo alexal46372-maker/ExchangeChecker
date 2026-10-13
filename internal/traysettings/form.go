@@ -26,7 +26,35 @@ const (
 	FieldTLS10         Field = "tls10"
 	FieldTrust         Field = "trustServerCert"
 	FieldEnabled       Field = "enabled"
+	// phase 8 (CHK-TRAY-12): per-profile thresholds, timeouts and the
+	// server preset. The thresholds have their own focus targets: the
+	// model path warnMinutes / errorMinutes is also a general setting.
+	FieldPreset       Field = "serverPreset"
+	FieldProfWarn     Field = "profile.warnMinutes"
+	FieldProfError    Field = "profile.errorMinutes"
+	FieldConnTimeout  Field = "connectTimeoutSec"
+	FieldQueryTimeout Field = "queryTimeoutSec"
 )
+
+// PresetChoices are the server presets of the form, in combo box order
+// (model.ServerPresetMSSQL2008, none = SQL Server 2012+).
+var PresetChoices = []string{model.ServerPresetMSSQL2008, ""}
+
+// PresetIndex is the combo box index of preset (unknown = none).
+func PresetIndex(preset string) int {
+	if preset == model.ServerPresetMSSQL2008 {
+		return 0
+	}
+	return 1
+}
+
+// Inherited are the thresholds a profile without its own values uses:
+// the general settings (model.Profile.EffectiveSettings of an empty
+// profile: defaults 30 / 60 when unset or inconsistent).
+func Inherited(global model.Settings) (warn, errMin int) {
+	s := model.Profile{}.EffectiveSettings(global)
+	return s.WarnMinutes, s.ErrorMinutes
+}
 
 // EncryptChoices are the encryption modes of the form, in combo box order.
 var EncryptChoices = []model.EncryptMode{model.EncryptDisable, model.EncryptOptional, model.EncryptOn, model.EncryptStrict}
@@ -62,6 +90,15 @@ type Form struct {
 	TLS10           bool
 	TrustServerCert bool
 	Enabled         bool
+	// Phase 8 (CHK-TRAY-12): server preset, thresholds and timeouts as
+	// typed. The boxes show the effective value: the profile's own or the
+	// inherited one (InhWarn / InhError, the general settings) and the
+	// timeout defaults of model; a value equal to the inherited / default
+	// one is stored as 0 (no override), empty also means 0.
+	Preset                    string
+	WarnMin, ErrorMin         string
+	ConnTimeout, QueryTimeout string
+	InhWarn, InhError         int
 }
 
 // SplitServer splits "host\instance" at the first backslash.
@@ -73,8 +110,13 @@ func SplitServer(server string) (host, instance string) {
 	return s, ""
 }
 
-// FromProfile fills a form from a saved profile (password empty).
-func FromProfile(p model.Profile) Form {
+// FromProfile fills a form from a saved profile (password empty) with the
+// default general thresholds (30 / 60).
+func FromProfile(p model.Profile) Form { return FromProfileIn(p, model.Settings{}) }
+
+// FromProfileIn fills a form from a saved profile; global gives the
+// inherited thresholds shown when the profile has none.
+func FromProfileIn(p model.Profile, global model.Settings) Form {
 	host, inst := SplitServer(p.Server)
 	f := Form{
 		Name: p.Name, Host: host, Instance: inst, Database: p.Database,
@@ -87,7 +129,73 @@ func FromProfile(p model.Profile) Form {
 	if p.Port != 0 {
 		f.Port = strconv.Itoa(p.Port)
 	}
+	f.Preset = p.ServerPreset
+	f.InhWarn, f.InhError = Inherited(global)
+	pick := func(own, def int) string {
+		if own > 0 {
+			return strconv.Itoa(own)
+		}
+		return strconv.Itoa(def)
+	}
+	f.WarnMin, f.ErrorMin = pick(p.WarnMinutes, f.InhWarn), pick(p.ErrorMinutes, f.InhError)
+	f.ConnTimeout = pick(p.ConnectTimeoutSec, model.DefaultConnectTimeoutSec)
+	f.QueryTimeout = pick(p.QueryTimeoutSec, model.DefaultQueryTimeoutSec)
 	return f
+}
+
+// number parses an optional number box: empty = 0, otherwise min..max;
+// a value equal to def is stored as 0 (no override).
+func number(path, text string, min, max, def int) (int, *model.FieldError) {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(t)
+	if err != nil || n < min || n > max {
+		return 0, fieldErr(path, model.ValRange, strconv.Itoa(min), strconv.Itoa(max), t)
+	}
+	if n == def {
+		return 0, nil
+	}
+	return n, nil
+}
+
+// applyLimits applies the thresholds, timeouts and preset of the form
+// (phase 8, CHK-TRAY-12) with local checks: the effective error
+// threshold must stay greater than the effective warning (an override
+// that breaks the pair would otherwise be ignored by the service).
+func (f Form) applyLimits(p *model.Profile) *model.FieldError {
+	iw, ie := f.InhWarn, f.InhError
+	if iw <= 0 || ie <= iw {
+		iw, ie = Inherited(model.Settings{})
+	}
+	var fe *model.FieldError
+	if p.WarnMinutes, fe = number("warnMinutes", f.WarnMin, 1, model.MaxThresholdMinutes, iw); fe != nil {
+		return fe
+	}
+	if p.ErrorMinutes, fe = number("errorMinutes", f.ErrorMin, 1, model.MaxThresholdMinutes, ie); fe != nil {
+		return fe
+	}
+	ew, ee := iw, ie
+	if p.WarnMinutes > 0 {
+		ew = p.WarnMinutes
+	}
+	if p.ErrorMinutes > 0 {
+		ee = p.ErrorMinutes
+	}
+	if ee <= ew {
+		// both explicit then (equal to the inherited pair they are 0)
+		p.WarnMinutes, p.ErrorMinutes = ew, ee
+		return fieldErr("errorMinutes", model.ValGreaterThan, "warnMinutes", strconv.Itoa(ew))
+	}
+	if p.ConnectTimeoutSec, fe = number("connectTimeoutSec", f.ConnTimeout, 1, model.MaxTimeoutSec, model.DefaultConnectTimeoutSec); fe != nil {
+		return fe
+	}
+	if p.QueryTimeoutSec, fe = number("queryTimeoutSec", f.QueryTimeout, 1, model.MaxTimeoutSec, model.DefaultQueryTimeoutSec); fe != nil {
+		return fe
+	}
+	p.ServerPreset = f.Preset
+	return nil
 }
 
 // ProfileFromSnapshot builds the read-only view of a profile from
@@ -109,8 +217,7 @@ func fieldErr(field, key string, args ...string) *model.FieldError {
 	return &model.FieldError{Field: field, Key: key, Args: args, Msg: field + ": " + key}
 }
 
-// Apply returns base with the form values: mapping, thresholds, timeouts
-// and preset of base are kept. Local checks (host / instance / port) come
+// Apply returns base with the form values; the mapping of base is kept. Local checks (host / instance / port) come
 // first, then model.Profile.Validate (a new profile is validated with a
 // temporary id; the service assigns the real one). The login is cleared
 // for Windows authentication; unchecking TLS 1.0 on a profile whose
@@ -146,7 +253,10 @@ func (f Form) Apply(base model.Profile) (model.Profile, *model.FieldError) {
 		p.Login = ""
 	}
 	p.Encrypt = f.Encrypt
-	p.TrustServerCert = f.TrustServerCert
+	// «Доверять сертификату» acts only with «Весь сеанс (TLS)» (phase 8,
+	// CHK-TRAY-13): optional never validates the certificate and strict
+	// always does (sqlcheck.driverConfig), so it is not stored there.
+	p.TrustServerCert = f.TrustServerCert && TrustApplies(f.Encrypt)
 	switch {
 	case f.TLS10:
 		p.TLSMinVersion = model.TLSMin10
@@ -154,6 +264,9 @@ func (f Form) Apply(base model.Profile) (model.Profile, *model.FieldError) {
 		p.TLSMinVersion = model.TLSMin12
 	}
 	p.Enabled = f.Enabled
+	if fe := f.applyLimits(&p); fe != nil {
+		return p, fe
+	}
 	check := p
 	if strings.TrimSpace(check.ID) == "" {
 		check.ID = "new"
@@ -165,6 +278,24 @@ func (f Form) Apply(base model.Profile) (model.Profile, *model.FieldError) {
 		return p, &model.FieldError{Field: "", Key: model.ValRequired, Msg: err.Error()}
 	}
 	return p, nil
+}
+
+// TrustApplies tells whether «Доверять сертификату сервера» has an effect
+// in encryption mode e: only EncryptOn (CHK-TRAY-13).
+func TrustApplies(e model.EncryptMode) bool { return e.Effective() == model.EncryptOn }
+
+// FocusProfileField is FocusField for a reply / error of a profile
+// request: warnMinutes / errorMinutes are the profile's own thresholds.
+func FocusProfileField(path string, params []string) Field {
+	switch path {
+	case "warnMinutes":
+		return FieldProfWarn
+	case "errorMinutes":
+		return FieldProfError
+	case "connectTimeoutSec", "queryTimeoutSec", "serverPreset":
+		return Field(path)
+	}
+	return FocusField(path, params)
 }
 
 // FocusField maps the JSON path of a service / model validation error to

@@ -186,8 +186,9 @@ func PointText(p model.PointStatus, lang string) string {
 // BuildRightMenu is the right-click menu: Settings (phase 6c: read-only
 // window, «Изменить (администратор)» elevates), About, the language
 // submenu with the current per-user preference pref checked ("" = as in
-// Windows; phase 6e), Exit.
-func BuildRightMenu(lang, pref string) []Item {
+// Windows; phase 6e), the «Служба» submenu with the service state svc
+// (phase 8, CHK-TRAY-16), Exit.
+func BuildRightMenu(lang, pref string, svc SvcState) []Item {
 	sub := []Item{
 		{ID: CmdLangAuto, Text: i18n.T(i18n.KeyMenuLangAuto, lang)},
 		{ID: CmdLangRU, Text: i18n.T(i18n.KeyMenuLangRU, lang)},
@@ -200,6 +201,7 @@ func BuildRightMenu(lang, pref string) []Item {
 		{ID: CmdSettings, Text: i18n.T(i18n.KeyMenuSettings, lang)},
 		{ID: CmdAbout, Text: i18n.T(i18n.KeyMenuAbout, lang)},
 		{Text: i18n.T(i18n.KeyMenuLanguage, lang), Sub: sub},
+		{Text: i18n.T(i18n.KeyMenuService, lang), Sub: ServiceMenu(svc, lang)},
 		{Separator: true},
 		{ID: CmdExit, Text: i18n.T(i18n.KeyMenuExit, lang)},
 	}

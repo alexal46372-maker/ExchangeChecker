@@ -89,17 +89,21 @@ const (
 )
 
 var sqlMessages = map[string]LocalizedText{
+	// The texts name the real controls of the tray settings window
+	// (phase 8, CHK-TRAY-14): «Шифрование», «Тип сервера», the «Разрешить
+	// TLS 1.0 (SQL Server 2008)» and «Доверять сертификату сервера без
+	// проверки» check boxes (internal/i18n set.*).
 	MsgSQLTLSEnableTLS10: {
-		"Не удалось установить TLS-соединение с SQL Server. Для SQL Server 2005/2008 без обновлений TLS 1.2 включите TLS 1.0 в профиле (пресет «SQL Server 2008» или «Минимальная версия TLS: 1.0»).",
-		"The TLS handshake with SQL Server failed. For SQL Server 2005/2008 without the TLS 1.2 updates, enable TLS 1.0 in the profile (\"SQL Server 2008\" preset or \"Minimum TLS version: 1.0\").",
+		"Не удалось установить TLS-соединение с SQL Server. Для SQL Server 2005/2008 без обновлений TLS 1.2 включите флажок «Разрешить TLS 1.0 (SQL Server 2008)» (его включает и «Тип сервера: SQL Server 2008 / 2008 R2»).",
+		"The TLS handshake with SQL Server failed. For SQL Server 2005/2008 without the TLS 1.2 updates, enable TLS 1.0 with the \"Allow TLS 1.0 (SQL Server 2008)\" check box (\"Server type: SQL Server 2008 / 2008 R2\" turns it on as well).",
 	},
 	MsgSQLTLSLegacyFailed: {
-		"TLS-соединение с SQL Server не установлено даже с TLS 1.0 (нет общего набора шифров или протокола). Установите на сервер обновление TLS 1.2 либо выберите «Шифрование: отключено» (данные и логин передаются без TLS, пароль SQL фактически открытым текстом).",
-		"The TLS handshake with SQL Server failed even with TLS 1.0 (no common cipher suite or protocol). Install the TLS 1.2 update on the server or choose \"Encryption: disable\" (no TLS for data and login; the SQL password is effectively sent in clear text).",
+		"TLS-соединение с SQL Server не установлено даже с TLS 1.0 (нет общего набора шифров или протокола). Установите на сервер обновление TLS 1.2 либо выберите «Шифрование: Без шифрования» (данные и логин передаются без TLS, пароль SQL фактически открытым текстом).",
+		"The TLS handshake with SQL Server failed even with TLS 1.0 (no common cipher suite or protocol). Install the TLS 1.2 update on the server or choose \"Encryption: No encryption\" (no TLS for data and login; the SQL password is effectively sent in clear text).",
 	},
 	MsgSQLTLSCertificate: {
-		"Сертификат SQL Server не прошёл проверку. Включите «Доверять сертификату сервера» или выберите «Шифрование: только логин» (без проверки сертификата).",
-		"The SQL Server certificate was rejected. Enable \"Trust server certificate\" or choose \"Encryption: login only\" (certificate not validated).",
+		"Сертификат SQL Server не прошёл проверку. При «Шифрование: Весь сеанс (TLS)» включите флажок «Доверять сертификату сервера без проверки» или выберите «Шифрование: Только вход, если сервер умеет TLS» (сертификат не проверяется).",
+		"The SQL Server certificate was rejected. With \"Encryption: Whole session (TLS)\" check \"Trust the server certificate without validation\" or choose \"Encryption: Login only, if the server supports TLS\" (the certificate is not validated).",
 	},
 	MsgSQLPresetMSSQL2008: {
 		"SQL Server 2008: все запросы совместимы с уровнем 100. По умолчанию подключение без шифрования. Если включить шифрование, а на сервере нет обновлений TLS 1.2, нужен TLS 1.0 (пресет разрешает его); Go предложит AES-CBC-SHA или 3DES, RC4 не поддерживается.",

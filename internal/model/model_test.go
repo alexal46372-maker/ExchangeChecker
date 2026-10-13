@@ -264,8 +264,8 @@ func TestCHK_CFG_01_ProfileValidate(t *testing.T) {
 		}
 	}
 	p := goodProfile()
-	if p.EffectivePort() != DefaultSQLPort {
-		t.Error("EffectivePort default")
+	if p.EffectivePort() != 0 { // 10.0.0.5\SQL2008: SQL Browser
+		t.Errorf("EffectivePort with an instance = %d", p.EffectivePort())
 	}
 	if p.DisplayName() != "Главная база" {
 		t.Error("DisplayName")
@@ -301,5 +301,27 @@ func TestCHK_CFG_01_ProfileStatusLevel(t *testing.T) {
 	ps.Error = "login failed"
 	if ps.Level() != LevelError {
 		t.Error("connection error must be Error")
+	}
+}
+
+// TestCHK_MODEL_01_EffectivePort — the port the driver connects to:
+// Port when set, 1433 for a plain host, 0 (SQL Browser) for an instance
+// (phase 8; same rule as sqlcheck.driverConfig and SameServerIdentity).
+func TestCHK_MODEL_01_EffectivePort(t *testing.T) {
+	cases := []struct {
+		server string
+		port   int
+		want   int
+	}{
+		{"srv", 0, DefaultSQLPort},
+		{"srv", 1500, 1500},
+		{`srv\SQLEXPRESS`, 0, 0},
+		{`srv\SQLEXPRESS`, 1500, 1500},
+		{` srv \ SQL1 `, 0, 0},
+	}
+	for _, c := range cases {
+		if got := (Profile{Server: c.server, Port: c.port}).EffectivePort(); got != c.want {
+			t.Errorf("%q:%d -> %d, want %d", c.server, c.port, got, c.want)
+		}
 	}
 }

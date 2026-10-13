@@ -249,6 +249,105 @@ const (
 	KeyUnknownMessage = "msg.unknown"
 )
 
+// Phase 8 (tray UX): profile fields, the service menu and tooltips
+// (CHK-TRAY-12 … CHK-TRAY-15).
+const (
+	KeySetPreset          = "set.preset"
+	KeySetPreset2008      = "set.preset_2008"
+	KeySetPresetNone      = "set.preset_none"
+	KeySetWarnMin         = "set.warn_min"
+	KeySetErrorMin        = "set.error_min"
+	KeySetConnTimeout     = "set.conn_timeout"
+	KeySetQueryTimeout    = "set.query_timeout"
+	KeySetPortCue         = "set.port_cue"
+	KeySetThreshCue       = "set.thresh_cue"
+	KeySetTimeoutCue      = "set.timeout_cue"
+	KeyMenuService        = "menu.service"
+	KeyMenuSvcStart       = "menu.svc_start"
+	KeyMenuSvcStop        = "menu.svc_stop"
+	KeySvcState           = "svc.state"
+	KeySvcRunning         = "svc.running"
+	KeySvcStopped         = "svc.stopped"
+	KeySvcStartPending    = "svc.start_pending"
+	KeySvcStopPending     = "svc.stop_pending"
+	KeySvcNotInstalled    = "svc.not_installed"
+	KeySvcNoAccess        = "svc.no_access"
+	KeySvcUnknown         = "svc.unknown"
+	KeySvcStartSent       = "svc.start_sent"
+	KeySvcStopSent        = "svc.stop_sent"
+	KeySvcErrAccess       = "svc.err_access"
+	KeySvcErrNotInstalled = "svc.err_not_installed"
+	KeySvcErrRunning      = "svc.err_running"
+	KeySvcErrNotActive    = "svc.err_not_active"
+	KeySvcErrOther        = "svc.err_other"
+	KeyTipSetList         = "tip.set.list"
+	KeyTipSetAdd          = "tip.set.add"
+	KeyTipSetDelete       = "tip.set.delete"
+	KeyTipSetDiscover     = "tip.set.discover"
+	KeyTipSetName         = "tip.set.name"
+	KeyTipSetHost         = "tip.set.host"
+	KeyTipSetInstance     = "tip.set.instance"
+	KeyTipSetPort         = "tip.set.port"
+	KeyTipSetDatabase     = "tip.set.database"
+	KeyTipSetAuth         = "tip.set.auth"
+	KeyTipSetLogin        = "tip.set.login"
+	KeyTipSetPassword     = "tip.set.password"
+	KeyTipSetClearPw      = "tip.set.clear_pw"
+	KeyTipSetEncrypt      = "tip.set.encrypt"
+	KeyTipSetPreset       = "tip.set.preset"
+	KeyTipSetTLS10        = "tip.set.tls10"
+	KeyTipSetTrust        = "tip.set.trust"
+	KeyTipSetEnabled      = "tip.set.enabled"
+	KeyTipSetWarn         = "tip.set.warn"
+	KeyTipSetError        = "tip.set.error"
+	KeyTipSetConnTimeout  = "tip.set.conn_timeout"
+	KeyTipSetQueryTimeout = "tip.set.query_timeout"
+	KeyTipSetPage         = "tip.set.page"
+	KeyTipSetStatus       = "tip.set.status"
+	KeyTipSetTest         = "tip.set.test"
+	KeyTipSetCancelTest   = "tip.set.cancel_test"
+	KeyTipSetSave         = "tip.set.save"
+	KeyTipSetPoll         = "tip.set.poll"
+	KeyTipSetReload       = "tip.set.reload"
+	KeyTipSetElevate      = "tip.set.elevate"
+	KeyTipSetClose        = "tip.set.close"
+	KeyTipGenPoll         = "tip.gen.poll"
+	KeyTipGenWarn         = "tip.gen.warn"
+	KeyTipGenError        = "tip.gen.error"
+	KeyTipGenBeep         = "tip.gen.beep"
+	KeyTipGenWarnFreq     = "tip.gen.warn_freq"
+	KeyTipGenWarnDur      = "tip.gen.warn_dur"
+	KeyTipGenErrFreq      = "tip.gen.err_freq"
+	KeyTipGenErrDur       = "tip.gen.err_dur"
+	KeyTipGenGap          = "tip.gen.gap"
+	KeyTipGenLang         = "tip.gen.lang"
+	KeyTipGenAutostart    = "tip.gen.autostart"
+	KeyTipDiscFind        = "tip.disc.find"
+	KeyTipDiscPoints      = "tip.disc.points"
+	KeyTipDiscCancel      = "tip.disc.cancel"
+	KeyTipDiscPoint       = "tip.disc.point"
+	KeyTipDiscTime        = "tip.disc.time"
+	KeyTipDiscTol         = "tip.disc.tol"
+	KeyTipDiscByValue     = "tip.disc.by_value"
+	KeyTipDiscList        = "tip.disc.list"
+	KeyTipDiscDetails     = "tip.disc.details"
+	KeyTipDiscMode        = "tip.disc.mode"
+	KeyTipDiscField       = "tip.disc.field"
+	KeyTipDiscPlanLabel   = "tip.disc.plan_label"
+	KeyTipDiscYear        = "tip.disc.year"
+	KeyTipDiscKeep        = "tip.disc.keep"
+	KeyTipDiscAllPlans    = "tip.disc.all_plans"
+	KeyTipDiscTemplate    = "tip.disc.template"
+	KeyTipDiscSQL         = "tip.disc.sql"
+	KeyTipDiscResult      = "tip.disc.result"
+	KeyTipDiscCheck       = "tip.disc.check"
+	KeyTipDiscApply       = "tip.disc.apply"
+	KeyTipDiscClose       = "tip.disc.close"
+	KeyTipAlertAck        = "tip.alert.ack"
+	KeyTipAlertClose      = "tip.alert.close"
+	KeyTipAboutOK         = "tip.about.ok"
+)
+
 var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAppName: {"Exchange Checker", "Exchange Checker"},
 
@@ -511,5 +610,99 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetElevateCanceled:     {"Запуск от имени администратора отменён.", "Running as administrator was canceled."},
 	KeySetElevateFailed:       {"Не удалось запустить настройки от имени администратора: %s", "Could not open the settings as administrator: %s"},
 
-	KeyUnknownMessage: {"Ошибка", "Error"},
+	KeyUnknownMessage:     {"Ошибка", "Error"},
+	KeySetPreset:          {"Тип сервера:", "Server type:"},
+	KeySetPreset2008:      {"SQL Server 2008 / 2008 R2", "SQL Server 2008 / 2008 R2"},
+	KeySetPresetNone:      {"SQL Server 2012 и новее", "SQL Server 2012 or newer"},
+	KeySetWarnMin:         {"Предупреждение, мин:", "Warning after, min:"},
+	KeySetErrorMin:        {"Ошибка, мин:", "Error after, min:"},
+	KeySetConnTimeout:     {"Тайм-аут подключения, с:", "Connect timeout, s:"},
+	KeySetQueryTimeout:    {"Тайм-аут запроса, с:", "Query timeout, s:"},
+	KeySetPortCue:         {"1433 или пусто для SQL Browser", "1433 or empty for SQL Browser"},
+	KeySetThreshCue:       {"как в общих настройках", "as in the general settings"},
+	KeySetTimeoutCue:      {"по умолчанию %d", "default %d"},
+	KeyMenuService:        {"Служба", "Service"},
+	KeyMenuSvcStart:       {"Запустить", "Start"},
+	KeyMenuSvcStop:        {"Остановить", "Stop"},
+	KeySvcState:           {"Состояние: %s", "State: %s"},
+	KeySvcRunning:         {"работает", "running"},
+	KeySvcStopped:         {"остановлена", "stopped"},
+	KeySvcStartPending:    {"запускается", "starting"},
+	KeySvcStopPending:     {"останавливается", "stopping"},
+	KeySvcNotInstalled:    {"не установлена", "not installed"},
+	KeySvcNoAccess:        {"нет доступа к состоянию", "no access to the state"},
+	KeySvcUnknown:         {"неизвестно", "unknown"},
+	KeySvcStartSent:       {"Служба «%s» запускается.", "The service \"%s\" is starting."},
+	KeySvcStopSent:        {"Служба «%s» останавливается.", "The service \"%s\" is stopping."},
+	KeySvcErrAccess:       {"Недостаточно прав, чтобы запустить или остановить службу «%s». Это может сделать администратор компьютера, например в оснастке «Службы» (services.msc).", "Not enough rights to start or stop the service \"%s\". A computer administrator can do it, for example in the Services console (services.msc)."},
+	KeySvcErrNotInstalled: {"Служба «%s» не установлена на этом компьютере. Запустите установщик Exchange Checker.", "The service \"%s\" is not installed on this computer. Run the Exchange Checker setup."},
+	KeySvcErrRunning:      {"Служба «%s» уже работает.", "The service \"%s\" is already running."},
+	KeySvcErrNotActive:    {"Служба «%s» уже остановлена.", "The service \"%s\" is already stopped."},
+	KeySvcErrOther:        {"Не удалось выполнить действие со службой «%s»: %s", "The service \"%s\" action failed: %s"},
+	KeyTipSetList:         {"Базы, которые проверяет служба. Выберите базу, чтобы увидеть и изменить её настройки.", "Databases checked by the service. Select one to view and edit its settings."},
+	KeyTipSetAdd:          {"Добавить новую базу данных для проверки.", "Add a new database to check."},
+	KeyTipSetDelete:       {"Удалить выбранную базу из настроек (с подтверждением).", "Remove the selected database from the settings (asks first)."},
+	KeyTipSetDiscover:     {"Найти в базе 1С таблицы с временем обмена и настроить их.", "Find the tables with exchange times in the 1C database and set them up."},
+	KeyTipSetName:         {"Название базы в меню трея и в тревогах. Можно оставить пустым — тогда «сервер/база».", "Name of the database in the tray menu and alerts. May be empty: \"server/database\" is shown then."},
+	KeyTipSetHost:         {"Имя компьютера или IP-адрес SQL Server, например SRV-SQL или 10.0.0.5. Без имени экземпляра.", "Computer name or IP address of SQL Server, e.g. SRV-SQL or 10.0.0.5. Without the instance name."},
+	KeyTipSetInstance:     {"Только имя именованного экземпляра, например SQLEXPRESS. Не сервер и не IP. Пусто — экземпляр по умолчанию.", "Only the name of a named instance, e.g. SQLEXPRESS. Not the server and not an IP. Empty: the default instance."},
+	KeyTipSetPort:         {"TCP-порт SQL Server. Пусто — 1433, а для именованного экземпляра порт узнаётся у SQL Browser (UDP 1434).", "TCP port of SQL Server. Empty: 1433; for a named instance the port is asked from SQL Browser (UDP 1434)."},
+	KeyTipSetDatabase:     {"Имя базы данных 1С на сервере, как в SQL Server Management Studio.", "Name of the 1C database on the server, as in SQL Server Management Studio."},
+	KeyTipSetAuth:         {"SQL — логин и пароль SQL Server. Windows — служба входит учётной записью компьютера (ДОМЕН\\ИМЯ$).", "SQL: a SQL Server login and password. Windows: the service logs in with the computer account (DOMAIN\\NAME$)."},
+	KeyTipSetLogin:        {"Логин SQL Server только с ролью db_datareader. Не sa.", "SQL Server login with the db_datareader role only. Not sa."},
+	KeyTipSetPassword:     {"Пароль SQL-логина. Хранится службой в зашифрованном виде; пусто — оставить сохранённый.", "Password of the SQL login. The service keeps it encrypted; empty keeps the saved one."},
+	KeyTipSetClearPw:      {"Удалить сохранённый пароль этой базы при сохранении.", "Delete the saved password of this database on save."},
+	KeyTipSetEncrypt:      {"Шифрование подключения. Для SQL Server 2008 без обновлений обычно «Без шифрования».", "Connection encryption. For SQL Server 2008 without updates usually \"No encryption\"."},
+	KeyTipSetPreset:       {"Версия SQL Server. «2008 / 2008 R2» разрешает TLS 1.0 и запрещает режим Strict.", "SQL Server version. \"2008 / 2008 R2\" allows TLS 1.0 and forbids the Strict mode."},
+	KeyTipSetTLS10:        {"Разрешить старый протокол TLS 1.0 — нужен SQL Server 2005/2008 без обновлений TLS 1.2.", "Allow the old TLS 1.0 protocol, needed by SQL Server 2005/2008 without the TLS 1.2 updates."},
+	KeyTipSetTrust:        {"Не проверять сертификат сервера (самоподписанный). Действует только в режиме «Весь сеанс (TLS)».", "Do not validate the server certificate (self-signed). Used only with \"Whole session (TLS)\"."},
+	KeyTipSetEnabled:      {"Снимите флажок, чтобы временно не проверять эту базу.", "Clear to stop checking this database for a while."},
+	KeyTipSetWarn:         {"Через сколько минут без обмена показать предупреждение. Значение из общих настроек не сохраняется в базу.", "Minutes without exchange before a warning. The general value is not stored in the database profile."},
+	KeyTipSetError:        {"Через сколько минут без обмена показать ошибку. Должно быть больше предупреждения.", "Minutes without exchange before an error. Must be greater than the warning."},
+	KeyTipSetConnTimeout:  {"Сколько секунд ждать подключения к SQL Server (1–600).", "Seconds to wait for the connection to SQL Server (1–600)."},
+	KeyTipSetQueryTimeout: {"Сколько секунд ждать ответа на запрос (1–600).", "Seconds to wait for a query result (1–600)."},
+	KeyTipSetPage:         {"Переключиться между базами и общими настройками.", "Switch between the databases and the general settings."},
+	KeyTipSetStatus:       {"Результат последнего действия и ошибки.", "Result of the last action and errors."},
+	KeyTipSetTest:         {"Проверить подключение и чтение таблиц с текущими значениями формы.", "Test the connection and table reading with the current form values."},
+	KeyTipSetCancelTest:   {"Прервать идущую проверку подключения.", "Stop the running connection test."},
+	KeyTipSetSave:         {"Сохранить изменения в настройки службы.", "Save the changes to the service settings."},
+	KeyTipSetPoll:         {"Попросить службу опросить эту базу сейчас.", "Ask the service to poll this database now."},
+	KeyTipSetReload:       {"Перечитать настройки из службы (несохранённые правки пропадут).", "Reload the settings from the service (unsaved edits are lost)."},
+	KeyTipSetElevate:      {"Открыть настройки с правами администратора, чтобы их можно было менять.", "Open the settings as administrator to be able to change them."},
+	KeyTipSetClose:        {"Закрыть окно настроек.", "Close the settings window."},
+	KeyTipGenPoll:         {"Как часто служба опрашивает базы, в секундах.", "How often the service polls the databases, in seconds."},
+	KeyTipGenWarn:         {"Общий порог предупреждения в минутах для всех баз без своего порога.", "General warning threshold in minutes for databases without their own."},
+	KeyTipGenError:        {"Общий порог ошибки в минутах; больше порога предупреждения.", "General error threshold in minutes; greater than the warning threshold."},
+	KeyTipGenBeep:         {"Пищать системным динамиком при тревоге.", "Beep with the system speaker on an alert."},
+	KeyTipGenWarnFreq:     {"Частота звука предупреждения, Гц.", "Pitch of the warning sound, Hz."},
+	KeyTipGenWarnDur:      {"Длительность звука предупреждения, мс.", "Length of the warning sound, ms."},
+	KeyTipGenErrFreq:      {"Частота звука ошибки, Гц.", "Pitch of the error sound, Hz."},
+	KeyTipGenErrDur:       {"Длительность звука ошибки, мс.", "Length of the error sound, ms."},
+	KeyTipGenGap:          {"Пауза между сигналами, мс.", "Pause between the beeps, ms."},
+	KeyTipGenLang:         {"Язык сообщений службы в журнале событий Windows.", "Language of the service messages in the Windows Event Log."},
+	KeyTipGenAutostart:    {"Запускать значок в трее при входе любого пользователя.", "Start the tray icon when any user logs on."},
+	KeyTipDiscFind:        {"Найти в базе таблицы, похожие на время обмена.", "Find tables that look like exchange times."},
+	KeyTipDiscPoints:      {"Загрузить список точек обмена (узлов планов обмена).", "Load the list of exchange points (exchange plan nodes)."},
+	KeyTipDiscCancel:      {"Прервать идущий поиск или проверку.", "Stop the running search or check."},
+	KeyTipDiscPoint:       {"Имя точки обмена, время которой вы знаете.", "Name of an exchange point whose time you know."},
+	KeyTipDiscTime:        {"Известное время последнего обмена этой точки: ДД.ММ.ГГГГ ЧЧ:ММ (UTC+3).", "Known time of the point's last exchange: DD.MM.YYYY HH:MM (UTC+3)."},
+	KeyTipDiscTol:         {"Допуск поиска по времени, минут. 0 или пусто — 1 сутки.", "Time tolerance of the search, minutes. 0 or empty: 1 day."},
+	KeyTipDiscByValue:     {"Найти колонки, где у точки записано это время.", "Find the columns where the point has this time."},
+	KeyTipDiscList:        {"Найденные варианты. Выберите вариант, чтобы перенести его в поля ниже.", "Found candidates. Select one to copy it to the fields below."},
+	KeyTipDiscDetails:     {"Подробности выбранного варианта.", "Details of the selected candidate."},
+	KeyTipDiscMode:        {"Как служба читает время: из таблиц, ручным SQL или по счётчикам сообщений.", "How the service reads the times: from tables, with manual SQL or by message counters."},
+	KeyTipDiscField:       {"Имя таблицы или колонки SQL Server, обычно вида _Node123 или _Fld456.", "SQL Server table or column name, usually like _Node123 or _Fld456."},
+	KeyTipDiscPlanLabel:   {"Своё название плана обмена для меню (необязательно).", "Own name of the exchange plan for the menu (optional)."},
+	KeyTipDiscYear:        {"1С хранит даты со сдвигом +2000 лет — обычно флажок включён.", "1C stores dates shifted by +2000 years: usually checked."},
+	KeyTipDiscKeep:        {"Показывать точки, для которых ещё нет записи времени.", "Show points that have no time record yet."},
+	KeyTipDiscAllPlans:    {"Добавить в профиль все найденные планы обмена, а не только выбранный.", "Add every found exchange plan to the profile, not only the selected one."},
+	KeyTipDiscTemplate:    {"Готовый шаблон ручного SQL для SQL Server 2008.", "Ready manual SQL template for SQL Server 2008."},
+	KeyTipDiscSQL:         {"Запрос должен вернуть имя точки, время отправки и время приёма.", "The query must return the point name, send time and receive time."},
+	KeyTipDiscResult:      {"Результат проверки и ошибки.", "Result of the check and errors."},
+	KeyTipDiscCheck:       {"Проверить настройку на сервере и показать примеры.", "Check the setup on the server and show examples."},
+	KeyTipDiscApply:       {"Перенести настройку в профиль базы (затем «Сохранить» в окне настроек).", "Copy the setup to the database profile (then \"Save\" in the settings window)."},
+	KeyTipDiscClose:       {"Закрыть окно без применения.", "Close the window without applying."},
+	KeyTipAlertAck:        {"Подтвердить тревогу: звук смолкнет до следующего изменения.", "Acknowledge the alert: silent until the next change."},
+	KeyTipAlertClose:      {"Закрыть окно и заглушить звук до следующего изменения статуса.", "Close the window and mute until the next status change."},
+	KeyTipAboutOK:         {"Закрыть окно «О программе».", "Close the About window."},
 }

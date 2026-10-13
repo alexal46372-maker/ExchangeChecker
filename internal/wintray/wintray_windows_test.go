@@ -130,7 +130,7 @@ func TestCHK_TRAY_01_NativeMenu(t *testing.T) {
 		t.Error("service status line must be a disabled item on top")
 	}
 
-	rm, err := buildMenu(trayui.BuildRightMenu(i18n.RU, "en"), &bm)
+	rm, err := buildMenu(trayui.BuildRightMenu(i18n.RU, "en", trayui.SvcStateRunning), &bm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestCHK_TRAY_01_AboutWindow(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	closed := false
 	text := trayui.AboutText(trayipc.Status{State: trayipc.StateConnected, Version: 2}, i18n.EN)
-	h, err := newAboutWindow(0, trayui.AboutTitle(i18n.EN), text, "OK", false, func() { closed = true })
+	h, err := newAboutWindow(0, trayui.AboutTitle(i18n.EN), text, "OK", "Close", false, func() { closed = true })
 	if err != nil {
 		t.Fatal(err)
 	}

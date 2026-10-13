@@ -12,9 +12,12 @@ const (
 	idAboutText = 100
 )
 
+// aboutTips are the tooltips of the last About window (tests).
+var aboutTips *tooltips
+
 // newAboutWindow creates the About window (hidden unless show). OK, Esc
 // via the system menu or the close box destroy it; onClose runs after.
-func newAboutWindow(owner uintptr, title, text, okText string, show bool, onClose func()) (uintptr, error) {
+func newAboutWindow(owner uintptr, title, text, okText, okTip string, show bool, onClose func()) (uintptr, error) {
 	const w, h = 380, 190
 	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2
 	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 2
@@ -42,7 +45,9 @@ func newAboutWindow(owner uintptr, title, text, okText string, show bool, onClos
 		return 0, err
 	}
 	child(hwnd, "STATIC", text, winapi.SS_LEFT, idAboutText, 16, 14, w-40, h-90)
-	child(hwnd, "BUTTON", okText, winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, winapi.IDOK, w-110, h-75, 80, 26)
+	ok := child(hwnd, "BUTTON", okText, winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, winapi.IDOK, w-110, h-75, 80, 26)
+	aboutTips = newTooltips(hwnd) // CHK-TRAY-15
+	aboutTips.set(ok, okTip)
 	if show {
 		winapi.ShowWindow(hwnd, winapi.SW_SHOW)
 		winapi.SetForegroundWindow(hwnd)

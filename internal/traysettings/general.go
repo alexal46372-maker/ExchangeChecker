@@ -120,9 +120,13 @@ func (g GeneralForm) Apply(base model.Settings) (model.Settings, *model.FieldErr
 // LoadSettings replaces the saved general settings (get_config /
 // get_status); unsaved edits of the page are dropped.
 func (e *Editor) LoadSettings(s model.Settings) {
+	clean := e.HasProfile() && !e.formDirty() // before the inherited values change
 	e.Settings = s.Normalized()
 	e.HasSettings = true
 	e.General = FromSettings(e.Settings)
+	if clean && !e.IsNew {
+		e.Form = e.fromProfile(e.Base) // new inherited thresholds (phase 8)
+	}
 }
 
 // GeneralUnsaved tells whether the general page has unsaved edits.
@@ -142,6 +146,7 @@ func (e *Editor) SettingsRequest() (model.IPCRequest, *Problem) {
 	if e.Revision == "" {
 		return model.IPCRequest{}, &Problem{Text: e.t(i18n.KeySetNoRevision), Reload: true}
 	}
+	e.settingsCtx = true
 	s, fe := e.General.Apply(e.Settings)
 	if fe != nil {
 		return model.IPCRequest{}, e.fieldProblem(fe)

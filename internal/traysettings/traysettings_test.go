@@ -56,7 +56,7 @@ func TestCHK_TRAY_04_FormRoundTrip(t *testing.T) {
 // field error points at the right control.
 func TestCHK_TRAY_04_FormValidation(t *testing.T) {
 	base := model.NewProfile("")
-	ok := Form{Host: "h", Database: "d", Auth: model.AuthSQL, Login: "l", Encrypt: model.EncryptDisable}
+	ok := Form{Host: "h", Database: "d", Auth: model.AuthSQL, Login: "l", Encrypt: model.EncryptDisable, Preset: model.ServerPresetMSSQL2008}
 	cases := []struct {
 		mod   func(*Form)
 		key   string

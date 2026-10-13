@@ -27,6 +27,7 @@ type alertWindow struct {
 	hwnd                     uintptr
 	icon, text, status, hint uintptr
 	ack, close               uintptr
+	tips                     *tooltips
 	level                    model.AlertLevel
 	shown                    bool
 	raised                   int // bring-to-front requests (tests)
@@ -75,6 +76,8 @@ func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWi
 	aw.hint = child(hwnd, "STATIC", i18n.T(i18n.KeyAlertCloseHint, lang), winapi.SS_LEFT, idAlertHint, 16, h-104, w-48, 32)
 	aw.ack = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertAck, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idAlertAck, w-264, h-70, 120, 28)
 	aw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertClose, lang), winapi.WS_TABSTOP, idAlertClose, w-136, h-70, 104, 28)
+	aw.tips = newTooltips(hwnd) // CHK-TRAY-15
+	aw.setTips()
 	return aw, nil
 }
 
@@ -125,4 +128,11 @@ func (aw *alertWindow) setLang(lang string) {
 	winapi.SetWindowText(aw.hint, i18n.T(i18n.KeyAlertCloseHint, lang))
 	winapi.SetWindowText(aw.ack, i18n.T(i18n.KeyAlertAck, lang))
 	winapi.SetWindowText(aw.close, i18n.T(i18n.KeyAlertClose, lang))
+	aw.setTips()
+}
+
+// setTips sets the button tooltips in the current language.
+func (aw *alertWindow) setTips() {
+	aw.tips.set(aw.ack, i18n.T(i18n.KeyTipAlertAck, aw.lang))
+	aw.tips.set(aw.close, i18n.T(i18n.KeyTipAlertClose, aw.lang))
 }

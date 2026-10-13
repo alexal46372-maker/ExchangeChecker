@@ -177,9 +177,9 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 // Language submenu (6e, the preference checked), Exit.
 func TestCHK_TRAY_01_RightClickItems(t *testing.T) {
 	for _, lang := range []string{i18n.RU, i18n.EN} {
-		it := BuildRightMenu(lang, "")
-		if len(it) != 5 || it[0].ID != CmdSettings || it[0].Disabled || it[1].ID != CmdAbout || it[1].Disabled ||
-			len(it[2].Sub) != 3 || !it[3].Separator || it[4].ID != CmdExit {
+		it := BuildRightMenu(lang, "", SvcStateRunning)
+		if len(it) != 6 || it[0].ID != CmdSettings || it[0].Disabled || it[1].ID != CmdAbout || it[1].Disabled ||
+			len(it[2].Sub) != 3 || len(it[3].Sub) != 4 || !it[4].Separator || it[5].ID != CmdExit {
 			t.Fatalf("%s: %+v", lang, it)
 		}
 		if it[0].Text != i18n.T(i18n.KeyMenuSettings, lang) {
@@ -324,7 +324,7 @@ func databases(items []Item) []Item {
 // Русский / English, exactly the stored preference checked.
 func TestCHK_TRAY_08_LanguageMenu(t *testing.T) {
 	for pref, want := range map[string]int{"": CmdLangAuto, "ru": CmdLangRU, "en": CmdLangEN} {
-		sub := BuildRightMenu(i18n.RU, pref)[2]
+		sub := BuildRightMenu(i18n.RU, pref, SvcStateUnknown)[2]
 		if sub.Text != "Язык (Language)" {
 			t.Errorf("submenu text %q", sub.Text)
 		}
@@ -344,7 +344,37 @@ func TestCHK_TRAY_08_LanguageMenu(t *testing.T) {
 			t.Errorf("pref %q: %d checked", pref, n)
 		}
 	}
-	if BuildRightMenu(i18n.EN, "en")[2].Text != "Language (Язык)" {
+	if BuildRightMenu(i18n.EN, "en", SvcStateUnknown)[2].Text != "Language (Язык)" {
 		t.Error("EN submenu text")
+	}
+}
+
+// TestCHK_TRAY_16_ServiceMenu — «Служба»: the state line (disabled, RU/EN)
+// and Start / Stop enabled by the state.
+func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
+	cases := []struct {
+		s           SvcState
+		start, stop bool
+		key         string
+	}{
+		{SvcStateRunning, false, true, i18n.KeySvcRunning},
+		{SvcStateStopped, true, false, i18n.KeySvcStopped},
+		{SvcStateStartPending, false, false, i18n.KeySvcStartPending},
+		{SvcStateStopPending, false, false, i18n.KeySvcStopPending},
+		{SvcStateNotInstalled, false, false, i18n.KeySvcNotInstalled},
+		{SvcStateNoAccess, true, true, i18n.KeySvcNoAccess},
+		{SvcStateUnknown, true, true, i18n.KeySvcUnknown},
+	}
+	for _, lang := range []string{i18n.RU, i18n.EN} {
+		for _, c := range cases {
+			m := ServiceMenu(c.s, lang)
+			if len(m) != 4 || !m[0].Disabled || !strings.Contains(m[0].Text, i18n.T(c.key, lang)) || !m[1].Separator ||
+				m[2].ID != CmdSvcStart || m[2].Disabled == c.start || m[3].ID != CmdSvcStop || m[3].Disabled == c.stop {
+				t.Errorf("%s %d: %+v", lang, c.s, m)
+			}
+		}
+	}
+	if it := BuildRightMenu(i18n.EN, "", SvcStateStopped)[3]; it.Text != "Service" || it.Sub[2].Disabled {
+		t.Errorf("service submenu %+v", it)
 	}
 }

@@ -73,7 +73,13 @@ const (
 	idGenNote
 	idGenAutostartErr
 	idSetDiscover // «Таблицы обмена…» (phase 6d, administrator only)
-	idSetClose    = winapi.IDCANCEL
+	// phase 8 (CHK-TRAY-12): server preset, own thresholds, timeouts
+	idSetPreset
+	idSetWarn
+	idSetError
+	idSetConnTO
+	idSetQueryTO
+	idSetClose = winapi.IDCANCEL
 )
 
 // Elevator starts the elevated settings process («Изменить
@@ -167,7 +173,49 @@ type settingsWindow struct {
 	// exiting: the tray exit message (or App.Exit) is closing the window:
 	// no questions any more, an open one answers «Нет» (CHK-TRAY-11)
 	exiting bool
-	updates int // update calls (test hook)
+	updates int       // update calls (test hook)
+	tips    *tooltips // CHK-TRAY-15
+}
+
+// settingsTips are the tooltips of the settings window controls (phase 8,
+// CHK-TRAY-15): every edit box, button, check box, combo and list box.
+var settingsTips = map[int32]string{
+	idSetList: i18n.KeyTipSetList, idSetAdd: i18n.KeyTipSetAdd, idSetDelete: i18n.KeyTipSetDelete,
+	idSetDiscover: i18n.KeyTipSetDiscover, idSetName: i18n.KeyTipSetName, idSetHost: i18n.KeyTipSetHost,
+	idSetInstance: i18n.KeyTipSetInstance, idSetPort: i18n.KeyTipSetPort, idSetDatabase: i18n.KeyTipSetDatabase,
+	idSetAuth: i18n.KeyTipSetAuth, idSetLogin: i18n.KeyTipSetLogin, idSetPassword: i18n.KeyTipSetPassword,
+	idSetClearPw: i18n.KeyTipSetClearPw, idSetEncrypt: i18n.KeyTipSetEncrypt, idSetPreset: i18n.KeyTipSetPreset,
+	idSetTLS10: i18n.KeyTipSetTLS10, idSetTrust: i18n.KeyTipSetTrust, idSetEnabled: i18n.KeyTipSetEnabled,
+	idSetWarn: i18n.KeyTipSetWarn, idSetError: i18n.KeyTipSetError, idSetConnTO: i18n.KeyTipSetConnTimeout,
+	idSetQueryTO: i18n.KeyTipSetQueryTimeout, idSetPage: i18n.KeyTipSetPage, idSetStatus: i18n.KeyTipSetStatus,
+	idSetTest: i18n.KeyTipSetTest, idSetCancelTest: i18n.KeyTipSetCancelTest, idSetSave: i18n.KeyTipSetSave,
+	idSetPoll: i18n.KeyTipSetPoll, idSetReload: i18n.KeyTipSetReload, idSetElevate: i18n.KeyTipSetElevate,
+	idSetClose: i18n.KeyTipSetClose,
+	idGenPoll:  i18n.KeyTipGenPoll, idGenWarn: i18n.KeyTipGenWarn, idGenError: i18n.KeyTipGenError,
+	idGenBeep: i18n.KeyTipGenBeep, idGenWarnFreq: i18n.KeyTipGenWarnFreq, idGenWarnDur: i18n.KeyTipGenWarnDur,
+	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
+	idGenLang: i18n.KeyTipGenLang, idGenAutostart: i18n.KeyTipGenAutostart,
+}
+
+// settingsOutputs are the static texts of the window (no tooltip).
+var settingsOutputs = map[int32]bool{idSetPwHint: true, idSetHints: true, idSetInfo: true, idGenNote: true, idGenAutostartErr: true}
+
+// profNumbers are the phase 8 number boxes of the profile form.
+var profNumbers = []int32{idSetWarn, idSetError, idSetConnTO, idSetQueryTO}
+
+// profText returns the address of the Form string of a phase 8 box.
+func profText(f *traysettings.Form, id int32) *string {
+	switch id {
+	case idSetWarn:
+		return &f.WarnMin
+	case idSetError:
+		return &f.ErrorMin
+	case idSetConnTO:
+		return &f.ConnTimeout
+	case idSetQueryTO:
+		return &f.QueryTimeout
+	}
+	return nil
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
@@ -184,9 +232,9 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	if cfg.mode == traysettings.Admin {
 		class = SettingsClass
 	}
-	// client 774×626 (controls up to 755 / 614), clamped to the work area
+	// client 774×706 (controls up to 755 / 694), clamped to the work area
 	const style = winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | winapi.WS_MINIMIZEBOX
-	x, y, ww, wh := windowRect(774, 626, style, 0)
+	x, y, ww, wh := windowRect(774, 706, style, 0)
 	hwnd, err := createWindow(class, title, 0, style, x, y, ww, wh, 0, w.wndProc)
 	if err != nil {
 		return nil, err
@@ -299,6 +347,7 @@ func (w *settingsWindow) build() {
 	w.add("BUTTON", w.t(i18n.KeySetClearPassword), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idSetClearPw, cx, row, cw, 20)
 	row += 26
 	line(w.t(i18n.KeySetEncrypt), idSetEncrypt, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw)
+	line(w.t(i18n.KeySetPreset), idSetPreset, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw)
 	for _, c := range []struct {
 		id  int32
 		key string
@@ -306,6 +355,16 @@ func (w *settingsWindow) build() {
 		w.add("BUTTON", w.t(c.key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, c.id, cx, row, cw, 20)
 		row += 24
 	}
+	// two number boxes per row: own thresholds, then timeouts (phase 8)
+	pair := func(k1 string, id1 int32, k2 string, id2 int32) {
+		w.add("STATIC", w.t(k1), 0, winapi.SS_LEFT, 0, lx, row+3, lw, 18)
+		w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id1, cx, row, 70, 23)
+		w.add("STATIC", w.t(k2), 0, winapi.SS_LEFT, 0, cx+85, row+3, 215, 18)
+		w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id2, cx+305, row, 70, 23)
+		row += rh
+	}
+	pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError)
+	pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO)
 	w.add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, lx, row+2, cx+cw-lx, 46)
 	row += 50
 	w.add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, lx, row, cx+cw-lx, 36)
@@ -331,10 +390,10 @@ func (w *settingsWindow) build() {
 
 	w.add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, 12, 440, 205, 26)
 	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
-		idSetStatus, 12, 476, 743, 100)
+		idSetStatus, 12, 556, 743, 100)
 	bx := int32(12)
 	button := func(id int32, key string, width int32) {
-		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, bx, 586, width, 28)
+		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, bx, 666, width, 28)
 		bx += width + 6
 	}
 	w.cur = &w.pageCtl[0]
@@ -351,12 +410,27 @@ func (w *settingsWindow) build() {
 	if w.cfg.mode == traysettings.ReadOnly {
 		button(idSetElevate, i18n.KeySetElevate, 165)
 	}
-	w.add("BUTTON", w.t(i18n.KeySetClose), 0, winapi.WS_TABSTOP, idSetClose, 665, 586, 90, 28)
+	w.add("BUTTON", w.t(i18n.KeySetClose), 0, winapi.WS_TABSTOP, idSetClose, 665, 666, 90, 28)
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
-	for _, k := range []string{i18n.KeySetEncDisable, i18n.KeySetEncOptional, i18n.KeySetEncOn, i18n.KeySetEncStrict} {
+	for _, k := range traysettings.EncryptKeys() {
 		winapi.SendMessageString(w.ctl[idSetEncrypt], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
+	for _, k := range traysettings.PresetKeys() {
+		winapi.SendMessageString(w.ctl[idSetPreset], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
+	// grey hints of empty boxes (phase 8, CHK-TRAY-12)
+	winapi.SetCueBanner(w.ctl[idSetPort], w.t(i18n.KeySetPortCue))
+	winapi.SetCueBanner(w.ctl[idSetWarn], w.t(i18n.KeySetThreshCue))
+	winapi.SetCueBanner(w.ctl[idSetError], w.t(i18n.KeySetThreshCue))
+	winapi.SetCueBanner(w.ctl[idSetConnTO], fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultConnectTimeoutSec))
+	winapi.SetCueBanner(w.ctl[idSetQueryTO], fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultQueryTimeoutSec))
+	w.tips = newTooltips(w.hwnd)
+	for id, h := range w.ctl {
+		if key, ok := settingsTips[id]; ok {
+			w.tips.set(h, w.t(key))
+		}
 	}
 	for _, k := range []string{i18n.KeyGenLangAuto, i18n.KeyGenLangRU, i18n.KeyGenLangEN} {
 		winapi.SendMessageString(w.ctl[idGenLang], winapi.CB_ADDSTRING, 0, w.t(k))
@@ -437,12 +511,12 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idSetPage:
 		w.setPage(1 - w.page)
-	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin:
+	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetWarn, idSetError, idSetConnTO, idSetQueryTO:
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readForm()
 			w.update()
 		}
-	case idSetAuth, idSetEncrypt:
+	case idSetAuth, idSetEncrypt, idSetPreset:
 		if code == winapi.CBN_SELCHANGE && !w.loading {
 			w.readForm()
 			w.update()
@@ -530,7 +604,18 @@ func (w *settingsWindow) readForm() {
 	if i := int(winapi.SendMessage(w.ctl[idSetEncrypt], winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(traysettings.EncryptChoices) {
 		f.Encrypt = traysettings.EncryptChoices[i]
 	}
-	f.ClearPassword, f.TLS10, f.TrustServerCert, f.Enabled = w.check(idSetClearPw), w.check(idSetTLS10), w.check(idSetTrust), w.check(idSetEnabled)
+	f.ClearPassword, f.TLS10, f.Enabled = w.check(idSetClearPw), w.check(idSetTLS10), w.check(idSetEnabled)
+	// the trust box is shown cleared and disabled where it has no effect
+	// (CHK-TRAY-13); its value is kept for «Весь сеанс (TLS)»
+	if traysettings.TrustApplies(f.Encrypt) {
+		f.TrustServerCert = w.check(idSetTrust)
+	}
+	if i := int(winapi.SendMessage(w.ctl[idSetPreset], winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(traysettings.PresetChoices) {
+		f.Preset = traysettings.PresetChoices[i]
+	}
+	for _, id := range profNumbers {
+		*profText(f, id) = w.text(id)
+	}
 }
 
 // fill shows the editor state: list, form, hints, buttons.
@@ -550,7 +635,8 @@ func (w *settingsWindow) fill() {
 	winapi.SendMessage(lb, winapi.LB_SETCURSEL, uintptr(sel), 0) // -1 clears
 	f := w.ed.Form
 	for id, s := range map[int32]string{idSetName: f.Name, idSetHost: f.Host, idSetInstance: f.Instance, idSetPort: f.Port,
-		idSetDatabase: f.Database, idSetLogin: f.Login} {
+		idSetDatabase: f.Database, idSetLogin: f.Login, idSetWarn: f.WarnMin, idSetError: f.ErrorMin,
+		idSetConnTO: f.ConnTimeout, idSetQueryTO: f.QueryTimeout} {
 		if w.text(id) != s {
 			winapi.SetWindowText(w.ctl[id], s)
 		}
@@ -571,9 +657,14 @@ func (w *settingsWindow) fill() {
 		enc = -1
 	}
 	winapi.SendMessage(w.ctl[idSetEncrypt], winapi.CB_SETCURSEL, uintptr(enc), 0)
+	preset := traysettings.PresetIndex(f.Preset)
+	if !w.ed.HasProfile() {
+		preset = -1
+	}
+	winapi.SendMessage(w.ctl[idSetPreset], winapi.CB_SETCURSEL, uintptr(preset), 0)
 	w.setCheck(idSetClearPw, f.ClearPassword)
 	w.setCheck(idSetTLS10, f.TLS10)
-	w.setCheck(idSetTrust, f.TrustServerCert)
+	w.setCheck(idSetTrust, f.TrustServerCert && traysettings.TrustApplies(f.Encrypt))
 	w.setCheck(idSetEnabled, f.Enabled)
 	w.fillGeneral()
 	w.update()
@@ -587,7 +678,8 @@ func (w *settingsWindow) update() {
 	has := ed.HasProfile()
 	sql := ed.Form.Auth != model.AuthWindows
 	encrypted := ed.Form.Encrypt.Effective() != model.EncryptDisable
-	for _, id := range []int32{idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetPassword} {
+	for _, id := range []int32{idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetPassword,
+		idSetWarn, idSetError, idSetConnTO, idSetQueryTO} {
 		winapi.SendMessage(w.ctl[id], winapi.EM_SETREADONLY, boolPtr(!edit), 0)
 	}
 	winapi.EnableWindow(w.ctl[idSetLogin], has && sql)
@@ -595,8 +687,15 @@ func (w *settingsWindow) update() {
 	winapi.EnableWindow(w.ctl[idSetClearPw], edit && sql && !ed.IsNew && ed.Base.HasPassword)
 	winapi.EnableWindow(w.ctl[idSetAuth], edit)
 	winapi.EnableWindow(w.ctl[idSetEncrypt], edit)
+	winapi.EnableWindow(w.ctl[idSetPreset], edit)
 	winapi.EnableWindow(w.ctl[idSetTLS10], edit && encrypted)
-	winapi.EnableWindow(w.ctl[idSetTrust], edit && encrypted)
+	// «Доверять сертификату» only where the driver uses it: encrypt on
+	// (optional never validates, strict always does; CHK-TRAY-13)
+	trust := traysettings.TrustApplies(ed.Form.Encrypt)
+	winapi.EnableWindow(w.ctl[idSetTrust], edit && trust)
+	if want := trust && ed.Form.TrustServerCert; w.check(idSetTrust) != want {
+		w.setCheck(idSetTrust, want)
+	}
 	winapi.EnableWindow(w.ctl[idSetEnabled], edit)
 	pw := ""
 	if has {
@@ -667,9 +766,6 @@ func (w *settingsWindow) info() string {
 	} else {
 		parts = append(parts, w.t(i18n.KeySetMapNo))
 	}
-	if ed.Base.WarnMinutes > 0 || ed.Base.ErrorMinutes > 0 {
-		parts = append(parts, fmt.Sprintf(w.t(i18n.KeySetThresholds), ed.Base.WarnMinutes, ed.Base.ErrorMinutes))
-	}
 	return strings.Join(parts, "\r\n")
 }
 
@@ -697,6 +793,8 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
 	traysettings.FieldLanguage: idGenLang, traysettings.FieldAutostart: idGenAutostart,
 	traysettings.FieldDiscoverButton: idSetDiscover, // mapping.* / mappings[i].*
+	traysettings.FieldPreset:         idSetPreset, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
+	traysettings.FieldConnTimeout: idSetConnTO, traysettings.FieldQueryTimeout: idSetQueryTO,
 }
 
 // focus moves the keyboard focus to the control of f (lastFocus keeps it

@@ -91,6 +91,12 @@ const (
 	// ValConflict: mutually exclusive request fields (password and
 	// clearPassword).
 	ValConflict = "validation.conflict"
+	// ValSQLServerForbidden: the SQL Server address names a named pipe /
+	// LPC / DAC / UNC path (np:, lpc:, admin:, \\host\..., //host/...,
+	// a leading backslash, ...\pipe\...): such a connection
+	// authenticates the service account over SMB (phase 9, CHK-CFG-05);
+	// {0} = np | lpc | admin | unc | backslash | pipe.
+	ValSQLServerForbidden = "validation.sql_server_forbidden"
 )
 
 // Limits of a profile (phase 6): a save_profile request must fit into
@@ -103,7 +109,7 @@ const (
 // ValidationKeys lists the validation.* keys.
 func ValidationKeys() []string {
 	return []string{ValRequired, ValRange, ValEnum, ValGreaterThan, ValTooLong, ValTooMany, ValPresetConflict,
-		ValServerFormat, ValMapping, ValDuplicate, ValConflict}
+		ValServerFormat, ValMapping, ValDuplicate, ValConflict, ValSQLServerForbidden}
 }
 
 // FormatMessage returns MonitorMessage(key, lang) (or SQLMessage for the
@@ -126,6 +132,9 @@ func validateServer(server string) *FieldError {
 	if s == "" {
 		return fieldErr("server", ValRequired, "server is required")
 	}
+	if err := ValidateSQLServerAddr(s); err != nil {
+		return err.(*FieldError)
+	}
 	i := strings.IndexByte(s, '\\')
 	if i < 0 {
 		return nil
@@ -140,4 +149,51 @@ func validateServer(server string) *FieldError {
 		return fieldErr("server", ValServerFormat, "server: instance is empty after the backslash (want host or host\\instance)", "empty_instance")
 	}
 	return nil
+}
+
+// ValidateSQLServerAddr checks a SQL Server address (phase 9,
+// CHK-CFG-05): nil when allowed, else a *FieldError (field "server", key
+// ValSQLServerForbidden, Args [reason]). Forbidden: the np: / lpc: /
+// admin: prefixes (ASCII case-insensitive) -> np / lpc / admin, a UNC
+// path (\\host or //host) -> unc, any other name starting with a
+// backslash -> backslash, a pipe path (\pipe\ or /pipe/ anywhere) ->
+// pipe. tcp: and plain host / host\instance stay allowed. Shared by the
+// tray (early feedback), the service (save_profile, test_profile) and
+// later EC SQL (sqlcheck).
+func ValidateSQLServerAddr(addr string) error {
+	why := sqlServerForbidden(addr)
+	if why == "" {
+		return nil
+	}
+	return fieldErr("server", ValSQLServerForbidden, "server: named pipe / LPC / DAC / UNC targets are not allowed ("+why+")", why)
+}
+
+func sqlServerForbidden(addr string) string {
+	s := strings.ToLower(strings.TrimSpace(addr))
+	switch {
+	case strings.HasPrefix(s, "np:"):
+		return "np"
+	case strings.HasPrefix(s, "lpc:"):
+		return "lpc"
+	case strings.HasPrefix(s, "admin:"):
+		return "admin"
+	case strings.HasPrefix(s, `\\`), strings.HasPrefix(s, "//"), strings.HasPrefix(s, `\/`), strings.HasPrefix(s, `/\`):
+		return "unc"
+	case strings.HasPrefix(s, `\`):
+		return "backslash"
+	case strings.Contains(s, `\pipe\`), strings.Contains(s, "/pipe/"), strings.Contains(s, `\pipe/`), strings.Contains(s, `/pipe\`):
+		return "pipe"
+	}
+	return ""
+}
+
+// TargetChanged reports whether p connects to another server than saved:
+// host, instance or effective port differ (host / instance ASCII
+// case-insensitive, port 0 = 1433 without an instance). A changed target
+// requires the password to be entered again; the saved secret is never
+// sent to a new target (phase 9, CHK-CFG-05).
+func TargetChanged(p, saved Profile) bool {
+	h1, i1 := splitHostInstance(p.Server)
+	h2, i2 := splitHostInstance(saved.Server)
+	return h1 != h2 || i1 != i2 || identityPort(p.Port, i1) != identityPort(saved.Port, i2)
 }

@@ -130,6 +130,10 @@ type Options struct {
 	DiscoverTimeout        time.Duration
 	InteractiveLimit       time.Duration
 	InteractiveWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+
+	// RunID identifies this run of the service in the heartbeat and in
+	// every AlertEvent (phase 9, CHK-SVC-05); "" = random.
+	RunID string
 }
 
 // entry is the per-profile runtime state.
@@ -329,6 +333,16 @@ type Monitor struct {
 	cmdLast map[string]time.Time // rate limiter of IPC commands
 	pendAll bool                 // poll_now for every profile pending
 	pendIDs map[string]bool      // poll_now for single profiles pending
+
+	// phase 9: check_now limiter (cmdMu), run id and event ring (mu)
+	checkLast map[string]time.Time
+	runID     string
+	ring      eventRing
+	// phase 9: when a point / profile left ok (recovered durationMin, mu),
+	// check_now sequence requested / included (mu)
+	raisedAt     map[string]time.Time
+	checkReqSeq  uint64
+	lastCheckSeq uint64
 }
 
 // New returns a Monitor; call Run to start it.
@@ -381,6 +395,13 @@ func New(opt Options) *Monitor {
 			WithTimeout: opt.InteractiveWithTimeout},
 	}
 	m.explorer.defaults()
+	m.checkLast = map[string]time.Time{}
+	m.runID = opt.RunID
+	if m.runID == "" {
+		m.runID = newRunID()
+	}
+	m.ring.size = model.EventRingSize
+	m.raisedAt = map[string]time.Time{}
 	m.loadAcks()
 	return m
 }
@@ -487,6 +508,7 @@ func (m *Monitor) Snapshot() model.StatusSnapshot {
 		s = model.StatusSnapshot{Now: now, Profiles: []model.ProfileSnapshot{}}
 	}
 	m.heartbeatLocked(now).apply(&s)
+	s.ServerNow = now // phase 9
 	return s
 }
 
@@ -558,7 +580,8 @@ func (m *Monitor) Heartbeat() model.Heartbeat {
 	h := m.heartbeatLocked(now)
 	m.mu.Unlock()
 	out := model.Heartbeat{Protocol: model.IPCVersion, Now: now, ServiceStartedAt: h.started,
-		PollerHung: h.hung, HungAfterSec: int(h.hungAfter / time.Second), PollIntervalSec: int(h.interval / time.Second)}
+		PollerHung: h.hung, HungAfterSec: int(h.hungAfter / time.Second), PollIntervalSec: int(h.interval / time.Second),
+		RunID: m.runID}
 	if !h.lastCycle.IsZero() {
 		lc := h.lastCycle
 		out.LastCycleAt = &lc
@@ -958,10 +981,12 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 		}
 	}
 	settings := m.cfg.Settings
+	reqSeq := m.checkReqSeq // phase 9: check_now requests covered by this poll
 	m.mu.Unlock()
 	interval := m.interval()
 	sem := make(chan struct{}, m.opt.MaxConcurrent)
 	results := make([]*model.ProfileStatus, len(es))
+	latency := make([]int64, len(es))
 	var wg sync.WaitGroup
 	for i, e := range es {
 		wg.Add(1)
@@ -982,7 +1007,9 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 				return
 			}
 			defer func() { <-sem }()
+			t0 := time.Now()
 			ps := m.pollOne(ctx, e, settings)
+			latency[i] = time.Since(t0).Milliseconds()
 			results[i] = &ps
 		}(i, e)
 	}
@@ -996,11 +1023,19 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 			if results[i] == nil {
 				continue
 			}
-			res[e.profile.ID] = model.NewProfileSnapshot(e.profile, *results[i], cfg.Settings, now)
+			snap := model.NewProfileSnapshot(e.profile, *results[i], cfg.Settings, now)
+			ms := latency[i]
+			snap.LatencyMs = &ms // phase 9 (CHK-SVC-03)
+			qms := ms
+			snap.LastQueryMs = &qms
+			res[e.profile.ID] = snap
 			polled[e.profile.ID] = true
 		}
 		if only == nil {
 			m.lastCycle = now // a full cycle completed (CHK-IPC-04)
+		}
+		if reqSeq > m.lastCheckSeq {
+			m.lastCheckSeq = reqSeq
 		}
 		return polled
 	})
@@ -1208,12 +1243,15 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	m.markAckedLocked(profiles, alerts)
 	for i := range events {
 		m.markEventLocked(&events[i])
+		m.classifyEventLocked(&events[i]) // phase 9 (CHK-SVC-05)
+		m.ring.add(events[i])
 	}
 	m.seq++
 	snap := model.StatusSnapshot{
 		Seq: m.seq, Now: now, Level: model.WorstProfileLevel(profiles), Profiles: profiles,
 		Alerts: alerts, PollIntervalSec: int(m.intervalLocked() / time.Second),
 		LastPollAt: m.lastPoll, ConfigRevision: m.revision,
+		ServerNow: now, LastCheckSeq: m.lastCheckSeq,
 	}
 	switch {
 	case m.good: // a configuration has been applied

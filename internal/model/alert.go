@@ -36,6 +36,16 @@ type AlertEvent struct {
 	// (CHK-IPC-02).
 	Acknowledged bool       `json:"acknowledged,omitempty"`
 	AckedAt      *time.Time `json:"ackedAt,omitempty"`
+	// RunID of the service run that produced the event (phase 9,
+	// CHK-SVC-05): (RunID, ID) is unique.
+	RunID string `json:"runId,omitempty"`
+	// EventID = ID, sent under its own name in every push (phase 9).
+	EventID uint64 `json:"eventId,omitempty"`
+	// Kind: AlertKindRecovered for a transition back to ok, else
+	// AlertKindAlert; DurationMin: recovered events, minutes since the
+	// point / profile left ok in this run (phase 9, CHK-SVC-05).
+	Kind        string `json:"kind,omitempty"`
+	DurationMin *int64 `json:"durationMin,omitempty"`
 }
 
 // Raised reports whether the event is an escalation (to a worse level).

@@ -62,6 +62,12 @@ var ErrConfigConflict = &model.IPCError{Code: model.ErrCodeConflict, Key: model.
 var errPasswordRequired = &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgTestPasswordRequired,
 	Message: "monitor: enter the password", Args: []string{"password", model.ValRequired}}
 
+// errPasswordTargetChange: save_profile changed the server or port of a
+// profile with a saved password and sent no new password (phase 9,
+// CHK-CFG-05).
+var errPasswordTargetChange = &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgPasswordTargetChange,
+	Message: "monitor: the server or port changed, enter the password again", Args: []string{"password", model.ValRequired}}
+
 // invalidOther is invalid(monitor.profile_invalid) for a write refused
 // because ANOTHER profile in profiles.json is invalid (edited by hand): the
 // reply carries that profile's id (IPCMessage.profileId, from
@@ -288,6 +294,11 @@ func (m *Monitor) SaveProfile(p model.Profile, password string, clearPassword bo
 	case clearPassword:
 		delete(sec, p.ID)
 	default: // empty password, SQL authentication
+		if idx >= 0 && hadSecret && model.TargetChanged(p, ps[idx]) {
+			// phase 9 (CHK-CFG-05): the saved secret is never reused for
+			// a new server / port
+			return model.SavedProfile{}, errPasswordTargetChange
+		}
 		if idx < 0 || !hadSecret || !model.CanReuseSavedPassword(p, ps[idx]) {
 			return model.SavedProfile{}, errPasswordRequired
 		}

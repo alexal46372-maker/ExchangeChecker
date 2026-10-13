@@ -20,8 +20,8 @@ func (stubSystem) MkdirAll(string) (bool, error)               { return false, E
 func (stubSystem) SetDACL(string, string) error                { return ErrNotWindows }
 func (stubSystem) TakeOwnership(string) (bool, error)          { return false, ErrNotWindows }
 func (stubSystem) CheckFixedDrive(string) error                { return ErrNotWindows }
-func (stubSystem) WriteFile(string, []byte) error              { return ErrNotWindows }
-func (stubSystem) BackupFile(string) error                     { return ErrNotWindows }
+func (stubSystem) WriteFile(string, []byte) (bool, error)      { return false, ErrNotWindows }
+func (stubSystem) BackupFile(string) (bool, error)             { return false, ErrNotWindows }
 func (stubSystem) RestoreBackup(string) error                  { return ErrNotWindows }
 func (stubSystem) RemoveBackup(string) error                   { return ErrNotWindows }
 func (stubSystem) RemoveFile(string) (bool, error)             { return false, ErrNotWindows }
@@ -40,6 +40,7 @@ func (stubSystem) ApplyTrayRun(string, string) (string, error) { return "", ErrN
 func (stubSystem) DeleteTrayRun() error                        { return ErrNotWindows }
 func (stubSystem) StopTray(string) error                       { return ErrNotWindows }
 func (stubSystem) WriteUninstallKey([]RegValue) error          { return ErrNotWindows }
+func (stubSystem) ReadUninstallKey() ([]RegValue, error)       { return nil, ErrNotWindows }
 func (stubSystem) DeleteUninstallKey() error                   { return ErrNotWindows }
 func (stubSystem) ReadInstalled() (Installed, error)           { return Installed{}, ErrNotWindows }
 func (stubSystem) DeleteUserKey() error                        { return ErrNotWindows }

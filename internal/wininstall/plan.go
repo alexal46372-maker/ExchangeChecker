@@ -166,22 +166,31 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			warn("stop tray: %v", err)
 		}
 	}
-	// 4. files (upgrade: *.bak then atomic replace; rollback restores bak)
+	// 4. files (upgrade: *.bak then atomic replace; rollback restores bak
+	// or deletes a file that did not exist before)
 	var total int64
 	var bakPaths []string
+	needReboot := false
 	for _, n := range PayloadFiles {
 		p := joinDir(dir, n)
 		if !fresh {
-			if err := sys.BackupFile(p); err != nil {
+			existed, err := sys.BackupFile(p)
+			if err != nil {
 				return failRollback(errf("backup "+p, err))
 			}
-			bakPaths = append(bakPaths, p)
 			path := p
-			undo.push(func() error { return sys.RestoreBackup(path) })
+			if existed {
+				bakPaths = append(bakPaths, p)
+				undo.push(func() error { return sys.RestoreBackup(path) })
+			} else {
+				undo.push(func() error { _, err := sys.RemoveFile(path); return err })
+			}
 		}
-		if err := sys.WriteFile(p, c.Files[n]); err != nil {
+		reboot, err := sys.WriteFile(p, c.Files[n])
+		if err != nil {
 			return failRollback(errf("write "+p, err))
 		}
+		needReboot = needReboot || reboot
 		total += int64(len(c.Files[n]))
 		if fresh {
 			undo.push(func() error { _, err := sys.RemoveFile(p); return err })
@@ -189,13 +198,22 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		log.Printf("file %s (%d bytes)", p, len(c.Files[n]))
 	}
 	svcExe := joinDir(dir, config.ServiceExeName)
-	// 5. service
+	// 5. service — journal previous ImagePath / description for upgrade rollback (§7.4)
 	spec := ServiceSpec{
 		Name: model.ServiceName, DisplayName: version.ProductName, ImagePath: ServiceImagePath(svcExe),
 		Description: ServiceDescription(c.Lang), AutoStart: !c.Opts.NoStart,
 		ResetPeriod: FailureResetPeriod, FailureDelays: FailureDelays, SDDL: ServiceSDDL,
 	}
 	if svc.Exists {
+		prev := ServiceSpec{
+			Name: model.ServiceName, DisplayName: version.ProductName,
+			ImagePath: svc.ImagePath, Description: svc.Description,
+			AutoStart:   svc.AutoStart,
+			ResetPeriod: FailureResetPeriod, FailureDelays: FailureDelays, SDDL: ServiceSDDL,
+		}
+		if !fresh {
+			undo.push(func() error { return sys.UpdateService(prev, false) })
+		}
 		// the start type chosen by the user (services.msc) is kept
 		if err := sys.UpdateService(spec, false); err != nil {
 			return failRollback(errf("update service", err))
@@ -213,6 +231,9 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	if fresh {
 		undo.push(sys.DeleteEventSource)
+	} else if svc.Exists && svc.ImagePath != "" {
+		prevExe := ExePathFromImagePath(svc.ImagePath)
+		undo.push(func() error { return sys.SetEventSource(prevExe) })
 	}
 	// 7. HKLM Run of the tray — the service's own rule (CHK-CFG-04)
 	if act, err := sys.ApplyTrayRun(svcExe, c.DataDir); err != nil {
@@ -223,32 +244,52 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			undo.push(sys.DeleteTrayRun)
 		}
 	}
-	// 8. Uninstall key, last
+	// 8. Uninstall key — journal previous values (DisplayVersion etc.) for rollback
+	if !fresh {
+		if prevVals, err := sys.ReadUninstallKey(); err != nil {
+			warn("read Uninstall key for rollback: %v", err)
+		} else if len(prevVals) > 0 {
+			pv := prevVals
+			undo.push(func() error { return sys.WriteUninstallKey(pv) })
+		}
+	}
 	vals := UninstallValues(dir, joinDir(dir, config.UninstallExeName), joinDir(dir, config.TrayExeName), c.Version, sizeKB(total), c.Now)
 	if err := sys.WriteUninstallKey(vals); err != nil {
 		return failRollback(errf("Uninstall key", err))
 	}
-	// 9. start
-	// restart only when the service was running (upgrade) or fresh+auto
+	// 9. start — on upgrade, keep *.bak until V2 StartService succeeds
 	start := (fresh && !c.Opts.NoStart) || (!fresh && wasRunning)
 	if !fresh && !svc.Exists && !c.Opts.NoStart {
 		start = true
 	}
-	// drop upgrade backups after registrations succeeded
-	for _, p := range bakPaths {
-		if err := sys.RemoveBackup(p); err != nil {
-			warn("remove backup %s: %v", p, err)
-		}
-	}
-	res.Code = ExitOK
 	if start {
 		log.Printf("starting service %s", model.ServiceName)
 		if err := sys.StartService(model.ServiceName, StartTimeout); err != nil {
-			res.Code = ExitError
 			res.Err = errf("start service (see "+joinDir(c.DataDir, `logs\exchsvc.log`)+")", err)
 			log.Printf("ERROR: %v", res.Err)
+			if !fresh {
+				log.Printf("rolling back the upgrade after StartService failure")
+				undo.run(log)
+			}
+			res.Code = ExitError
 			return res
 		}
+		// Start succeeded: drop the "restart old service" undo entry's effect by
+		// clearing undo only for bak removal path — keep undo unused on success.
+	}
+	// Drop *.bak: after successful StartService when wasRunning; otherwise after
+	// registrations when the service was not running (no start to wait for).
+	if !fresh && (wasRunning && start || !wasRunning) {
+		for _, p := range bakPaths {
+			if err := sys.RemoveBackup(p); err != nil {
+				warn("remove backup %s: %v", p, err)
+			}
+		}
+	}
+	res.Code = ExitOK
+	if needReboot {
+		res.Code = ExitRebootRequired
+		res.Reboot = true
 	}
 	log.Printf("done: %s", mode)
 	return res

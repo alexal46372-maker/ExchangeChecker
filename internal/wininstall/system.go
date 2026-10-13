@@ -15,10 +15,11 @@ type ServiceSpec struct {
 
 // ServiceInfo is the current registration of an existing service.
 type ServiceInfo struct {
-	Exists    bool
-	ImagePath string
-	AutoStart bool
-	Running   bool
+	Exists      bool
+	ImagePath   string
+	Description string
+	AutoStart   bool
+	Running     bool
 }
 
 // Installed describes an existing installation (Uninstall key).
@@ -41,10 +42,12 @@ type System interface {
 	TakeOwnership(path string) (changed bool, err error)
 	CheckFixedDrive(dir string) error
 	// WriteFile writes data via a temporary file + MoveFileEx and reads it
-	// back (sha256).
-	WriteFile(path string, data []byte) error
+	// back (sha256). reboot is true when a locked target was renamed to
+	// *.old and scheduled for deletion at reboot (§7.4).
+	WriteFile(path string, data []byte) (reboot bool, err error)
 	// BackupFile copies path to path+".bak" when it exists (upgrade).
-	BackupFile(path string) error
+	// existed is false when path was missing (rollback should RemoveFile).
+	BackupFile(path string) (existed bool, err error)
 	// RestoreBackup renames path+".bak" over path (upgrade rollback).
 	RestoreBackup(path string) error
 	// RemoveBackup deletes path+".bak" if present.
@@ -78,6 +81,8 @@ type System interface {
 	// TerminateProcess; leftovers after ~5s are terminated.
 	StopTray(installDir string) error
 	WriteUninstallKey(vals []RegValue) error
+	// ReadUninstallKey returns current Uninstall values (for upgrade rollback).
+	ReadUninstallKey() ([]RegValue, error)
 	DeleteUninstallKey() error
 	ReadInstalled() (Installed, error)
 	DeleteUserKey() error

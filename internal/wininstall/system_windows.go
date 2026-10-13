@@ -49,41 +49,75 @@ func (winSystem) CheckFixedDrive(dir string) error {
 	return nil
 }
 
-func (winSystem) WriteFile(path string, data []byte) error {
+func (winSystem) WriteFile(path string, data []byte) (reboot bool, err error) {
 	dir := filepath.Dir(path)
 	name := filepath.Base(path)
-	if err := config.WriteFileAtomic(dir, name, data, 0o644); err != nil {
-		return err
+	err = config.WriteFileAtomic(dir, name, data, 0o644)
+	if err != nil && isFileLocked(err) {
+		// §7.4: rename locked image to *.old, delete at reboot, write new
+		old := path + ".old"
+		_ = os.Remove(old)
+		if err2 := winapi.MoveFileEx(path, old, 0); err2 != nil {
+			return false, fmt.Errorf("write %s: locked (%v); rename to .old: %w", path, err, err2)
+		}
+		if err2 := winapi.MoveFileEx(old, "", winapi.MoveFileDelayUntilReboot); err2 != nil {
+			return true, fmt.Errorf("write %s: schedule .old delete: %w", path, err2)
+		}
+		reboot = true
+		if err = config.WriteFileAtomic(dir, name, data, 0o644); err != nil {
+			return reboot, err
+		}
+	} else if err != nil {
+		return false, err
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return reboot, err
 	}
 	sumWant := sha256.Sum256(data)
 	sumGot := sha256.Sum256(got)
 	if sumWant != sumGot {
-		return fmt.Errorf("write %s: sha256 mismatch after write", path)
+		return reboot, fmt.Errorf("write %s: sha256 mismatch after write", path)
 	}
-	return nil
+	return reboot, nil
 }
 
-func (winSystem) BackupFile(path string) error {
+func isFileLocked(err error) bool {
+	var errno syscall.Errno
+	if !errors.As(err, &errno) {
+		var pe *os.PathError
+		if errors.As(err, &pe) {
+			errors.As(pe.Err, &errno)
+		}
+		var le *os.LinkError
+		if errors.As(err, &le) {
+			errors.As(le.Err, &errno)
+		}
+	}
+	// ERROR_ACCESS_DENIED=5, SHARING_VIOLATION=32, LOCK_VIOLATION=33
+	return errno == 5 || errno == 32 || errno == 33
+}
+
+func (winSystem) BackupFile(path string) (bool, error) {
 	st, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	if st.IsDir() {
-		return fmt.Errorf("backup %s: is a directory", path)
+		return false, fmt.Errorf("backup %s: is a directory", path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	bak := path + ".bak"
-	return os.WriteFile(bak, data, 0o644)
+	if err := os.WriteFile(bak, data, 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (winSystem) RestoreBackup(path string) error {
@@ -208,11 +242,13 @@ func (winSystem) QueryService(name string) (ServiceInfo, error) {
 	if err != nil {
 		return ServiceInfo{}, err
 	}
+	desc, _ := winapi.QueryServiceDescription(svc)
 	return ServiceInfo{
-		Exists:    true,
-		ImagePath: cfg.BinaryPath,
-		AutoStart: cfg.StartType == winapi.ServiceAutoStart,
-		Running:   state == winapi.ServiceRunning || state == winapi.ServiceStartPend,
+		Exists:      true,
+		ImagePath:   cfg.BinaryPath,
+		Description: desc,
+		AutoStart:   cfg.StartType == winapi.ServiceAutoStart,
+		Running:     state == winapi.ServiceRunning || state == winapi.ServiceStartPend,
 	}, nil
 }
 
@@ -462,6 +498,37 @@ func (winSystem) DeleteTrayRun() error {
 	return winapi.RegDeleteValueView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, winapi.KEY_WOW64_64KEY)
 }
 
+func (winSystem) ReadUninstallKey() ([]RegValue, error) {
+	view := uint32(winapi.KEY_WOW64_64KEY)
+	ok, err := winapi.RegKeyExistsView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, view)
+	if err != nil || !ok {
+		return nil, err
+	}
+	var out []RegValue
+	for _, name := range []string{
+		"DisplayName", "DisplayVersion", "InstallLocation", "UninstallString",
+		"QuietUninstallString", "DisplayIcon", "InstallDate",
+	} {
+		s, present, err := winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, name, view)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			out = append(out, RegValue{Name: name, Str: s})
+		}
+	}
+	for _, name := range []string{"EstimatedSize", "NoModify", "NoRepair"} {
+		n, present, err := winapi.RegGetDWORDView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, name, view)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			out = append(out, RegValue{Name: name, DWord: true, Num: n})
+		}
+	}
+	return out, nil
+}
+
 func (winSystem) WriteUninstallKey(vals []RegValue) error {
 	view := uint32(winapi.KEY_WOW64_64KEY)
 	for _, v := range vals {
@@ -510,7 +577,7 @@ func (winSystem) StopTray(installDir string) error {
 		return nil
 	}
 	msg := winapi.RegisterWindowMessage(model.TrayExitMessage)
-	selfSess, _ := winapi.CurrentSessionID()
+	selfSess, sessErr := winapi.CurrentSessionID()
 
 	procs, err := winapi.ProcessesInDir(installDir, config.TrayExeName)
 	if err != nil {
@@ -518,13 +585,26 @@ func (winSystem) StopTray(installDir string) error {
 	}
 	var list []TrayProc
 	for _, p := range procs {
-		s := uint32(0xffffffff) // unknown session → terminate path via Split
-		if sid, e := winapi.ProcessSessionID(p.PID); e == nil {
-			s = sid
+		// If our own session is unknown, try graceful exit for everyone first
+		// (do not treat unknown PIDs as "other session").
+		s := selfSess
+		if sessErr == nil {
+			if sid, e := winapi.ProcessSessionID(p.PID); e == nil {
+				s = sid
+			} else {
+				s = selfSess // graceful first
+			}
 		}
 		list = append(list, TrayProc{PID: p.PID, Session: s})
 	}
-	post, other := SplitTrayStop(selfSess, list)
+	var post, other []uint32
+	if sessErr != nil {
+		for _, p := range list {
+			post = append(post, p.PID)
+		}
+	} else {
+		post, other = SplitTrayStop(selfSess, list)
+	}
 
 	if msg != 0 {
 		want := map[uint32]bool{}

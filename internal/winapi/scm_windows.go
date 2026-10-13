@@ -343,6 +343,22 @@ const ErrServiceCannotAcceptCtrl syscall.Errno = 1061
 
 // ServiceMarkedForDelete reports whether svc is marked for deletion
 // (ChangeServiceConfigW with SERVICE_NO_CHANGE → ERROR_SERVICE_MARKED_FOR_DELETE).
+// QueryServiceDescription returns the service description string.
+func QueryServiceDescription(svc ServiceHandle) (string, error) {
+	buf, err := QueryServiceConfig2Bytes(svc, ServiceConfigDescription)
+	if err != nil {
+		return "", err
+	}
+	if len(buf) < int(unsafe.Sizeof(ServiceDescriptionW{})) {
+		return "", nil
+	}
+	sd := (*ServiceDescriptionW)(unsafe.Pointer(&buf[0]))
+	if sd.Description == nil {
+		return "", nil
+	}
+	return syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(sd.Description))[:]), nil
+}
+
 func ServiceMarkedForDelete(svc ServiceHandle) bool {
 	r, _, e := callProc(procChangeServiceConfigW, uintptr(svc),
 		uintptr(ServiceNoChange), uintptr(ServiceNoChange), uintptr(ServiceNoChange),

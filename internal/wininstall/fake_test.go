@@ -15,19 +15,21 @@ type recordingSystem struct {
 	// Log of "verb|arg" steps
 	Steps []string
 
-	Installed Installed
-	Service   ServiceInfo
-	Dirs      map[string]bool
-	Files     map[string][]byte
-	DACLs     map[string]string
-	Owners    map[string]bool // path -> takeOwnership called
-	EventSrc  string
-	TrayRun   string
-	Uninst    []RegValue
-	UserKey   bool
-	FixedOK   bool
-	FailAt    string // step prefix that returns error
-	RebootRm  bool
+	Installed   Installed
+	Service     ServiceInfo
+	Dirs        map[string]bool
+	Files       map[string][]byte
+	DACLs       map[string]string
+	Owners      map[string]bool // path -> takeOwnership called
+	EventSrc    string
+	TrayRun     string
+	Uninst      []RegValue
+	UserKey     bool
+	FixedOK     bool
+	FailAt      string // step prefix that returns error
+	FailOnce    bool   // clear FailAt after the first injected error
+	RebootRm    bool
+	WriteReboot bool // WriteFile returns reboot=true
 }
 
 func newFake() *recordingSystem {
@@ -44,7 +46,10 @@ func (f *recordingSystem) step(format string, args ...interface{}) error {
 	s := fmt.Sprintf(format, args...)
 	f.Steps = append(f.Steps, s)
 	if f.FailAt != "" && strings.HasPrefix(s, f.FailAt) {
-		return fmt.Errorf("fake fail: %s", s)
+		if f.FailOnce {
+			f.FailAt = ""
+		}
+		return fmt.Errorf("injected failure: %s", s)
 	}
 	return nil
 }
@@ -94,29 +99,29 @@ func (f *recordingSystem) CheckFixedDrive(dir string) error {
 	return nil
 }
 
-func (f *recordingSystem) WriteFile(path string, data []byte) error {
+func (f *recordingSystem) WriteFile(path string, data []byte) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	sum := sha256.Sum256(data)
 	if err := f.step("WriteFile|%s|%d|%s", path, len(data), hex.EncodeToString(sum[:8])); err != nil {
-		return err
+		return false, err
 	}
 	cp := append([]byte(nil), data...)
 	f.Files[path] = cp
-	return nil
+	return f.WriteReboot, nil
 }
 
-func (f *recordingSystem) BackupFile(path string) error {
+func (f *recordingSystem) BackupFile(path string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.step("BackupFile|%s", path); err != nil {
-		return err
+		return false, err
 	}
-	if data, ok := f.Files[path]; ok {
-		cp := append([]byte(nil), data...)
-		f.Files[path+".bak"] = cp
+	data, ok := f.Files[path]
+	if ok {
+		f.Files[path+".bak"] = append([]byte(nil), data...)
 	}
-	return nil
+	return ok, nil
 }
 
 func (f *recordingSystem) RestoreBackup(path string) error {
@@ -208,8 +213,13 @@ func (f *recordingSystem) CreateService(s ServiceSpec) error {
 func (f *recordingSystem) UpdateService(s ServiceSpec, setStart bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.step("UpdateService|%s|setStart=%v|auto=%v", s.Name, setStart, s.AutoStart); err != nil {
+	if err := f.step("UpdateService|%s|setStart=%v|auto=%v|img=%s", s.Name, setStart, s.AutoStart, s.ImagePath); err != nil {
 		return err
+	}
+	f.Service.ImagePath = s.ImagePath
+	f.Service.Description = s.Description
+	if setStart {
+		f.Service.AutoStart = s.AutoStart
 	}
 	f.Service.ImagePath = s.ImagePath
 	if setStart {
@@ -292,6 +302,20 @@ func (f *recordingSystem) DeleteTrayRun() error {
 	}
 	f.TrayRun = ""
 	return nil
+}
+
+func (f *recordingSystem) ReadUninstallKey() ([]RegValue, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("ReadUninstallKey"); err != nil {
+		return nil, err
+	}
+	if !f.Installed.Present {
+		return nil, nil
+	}
+	out := make([]RegValue, len(f.Uninst))
+	copy(out, f.Uninst)
+	return out, nil
 }
 
 func (f *recordingSystem) WriteUninstallKey(vals []RegValue) error {

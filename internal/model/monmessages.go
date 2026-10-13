@@ -178,8 +178,9 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	ValServerFormat:            {"Сервер: укажите «хост» или «хост\\экземпляр».", "Server: enter \"host\" or \"host\\instance\"."},
 	ValMapping:                 {"Таблицы обмена: несогласованные поля («{0}»).", "Exchange tables: inconsistent fields (\"{0}\")."},
 	ValDuplicate:               {"Профиль с таким идентификатором уже есть.", "A profile with this id already exists."},
-	ValSQLServerForbidden:      {"Сервер: именованные каналы (np:), LPC (lpc:), DAC (admin:) и UNC-пути не допускаются, укажите «хост» или «хост\\экземпляр».", "Server: named pipes (np:), LPC (lpc:), DAC (admin:) and UNC paths are not allowed; enter \"host\" or \"host\\instance\"."},
+	ValSQLServerForbidden:      {"Сервер: префиксы протокола (tcp:, np:, lpc:, sm:, via:, admin:) и UNC-пути не допускаются, укажите «хост» или «хост\\экземпляр».", "Server: protocol prefixes (tcp:, np:, lpc:, sm:, via:, admin:) and UNC paths are not allowed; enter \"host\" or \"host\\instance\"."},
 	MsgPasswordTargetChange:    {"Сервер или порт изменён: введите пароль заново.", "The server or port changed: enter the password again."},
+	MsgBrowseRateLimited:       {"Поиск серверов SQL уже выполнялся недавно, повторите позже.", "SQL Server search was run recently, try again later."},
 	MsgCheckRateLimited:        {"Проверка уже запрашивалась недавно, повторите позже.", "A check was requested recently, try again later."},
 	MsgMonitorProfileOff:       {"Профиль отключён.", "The profile is disabled."},
 	MsgHistoryDisabled:         {"История опросов недоступна.", "The poll history is not available."},
@@ -217,6 +218,6 @@ func MonitorMessageKeys() []string {
 		MsgMonitorBadRequest, MsgMonitorConfigChanged,
 		MsgDiscoverBusy, MsgDiscoverProfileBusy, MsgDiscoverTimeout, MsgDiscoverFailed, MsgDiscoverPointNameEmpty,
 		MsgDiscoverMappingInvalid, MsgMonitorInternal,
-		MsgPasswordTargetChange, MsgCheckRateLimited, MsgMonitorProfileOff, MsgHistoryDisabled, MsgHistoryBadRange,
+		MsgPasswordTargetChange, MsgCheckRateLimited, MsgBrowseRateLimited, MsgMonitorProfileOff, MsgHistoryDisabled, MsgHistoryBadRange,
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed}
 }

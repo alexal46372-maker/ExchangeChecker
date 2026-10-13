@@ -29,8 +29,8 @@ const (
 
 // SQLAutoPick is the auto-pick decision for a Discovery result.
 type SQLAutoPick struct {
-	// Apply: the candidate at Index may be applied without asking.
-	Apply bool `json:"apply"`
+	// AutoApply: the candidate at Index may be applied without asking.
+	AutoApply bool `json:"autoApply"`
 	// Index of the best candidate in the list (-1: none).
 	Index int `json:"index"`
 	// CandidateKey is DiscoveryCandidate.Key() of the best candidate.
@@ -39,6 +39,91 @@ type SQLAutoPick struct {
 	Score        int    `json:"score,omitempty"`
 	// Margin is Score minus the runner-up's score (Score if alone).
 	Margin int `json:"margin,omitempty"`
+	// Confidence of the best candidate (0..1, SQLConfidence) and the
+	// server-side threshold AutoPickMin (= SQLAutoPickMinConfidence).
+	Confidence  float64 `json:"confidence"`
+	AutoPickMin float64 `json:"autoPickMin"`
+	// Ranks: one entry per candidate, same order as the input list.
+	Ranks []SQLCandidateRank `json:"ranks"`
+}
+
+// SQLCandidateRank annotates one Discovery candidate for the wizard
+// (DiscoveryCandidate itself is unchanged).
+type SQLCandidateRank struct {
+	// Rank: 1 = best (score descending, input order on ties).
+	Rank       int      `json:"rank"`
+	Confidence float64  `json:"confidence"`
+	Reasons    []string `json:"reasons"`
+}
+
+// Confidence scale: SQLConfidence(score) = score / SQLConfidenceFullScore
+// clamped to 0..1, so SQLAutoPickMinScore maps to 0.6.
+const (
+	SQLConfidenceFullScore   = 200
+	SQLAutoPickMinConfidence = float64(SQLAutoPickMinScore) / SQLConfidenceFullScore
+)
+
+// Candidate reason keys (SQLCandidateRank.Reasons; RU/EN in SQLMessage).
+const (
+	MsgSQLCandExchangePlan = "sql.cand_exchange_plan" // exchange plan table (_NodeNNN)
+	MsgSQLCandSendRecv     = "sql.cand_send_recv"     // both send and recv times
+	MsgSQLCandCounters     = "sql.cand_counters"      // message counters, no times
+	MsgSQLCandIncomplete   = "sql.cand_incomplete"    // missing send/recv, points or cut short
+	MsgSQLCandLowScore     = "sql.cand_low_score"     // below the auto-pick score
+)
+
+// SQLCandidateReasonKeys lists the candidate reason keys.
+func SQLCandidateReasonKeys() []string {
+	return []string{MsgSQLCandExchangePlan, MsgSQLCandSendRecv, MsgSQLCandCounters, MsgSQLCandIncomplete, MsgSQLCandLowScore}
+}
+
+// SQLConfidence maps a Discovery score to 0..1.
+func SQLConfidence(score int) float64 {
+	c := float64(score) / SQLConfidenceFullScore
+	if c < 0 {
+		return 0
+	}
+	if c > 1 {
+		return 1
+	}
+	return c
+}
+
+func candIncomplete(c DiscoveryCandidate) bool {
+	inc := c.SendCol == "" || c.RecvCol == "" || c.Points == 0
+	for _, h := range []string{HintTruncated, HintNoTimestamps, HintFutureDates, HintSingleSeries} {
+		inc = inc || c.HasHint(h)
+	}
+	return inc
+}
+
+func sqlCandidateRanks(cands []DiscoveryCandidate) []SQLCandidateRank {
+	out := make([]SQLCandidateRank, len(cands))
+	for i, c := range cands {
+		rank := 1
+		for j, o := range cands {
+			if o.Score > c.Score || o.Score == c.Score && j < i {
+				rank++
+			}
+		}
+		r := SQLCandidateRank{Rank: rank, Confidence: SQLConfidence(c.Score), Reasons: []string{}}
+		if c.PlanTable != "" {
+			r.Reasons = append(r.Reasons, MsgSQLCandExchangePlan)
+		}
+		if c.SendCol != "" && c.RecvCol != "" {
+			r.Reasons = append(r.Reasons, MsgSQLCandSendRecv)
+		}
+		if c.Mode == CandidateCounters {
+			r.Reasons = append(r.Reasons, MsgSQLCandCounters)
+		} else if candIncomplete(c) {
+			r.Reasons = append(r.Reasons, MsgSQLCandIncomplete)
+		}
+		if c.Score < SQLAutoPickMinScore {
+			r.Reasons = append(r.Reasons, MsgSQLCandLowScore)
+		}
+		out[i] = r
+	}
+	return out
 }
 
 // SQLAutoPickFor decides on the candidates of one Discovery run (any
@@ -49,7 +134,7 @@ type SQLAutoPick struct {
 // SQLAutoPickMinScore or leads by less than SQLAutoPickMinMargin.
 func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 	if len(cands) == 0 {
-		return SQLAutoPick{Index: -1, ReasonKey: MsgSQLAutoPickNone}
+		return SQLAutoPick{Index: -1, ReasonKey: MsgSQLAutoPickNone, AutoPickMin: SQLAutoPickMinConfidence, Ranks: []SQLCandidateRank{}}
 	}
 	best := 0
 	for i, c := range cands {
@@ -64,7 +149,8 @@ func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 		}
 	}
 	b := cands[best]
-	res := SQLAutoPick{Index: best, CandidateKey: b.Key(), Score: b.Score, Margin: b.Score}
+	res := SQLAutoPick{Index: best, CandidateKey: b.Key(), Score: b.Score, Margin: b.Score,
+		Confidence: SQLConfidence(b.Score), AutoPickMin: SQLAutoPickMinConfidence, Ranks: sqlCandidateRanks(cands)}
 	if has2 {
 		res.Margin = b.Score - second
 	}
@@ -74,10 +160,7 @@ func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 			plans[c.PlanTable] = true
 		}
 	}
-	incomplete := b.SendCol == "" || b.RecvCol == "" || b.Points == 0
-	for _, h := range []string{HintTruncated, HintNoTimestamps, HintFutureDates, HintSingleSeries} {
-		incomplete = incomplete || b.HasHint(h)
-	}
+	incomplete := candIncomplete(b)
 	switch {
 	case len(plans) > 1:
 		res.ReasonKey = MsgSQLAutoPickMultiplePlans
@@ -90,7 +173,7 @@ func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 	case res.Margin < SQLAutoPickMinMargin:
 		res.ReasonKey = MsgSQLAutoPickAmbiguous
 	default:
-		res.Apply, res.ReasonKey = true, MsgSQLAutoPickOK
+		res.AutoApply, res.ReasonKey = true, MsgSQLAutoPickOK
 	}
 	return res
 }

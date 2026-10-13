@@ -48,6 +48,15 @@ type SQLDatabaseInfo struct {
 	CompatLevel int `json:"compatLevel"`
 	// State is sys.databases.state_desc (always "ONLINE" in the list).
 	State string `json:"state"`
+	// Is1C: the database has the 1C:Enterprise service tables (two of
+	// Config, Params, DBSchema); HasNodeTables: it has _Node* tables
+	// (exchange plans). Both false when the probe was skipped or denied
+	// (Probed = false).
+	Is1C          bool `json:"is1c"`
+	HasNodeTables bool `json:"hasNodeTables"`
+	Probed        bool `json:"probed"`
+	// SizeMB: data + log size from sys.master_files; 0 if not visible.
+	SizeMB int64 `json:"sizeMb"`
 }
 
 // SQLDatabasesResult is the answer of sql_databases.

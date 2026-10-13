@@ -31,7 +31,27 @@ type SQLGrantRequest struct {
 	// NT AUTHORITY\SYSTEM (same computer).
 	Principal string `json:"principal"`
 	Windows   bool   `json:"windows"`
-	Database  string `json:"database"`
+	// Auth "sql" | "windows" is an alternative to Windows (EC Tray);
+	// "windows" or Windows = true selects a Windows login.
+	Auth     string `json:"auth,omitempty"`
+	Database string `json:"database"`
+	// Tables: empty = role db_datareader (default); otherwise GRANT SELECT
+	// on exactly these tables ("table" = dbo.table, or "schema.table"),
+	// at most MaxSQLGrantTables.
+	Tables []string `json:"tables,omitempty"`
+}
+
+// MaxSQLGrantTables caps SQLGrantRequest.Tables.
+const MaxSQLGrantTables = 100
+
+func (r SQLGrantRequest) windows() bool { return r.Windows || r.Auth == "windows" }
+
+// splitTable returns schema and table of "schema.table" / "table".
+func splitTable(t string) (string, string) {
+	if i := strings.IndexByte(t, '.'); i >= 0 {
+		return t[:i], t[i+1:]
+	}
+	return "dbo", t
 }
 
 // SQLGrantScript is the generated script with notes for the wizard.
@@ -74,7 +94,15 @@ func (r SQLGrantRequest) Validate() error {
 	if err := checkSysname("principal", r.Principal); err != nil {
 		return err
 	}
-	if r.Windows {
+	switch r.Auth {
+	case "", "sql", "windows":
+	default:
+		return fieldErr("auth", ValEnum, "auth: sql or windows", "sql, windows")
+	}
+	if r.Auth == "sql" && r.Windows {
+		return fieldErr("auth", ValConflict, "auth: sql conflicts with windows")
+	}
+	if r.windows() {
 		i := strings.IndexByte(r.Principal, '\\')
 		if i < 0 || strings.Count(r.Principal, `\`) != 1 {
 			return fieldErr("principal", ValSQLPrincipal, `principal: DOMAIN\NAME expected`, SQLPrincipalWindowsFormat)
@@ -89,11 +117,44 @@ func (r SQLGrantRequest) Validate() error {
 	} else if strings.ContainsRune(r.Principal, '\\') {
 		return fieldErr("principal", ValSQLPrincipal, `principal: a SQL login cannot contain '\'`, SQLPrincipalBackslash)
 	}
-	return checkSysname("database", r.Database)
+	if err := checkSysname("database", r.Database); err != nil {
+		return err
+	}
+	if len(r.Tables) > MaxSQLGrantTables {
+		return fieldErr("tables", ValTooMany, "tables: too many", itoa(MaxSQLGrantTables))
+	}
+	for i, t := range r.Tables {
+		f := "tables[" + itoa(i) + "]"
+		sch, tab := splitTable(t)
+		if err := checkSysname(f, sch); err != nil {
+			return err
+		}
+		if err := checkSysname(f, tab); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // sqlNLiteral returns s as a T-SQL N'...' literal.
 func sqlNLiteral(s string) string { return "N'" + strings.ReplaceAll(s, "'", "''") + "'" }
+
+// roleOrTables is the end of the database batch (inside N'...'): the
+// db_datareader role or GRANT SELECT per table. Table names are N”
+// literals of the inner batch (quotes doubled twice) passed to QUOTENAME.
+func roleOrTables(tables []string) string {
+	if len(tables) == 0 {
+		return "EXEC sp_addrolemember N''db_datareader'', @login;';"
+	}
+	lit := func(s string) string { return strings.ReplaceAll(sqlNLiteral(s), "'", "''") }
+	var b strings.Builder
+	b.WriteString("DECLARE @grant nvarchar(max);")
+	for _, t := range tables {
+		sch, tab := splitTable(t)
+		b.WriteString("\r\nSET @grant = N''GRANT SELECT ON '' + QUOTENAME(" + lit(sch) + ") + N''.'' + QUOTENAME(" + lit(tab) + ") + N'' TO '' + QUOTENAME(@login) + N'';''; EXEC (@grant);")
+	}
+	return b.String() + "';"
+}
 
 // SQLGrantScriptFor validates r and returns the script.
 func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
@@ -107,21 +168,26 @@ func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
 			b.WriteString("\r\n")
 		}
 	}
+	win := r.windows()
 	kind := "SQL Server login"
-	if r.Windows {
+	if win {
 		kind = "Windows login"
 	}
-	w("-- Exchange Checker: read-only access (role db_datareader) to one database for a "+kind+".",
+	what := "role db_datareader"
+	if len(r.Tables) > 0 {
+		what = "SELECT on " + itoa(len(r.Tables)) + " table(s)"
+	}
+	w("-- Exchange Checker: read-only access ("+what+") in one database for a "+kind+".",
 		"-- SQL Server 2005 / 2008 and newer. Safe to run again. Run as a member of sysadmin",
 		"-- (or securityadmin + db_owner of the database).")
-	if !r.Windows {
+	if !win {
 		w("-- Replace " + SQLGrantPasswordPlaceholder + " below with the password of the login first.")
 	}
 	w("SET NOCOUNT ON;",
 		"DECLARE @login sysname, @db sysname, @password nvarchar(128), @sql nvarchar(max);",
 		"SET @login = "+sqlNLiteral(r.Principal)+";",
 		"SET @db = "+sqlNLiteral(r.Database)+";")
-	if !r.Windows {
+	if !win {
 		w("SET @password = N'"+SQLGrantPasswordPlaceholder+"';",
 			"IF @password IS NULL OR LEN(@password) = 0 OR @password = N'{{' + N'PASSWORD}}'",
 			"BEGIN",
@@ -136,7 +202,7 @@ func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
 		"END;",
 		"IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @login)",
 		"BEGIN")
-	if r.Windows {
+	if win {
 		w("    SET @sql = N'CREATE LOGIN ' + QUOTENAME(@login) + N' FROM WINDOWS WITH DEFAULT_DATABASE = ' + QUOTENAME(@db) + N';';")
 	} else {
 		w("    SET @sql = N'CREATE LOGIN ' + QUOTENAME(@login) + N' WITH PASSWORD = ' + QUOTENAME(@password, N'''')",
@@ -151,14 +217,14 @@ func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
 		"    SET @create = N''CREATE USER '' + QUOTENAME(@login) + N'' FOR LOGIN '' + QUOTENAME(@login) + N'';'';",
 		"    EXEC (@create);",
 		"END;",
-		"EXEC sp_addrolemember N''db_datareader'', @login;';",
+		roleOrTables(r.Tables),
 		"EXEC sp_executesql @sql, N'@login sysname', @login = @login;",
-		"PRINT N'Exchange Checker: access granted (db_datareader).';")
+		"PRINT N'Exchange Checker: access granted ("+what+").';")
 	res := SQLGrantScript{SQL: b.String(), Notes: []LocalizedText{
-		{"Скрипт выдаёт только чтение (роль db_datareader) в одной базе; его можно запускать повторно.", "The script grants read access only (db_datareader role) in one database; it can be run again."},
+		{"Скрипт выдаёт только чтение (роль db_datareader или SELECT на перечисленные таблицы) в одной базе; его можно запускать повторно. Программа скрипт только показывает и не выполняет.", "The script grants read access only (db_datareader role or SELECT on the listed tables) in one database; it can be run again. The program only shows the script, it never runs it."},
 		{"Запускает администратор SQL Server (sysadmin, либо securityadmin + db_owner базы) в SQL Server Management Studio или sqlcmd.", "A SQL Server administrator runs it (sysadmin, or securityadmin + db_owner of the database) in SQL Server Management Studio or sqlcmd."},
 	}}
-	if r.Windows {
+	if win {
 		res.Notes = append(res.Notes, LocalizedText{
 			"Служба Exchange Checker работает как LocalSystem: на удалённом SQL Server выдайте права учётной записи компьютера ДОМЕН\\ИМЯ$, на этом же компьютере — NT AUTHORITY\\SYSTEM.",
 			"The Exchange Checker service runs as LocalSystem: on a remote SQL Server grant the computer account DOMAIN\\NAME$, on the same computer NT AUTHORITY\\SYSTEM."})

@@ -86,12 +86,23 @@ func TestCHK_SQL_08_AutoPick(t *testing.T) {
 	}
 	for _, c := range cases {
 		p := SQLAutoPickFor(c.cands)
-		if p.ReasonKey != c.key || p.Apply != (c.key == MsgSQLAutoPickOK) {
+		if p.ReasonKey != c.key || p.AutoApply != (c.key == MsgSQLAutoPickOK) {
 			t.Errorf("%s: %+v", c.name, p)
 		}
 	}
 	if p := SQLAutoPickFor([]DiscoveryCandidate{cand(102, "_N"), cand(148, "_N")}); p.Index != 1 || p.Margin != 46 || p.CandidateKey == "" {
 		t.Errorf("%+v", p)
+	}
+	rk := SQLAutoPickFor([]DiscoveryCandidate{cand(102, "_N"), cand(148, "_N"), cand(102, "_N")})
+	if len(rk.Ranks) != 3 || rk.Ranks[1].Rank != 1 || rk.Ranks[0].Rank != 2 || rk.Ranks[2].Rank != 3 || rk.AutoPickMin != 0.6 ||
+		rk.Confidence != 0.74 || rk.Ranks[0].Confidence != 0.51 {
+		t.Errorf("ranks: %+v", rk)
+	}
+	if r := rk.Ranks[0].Reasons; len(r) != 3 || r[0] != MsgSQLCandExchangePlan || r[1] != MsgSQLCandSendRecv || r[2] != MsgSQLCandLowScore {
+		t.Errorf("reasons: %v", r)
+	}
+	if SQLConfidence(-5) != 0 || SQLConfidence(500) != 1 {
+		t.Error("clamp")
 	}
 	inc := cand(200, "")
 	inc.RecvCol = ""
@@ -145,7 +156,7 @@ func TestCHK_SQL_09_Diagnose(t *testing.T) {
 	}
 }
 
-const goldenWindowsGrant = `-- Exchange Checker: read-only access (role db_datareader) to one database for a Windows login.
+const goldenWindowsGrant = `-- Exchange Checker: read-only access (role db_datareader) in one database for a Windows login.
 -- SQL Server 2005 / 2008 and newer. Safe to run again. Run as a member of sysadmin
 -- (or securityadmin + db_owner of the database).
 SET NOCOUNT ON;
@@ -171,7 +182,7 @@ BEGIN
 END;
 EXEC sp_addrolemember N''db_datareader'', @login;';
 EXEC sp_executesql @sql, N'@login sysname', @login = @login;
-PRINT N'Exchange Checker: access granted (db_datareader).';
+PRINT N'Exchange Checker: access granted (role db_datareader).';
 `
 
 // CHK-SQL-09: grant script golden text, validation, injection.
@@ -223,6 +234,23 @@ func TestCHK_SQL_09_GrantScript(t *testing.T) {
 	var fe *FieldError
 	if _, err := SQLGrantScriptFor(SQLGrantRequest{Principal: "a", Database: "d\x00"}); !errors.As(err, &fe) || fe.Field != "database" {
 		t.Errorf("database: %v", err)
+	}
+	// Tables mode: GRANT SELECT per table, names quoted twice.
+	ts, err := SQLGrantScriptFor(SQLGrantRequest{Principal: `CORP\u`, Auth: "windows", Database: "d", Tables: []string{"_Node123", "acc.x'y]"}})
+	if err != nil || strings.Contains(ts.SQL, "db_datareader'', @login") || !strings.Contains(ts.SQL, "QUOTENAME(N''_Node123'')") ||
+		!strings.Contains(ts.SQL, "QUOTENAME(N''dbo'')") || !strings.Contains(ts.SQL, "QUOTENAME(N''x''''y]'')") || !strings.Contains(ts.SQL, "FROM WINDOWS") {
+		t.Errorf("tables: %v\n%s", err, ts.SQL)
+	}
+	for _, r := range []SQLGrantRequest{
+		{Principal: "a", Database: "d", Auth: "kerberos"},
+		{Principal: "a", Database: "d", Auth: "sql", Windows: true},
+		{Principal: "a", Database: "d", Tables: []string{"s.\x00"}},
+		{Principal: "a", Database: "d", Tables: []string{".t"}},
+		{Principal: "a", Database: "d", Tables: make([]string, MaxSQLGrantTables+1)},
+	} {
+		if _, err := SQLGrantScriptFor(r); err == nil {
+			t.Errorf("%+v accepted", r)
+		}
 	}
 	if _, err := SQLGrantScriptFor(SQLGrantRequest{Principal: `NT AUTHORITY\SYSTEM`, Windows: true, Database: "d"}); err != nil {
 		t.Error(err)

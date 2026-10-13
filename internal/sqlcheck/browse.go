@@ -48,6 +48,11 @@ type BrowseOptions struct {
 	MaxInstances int
 }
 
+// ListServers is Browse with default options (EC Tray naming).
+func ListServers(ctx context.Context, req model.SQLBrowseRequest) (model.SQLBrowseResult, error) {
+	return Browse(ctx, req, BrowseOptions{})
+}
+
 // Browse asks the SQL Server Browser for instances: for req.Host empty a
 // broadcast CLNT_BCAST_EX to 255.255.255.255 and the directed broadcast of
 // every IPv4 interface; otherwise CLNT_UCAST_EX (or CLNT_UCAST_INST for
@@ -69,6 +74,9 @@ func Browse(ctx context.Context, req model.SQLBrowseRequest, opt BrowseOptions) 
 		port = SQLBrowserPort
 	}
 	max := opt.MaxInstances
+	if req.Limit > 0 && (max <= 0 || req.Limit < max) {
+		max = req.Limit
+	}
 	if max <= 0 || max > model.MaxSQLBrowseInstances {
 		max = model.MaxSQLBrowseInstances
 	}
@@ -135,6 +143,7 @@ func Browse(ctx context.Context, req model.SQLBrowseRequest, opt BrowseOptions) 
 		}
 		insts, ok := parseSSRP(buf[:k])
 		if !ok {
+			res.Malformed++
 			continue
 		}
 		responders[addr] = true
@@ -167,6 +176,7 @@ func Browse(ctx context.Context, req model.SQLBrowseRequest, opt BrowseOptions) 
 		res.Instances = []model.SQLServerInstance{}
 	}
 	res.Responders = len(responders)
+	res.Partial = res.Truncated || res.Malformed > 0 || unicast && len(responders) < len(want)
 	return res, nil
 }
 

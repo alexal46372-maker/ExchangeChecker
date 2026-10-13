@@ -25,6 +25,11 @@ var sqlWizardMessages = map[string]LocalizedText{
 		"The best option is incomplete (no send or recv time, no points, or the search was cut short) — choose manually."},
 	MsgSQLAutoPickLowScore:  {"Уверенности недостаточно — выберите вариант из списка.", "Not confident enough — choose an option from the list."},
 	MsgSQLAutoPickAmbiguous: {"Несколько похожих вариантов — выберите нужный.", "Several similar options — choose one."},
+	MsgSQLCandExchangePlan:  {"Таблица плана обмена 1С", "1C exchange plan table"},
+	MsgSQLCandSendRecv:      {"Есть время отправки и приёма", "Has send and receive times"},
+	MsgSQLCandCounters:      {"Только счётчики сообщений, без времени", "Message counters only, no times"},
+	MsgSQLCandIncomplete:    {"Неполный вариант (нет времени отправки/приёма или точек)", "Incomplete (no send/receive time or no points)"},
+	MsgSQLCandLowScore:      {"Низкая уверенность", "Low confidence"},
 	ValSQLBrowseHost:        {"Поле «{0}»: укажите имя компьютера или IP-адрес.", "Field \"{0}\": enter a computer name or an IP address."},
 	ValSQLInstanceName: {"Поле «{0}»: имя экземпляра — до {2} символов, начинается с буквы, _ или #.",
 		"Field \"{0}\": the instance name has up to {2} characters and starts with a letter, _ or #."},
@@ -38,10 +43,11 @@ func init() {
 	}
 }
 
-// SQLWizardMessageKeys lists the phase 9 sql.* keys (auto-pick reasons).
+// SQLWizardMessageKeys lists the phase 9 sql.* keys (auto-pick reasons,
+// candidate reasons, diagnosis titles sql.diag_*).
 func SQLWizardMessageKeys() []string {
-	return []string{MsgSQLAutoPickOK, MsgSQLAutoPickNone, MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters,
-		MsgSQLAutoPickIncomplete, MsgSQLAutoPickLowScore, MsgSQLAutoPickAmbiguous}
+	return append(append(SQLDiagnosisKeys(), SQLCandidateReasonKeys()...), MsgSQLAutoPickOK, MsgSQLAutoPickNone, MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters,
+		MsgSQLAutoPickIncomplete, MsgSQLAutoPickLowScore, MsgSQLAutoPickAmbiguous)
 }
 
 // SQLWizardValidationKeys lists the phase 9 validation.sql_* keys.

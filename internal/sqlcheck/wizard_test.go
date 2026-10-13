@@ -24,17 +24,17 @@ func TestCHK_SQL_08_AutoPickFixtures(t *testing.T) {
 	for _, c := range cases {
 		cands := discoverFx(t, newFake(c.fx...), DiscoverOptions{TopN: 20})
 		p := AutoPick(cands)
-		if p.ReasonKey != c.key || p.Apply != (c.key == model.MsgSQLAutoPickOK) {
+		if p.ReasonKey != c.key || p.AutoApply != (c.key == model.MsgSQLAutoPickOK) {
 			t.Errorf("%s: %+v", c.name, p)
 			continue
 		}
-		if p.Apply {
+		if p.AutoApply {
 			if cands[p.Index].Key() != p.CandidateKey || p.Score < model.SQLAutoPickMinScore || p.Margin < model.SQLAutoPickMinMargin {
 				t.Errorf("%s: %+v", c.name, p)
 			}
 		}
 	}
-	if p := AutoPick(nil); p.Apply || p.Index != -1 {
+	if p := AutoPick(nil); p.AutoApply || p.Index != -1 {
 		t.Errorf("%+v", p)
 	}
 }

@@ -23,6 +23,13 @@ func TestCHK_SQL_07_DatabasesGrantIntegration(t *testing.T) {
 	if err != nil || len(all.Databases) < 2 || all.Truncated {
 		t.Fatalf("sa: %+v %v", all, err)
 	}
+	byName := map[string]model.SQLDatabaseInfo{}
+	for _, d := range all.Databases {
+		byName[d.Name] = d
+	}
+	if n, g := byName["ec_1c_node_off"], byName["ec_generic"]; !n.Probed || !n.HasNodeTables || n.Is1C || n.SizeMB <= 0 || !g.Probed || g.HasNodeTables || all.ConnectMs < 0 {
+		t.Errorf("probe: %+v %+v", n, g)
+	}
 	for _, d := range all.Databases {
 		if d.State != "ONLINE" || d.Name == "master" || d.Name == "tempdb" || d.Name == "model" || d.Name == "msdb" {
 			t.Errorf("sa: %+v", d)
@@ -70,7 +77,7 @@ func TestCHK_SQL_07_DatabasesGrantIntegration(t *testing.T) {
 		}
 		res, err := r.Databases(ctx, DatabasesOptions{})
 		r.Close()
-		if err != nil || len(res.Databases) != 1 || res.Databases[0].Name != "ec_1c_custom" || res.Databases[0].CompatLevel != itCompatLevel || res.Truncated {
+		if err != nil || len(res.Databases) != 1 || res.Databases[0].Name != "ec_1c_custom" || !res.Databases[0].Probed || res.Databases[0].CompatLevel != itCompatLevel || res.Truncated {
 			t.Errorf("%q: %+v %v", login, res, err)
 		}
 		// db_datareader only: no write.

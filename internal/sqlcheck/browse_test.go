@@ -76,7 +76,7 @@ func TestCHK_SQL_06_BrowseBroadcast(t *testing.T) {
 	if d := time.Since(start); d < 350*time.Millisecond || d > 3*time.Second {
 		t.Errorf("broadcast must collect until the timeout: %v", d)
 	}
-	if len(res.Instances) != 3 || res.Responders != 1 || res.Truncated {
+	if len(res.Instances) != 3 || res.Responders != 1 || res.Truncated || !res.Partial || res.Malformed != 1 {
 		// Both fakes answer from 127.0.0.1: one responder address.
 		t.Fatalf("%+v", res)
 	}
@@ -97,8 +97,12 @@ func TestCHK_SQL_06_BrowseBroadcast(t *testing.T) {
 	}
 	// MaxInstances cap.
 	res, err = Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 200}, BrowseOptions{Targets: []string{a.addr()}, MaxInstances: 1})
-	if err != nil || len(res.Instances) != 1 || !res.Truncated {
+	if err != nil || len(res.Instances) != 1 || !res.Truncated || !res.Partial {
 		t.Errorf("cap: %+v %v", res, err)
+	}
+	res, err = Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 200, Limit: 1}, BrowseOptions{Targets: []string{a.addr()}})
+	if err != nil || len(res.Instances) != 1 || !res.Truncated {
+		t.Errorf("limit: %+v %v", res, err)
 	}
 }
 
@@ -122,7 +126,7 @@ func TestCHK_SQL_06_BrowseUnicast(t *testing.T) {
 	port := a.pc.LocalAddr().(*net.UDPAddr).Port
 	start := time.Now()
 	res, err = Browse(context.Background(), model.SQLBrowseRequest{Host: "127.0.0.1", TimeoutMs: 5000}, BrowseOptions{Port: port})
-	if err != nil || len(res.Instances) != 2 || time.Since(start) > 3*time.Second {
+	if err != nil || len(res.Instances) != 2 || res.Partial || time.Since(start) > 3*time.Second {
 		t.Errorf("unicast must stop once the host answered: %+v %v %v", res, err, time.Since(start))
 	}
 }
@@ -135,6 +139,10 @@ func TestCHK_SQL_06_BrowseTimeoutCancel(t *testing.T) {
 	if err != nil || len(res.Instances) != 0 || res.Instances == nil || res.Responders != 0 {
 		t.Errorf("silence: %+v %v", res, err)
 	}
+	sport := silent.pc.LocalAddr().(*net.UDPAddr).Port
+	if res, err := Browse(context.Background(), model.SQLBrowseRequest{Host: "127.0.0.1", TimeoutMs: 200}, BrowseOptions{Port: sport}); err != nil || !res.Partial {
+		t.Errorf("unicast silence must be partial: %+v %v", res, err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(100*time.Millisecond, cancel)
 	start := time.Now()
@@ -145,7 +153,7 @@ func TestCHK_SQL_06_BrowseTimeoutCancel(t *testing.T) {
 	if _, err := Browse(ctx, model.SQLBrowseRequest{}, BrowseOptions{Targets: []string{silent.addr()}}); KindOf(err) != KindCanceled {
 		t.Errorf("canceled before start: %v", err)
 	}
-	for _, r := range []model.SQLBrowseRequest{{Host: `\\evil\pipe\x`}, {Host: "np:evil"}, {Instance: "X"}, {TimeoutMs: 10}} {
+	for _, r := range []model.SQLBrowseRequest{{Host: `\\evil\pipe\x`}, {Host: "np:evil"}, {Instance: "X"}, {TimeoutMs: 10}, {Limit: -1}, {Limit: 257}} {
 		if _, err := Browse(context.Background(), r, BrowseOptions{}); KindOf(err) != KindConfig {
 			t.Errorf("%+v: %v", r, err)
 		}

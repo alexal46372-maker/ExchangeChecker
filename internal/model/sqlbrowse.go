@@ -35,6 +35,8 @@ type SQLBrowseRequest struct {
 	Host      string `json:"host,omitempty"`
 	Instance  string `json:"instance,omitempty"`
 	TimeoutMs int    `json:"timeoutMs,omitempty"` // 0 = DefaultSQLBrowseTimeoutMs
+	// Limit caps the instances (0 = MaxSQLBrowseInstances; 1..256).
+	Limit int `json:"limit,omitempty"`
 }
 
 // SQLServerInstance is one instance announced by a SQL Server Browser.
@@ -76,6 +78,12 @@ type SQLBrowseResult struct {
 	Responders int `json:"responders"`
 	// Truncated: more than MaxSQLBrowseInstances instances answered.
 	Truncated bool `json:"truncated"`
+	// Partial: the list may be incomplete — Truncated, malformed answers
+	// were dropped (Malformed), or a unicast host did not answer on all
+	// its addresses before the timeout. A broadcast always runs to the
+	// timeout; that alone is not partial.
+	Partial   bool `json:"partial"`
+	Malformed int  `json:"malformed,omitempty"`
 }
 
 // Timeout returns TimeoutMs or the default.
@@ -92,6 +100,9 @@ func (r SQLBrowseRequest) Validate() error {
 	if r.TimeoutMs != 0 && (r.TimeoutMs < MinSQLBrowseTimeoutMs || r.TimeoutMs > MaxSQLBrowseTimeoutMs) {
 		return fieldErr("timeoutMs", ValRange, "timeoutMs out of range", strconv.Itoa(MinSQLBrowseTimeoutMs),
 			strconv.Itoa(MaxSQLBrowseTimeoutMs), strconv.Itoa(r.TimeoutMs))
+	}
+	if r.Limit < 0 || r.Limit > MaxSQLBrowseInstances {
+		return fieldErr("limit", ValRange, "limit out of range", "0", strconv.Itoa(MaxSQLBrowseInstances), strconv.Itoa(r.Limit))
 	}
 	if r.Host != "" && !ValidSQLBrowseHost(r.Host) {
 		return fieldErr("host", ValSQLBrowseHost, "host must be a host name or an IPv4/IPv6 address")

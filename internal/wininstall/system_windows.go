@@ -1,0 +1,423 @@
+//go:build windows
+
+package wininstall
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+)
+
+// NewSystem returns the WinAPI-backed System.
+func NewSystem() System { return winSystem{} }
+
+type winSystem struct{}
+
+func (winSystem) MkdirAll(dir string) (bool, error) {
+	_, err := os.Stat(dir)
+	if err == nil {
+		return false, nil
+	}
+	if !os.IsNotExist(err) {
+		return false, err
+	}
+	return true, os.MkdirAll(dir, 0o755)
+}
+
+func (winSystem) SetDACL(path, sddl string) error { return winapi.SetFileDACL(path, sddl) }
+
+func (winSystem) TakeOwnership(path string) (bool, error) { return winapi.TakeOwnershipTree(path) }
+
+func (winSystem) CheckFixedDrive(dir string) error {
+	dt, err := winapi.DriveType(dir)
+	if err != nil {
+		return err
+	}
+	if dt != winapi.DriveFixed {
+		return fmt.Errorf("%w %q: not a fixed local disk (GetDriveType=%d)", ErrBadDir, dir, dt)
+	}
+	return nil
+}
+
+func (winSystem) WriteFile(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	name := filepath.Base(path)
+	if err := config.WriteFileAtomic(dir, name, data, 0o644); err != nil {
+		return err
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	sumWant := sha256.Sum256(data)
+	sumGot := sha256.Sum256(got)
+	if sumWant != sumGot {
+		return fmt.Errorf("write %s: sha256 mismatch after write", path)
+	}
+	return nil
+}
+
+func (winSystem) RemoveFile(path string) (bool, error) {
+	err := os.Remove(path)
+	if err == nil || os.IsNotExist(err) {
+		return false, nil
+	}
+	// in use: schedule deletion at reboot
+	if err2 := winapi.MoveFileEx(path, "", winapi.MoveFileDelayUntilReboot); err2 != nil {
+		return false, fmt.Errorf("remove %s: %v; delay-until-reboot: %w", path, err, err2)
+	}
+	return true, nil
+}
+
+func (winSystem) RemoveDirIfEmpty(dir string) (bool, error) {
+	err := os.Remove(dir)
+	if err == nil || os.IsNotExist(err) {
+		return false, nil
+	}
+	// not empty or in use
+	if err2 := winapi.MoveFileEx(dir, "", winapi.MoveFileDelayUntilReboot); err2 != nil {
+		// directory not empty is fine to report; delay often fails for non-empty
+		if pe, ok := err.(*os.PathError); ok && pe.Err == syscall.ENOTEMPTY {
+			return false, nil // leave non-empty dir (should not happen if files removed)
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (winSystem) RemoveAll(dir string) error {
+	err := os.RemoveAll(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+func (winSystem) SelfDelete(exe string) (bool, error) {
+	winDir, err := winapi.WindowsDirectory()
+	if err != nil {
+		return false, err
+	}
+	tmpDir := filepath.Join(winDir, "Temp")
+	_ = os.MkdirAll(tmpDir, 0o755)
+	var rnd [4]byte
+	_, _ = rand.Read(rnd[:])
+	tmp := filepath.Join(tmpDir, fmt.Sprintf("ExchangeChecker-uninst-%s.exe", hex.EncodeToString(rnd[:])))
+	// rename running image within the volume (no COPY_ALLOWED)
+	if err := winapi.MoveFileEx(exe, tmp, 0); err != nil {
+		// different volumes or rename refused: delay-delete in place
+		if err2 := winapi.MoveFileEx(exe, "", winapi.MoveFileDelayUntilReboot); err2 != nil {
+			return false, fmt.Errorf("self-delete: rename: %v; delay: %w", err, err2)
+		}
+		return true, nil
+	}
+	if err := winapi.MoveFileEx(tmp, "", winapi.MoveFileDelayUntilReboot); err != nil {
+		return true, err // already moved out of install dir
+	}
+	return true, nil
+}
+
+func (winSystem) QueryService(name string) (ServiceInfo, error) {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		return ServiceInfo{}, err
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, name, winapi.ServiceQueryStatus|winapi.ServiceQueryConfig)
+	if err != nil {
+		if errors.Is(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceDoesNotExist) {
+			return ServiceInfo{}, nil
+		}
+		// OpenService wraps the errno; also match ERROR_SERVICE_DOES_NOT_EXIST in text
+		if strings.Contains(err.Error(), "1060") || strings.Contains(strings.ToLower(err.Error()), "does not exist") {
+			return ServiceInfo{}, nil
+		}
+		return ServiceInfo{}, err
+	}
+	defer svc.Close()
+	cfg, err := winapi.QueryServiceConfig(svc)
+	if err != nil {
+		return ServiceInfo{}, err
+	}
+	state, _, err := winapi.QueryServiceStatus(svc)
+	if err != nil {
+		return ServiceInfo{}, err
+	}
+	return ServiceInfo{
+		Exists:    true,
+		ImagePath: cfg.BinaryPath,
+		AutoStart: cfg.StartType == winapi.ServiceAutoStart,
+		Running:   state == winapi.ServiceRunning,
+	}, nil
+}
+
+func isErrno(err error, want syscall.Errno) bool {
+	var e syscall.Errno
+	return errors.As(err, &e) && e == want
+}
+
+func (s winSystem) CreateService(spec ServiceSpec) error {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect | winapi.SCManagerCreateService)
+	if err != nil {
+		return err
+	}
+	defer scm.Close()
+	start := uint32(winapi.ServiceDemandStart)
+	if spec.AutoStart {
+		start = winapi.ServiceAutoStart
+	}
+	svc, err := winapi.CreateService(scm, spec.Name, spec.DisplayName, winapi.ServiceAccessForSetup,
+		winapi.ServiceWin32OwnProcess, start, winapi.ServiceErrorNormal, spec.ImagePath)
+	if err != nil {
+		return err
+	}
+	defer svc.Close()
+	return s.applyServiceExtras(svc, spec, spec.AutoStart)
+}
+
+func (s winSystem) UpdateService(spec ServiceSpec, setStart bool) error {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		return err
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, spec.Name, winapi.ServiceAccessForSetup)
+	if err != nil {
+		return err
+	}
+	defer svc.Close()
+	start := uint32(winapi.ServiceNoChange)
+	if setStart {
+		start = winapi.ServiceDemandStart
+		if spec.AutoStart {
+			start = winapi.ServiceAutoStart
+		}
+	}
+	if err := winapi.ChangeServiceConfig(svc, winapi.ServiceNoChange, start, winapi.ServiceNoChange,
+		spec.ImagePath, spec.DisplayName); err != nil {
+		return err
+	}
+	// delayed auto-start only when the service is (or becomes) AUTO_START
+	delayed := spec.AutoStart
+	if !setStart {
+		if cfg, err := winapi.QueryServiceConfig(svc); err == nil {
+			delayed = cfg.StartType == winapi.ServiceAutoStart
+		}
+	}
+	return s.applyServiceExtras(svc, spec, delayed)
+}
+
+func (winSystem) applyServiceExtras(svc winapi.ServiceHandle, spec ServiceSpec, setDelayed bool) error {
+	if err := winapi.SetServiceDescription(svc, spec.Description); err != nil {
+		return err
+	}
+	delays := make([]uint32, len(spec.FailureDelays))
+	for i, d := range spec.FailureDelays {
+		delays[i] = uint32(d / time.Millisecond)
+	}
+	reset := uint32(spec.ResetPeriod / time.Second)
+	if err := winapi.SetServiceFailureActions(svc, reset, delays); err != nil {
+		return err
+	}
+	if setDelayed {
+		if err := winapi.SetServiceDelayedAutoStart(svc, true); err != nil {
+			return err
+		}
+	}
+	if spec.SDDL != "" {
+		if err := winapi.SetServiceDACL(svc, spec.SDDL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (winSystem) StartService(name string, timeout time.Duration) error {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		return err
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, name, winapi.ServiceStart|winapi.ServiceQueryStatus)
+	if err != nil {
+		return err
+	}
+	defer svc.Close()
+	if err := winapi.StartService(svc); err != nil && !isErrno(err, winapi.ErrServiceAlreadyRunning) &&
+		!strings.Contains(err.Error(), "1056") {
+		return err
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		state, _, err := winapi.QueryServiceStatus(svc)
+		if err != nil {
+			return err
+		}
+		if state == winapi.ServiceRunning {
+			// confirm it stays up ~3s
+			time.Sleep(3 * time.Second)
+			state, _, err = winapi.QueryServiceStatus(svc)
+			if err != nil {
+				return err
+			}
+			if state == winapi.ServiceRunning {
+				return nil
+			}
+			return fmt.Errorf("service %s left RUNNING (state=%d)", name, state)
+		}
+		if state == winapi.ServiceStopped {
+			return fmt.Errorf("service %s stopped while starting", name)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("service %s: start timeout", name)
+}
+
+func (winSystem) StopService(name string, timeout time.Duration) error {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		return err
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, name, winapi.ServiceStop|winapi.ServiceQueryStatus)
+	if err != nil {
+		if strings.Contains(err.Error(), "1060") {
+			return nil
+		}
+		return err
+	}
+	defer svc.Close()
+	state, pid, err := winapi.QueryServiceStatus(svc)
+	if err != nil {
+		return err
+	}
+	if state != winapi.ServiceStopped {
+		if _, err := winapi.ControlService(svc, winapi.ServiceControlStop); err != nil &&
+			!isErrno(err, winapi.ErrServiceNotActive) && !strings.Contains(err.Error(), "1062") {
+			return err
+		}
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			state, pid, err = winapi.QueryServiceStatus(svc)
+			if err != nil {
+				return err
+			}
+			if state == winapi.ServiceStopped {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if state != winapi.ServiceStopped {
+			return fmt.Errorf("service %s: stop timeout (state=%d)", name, state)
+		}
+	}
+	if pid != 0 {
+		_ = winapi.WaitProcessExit(pid, 15000)
+	}
+	return nil
+}
+
+func (winSystem) DeleteService(name string) error {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		return err
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, name, winapi.ServiceDelete)
+	if err != nil {
+		if strings.Contains(err.Error(), "1060") {
+			return nil
+		}
+		return err
+	}
+	defer svc.Close()
+	if err := winapi.DeleteService(svc); err != nil && !strings.Contains(err.Error(), "1060") {
+		return err
+	}
+	return nil
+}
+
+func (winSystem) SetEventSource(msgFile string) error {
+	view := uint32(winapi.KEY_WOW64_64KEY)
+	if err := winapi.RegSetExpandStringView(winapi.HKEY_LOCAL_MACHINE, EventLogKeyPath, "EventMessageFile", msgFile, view); err != nil {
+		return err
+	}
+	return winapi.RegSetDWORDView(winapi.HKEY_LOCAL_MACHINE, EventLogKeyPath, "TypesSupported", EventTypesSupported, view)
+}
+
+func (winSystem) DeleteEventSource() error {
+	return winapi.RegDeleteKeyView(winapi.HKEY_LOCAL_MACHINE, EventLogKeyPath, winapi.KEY_WOW64_64KEY)
+}
+
+func (winSystem) ApplyTrayRun(serviceExe, dataDir string) (string, error) {
+	cmd, err := config.TrayRunCommand(serviceExe)
+	if err != nil {
+		return "", err
+	}
+	st, err := config.NewStore(dataDir).LoadSettings()
+	if err != nil {
+		// unreadable settings → do not touch (same as the service, CHK-CFG-04)
+		return "unchanged (settings unreadable)", nil
+	}
+	act, err := config.ApplyTrayAutostart(config.MachineRunRegistry(), st.TrayAutostart, cmd)
+	return string(act), err
+}
+
+func (winSystem) DeleteTrayRun() error {
+	return winapi.RegDeleteValueView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, winapi.KEY_WOW64_64KEY)
+}
+
+func (winSystem) WriteUninstallKey(vals []RegValue) error {
+	view := uint32(winapi.KEY_WOW64_64KEY)
+	for _, v := range vals {
+		if v.DWord {
+			if err := winapi.RegSetDWORDView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, v.Name, v.Num, view); err != nil {
+				return err
+			}
+		} else {
+			if err := winapi.RegSetStringView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, v.Name, v.Str, view); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (winSystem) DeleteUninstallKey() error {
+	return winapi.RegDeleteKeyView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, winapi.KEY_WOW64_64KEY)
+}
+
+func (winSystem) ReadInstalled() (Installed, error) {
+	view := uint32(winapi.KEY_WOW64_64KEY)
+	ok, err := winapi.RegKeyExistsView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, view)
+	if err != nil || !ok {
+		return Installed{}, err
+	}
+	ver, _, err := winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, "DisplayVersion", view)
+	if err != nil {
+		return Installed{}, err
+	}
+	dir, _, err := winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, "InstallLocation", view)
+	if err != nil {
+		return Installed{}, err
+	}
+	return Installed{Present: true, Version: ver, Dir: dir}, nil
+}
+
+func (winSystem) DeleteUserKey() error {
+	// HKCU\Software\ExchangeChecker (and Tray subkey); missing = ok
+	_ = winapi.RegDeleteKey(winapi.HKEY_CURRENT_USER, UserKeyPath+`\Tray`)
+	return winapi.RegDeleteKey(winapi.HKEY_CURRENT_USER, UserKeyPath)
+}
+
+// silence unused import of model in case of future use

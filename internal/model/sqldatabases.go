@@ -1,6 +1,6 @@
 package model
 
-// Phase 9 (PLAN §12 p. 97, CHK-SQL-07): the databases the wizard offers
+// Phase 9 (PLAN §12 p. 106, CHK-SQL-07): the databases the wizard offers
 // after a successful connection (IPC sql_databases). Only user databases
 // (database_id > 4: not master, tempdb, model, msdb) that are ONLINE and
 // that the login can open (HAS_DBACCESS = 1).

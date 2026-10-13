@@ -15,7 +15,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// Phase 9 (PLAN §12 p. 96, CHK-SQL-06): SQL Server discovery through the
+// Phase 9 (PLAN §12 p. 105, CHK-SQL-06): SQL Server discovery through the
 // SQL Server Browser (SSRP, [MC-SQLR], UDP 1434). Networking: Go
 // net.ListenPacket (UDP) inside sqlcheck by the explicit phase 9 task
 // (POLICY: no hcwinnet equivalent for UDP broadcast); no os/exec.
@@ -120,13 +120,17 @@ func Browse(ctx context.Context, req model.SQLBrowseRequest, opt BrowseOptions) 
 	for _, t := range targets {
 		if _, err := pc.WriteTo(msg, t); err == nil {
 			sent++
-			want[t.IP.String()] = true
+			want[t.String()] = true
 		}
 	}
 	if sent == 0 {
 		return res, &Error{Kind: KindConn, Op: "browse", Err: errors.New("no SQL Browser request could be sent")}
 	}
 	unicast := req.Host != "" && len(opt.Targets) == 0
+	// Addressed mode (a host or explicit targets): only answers from the
+	// exact ip:port a request went to are accepted (no spoofed / stray
+	// datagrams from other hosts); broadcast accepts any responder.
+	addressed := req.Host != "" || len(opt.Targets) > 0
 	dl, _ := ctx.Deadline()
 	_ = pc.SetReadDeadline(dl)
 	buf := make([]byte, ssrpMaxResp+1)
@@ -137,16 +141,20 @@ func Browse(ctx context.Context, req model.SQLBrowseRequest, opt BrowseOptions) 
 		if err != nil {
 			break // deadline, ctx (conn closed) or socket error
 		}
-		addr := ""
+		addr, src := "", ""
 		if ua, ok := from.(*net.UDPAddr); ok {
-			addr = ua.IP.String()
+			addr, src = ua.IP.String(), (&net.UDPAddr{IP: ua.IP.To4(), Port: ua.Port}).String()
+		}
+		if addressed && !want[src] {
+			res.Ignored++
+			continue
 		}
 		insts, ok := parseSSRP(buf[:k])
 		if !ok {
 			res.Malformed++
 			continue
 		}
-		responders[addr] = true
+		responders[src] = true
 		for _, in := range insts {
 			in.Address = addr
 			key := strings.ToUpper(in.Host) + "\x00" + strings.ToUpper(in.Instance)
@@ -257,7 +265,7 @@ func parseSSRP(b []byte) ([]model.SQLServerInstance, bool) {
 	if size == 0 || len(b) < 3+size {
 		return nil, false
 	}
-	data := string(b[3 : 3+size])
+	data := ssrpDecode(b[3 : 3+size])
 	var out []model.SQLServerInstance
 	for _, rec := range strings.Split(data, ";;") {
 		if rec == "" {

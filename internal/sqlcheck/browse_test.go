@@ -3,6 +3,7 @@ package sqlcheck
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"net"
 	"runtime"
 	"strings"
@@ -69,15 +70,14 @@ func TestCHK_SQL_06_BrowseBroadcast(t *testing.T) {
 	a := newFakeBrowser(t, svrResp(srvA), svrResp(srvA)) // duplicate answer
 	b := newFakeBrowser(t, svrResp("ServerName;srv-b;InstanceName;EC\x01X;Version;9.00.5000.00;tcp;99999;;"), []byte("garbage"))
 	start := time.Now()
-	res, err := Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 400}, BrowseOptions{Targets: []string{a.addr(), b.addr()}})
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 500}, BrowseOptions{Targets: []string{a.addr(), b.addr()}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d := time.Since(start); d < 350*time.Millisecond || d > 3*time.Second {
 		t.Errorf("broadcast must collect until the timeout: %v", d)
 	}
-	if len(res.Instances) != 3 || res.Responders != 1 || res.Truncated || !res.Partial || res.Malformed != 1 {
-		// Both fakes answer from 127.0.0.1: one responder address.
+	if len(res.Instances) != 3 || res.Responders != 2 || res.Truncated || !res.Partial || res.Malformed != 1 {
 		t.Fatalf("%+v", res)
 	}
 	i0, i1, i2 := res.Instances[0], res.Instances[1], res.Instances[2]
@@ -96,11 +96,11 @@ func TestCHK_SQL_06_BrowseBroadcast(t *testing.T) {
 		}
 	}
 	// MaxInstances cap.
-	res, err = Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 200}, BrowseOptions{Targets: []string{a.addr()}, MaxInstances: 1})
+	res, err = Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 500}, BrowseOptions{Targets: []string{a.addr()}, MaxInstances: 1})
 	if err != nil || len(res.Instances) != 1 || !res.Truncated || !res.Partial {
 		t.Errorf("cap: %+v %v", res, err)
 	}
-	res, err = Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 200, Limit: 1}, BrowseOptions{Targets: []string{a.addr()}})
+	res, err = Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 500, Limit: 1}, BrowseOptions{Targets: []string{a.addr()}})
 	if err != nil || len(res.Instances) != 1 || !res.Truncated {
 		t.Errorf("limit: %+v %v", res, err)
 	}
@@ -116,7 +116,7 @@ func TestCHK_SQL_06_BrowseUnicast(t *testing.T) {
 	if r := a.requests(); len(r) != 1 || string(r[0]) != "\x04SQL2008\x00" {
 		t.Errorf("%q", r)
 	}
-	if _, err := Browse(context.Background(), model.SQLBrowseRequest{Host: "127.0.0.1", TimeoutMs: 300}, BrowseOptions{Targets: []string{a.addr()}}); err != nil {
+	if _, err := Browse(context.Background(), model.SQLBrowseRequest{Host: "127.0.0.1", TimeoutMs: 500}, BrowseOptions{Targets: []string{a.addr()}}); err != nil {
 		t.Fatal(err)
 	}
 	if r := a.requests(); len(r) != 2 || string(r[1]) != "\x03" {
@@ -131,22 +131,59 @@ func TestCHK_SQL_06_BrowseUnicast(t *testing.T) {
 	}
 }
 
+// CHK-SQL-06: in addressed mode answers from other sources are ignored.
+func TestCHK_SQL_06_BrowseAddressedFilter(t *testing.T) {
+	other, err := net.ListenPacket("udp4", "127.0.0.1:0") // a different source port
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pc.Close()
+	go func() { // the target answers from the wrong socket, then from the right one
+		buf := make([]byte, 64)
+		for {
+			_, from, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			other.WriteTo(svrResp("ServerName;SPOOF;InstanceName;X;;"), from)
+			time.Sleep(20 * time.Millisecond)
+			pc.WriteTo(svrResp("ServerName;REAL;InstanceName;MSSQLSERVER;tcp;1433;;"), from)
+		}
+	}()
+	for _, req := range []model.SQLBrowseRequest{{Host: "127.0.0.1", TimeoutMs: 1000}, {TimeoutMs: 500}} {
+		res, err := Browse(context.Background(), req, BrowseOptions{Targets: []string{pc.LocalAddr().String()}})
+		if err != nil || len(res.Instances) != 1 || res.Instances[0].Host != "REAL" || res.Ignored != 1 || res.Responders != 1 {
+			t.Errorf("%+v: %+v %v", req, res, err)
+		}
+	}
+	port := pc.LocalAddr().(*net.UDPAddr).Port
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{Host: "127.0.0.1", TimeoutMs: 1000}, BrowseOptions{Port: port})
+	if err != nil || len(res.Instances) != 1 || res.Instances[0].Host != "REAL" || res.Ignored != 1 {
+		t.Errorf("unicast: %+v %v", res, err)
+	}
+}
+
 // CHK-SQL-06: silence, timeout, ctx cancel, invalid request.
 func TestCHK_SQL_06_BrowseTimeoutCancel(t *testing.T) {
 	base := runtime.NumGoroutine()
 	silent := newFakeBrowser(t) // reads, never answers
-	res, err := Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 200}, BrowseOptions{Targets: []string{silent.addr()}})
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 500}, BrowseOptions{Targets: []string{silent.addr()}})
 	if err != nil || len(res.Instances) != 0 || res.Instances == nil || res.Responders != 0 {
 		t.Errorf("silence: %+v %v", res, err)
 	}
 	sport := silent.pc.LocalAddr().(*net.UDPAddr).Port
-	if res, err := Browse(context.Background(), model.SQLBrowseRequest{Host: "127.0.0.1", TimeoutMs: 200}, BrowseOptions{Port: sport}); err != nil || !res.Partial {
+	if res, err := Browse(context.Background(), model.SQLBrowseRequest{Host: "127.0.0.1", TimeoutMs: 500}, BrowseOptions{Port: sport}); err != nil || !res.Partial {
 		t.Errorf("unicast silence must be partial: %+v %v", res, err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(100*time.Millisecond, cancel)
 	start := time.Now()
-	_, err = Browse(ctx, model.SQLBrowseRequest{TimeoutMs: 10000}, BrowseOptions{Targets: []string{silent.addr()}})
+	_, err = Browse(ctx, model.SQLBrowseRequest{TimeoutMs: 5000}, BrowseOptions{Targets: []string{silent.addr()}})
 	if KindOf(err) != KindCanceled || time.Since(start) > 2*time.Second {
 		t.Errorf("cancel: %v after %v", err, time.Since(start))
 	}
@@ -219,20 +256,30 @@ func TestCHK_SQL_06_BroadcastAddr(t *testing.T) {
 	}
 }
 
-// CHK-SQL-09: the internal pre-dial guard against np:/lpc:/admin: and UNC.
+// CHK-SQL-09: the pre-dial guard is model.ValidateSQLServerAddr (single
+// source); Open refuses forbidden servers with KindConfig + FieldError.
 func TestCHK_SQL_09_ForbiddenServerForm(t *testing.T) {
-	for _, s := range []string{"np:evil", "NP:evil", " lpc:x", "admin:srv", "tcp:srv", "sm:x", `\\evil\pipe\sql\query`, `\evil`, "//evil/pipe/x", `srv\pipe\x`} {
-		if !forbiddenServerForm(s) {
-			t.Errorf("%q allowed", s)
+	all := []string{"np:evil", "NP:evil", " lpc:x", "admin:srv", `\\evil\pipe\sql\query`, `\evil`, "//evil/pipe/x", `srv\pipe\x`,
+		"tcp:srv", "sm:x", "via:x", "/x", "srv", `srv\SQL2008`, "10.0.0.5", "srv.corp.local", "npsrv", "admins-pc"}
+	for _, s := range all {
+		want := model.ValidateSQLServerAddr(s)
+		if got := forbiddenServerForm(s); (got == nil) != (want == nil) {
+			t.Errorf("%q: %v vs model %v", s, got, want)
 		}
-		p := model.Profile{Server: s, AuthMode: model.AuthWindows, Encrypt: model.EncryptDisable}
-		if _, err := driverConfig(p, ""); err == nil {
-			t.Errorf("%q: driverConfig accepted", s)
+		_, err := Open(model.Profile{Server: s, AuthMode: model.AuthWindows, Encrypt: model.EncryptDisable}, "")
+		var fe *model.FieldError
+		if want != nil && (KindOf(err) != KindConfig || !errors.As(err, &fe) || fe.Key != model.ValSQLServerForbidden) {
+			t.Errorf("%q: Open %v", s, err)
 		}
 	}
-	for _, s := range []string{"srv", `srv\SQL2008`, "10.0.0.5", "srv.corp.local", "npsrv", "admins-pc"} {
-		if forbiddenServerForm(s) {
-			t.Errorf("%q rejected", s)
+	for _, s := range []string{"srv", `srv\SQL2008`, "10.0.0.5", "npsrv", "admins-pc"} {
+		if _, err := Open(model.Profile{Server: s, AuthMode: model.AuthWindows, Encrypt: model.EncryptDisable}, ""); err != nil {
+			t.Errorf("%q: Open %v", s, err)
+		}
+	}
+	for _, s := range []string{"np:evil", "lpc:x", "admin:srv", "tcp:srv", "sm:x", "via:x", "/x", `\\evil\pipe\x`, `\evil`} {
+		if forbiddenServerForm(s) == nil {
+			t.Errorf("%q allowed", s)
 		}
 	}
 }

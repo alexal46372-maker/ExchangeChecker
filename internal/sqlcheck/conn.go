@@ -28,27 +28,14 @@ func splitServer(server string) (host, instance string) {
 	return server, ""
 }
 
-// forbiddenServerForm is the internal pre-dial guard of phase 9 (CHK-SQL-09,
-// PLAN §12 p. 100): a server with a protocol prefix (np:, lpc:, admin:,
-// tcp:, sm:), a UNC / pipe path or any leading '\' or '/' never reaches
-// the driver, so the service (LocalSystem) does not open SMB / named pipes
-// to arbitrary hosts. The user-facing validation (FieldError) lives in
-// model (EC Service, branch phase9-svc); this only defends sqlcheck.
-// go-mssqldb v1.8.2 with the URL DSN built here does not interpret those
-// prefixes (np/lpc dialers are not linked: the namedpipe / sharedmemory
-// packages are not imported), but the guard does not rely on that.
-func forbiddenServerForm(server string) bool {
-	s := strings.ToLower(strings.TrimSpace(server))
-	if strings.HasPrefix(s, `\`) || strings.HasPrefix(s, "/") {
-		return true
-	}
-	for _, pfx := range []string{"np:", "lpc:", "admin:", "tcp:", "sm:", "via:"} {
-		if strings.HasPrefix(s, pfx) {
-			return true
-		}
-	}
-	return strings.Contains(s, `\pipe\`) || strings.Contains(s, "/pipe/")
-}
+// forbiddenServerForm is the pre-dial guard of phase 9 (CHK-SQL-09, PLAN
+// §12 p. 109): a thin wrapper over model.ValidateSQLServerAddr, the single
+// source of the rule (np:, lpc:, admin:, UNC, leading '\', pipe paths;
+// owned by EC Service). The service (LocalSystem) never opens SMB / named
+// pipes to arbitrary hosts. go-mssqldb v1.8.2 with the URL DSN built here
+// does not interpret such prefixes (np / lpc dialers are not linked), but
+// the guard does not rely on that.
+func forbiddenServerForm(server string) error { return model.ValidateSQLServerAddr(server) }
 
 // driverConfig builds the go-mssqldb configuration for p. The login and the
 // password are set on the returned struct only: they never appear in a DSN
@@ -59,8 +46,8 @@ func forbiddenServerForm(server string) bool {
 // Networking: the driver's own net.Dialer (TCP) is used; there is no
 // project network package convention yet (PLAN.md §12).
 func driverConfig(p model.Profile, password string) (msdsn.Config, error) {
-	if forbiddenServerForm(p.Server) {
-		return msdsn.Config{}, errors.New("server: protocol prefixes (np:, lpc:, admin:, tcp:) and UNC / pipe paths are not allowed")
+	if err := forbiddenServerForm(p.Server); err != nil {
+		return msdsn.Config{}, err
 	}
 	host, inst := splitServer(p.Server)
 	if host == "" {

@@ -95,7 +95,8 @@ const (
 	// LPC / DAC / UNC path (np:, lpc:, admin:, \\host\..., //host/...,
 	// a leading backslash, ...\pipe\...): such a connection
 	// authenticates the service account over SMB (phase 9, CHK-CFG-05);
-	// {0} = np | lpc | admin | unc | backslash | pipe.
+	// {0} = np | lpc | admin | tcp | sm | via | unc | backslash | slash |
+	// pipe (protocol prefixes are not allowed at all: the service picks TCP).
 	ValSQLServerForbidden = "validation.sql_server_forbidden"
 )
 
@@ -157,7 +158,8 @@ func validateServer(server string) *FieldError {
 // admin: prefixes (ASCII case-insensitive) -> np / lpc / admin, a UNC
 // path (\\host or //host) -> unc, any other name starting with a
 // backslash -> backslash, a pipe path (\pipe\ or /pipe/ anywhere) ->
-// pipe. tcp: and plain host / host\instance stay allowed. Shared by the
+// pipe; the protocol prefixes tcp: / sm: / via: -> tcp / sm / via and a
+// leading slash -> slash. Only a plain host / host\instance is allowed. Shared by the
 // tray (early feedback), the service (save_profile, test_profile) and
 // later EC SQL (sqlcheck).
 func ValidateSQLServerAddr(addr string) error {
@@ -165,7 +167,7 @@ func ValidateSQLServerAddr(addr string) error {
 	if why == "" {
 		return nil
 	}
-	return fieldErr("server", ValSQLServerForbidden, "server: named pipe / LPC / DAC / UNC targets are not allowed ("+why+")", why)
+	return fieldErr("server", ValSQLServerForbidden, "server: protocol prefixes, named pipes and UNC paths are not allowed ("+why+")", why)
 }
 
 func sqlServerForbidden(addr string) string {
@@ -177,10 +179,18 @@ func sqlServerForbidden(addr string) string {
 		return "lpc"
 	case strings.HasPrefix(s, "admin:"):
 		return "admin"
+	case strings.HasPrefix(s, "tcp:"):
+		return "tcp"
+	case strings.HasPrefix(s, "sm:"):
+		return "sm"
+	case strings.HasPrefix(s, "via:"):
+		return "via"
 	case strings.HasPrefix(s, `\\`), strings.HasPrefix(s, "//"), strings.HasPrefix(s, `\/`), strings.HasPrefix(s, `/\`):
 		return "unc"
 	case strings.HasPrefix(s, `\`):
 		return "backslash"
+	case strings.HasPrefix(s, "/"):
+		return "slash"
 	case strings.Contains(s, `\pipe\`), strings.Contains(s, "/pipe/"), strings.Contains(s, `\pipe/`), strings.Contains(s, `/pipe\`):
 		return "pipe"
 	}

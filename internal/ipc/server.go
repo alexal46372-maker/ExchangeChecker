@@ -102,6 +102,15 @@ type Discoverer interface {
 	CheckMapping(ctx context.Context, req model.IPCRequest) (model.MappingCheck, error)
 }
 
+// SQLWizard runs the admin-only connection wizard commands of phase 9
+// (CHK-IPC-10) that need I/O: sql_browse and sql_databases (async, cancel
+// {ref}). sql_diagnose and sql_grant_script are answered by the server
+// itself (model, no I/O) when the handler is a SQLWizard.
+type SQLWizard interface {
+	SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQLBrowseResult, error)
+	SQLDatabases(ctx context.Context, req model.IPCRequest) (model.SQLDatabasesResult, error)
+}
+
 // interactiveCommand reports whether cmd is one of the Discoverer
 // commands.
 func interactiveCommand(cmd string) bool {
@@ -304,7 +313,8 @@ func (s *Server) Capabilities() []string {
 	}
 	_, tester := s.H.(Tester)
 	_, disc := s.H.(Discoverer)
-	if tester || disc || s.History != nil {
+	_, wiz := s.H.(SQLWizard)
+	if tester || disc || wiz || s.History != nil {
 		caps = append(caps, model.CapCancel)
 	}
 	if _, ok := s.H.(ConfigManager); ok {
@@ -325,6 +335,9 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(EventFeed); ok {
 		caps = append(caps, model.CapEventsSince)
 	}
+	if wiz {
+		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
+	}
 	return caps
 }
 
@@ -344,6 +357,7 @@ func errorReply(id uint64, err error, code string) model.IPCMessage {
 	if errors.As(err, &ie) {
 		m.Code, m.ErrorKey, m.ErrorArgs, m.ProfileID = ie.Code, ie.Key, ie.Args, ie.ProfileID
 		m.RetryAfterMs = ie.RetryAfterMs
+		m.ErrorInfo = ie.Info
 	}
 	if m.Code == "" && errors.Is(err, context.Canceled) {
 		m.Code = model.ErrCodeCanceled
@@ -611,6 +625,13 @@ func (s *Server) readLoop(c *conn) {
 			}
 			continue
 		}
+		if w, ok := s.H.(SQLWizard); ok && model.SQLCommand(req.Cmd) {
+			if !s.startSQL(c, w, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
+		}
 		if d, ok := s.H.(Discoverer); ok && interactiveCommand(req.Cmd) {
 			if !s.startInteractive(c, d, req) {
 				s.Log.Printf("ipc: client too slow, disconnected")
@@ -620,7 +641,7 @@ func (s *Server) readLoop(c *conn) {
 		}
 		var reply model.IPCMessage
 		switch {
-		case interactiveCommand(req.Cmd): // the handler has no Discoverer
+		case interactiveCommand(req.Cmd), model.SQLCommand(req.Cmd): // the handler has no Discoverer / SQLWizard
 			reply = errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 		case req.Cmd == model.CmdCancel:
 			reply = s.cancelOp(c, req)
@@ -651,6 +672,95 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 		res, err := t.TestProfile(ctx, req)
 		return model.IPCMessage{Type: model.MsgTestResult, Test: &res}, err
 	})
+}
+
+// adminOnly checks the client of an admin-only command on every request
+// (no cache); false: refused (reply already queued or not, sent=ok).
+func (s *Server) adminOnly(c *conn, req model.IPCRequest) (allowed, sent bool) {
+	cl, err := s.identify(c)
+	if err != nil || !cl.Admin {
+		why := "not an elevated administrator"
+		if err != nil {
+			why = err.Error()
+		}
+		s.Log.Printf("ipc: %s refused for %q: %s", req.Cmd, cl.Account, why)
+		return false, c.send(errorReply(req.ID, ErrAccessDenied, ""))
+	}
+	return true, true
+}
+
+// startSQL runs a wizard command (phase 9, CHK-IPC-10) for an elevated
+// administrator: sql_diagnose / sql_grant_script synchronously,
+// sql_browse / sql_databases like discover (own goroutine, cancel {ref},
+// reply cut to model.IPCMaxInteractiveReply). false: the client is too
+// slow.
+func (s *Server) startSQL(c *conn, w SQLWizard, req model.IPCRequest) bool {
+	if ok, sent := s.adminOnly(c, req); !ok {
+		return sent
+	}
+	switch req.Cmd {
+	case model.CmdSQLDiagnose:
+		return c.send(sqlDiagnose(req))
+	case model.CmdSQLGrantScript:
+		gr := model.SQLGrantRequest{Principal: req.Principal, Windows: req.Windows, Auth: req.Auth, Database: req.Database, Tables: req.Tables}
+		sc, err := model.SQLGrantScriptFor(gr)
+		if err != nil {
+			return c.send(errorReply(req.ID, fieldRequestError(err), ""))
+		}
+		return c.send(model.IPCMessage{ID: req.ID, Type: model.MsgSQLGrantScript, SQLGrantScript: &sc})
+	}
+	s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
+		m := model.IPCMessage{ID: req.ID}
+		switch req.Cmd {
+		case model.CmdSQLBrowse:
+			res, err := w.SQLBrowse(ctx, req)
+			if err != nil {
+				return m, err
+			}
+			m.Type, m.SQLBrowse = model.MsgSQLBrowse, &res
+			if res.Truncated {
+				m.Truncated, m.TruncatedReason = true, model.TruncatedLimit
+			}
+		default:
+			res, err := w.SQLDatabases(ctx, req)
+			if err != nil {
+				return m, err
+			}
+			m.Type, m.SQLDatabases = model.MsgSQLDatabases, &res
+			if res.Truncated {
+				m.Truncated, m.TruncatedReason = true, model.TruncatedLimit
+			}
+		}
+		fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
+		return m, nil
+	})
+	return true
+}
+
+// sqlDiagnose answers sql_diagnose: Code (+ TLSKey) or Category (+
+// ErrorKey); neither is invalid_request.
+func sqlDiagnose(req model.IPCRequest) model.IPCMessage {
+	var d model.SQLDiagnosis
+	switch {
+	case req.Code != "":
+		d = model.SQLDiagnoseCode(req.Code, req.TLSKey)
+	case req.Category != "" || req.ErrorKey != "":
+		d = model.SQLDiagnose(req.Category, req.ErrorKey)
+	default:
+		return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+			Message: "sql_diagnose: category or code is required", Args: []string{"category", model.ValRequired}}, "")
+	}
+	return model.IPCMessage{ID: req.ID, Type: model.MsgSQLDiagnosis, SQLDiagnosis: &d}
+}
+
+// fieldRequestError: invalid_request, errorKey monitor.bad_request,
+// errorArgs [field, validation key, args...].
+func fieldRequestError(err error) error {
+	if fe := model.AsFieldError(err); fe != nil {
+		return &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest, Message: err.Error(),
+			Args: append([]string{fe.Field, fe.Key}, fe.Args...)}
+	}
+	return &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest, Message: err.Error()}
 }
 
 // startInteractive checks the client (admin, on every request, no cache;
@@ -690,10 +800,14 @@ func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) b
 		if err == nil {
 			m.ID = req.ID
 			m.Truncated = m.TruncatedReason != ""
+
 			if m.Type == model.MsgNodePoints && m.TruncatedReason == model.TruncatedLimit {
 				m.Limit = req.Limit // the limit the list was cut to (EC Tray)
 			}
 			fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
+			if m.Type == model.MsgDiscovery {
+				fitAutoPick(&m, model.IPCMaxInteractiveReply)
+			}
 		}
 		return m, err
 	})
@@ -738,6 +852,18 @@ func fitInteractiveReply(m *model.IPCMessage, max int) {
 		return model.TruncatedSize
 	}
 	switch {
+	case m.SQLBrowse != nil && len(m.SQLBrowse.Instances) > 0:
+		r := *m.SQLBrowse
+		m.SQLBrowse = &r
+		all := r.Instances
+		r.Truncated, m.Truncated, m.TruncatedReason = true, true, model.TruncatedSize
+		cut(len(all), func(k int) { r.Instances = all[:k] })
+	case m.SQLDatabases != nil && len(m.SQLDatabases.Databases) > 0:
+		r := *m.SQLDatabases
+		m.SQLDatabases = &r
+		all := r.Databases
+		r.Truncated, m.Truncated, m.TruncatedReason = true, true, model.TruncatedSize
+		cut(len(all), func(k int) { r.Databases = all[:k] })
 	case len(m.Candidates) > 0:
 		all := m.Candidates
 		m.Truncated, m.TruncatedReason = true, sizeReason(m.TruncatedReason)
@@ -759,6 +885,26 @@ func fitInteractiveReply(m *model.IPCMessage, max int) {
 			if r := []rune(mc.Error); len(r) > 1024 {
 				mc.Error = string(r[:1024])
 			}
+		}
+	}
+}
+
+// fitAutoPick adds AutoPick (model.SQLAutoPickFor over the candidates of
+// the reply, phase 9 CHK-IPC-10) to a discovery reply; if that no longer
+// fits, the last candidates are dropped (reason size) and AutoPick is
+// recomputed.
+func fitAutoPick(m *model.IPCMessage, max int) {
+	for {
+		ap := model.SQLAutoPickFor(m.Candidates)
+		m.AutoPick = &ap
+		b, err := json.Marshal(m)
+		if err != nil || len(b) <= max || len(m.Candidates) == 0 {
+			return
+		}
+		m.Candidates = m.Candidates[:len(m.Candidates)-1]
+		m.Truncated = true
+		if m.TruncatedReason != model.TruncatedBudget {
+			m.TruncatedReason = model.TruncatedSize
 		}
 	}
 }
@@ -1102,6 +1248,13 @@ func (s *Server) startHistory(c *conn, req model.IPCRequest) bool {
 // checkNow handles check_now (phase 9, CHK-SVC-04): at most one request
 // per model.CheckConnInterval per connection (rate_limited +
 // retryAfterMs), then the handler's limits.
+//
+// The per-connection limit only damps a chatty client; several pipes can
+// bypass it, which is fine: the monitor's global limits (all profiles once
+// per model.CheckAllInterval, a profile once per
+// model.CheckProfileInterval, coalescing with queued / running polls)
+// bound the SQL load regardless of the number of connections, and the
+// pipe server caps the connections.
 func (s *Server) checkNow(c *conn, req model.IPCRequest) model.IPCMessage {
 	ch, ok := s.H.(Checker)
 	if !ok {

@@ -109,7 +109,13 @@ type Explorer struct {
 	// WithTimeout derives the context with the hard limit (tests).
 	WithTimeout func(parent context.Context, d time.Duration) (context.Context, context.CancelFunc)
 
+	// Browse lists SQL Server instances (sql_browse; nil =
+	// sqlcheck.ListServers; tests pass fakes).
+	Browse func(ctx context.Context, req model.SQLBrowseRequest) (model.SQLBrowseResult, error)
+
 	mu        sync.Mutex
+	browsing  bool                 // a sql_browse is running (one per service)
+	browseAt  map[string]time.Time // sql_browse rate limiter ("" = broadcast)
 	heavy     int
 	light     int
 	abandoned int
@@ -143,6 +149,12 @@ func (x *Explorer) defaults() {
 	}
 	if x.profiles == nil {
 		x.profiles = map[string]bool{}
+	}
+	if x.Browse == nil {
+		x.Browse = sqlcheck.ListServers
+	}
+	if x.browseAt == nil {
+		x.browseAt = map[string]time.Time{}
 	}
 }
 
@@ -337,7 +349,13 @@ func interactiveError(err error, password string) error {
 		return err
 	}
 	code, key := interactiveErrorKey(err)
-	return &model.IPCError{Code: code, Key: key, Message: scrub(err.Error(), password)}
+	ie = &model.IPCError{Code: code, Key: key, Message: scrub(err.Error(), password)}
+	if code != model.ErrCodeCanceled { // phase 9 (CHK-IPC-10): errorInfo
+		if info := sqlcheck.ErrorInfo(err); info.Code != "" {
+			ie.Info = &info
+		}
+	}
+	return ie
 }
 
 // logInteractive logs the outcome (never the password, the manual SQL or

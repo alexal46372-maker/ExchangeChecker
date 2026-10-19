@@ -80,6 +80,8 @@ const (
 	idSetConnTO
 	idSetQueryTO
 	idSetUIMode // «Экспертный режим» / «Простой режим» (phase 10 D)
+	idSetExport // «Экспорт…» (phase 10 E, administrator)
+	idSetImport // «Импорт…»
 	idSetClose  = winapi.IDCANCEL
 )
 
@@ -144,6 +146,12 @@ type settingsConfig struct {
 	// D, CHK-TRAY-40); nil store = not stored
 	uiMode  traysettings.UIMode
 	uiStore UIModeStore
+	// phase 10 E (CHK-TRAY-44): the tray block stores, the file dialog
+	// and the warning box (nil = GetSaveFileNameW / GetOpenFileNameW,
+	// MessageBoxW)
+	stores     trayStores
+	fileDialog func(owner uintptr, save bool) (string, bool)
+	notice     func(text string)
 }
 
 // UIModeStore keeps the settings window mode.
@@ -182,6 +190,11 @@ type settingsWindow struct {
 	barLeft, barRight              []barButton
 	// expertShown: the expert-only controls are shown (test hook)
 	expertShown bool
+	// phase 10 E: the import dialog, the profiles of needPassword, the
+	// status after the import
+	imp         *importDialog
+	needPw      []string
+	afterImport string
 	cfg         settingsConfig
 	ed          *traysettings.Editor
 	hwnd        uintptr
@@ -231,7 +244,7 @@ func (w *settingsWindow) setCue(id int32, text string) {
 // CHK-TRAY-15): every edit box, button, check box, combo and list box.
 var settingsTips = map[int32]string{
 	idSetList: i18n.KeyTipSetList, idSetAdd: i18n.KeyTipSetAdd, idSetDelete: i18n.KeyTipSetDelete,
-	idSetDiscover: i18n.KeyTipSetDiscover, idSetName: i18n.KeyTipSetName, idSetHost: i18n.KeyTipSetHost,
+	idSetDiscover: i18n.KeyTipSetDiscover, idSetExport: i18n.KeyTipXferExport, idSetImport: i18n.KeyTipXferImport, idSetName: i18n.KeyTipSetName, idSetHost: i18n.KeyTipSetHost,
 	idSetInstance: i18n.KeyTipSetInstance, idSetPort: i18n.KeyTipSetPort, idSetDatabase: i18n.KeyTipSetDatabase,
 	idSetAuth: i18n.KeyTipSetAuth, idSetLogin: i18n.KeyTipSetLogin, idSetPassword: i18n.KeyTipSetPassword,
 	idSetClearPw: i18n.KeyTipSetClearPw, idSetUIMode: i18n.KeyTipSetUIMode, idSetEncrypt: i18n.KeyTipSetEncrypt, idSetPreset: i18n.KeyTipSetPreset,
@@ -388,6 +401,8 @@ func (w *settingsWindow) build() {
 	w.add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, 117, 376, 100, 26)
 	if w.cfg.mode == traysettings.Admin {
 		w.add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, 12, 408, 205, 26)
+		w.add("BUTTON", w.t(i18n.KeyXferExport), 0, winapi.WS_TABSTOP, idSetExport, 12, 440, 100, 26)
+		w.add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, 117, 440, 100, 26)
 	}
 	// profile page: four group boxes on the grid (phase 10 D3)
 	const gx, gw = lx - 8, 540
@@ -648,6 +663,10 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idSetDelete:
 		w.deleteProfile()
+	case idSetExport:
+		w.exportConfig()
+	case idSetImport:
+		w.importConfig()
 	case idSetSave:
 		w.save()
 	case idSetTest:
@@ -827,6 +846,11 @@ func (w *settingsWindow) update() {
 	saved := has && !ed.IsNew
 	winapi.EnableWindow(w.ctl[idSetPoll], saved && !w.busy)
 	winapi.EnableWindow(w.ctl[idSetReload], !w.busy)
+	if w.ctl[idSetExport] != 0 {
+		x := w.transferAvailable()
+		winapi.EnableWindow(w.ctl[idSetExport], x && !w.busy)
+		winapi.EnableWindow(w.ctl[idSetImport], x && !w.busy)
+	}
 	if t := w.autostartError(); w.text(idGenAutostartErr) != t {
 		winapi.SetWindowText(w.ctl[idGenAutostartErr], t)
 	}
@@ -1160,6 +1184,7 @@ func (w *settingsWindow) save() {
 		default:
 			w.status = w.ed.SaveDone(m)
 			w.fill()
+			w.savedNeedPassword(w.ed.Base.ID)
 		}
 	})
 }
@@ -1338,8 +1363,10 @@ func (w *settingsWindow) reload(keep bool) {
 		default:
 			w.ed.LoadConfig(*m.Config, m.Revision)
 			w.loaded = true
-			w.status = ""
+			w.status = w.afterImport
+			w.afterImport = ""
 			w.fill()
+			w.nextNeedPassword()
 		}
 	})
 }
@@ -1462,6 +1489,9 @@ func (w *settingsWindow) close() {
 	if w.disc != nil {
 		w.disc.close()
 	}
+	if w.imp != nil {
+		w.imp.close()
+	}
 	if w.wiz != nil {
 		w.wiz.close()
 	}
@@ -1484,6 +1514,10 @@ type SettingsOptions struct {
 	Session trayipc.Options
 	// UIModeStore: «Простой» / «Экспертный» (HKCU; nil = every field).
 	UIModeStore UIModeStore
+	// tray block of export / import (phase 10 E; HKCU, nil = not stored)
+	LangStore    LangStore
+	BalloonStore BalloonStore
+	SoundStore   SoundStore
 }
 
 // loadUIMode reads the stored mode ("" without a store).
@@ -1535,6 +1569,7 @@ func RunSettings(opt SettingsOptions) int {
 	s := trayipc.New(so)
 	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,
 		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
+		stores:  trayStores{Lang: opt.LangStore, Balloon: opt.BalloonStore, Sound: opt.SoundStore},
 		onClose: func() { winapi.PostQuitMessage(0) }})
 	if err != nil {
 		return 1

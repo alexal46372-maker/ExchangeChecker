@@ -37,7 +37,8 @@ func run() int {
 		if a == wintray.SettingsArg {
 			// elevated settings window (ShellExecuteExW "runas" from the
 			// read-only window): own process, own connection
-			return wintray.RunSettings(wintray.SettingsOptions{Lang: lang, Session: session, UIModeStore: wintray.RegistryUIModeStore{}})
+			return wintray.RunSettings(wintray.SettingsOptions{Lang: lang, Session: session, UIModeStore: wintray.RegistryUIModeStore{},
+				LangStore: wintray.RegistryLangStore{}, BalloonStore: wintray.RegistryBalloonStore{}, SoundStore: wintray.RegistrySoundStore{}})
 		}
 	}
 	release, ok, err := wintray.SingleInstance(wintray.MutexName)

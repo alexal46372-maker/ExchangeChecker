@@ -616,6 +616,7 @@ func (a *App) OpenSettings() uintptr {
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
 		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
+		stores:  trayStores{Lang: a.opt.LangStore, Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onClose: func() {
 			if a.settings == w {

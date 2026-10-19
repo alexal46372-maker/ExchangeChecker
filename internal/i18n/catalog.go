@@ -587,57 +587,96 @@ const (
 	KeySetGroupChecks  = "set.group_checks"
 	KeySetGroupGeneral = "set.group_general"
 	// phase 10 D4: «Viber» page
-	KeyVbPage          = "set.vb_page"
-	KeyVbGroup         = "set.vb_group"
-	KeyVbEnabled       = "set.vb_enabled"
-	KeyVbToken         = "set.vb_token"
-	KeyVbClearToken    = "set.vb_clear_token"
-	KeyVbTokenSaved    = "set.vb_token_saved"
-	KeyVbTokenNone     = "set.vb_token_none"
-	KeyVbTokenNew      = "set.vb_token_new"
-	KeyVbTokenClear    = "set.vb_token_clear"
-	KeyVbRecipients    = "set.vb_recipients"
-	KeyVbDays          = "set.vb_days"
-	KeyVbDay1          = "set.vb_day1"
-	KeyVbDay2          = "set.vb_day2"
-	KeyVbDay3          = "set.vb_day3"
-	KeyVbDay4          = "set.vb_day4"
-	KeyVbDay5          = "set.vb_day5"
-	KeyVbDay6          = "set.vb_day6"
-	KeyVbDay7          = "set.vb_day7"
-	KeyVbFrom          = "set.vb_from"
-	KeyVbTo            = "set.vb_to"
-	KeyVbEvents        = "set.vb_events"
-	KeyVbEvError       = "set.vb_ev_error"
-	KeyVbEvWarning     = "set.vb_ev_warning"
-	KeyVbEvRecovered   = "set.vb_ev_recovered"
-	KeyVbEvNoConn      = "set.vb_ev_no_connection"
-	KeyVbReminder      = "set.vb_reminder"
-	KeyVbReminderHint  = "set.vb_reminder_hint"
-	KeyVbTestTo        = "set.vb_test_to"
-	KeyVbTestAll       = "set.vb_test_all"
-	KeyVbTest          = "set.vb_test"
-	KeyVbTesting       = "set.vb_testing"
-	KeyVbTestOK        = "set.vb_test_ok"
-	KeyVbTestFailed    = "set.vb_test_failed"
-	KeyVbTestItemOK    = "set.vb_test_item_ok"
-	KeyVbTestNoResult  = "set.vb_test_no_result"
-	KeyVbStatus        = "set.vb_status"
-	KeyVbLastOK        = "set.vb_last_ok"
-	KeyVbLastError     = "set.vb_last_error"
-	KeyVbSaved         = "set.vb_saved"
-	KeyTipVbPage       = "tip.vb_page"
-	KeyTipVbEnabled    = "tip.vb_enabled"
-	KeyTipVbToken      = "tip.vb_token"
-	KeyTipVbClearToken = "tip.vb_clear_token"
-	KeyTipVbRecipients = "tip.vb_recipients"
-	KeyTipVbDay        = "tip.vb_day"
-	KeyTipVbFrom       = "tip.vb_from"
-	KeyTipVbTo         = "tip.vb_to"
-	KeyTipVbEvent      = "tip.vb_event"
-	KeyTipVbReminder   = "tip.vb_reminder"
-	KeyTipVbTestTo     = "tip.vb_test_to"
-	KeyTipVbTest       = "tip.vb_test"
+	KeyVbPage             = "set.vb_page"
+	KeyVbGroup            = "set.vb_group"
+	KeyVbEnabled          = "set.vb_enabled"
+	KeyVbToken            = "set.vb_token"
+	KeyVbClearToken       = "set.vb_clear_token"
+	KeyVbTokenSaved       = "set.vb_token_saved"
+	KeyVbTokenNone        = "set.vb_token_none"
+	KeyVbTokenNew         = "set.vb_token_new"
+	KeyVbTokenClear       = "set.vb_token_clear"
+	KeyVbRecipients       = "set.vb_recipients"
+	KeyVbDays             = "set.vb_days"
+	KeyVbDay1             = "set.vb_day1"
+	KeyVbDay2             = "set.vb_day2"
+	KeyVbDay3             = "set.vb_day3"
+	KeyVbDay4             = "set.vb_day4"
+	KeyVbDay5             = "set.vb_day5"
+	KeyVbDay6             = "set.vb_day6"
+	KeyVbDay7             = "set.vb_day7"
+	KeyVbFrom             = "set.vb_from"
+	KeyVbTo               = "set.vb_to"
+	KeyVbEvents           = "set.vb_events"
+	KeyVbEvError          = "set.vb_ev_error"
+	KeyVbEvWarning        = "set.vb_ev_warning"
+	KeyVbEvRecovered      = "set.vb_ev_recovered"
+	KeyVbEvNoConn         = "set.vb_ev_no_connection"
+	KeyVbReminder         = "set.vb_reminder"
+	KeyVbReminderHint     = "set.vb_reminder_hint"
+	KeyVbTestTo           = "set.vb_test_to"
+	KeyVbTestAll          = "set.vb_test_all"
+	KeyVbTest             = "set.vb_test"
+	KeyVbTesting          = "set.vb_testing"
+	KeyVbTestOK           = "set.vb_test_ok"
+	KeyVbTestFailed       = "set.vb_test_failed"
+	KeyVbTestItemOK       = "set.vb_test_item_ok"
+	KeyVbTestNoResult     = "set.vb_test_no_result"
+	KeyVbStatus           = "set.vb_status"
+	KeyVbLastOK           = "set.vb_last_ok"
+	KeyVbLastError        = "set.vb_last_error"
+	KeyVbSaved            = "set.vb_saved"
+	KeyTipVbPage          = "tip.vb_page"
+	KeyTipVbEnabled       = "tip.vb_enabled"
+	KeyTipVbToken         = "tip.vb_token"
+	KeyTipVbClearToken    = "tip.vb_clear_token"
+	KeyTipVbRecipients    = "tip.vb_recipients"
+	KeyTipVbDay           = "tip.vb_day"
+	KeyTipVbFrom          = "tip.vb_from"
+	KeyTipVbTo            = "tip.vb_to"
+	KeyTipVbEvent         = "tip.vb_event"
+	KeyTipVbReminder      = "tip.vb_reminder"
+	KeyTipVbTestTo        = "tip.vb_test_to"
+	KeyTipVbTest          = "tip.vb_test"
+	KeyXferExport         = "set.xfer_export"
+	KeyXferImport         = "set.xfer_import"
+	KeyTipXferExport      = "tip.xfer_export"
+	KeyTipXferImport      = "tip.xfer_import"
+	KeyXferFilter         = "set.xfer_filter"
+	KeyXferContainsLogins = "set.xfer_contains_logins"
+	KeyXferExported       = "set.xfer_exported"
+	KeyXferWriteFailed    = "set.xfer_write_failed"
+	KeyXferReadFailed     = "set.xfer_read_failed"
+	KeyXferTooLarge       = "set.xfer_too_large"
+	KeyXferBadFile        = "set.xfer_bad_file"
+	KeyXferTitle          = "set.xfer_title"
+	KeyXferMerge          = "set.xfer_merge"
+	KeyXferReplace        = "set.xfer_replace"
+	KeyXferTrayCheck      = "set.xfer_tray_check"
+	KeyXferDo             = "set.xfer_do"
+	KeyXferChecking       = "set.xfer_checking"
+	KeyXferImporting      = "set.xfer_importing"
+	KeyXferAdded          = "set.xfer_added"
+	KeyXferUpdated        = "set.xfer_updated"
+	KeyXferRemoved        = "set.xfer_removed"
+	KeyXferNeedPw         = "set.xfer_need_pw"
+	KeyXferNoChanges      = "set.xfer_no_changes"
+	KeyXferNoTray         = "set.xfer_no_tray"
+	KeyXferTrayKept       = "set.xfer_tray_kept"
+	KeyXferTraySummary    = "set.xfer_tray_summary"
+	KeyXferLangAuto       = "set.xfer_lang_auto"
+	KeyXferOn             = "set.xfer_on"
+	KeyXferOff            = "set.xfer_off"
+	KeyXferNoSoundFile    = "set.xfer_no_sound_file"
+	KeyXferDone           = "set.xfer_done"
+	KeyXferTrayApplied    = "set.xfer_tray_applied"
+	KeyXferEnterPw        = "set.xfer_enter_pw"
+	KeyXferTrayFailed     = "set.xfer_tray_failed"
+	KeyTipXferMerge       = "tip.xfer_merge"
+	KeyTipXferReplace     = "tip.xfer_replace"
+	KeyTipXferTray        = "tip.xfer_tray"
+	KeyTipXferDo          = "tip.xfer_do"
+	KeyTipXferPreview     = "tip.xfer_preview"
 )
 
 var catalog = map[string][2]string{ // key -> {ru, en}
@@ -1165,107 +1204,146 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipWizGrant:         {"Скопировать в буфер обмена T-SQL, выдающий права только на чтение; EC скрипт не выполняет.", "Copy the T-SQL that grants read-only access to the clipboard; EC never runs the script."},
 	KeyTipWizCancel:        {"Закрыть мастер без сохранения.", "Close the wizard without saving."},
 	// phase 10 A–C
-	KeyPanelNoService:   {"Нет связи со службой Exchange Checker", "No connection to the Exchange Checker service"},
-	KeyPanelNoSQL:       {"%s: нет связи с SQL Server", "%s: no connection to SQL Server"},
-	KeyPanelTitle:       {"Exchange Checker — проблемы", "Exchange Checker — problems"},
-	KeyAlertMute:        {"Звук выкл", "Sound off"},
-	KeyAlertUnmute:      {"Звук вкл", "Sound on"},
-	KeyTipAlertMute:     {"Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком", "Turn the sound of this alarm off or on. The next new alarm sounds again"},
-	KeyMenuSound:        {"Звук тревог…", "Alarm sounds…"},
-	KeyMenuVolume:       {"Громкость…", "Volume…"},
-	KeyMenuPinHelp:      {"Как закрепить значок…", "How to pin the icon…"},
-	KeyPinHelpTitle:     {"Значок Exchange Checker", "Exchange Checker icon"},
-	KeyPinHelpText:      {"Чтобы значок всегда был виден рядом с часами (Windows 7):\r\n1. Нажмите стрелку «Отображать скрытые значки» слева от часов.\r\n2. Выберите «Настроить…».\r\n3. Для Exchange Checker выберите «Показать значок и уведомления».\r\n\r\nВ Windows 10 и 11: Параметры → Персонализация → Панель задач → Значки в углу панели задач — включите Exchange Checker.", "To keep the icon always visible next to the clock (Windows 7):\r\n1. Click the «Show hidden icons» arrow left of the clock.\r\n2. Choose «Customize…».\r\n3. For Exchange Checker select «Show icon and notifications».\r\n\r\nOn Windows 10 and 11: Settings → Personalization → Taskbar → Taskbar corner overflow — turn Exchange Checker on."},
-	KeySoundTitle:       {"Звук тревог", "Alarm sounds"},
-	KeySoundWarning:     {"Предупреждение", "Warning"},
-	KeySoundError:       {"Ошибка", "Error"},
-	KeySoundBeep:        {"Тон", "Tone"},
-	KeySoundFile:        {"Файл", "File"},
-	KeySoundFreq:        {"Частота, Гц:", "Frequency, Hz:"},
-	KeySoundDur:         {"Длительность, мс:", "Duration, ms:"},
-	KeySoundBrowse:      {"Обзор…", "Browse…"},
-	KeySoundVolume:      {"Громкость, %:", "Volume, %:"},
-	KeySoundLoop:        {"Повторять до подтверждения", "Repeat until acknowledged"},
-	KeySoundGap:         {"Пауза между повторами, мс:", "Pause between repeats, ms:"},
-	KeySoundTest:        {"Прослушать", "Listen"},
-	KeySoundStop:        {"Стоп", "Stop"},
-	KeySoundSave:        {"Сохранить", "Save"},
-	KeySoundCancel:      {"Отмена", "Cancel"},
-	KeySoundFilterAudio: {"Звуковые файлы (*.wav; *.mp3; *.wma; *.mid)", "Sound files (*.wav; *.mp3; *.wma; *.mid)"},
-	KeySoundFilterAll:   {"Все файлы (*.*)", "All files (*.*)"},
-	KeySoundBadFile:     {"Файл не найден или не поддерживается: %s", "The file is not found or not supported: %s"},
-	KeySoundBadValue:    {"Проверьте значение: %s", "Check the value: %s"},
-	KeySoundSaved:       {"Сохранено", "Saved"},
-	KeySoundFallback:    {"Не удалось воспроизвести «%s» (%s), звучит тон", "Could not play «%s» (%s), a tone is used"},
-	KeyTipSoundKind:     {"Тон — синусоида с заданной частотой; Файл — WAV, MP3, WMA или MID", "Tone is a sine wave of the given frequency; File is a WAV, MP3, WMA or MID file"},
-	KeyTipSoundFreq:     {"Частота тона, 37–32767 Гц", "Tone frequency, 37–32767 Hz"},
-	KeyTipSoundDur:      {"Длительность одного сигнала, мс", "Length of one signal, ms"},
-	KeyTipSoundFile:     {"Путь к звуковому файлу. Если файл не воспроизводится, звучит тон", "Path to the sound file. If it cannot be played, the tone is used"},
-	KeyTipSoundBrowse:   {"Выбрать звуковой файл", "Choose a sound file"},
-	KeyTipSoundVolume:   {"Громкость этого профиля, 0–100%; умножается на общую громкость", "Volume of this profile, 0–100%; multiplied by the master volume"},
-	KeyTipSoundLoop:     {"Повторять звук, пока тревогу не подтвердят или не закроют окно; иначе — один раз", "Repeat the sound until the alarm is acknowledged or the window closed; otherwise once"},
-	KeyTipSoundGap:      {"Пауза между повторами звука, мс", "Pause between repeats, ms"},
-	KeyTipSoundTest:     {"Проиграть звук с текущими настройками", "Play the sound with the current settings"},
-	KeyTipSoundSave:     {"Сохранить настройки звука для текущего пользователя Windows", "Save the sound settings for the current Windows user"},
-	KeyVolumeTitle:      {"Громкость тревог", "Alarm volume"},
-	KeyTipVolume:        {"Общая громкость звуков тревог, 0–100%. Сохраняется сразу", "Master volume of the alarm sounds, 0–100%. Saved at once"},
-	KeySetModeExpert:    {"Экспертный режим", "Expert mode"},
-	KeySetModeSimple:    {"Простой режим", "Simple mode"},
-	KeyTipSetUIMode:     {"Простой режим — только основные поля; экспертный — все настройки. Выбор запоминается для пользователя Windows", "Simple mode shows the main fields only; expert mode shows all settings. The choice is kept for the Windows user"},
-	KeySetGroupConn:     {"Подключение", "Connection"},
-	KeySetGroupLogin:    {"Вход", "Sign-in"},
-	KeySetGroupTLS:      {"Шифрование", "Encryption"},
-	KeySetGroupChecks:   {"Опрос и пороги", "Polling and thresholds"},
-	KeySetGroupGeneral:  {"Общие настройки компьютера", "Computer-wide settings"},
-	KeyVbPage:           {"Уведомления Viber…", "Viber notifications…"},
-	KeyVbGroup:          {"Уведомления Viber", "Viber notifications"},
-	KeyVbEnabled:        {"Отправлять уведомления в Viber", "Send notifications to Viber"},
-	KeyVbToken:          {"Токен бота:", "Bot token:"},
-	KeyVbClearToken:     {"Удалить сохранённый токен", "Delete the saved token"},
-	KeyVbTokenSaved:     {"Токен сохранён (не показывается).", "A token is saved (never shown)."},
-	KeyVbTokenNone:      {"Токен не задан.", "No token is set."},
-	KeyVbTokenNew:       {"Новый токен будет сохранён.", "The new token will be saved."},
-	KeyVbTokenClear:     {"Сохранённый токен будет удалён.", "The saved token will be deleted."},
-	KeyVbRecipients:     {"Получатели (по одному в строке: ID имя):", "Recipients (one per line: ID name):"},
-	KeyVbDays:           {"Дни:", "Days:"},
-	KeyVbDay1:           {"Пн", "Mon"},
-	KeyVbDay2:           {"Вт", "Tue"},
-	KeyVbDay3:           {"Ср", "Wed"},
-	KeyVbDay4:           {"Чт", "Thu"},
-	KeyVbDay5:           {"Пт", "Fri"},
-	KeyVbDay6:           {"Сб", "Sat"},
-	KeyVbDay7:           {"Вс", "Sun"},
-	KeyVbFrom:           {"Время с (ЧЧ:ММ):", "From (HH:MM):"},
-	KeyVbTo:             {"до:", "to:"},
-	KeyVbEvents:         {"События:", "Events:"},
-	KeyVbEvError:        {"Ошибка обмена", "Exchange error"},
-	KeyVbEvWarning:      {"Предупреждение", "Warning"},
-	KeyVbEvRecovered:    {"Восстановление", "Recovered"},
-	KeyVbEvNoConn:       {"Нет подключения к базе", "No database connection"},
-	KeyVbReminder:       {"Напоминание, мин:", "Reminder, min:"},
-	KeyVbReminderHint:   {"0 — без напоминаний, иначе 15–1440", "0 = no reminders, else 15–1440"},
-	KeyVbTestTo:         {"Тест для:", "Test for:"},
-	KeyVbTestAll:        {"Все получатели", "All recipients"},
-	KeyVbTest:           {"Тест", "Test"},
-	KeyVbTesting:        {"Отправка тестового сообщения…", "Sending a test message…"},
-	KeyVbTestOK:         {"Тест Viber: доставлено.", "Viber test: delivered."},
-	KeyVbTestFailed:     {"Тест Viber: есть ошибки.", "Viber test: some messages failed."},
-	KeyVbTestItemOK:     {"доставлено", "delivered"},
-	KeyVbTestNoResult:   {"Служба не вернула результат теста.", "The service returned no test result."},
-	KeyVbStatus:         {"Отправлено: %d, в очереди: %d, отброшено: %d", "Sent: %d, queued: %d, dropped: %d"},
-	KeyVbLastOK:         {"Последняя доставка: %s", "Last delivery: %s"},
-	KeyVbLastError:      {"Последняя ошибка: %s — %s", "Last error: %s — %s"},
-	KeyVbSaved:          {"Настройки Viber сохранены.", "Viber settings saved."},
-	KeyTipVbPage:        {"Уведомления о тревогах в Viber: токен бота, получатели, расписание, события", "Alert notifications in Viber: bot token, recipients, schedule, events"},
-	KeyTipVbEnabled:     {"Служба отправляет сообщения только в окне расписания", "The service sends messages only inside the schedule window"},
-	KeyTipVbToken:       {"Токен бота Viber. Только запись: сохранённый токен не показывается; пусто — не менять", "Viber bot token. Write-only: a saved token is never shown; empty keeps it"},
-	KeyTipVbClearToken:  {"Удалить сохранённый токен при сохранении", "Delete the saved token on save"},
-	KeyTipVbRecipients:  {"ID пользователя Viber (без пробелов, до 64 символов) и имя, до 20 получателей", "Viber user ID (no spaces, up to 64 characters) and a name, up to 20 recipients"},
-	KeyTipVbDay:         {"День недели, в который отправляются уведомления", "A weekday on which notifications are sent"},
-	KeyTipVbFrom:        {"Начало окна отправки, местное время компьютера службы", "Start of the sending window, local time of the service computer"},
-	KeyTipVbTo:          {"Конец окна отправки (позже начала)", "End of the sending window (after the start)"},
-	KeyTipVbEvent:       {"Отправлять сообщение об этом событии", "Send a message on this event"},
-	KeyTipVbReminder:    {"Сводка нерешённых проблем каждые N минут в окне расписания", "Summary of unresolved problems every N minutes inside the schedule"},
-	KeyTipVbTestTo:      {"Кому отправить тест: одному получателю или всем", "Whom to send the test to: one recipient or all"},
-	KeyTipVbTest:        {"Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с", "A test message now (ignores the schedule and «Send»), at most once per 10 s"},
+	KeyPanelNoService:     {"Нет связи со службой Exchange Checker", "No connection to the Exchange Checker service"},
+	KeyPanelNoSQL:         {"%s: нет связи с SQL Server", "%s: no connection to SQL Server"},
+	KeyPanelTitle:         {"Exchange Checker — проблемы", "Exchange Checker — problems"},
+	KeyAlertMute:          {"Звук выкл", "Sound off"},
+	KeyAlertUnmute:        {"Звук вкл", "Sound on"},
+	KeyTipAlertMute:       {"Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком", "Turn the sound of this alarm off or on. The next new alarm sounds again"},
+	KeyMenuSound:          {"Звук тревог…", "Alarm sounds…"},
+	KeyMenuVolume:         {"Громкость…", "Volume…"},
+	KeyMenuPinHelp:        {"Как закрепить значок…", "How to pin the icon…"},
+	KeyPinHelpTitle:       {"Значок Exchange Checker", "Exchange Checker icon"},
+	KeyPinHelpText:        {"Чтобы значок всегда был виден рядом с часами (Windows 7):\r\n1. Нажмите стрелку «Отображать скрытые значки» слева от часов.\r\n2. Выберите «Настроить…».\r\n3. Для Exchange Checker выберите «Показать значок и уведомления».\r\n\r\nВ Windows 10 и 11: Параметры → Персонализация → Панель задач → Значки в углу панели задач — включите Exchange Checker.", "To keep the icon always visible next to the clock (Windows 7):\r\n1. Click the «Show hidden icons» arrow left of the clock.\r\n2. Choose «Customize…».\r\n3. For Exchange Checker select «Show icon and notifications».\r\n\r\nOn Windows 10 and 11: Settings → Personalization → Taskbar → Taskbar corner overflow — turn Exchange Checker on."},
+	KeySoundTitle:         {"Звук тревог", "Alarm sounds"},
+	KeySoundWarning:       {"Предупреждение", "Warning"},
+	KeySoundError:         {"Ошибка", "Error"},
+	KeySoundBeep:          {"Тон", "Tone"},
+	KeySoundFile:          {"Файл", "File"},
+	KeySoundFreq:          {"Частота, Гц:", "Frequency, Hz:"},
+	KeySoundDur:           {"Длительность, мс:", "Duration, ms:"},
+	KeySoundBrowse:        {"Обзор…", "Browse…"},
+	KeySoundVolume:        {"Громкость, %:", "Volume, %:"},
+	KeySoundLoop:          {"Повторять до подтверждения", "Repeat until acknowledged"},
+	KeySoundGap:           {"Пауза между повторами, мс:", "Pause between repeats, ms:"},
+	KeySoundTest:          {"Прослушать", "Listen"},
+	KeySoundStop:          {"Стоп", "Stop"},
+	KeySoundSave:          {"Сохранить", "Save"},
+	KeySoundCancel:        {"Отмена", "Cancel"},
+	KeySoundFilterAudio:   {"Звуковые файлы (*.wav; *.mp3; *.wma; *.mid)", "Sound files (*.wav; *.mp3; *.wma; *.mid)"},
+	KeySoundFilterAll:     {"Все файлы (*.*)", "All files (*.*)"},
+	KeySoundBadFile:       {"Файл не найден или не поддерживается: %s", "The file is not found or not supported: %s"},
+	KeySoundBadValue:      {"Проверьте значение: %s", "Check the value: %s"},
+	KeySoundSaved:         {"Сохранено", "Saved"},
+	KeySoundFallback:      {"Не удалось воспроизвести «%s» (%s), звучит тон", "Could not play «%s» (%s), a tone is used"},
+	KeyTipSoundKind:       {"Тон — синусоида с заданной частотой; Файл — WAV, MP3, WMA или MID", "Tone is a sine wave of the given frequency; File is a WAV, MP3, WMA or MID file"},
+	KeyTipSoundFreq:       {"Частота тона, 37–32767 Гц", "Tone frequency, 37–32767 Hz"},
+	KeyTipSoundDur:        {"Длительность одного сигнала, мс", "Length of one signal, ms"},
+	KeyTipSoundFile:       {"Путь к звуковому файлу. Если файл не воспроизводится, звучит тон", "Path to the sound file. If it cannot be played, the tone is used"},
+	KeyTipSoundBrowse:     {"Выбрать звуковой файл", "Choose a sound file"},
+	KeyTipSoundVolume:     {"Громкость этого профиля, 0–100%; умножается на общую громкость", "Volume of this profile, 0–100%; multiplied by the master volume"},
+	KeyTipSoundLoop:       {"Повторять звук, пока тревогу не подтвердят или не закроют окно; иначе — один раз", "Repeat the sound until the alarm is acknowledged or the window closed; otherwise once"},
+	KeyTipSoundGap:        {"Пауза между повторами звука, мс", "Pause between repeats, ms"},
+	KeyTipSoundTest:       {"Проиграть звук с текущими настройками", "Play the sound with the current settings"},
+	KeyTipSoundSave:       {"Сохранить настройки звука для текущего пользователя Windows", "Save the sound settings for the current Windows user"},
+	KeyVolumeTitle:        {"Громкость тревог", "Alarm volume"},
+	KeyTipVolume:          {"Общая громкость звуков тревог, 0–100%. Сохраняется сразу", "Master volume of the alarm sounds, 0–100%. Saved at once"},
+	KeySetModeExpert:      {"Экспертный режим", "Expert mode"},
+	KeySetModeSimple:      {"Простой режим", "Simple mode"},
+	KeyTipSetUIMode:       {"Простой режим — только основные поля; экспертный — все настройки. Выбор запоминается для пользователя Windows", "Simple mode shows the main fields only; expert mode shows all settings. The choice is kept for the Windows user"},
+	KeySetGroupConn:       {"Подключение", "Connection"},
+	KeySetGroupLogin:      {"Вход", "Sign-in"},
+	KeySetGroupTLS:        {"Шифрование", "Encryption"},
+	KeySetGroupChecks:     {"Опрос и пороги", "Polling and thresholds"},
+	KeySetGroupGeneral:    {"Общие настройки компьютера", "Computer-wide settings"},
+	KeyVbPage:             {"Уведомления Viber…", "Viber notifications…"},
+	KeyVbGroup:            {"Уведомления Viber", "Viber notifications"},
+	KeyVbEnabled:          {"Отправлять уведомления в Viber", "Send notifications to Viber"},
+	KeyVbToken:            {"Токен бота:", "Bot token:"},
+	KeyVbClearToken:       {"Удалить сохранённый токен", "Delete the saved token"},
+	KeyVbTokenSaved:       {"Токен сохранён (не показывается).", "A token is saved (never shown)."},
+	KeyVbTokenNone:        {"Токен не задан.", "No token is set."},
+	KeyVbTokenNew:         {"Новый токен будет сохранён.", "The new token will be saved."},
+	KeyVbTokenClear:       {"Сохранённый токен будет удалён.", "The saved token will be deleted."},
+	KeyVbRecipients:       {"Получатели (по одному в строке: ID имя):", "Recipients (one per line: ID name):"},
+	KeyVbDays:             {"Дни:", "Days:"},
+	KeyVbDay1:             {"Пн", "Mon"},
+	KeyVbDay2:             {"Вт", "Tue"},
+	KeyVbDay3:             {"Ср", "Wed"},
+	KeyVbDay4:             {"Чт", "Thu"},
+	KeyVbDay5:             {"Пт", "Fri"},
+	KeyVbDay6:             {"Сб", "Sat"},
+	KeyVbDay7:             {"Вс", "Sun"},
+	KeyVbFrom:             {"Время с (ЧЧ:ММ):", "From (HH:MM):"},
+	KeyVbTo:               {"до:", "to:"},
+	KeyVbEvents:           {"События:", "Events:"},
+	KeyVbEvError:          {"Ошибка обмена", "Exchange error"},
+	KeyVbEvWarning:        {"Предупреждение", "Warning"},
+	KeyVbEvRecovered:      {"Восстановление", "Recovered"},
+	KeyVbEvNoConn:         {"Нет подключения к базе", "No database connection"},
+	KeyVbReminder:         {"Напоминание, мин:", "Reminder, min:"},
+	KeyVbReminderHint:     {"0 — без напоминаний, иначе 15–1440", "0 = no reminders, else 15–1440"},
+	KeyVbTestTo:           {"Тест для:", "Test for:"},
+	KeyVbTestAll:          {"Все получатели", "All recipients"},
+	KeyVbTest:             {"Тест", "Test"},
+	KeyVbTesting:          {"Отправка тестового сообщения…", "Sending a test message…"},
+	KeyVbTestOK:           {"Тест Viber: доставлено.", "Viber test: delivered."},
+	KeyVbTestFailed:       {"Тест Viber: есть ошибки.", "Viber test: some messages failed."},
+	KeyVbTestItemOK:       {"доставлено", "delivered"},
+	KeyVbTestNoResult:     {"Служба не вернула результат теста.", "The service returned no test result."},
+	KeyVbStatus:           {"Отправлено: %d, в очереди: %d, отброшено: %d", "Sent: %d, queued: %d, dropped: %d"},
+	KeyVbLastOK:           {"Последняя доставка: %s", "Last delivery: %s"},
+	KeyVbLastError:        {"Последняя ошибка: %s — %s", "Last error: %s — %s"},
+	KeyVbSaved:            {"Настройки Viber сохранены.", "Viber settings saved."},
+	KeyTipVbPage:          {"Уведомления о тревогах в Viber: токен бота, получатели, расписание, события", "Alert notifications in Viber: bot token, recipients, schedule, events"},
+	KeyTipVbEnabled:       {"Служба отправляет сообщения только в окне расписания", "The service sends messages only inside the schedule window"},
+	KeyTipVbToken:         {"Токен бота Viber. Только запись: сохранённый токен не показывается; пусто — не менять", "Viber bot token. Write-only: a saved token is never shown; empty keeps it"},
+	KeyTipVbClearToken:    {"Удалить сохранённый токен при сохранении", "Delete the saved token on save"},
+	KeyTipVbRecipients:    {"ID пользователя Viber (без пробелов, до 64 символов) и имя, до 20 получателей", "Viber user ID (no spaces, up to 64 characters) and a name, up to 20 recipients"},
+	KeyTipVbDay:           {"День недели, в который отправляются уведомления", "A weekday on which notifications are sent"},
+	KeyTipVbFrom:          {"Начало окна отправки, местное время компьютера службы", "Start of the sending window, local time of the service computer"},
+	KeyTipVbTo:            {"Конец окна отправки (позже начала)", "End of the sending window (after the start)"},
+	KeyTipVbEvent:         {"Отправлять сообщение об этом событии", "Send a message on this event"},
+	KeyTipVbReminder:      {"Сводка нерешённых проблем каждые N минут в окне расписания", "Summary of unresolved problems every N minutes inside the schedule"},
+	KeyTipVbTestTo:        {"Кому отправить тест: одному получателю или всем", "Whom to send the test to: one recipient or all"},
+	KeyTipVbTest:          {"Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с", "A test message now (ignores the schedule and «Send»), at most once per 10 s"},
+	KeyXferExport:         {"Экспорт…", "Export…"},
+	KeyXferImport:         {"Импорт…", "Import…"},
+	KeyTipXferExport:      {"Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей и Viber)", "Save the databases and the general service settings, plus the tray sound and look, to a file (no passwords, no Viber)"},
+	KeyTipXferImport:      {"Загрузить настройки из файла: сначала показывается, что изменится", "Load settings from a file: what will change is shown first"},
+	KeyXferFilter:         {"Настройки EC (*.json)", "EC settings (*.json)"},
+	KeyXferContainsLogins: {"Файл содержит адреса серверов и логины SQL (без паролей). Храните его в надёжном месте.", "The file contains server addresses and SQL logins (no passwords). Keep it in a safe place."},
+	KeyXferExported:       {"Настройки сохранены в файл %s", "Settings saved to %s"},
+	KeyXferWriteFailed:    {"Не удалось записать файл: %s", "Could not write the file: %s"},
+	KeyXferReadFailed:     {"Не удалось прочитать файл: %s", "Could not read the file: %s"},
+	KeyXferTooLarge:       {"Файл слишком большой (больше %d КБ).", "The file is too large (over %d KB)."},
+	KeyXferBadFile:        {"Это не файл настроек EC: %s", "This is not an EC settings file: %s"},
+	KeyXferTitle:          {"Импорт настроек", "Import settings"},
+	KeyXferMerge:          {"Объединить: добавить новые базы и обновить существующие", "Merge: add new databases and update existing ones"},
+	KeyXferReplace:        {"Заменить: базы, которых нет в файле, будут удалены", "Replace: databases missing from the file are removed"},
+	KeyXferTrayCheck:      {"Также звук и вид трея", "Also tray sound and look"},
+	KeyXferDo:             {"Импортировать", "Import"},
+	KeyXferChecking:       {"Проверка файла службой…", "The service is checking the file…"},
+	KeyXferImporting:      {"Импорт…", "Importing…"},
+	KeyXferAdded:          {"Будут добавлены (%d): %s", "To be added (%d): %s"},
+	KeyXferUpdated:        {"Будут обновлены (%d): %s", "To be updated (%d): %s"},
+	KeyXferRemoved:        {"Будут удалены (%d): %s", "To be removed (%d): %s"},
+	KeyXferNeedPw:         {"Нужно будет заново ввести пароль (%d): %s", "The password must be entered again (%d): %s"},
+	KeyXferNoChanges:      {"Базы данных не изменятся.", "The databases do not change."},
+	KeyXferNoTray:         {"В файле нет настроек трея.", "The file has no tray settings."},
+	KeyXferTrayKept:       {"Звук и вид трея не меняются.", "The tray sound and look are kept."},
+	KeyXferTraySummary:    {"Трей: язык %s, всплывающие уведомления %s, громкость %s, %s", "Tray: language %s, balloons %s, volume %s, %s"},
+	KeyXferLangAuto:       {"как в Windows", "as in Windows"},
+	KeyXferOn:             {"вкл.", "on"},
+	KeyXferOff:            {"выкл.", "off"},
+	KeyXferNoSoundFile:    {"Внимание: звуковой файл не найден на этом компьютере, будет звучать тон: %s", "Warning: the sound file is not on this computer, the tone plays instead: %s"},
+	KeyXferDone:           {"Импорт выполнен.", "Import done."},
+	KeyXferTrayApplied:    {"Звук и вид трея применятся после перезапуска трея.", "The tray sound and look apply after the tray restarts."},
+	KeyXferEnterPw:        {"Введите пароль заново для «%s» и сохраните (осталось: %d).", "Enter the password again for «%s» and save (left: %d)."},
+	KeyXferTrayFailed:     {"Не удалось сохранить настройки трея: %s", "Could not save the tray settings: %s"},
+	KeyTipXferMerge:       {"Базы с тем же идентификатором обновляются, новые добавляются, остальные остаются", "Databases with the same id are updated, new ones added, the others kept"},
+	KeyTipXferReplace:     {"Список баз становится таким, как в файле", "The list of databases becomes the one of the file"},
+	KeyTipXferTray:        {"Язык, всплывающие уведомления, звук и режим окна этого пользователя", "Language, balloons, sound and window mode of this user"},
+	KeyTipXferDo:          {"Выполнить импорт, как показано выше", "Run the import as shown above"},
+	KeyTipXferPreview:     {"Что изменит импорт", "What the import will change"},
 }

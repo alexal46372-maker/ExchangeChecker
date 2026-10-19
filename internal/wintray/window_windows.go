@@ -67,7 +67,7 @@ func ensureClass(name string) error {
 // top-level window keeps its center (createWindowPx: already pixels).
 func createWindow(class, title string, exStyle, style uint32, x, y, w, hgt int32, parent uintptr, h msgHandler) (uintptr, error) {
 	if style&winapi.WS_CHILD != 0 {
-		x, y, w, hgt = px(x), px(y), px(w), px(hgt)
+		x, y, w, hgt = pxRect(x, y, w, hgt)
 	} else if w > 0 && hgt > 0 {
 		sw, sh := px(w), px(hgt)
 		x, y = x-(sw-w)/2, y-(sh-hgt)/3
@@ -99,7 +99,8 @@ func createWindowPx(class, title string, exStyle, style uint32, x, y, w, hgt int
 
 // child creates a standard control (STATIC / BUTTON) with the GUI font.
 func child(parent uintptr, class, text string, style uint32, id int32, x, y, w, h int32) uintptr {
-	hwnd, err := winapi.CreateWindowEx(0, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, px(x), px(y), px(w), px(h), parent, uintptr(id), winapi.GetModuleHandle())
+	x, y, w, h = pxRect(x, y, w, h)
+	hwnd, err := winapi.CreateWindowEx(0, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, w, h, parent, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}

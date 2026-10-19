@@ -139,7 +139,8 @@ func (w *settingsWindow) openWizard() {
 func (wd *wizardDialog) t(key string) string { return wd.w.t(key) }
 
 func (wd *wizardDialog) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
-	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, px(x), px(y), px(cw), px(ch), wd.hwnd, uintptr(id), winapi.GetModuleHandle())
+	x, y, cw, ch = pxRect(x, y, cw, ch)
+	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, wd.hwnd, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}
@@ -199,12 +200,12 @@ func (wd *wizardDialog) build() {
 		wd.add("BUTTON", wd.t(key), 0, winapi.WS_TABSTOP, id, bx, 522, width, 28)
 		bx += width + 6
 	}
-	button(idWizBack, i18n.KeyWizBack, 90)
-	button(idWizNext, i18n.KeyWizNext, 90)
+	button(idWizBack, i18n.KeyWizBack, 85)
+	button(idWizNext, i18n.KeyWizNext, 85)
 	button(idWizSave, i18n.KeyWizSave, 100)
 	button(idWizGrant, i18n.KeyWizGrant, 210)
-	button(idWizAdvanced, i18n.KeyWizAdvanced, 150)
-	wd.add("BUTTON", wd.t(i18n.KeyWizCancel), 0, winapi.WS_TABSTOP, idWizCancel, 668, 522, 80, 28)
+	button(idWizAdvanced, i18n.KeyWizAdvanced, 160)
+	wd.add("BUTTON", wd.t(i18n.KeyWizCancel), 0, winapi.WS_TABSTOP, idWizCancel, 680, 522, 68, 28)
 	for _, k := range []string{i18n.KeyWizAuthSQL, i18n.KeyWizAuthWindows} {
 		winapi.SendMessageString(wd.ctl[idWizAuth], winapi.CB_ADDSTRING, 0, wd.t(k))
 	}

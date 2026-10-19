@@ -79,6 +79,13 @@ func px(v int32) int32 {
 	return int32((n - 48) / 96)
 }
 
+// pxRect scales a grid rectangle by its corners, so touching controls
+// stay touching at every DPI (no rounding overlap).
+func pxRect(x, y, w, h int32) (int32, int32, int32, int32) {
+	l, t := px(x), px(y)
+	return l, t, px(x+w) - l, px(y+h) - t
+}
+
 // uiFontFace / uiFontPt: the font of every tray window.
 const (
 	uiFontFace = "Segoe UI"

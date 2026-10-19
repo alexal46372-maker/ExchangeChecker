@@ -295,7 +295,8 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 func (w *settingsWindow) t(key string) string { return i18n.T(key, w.cfg.lang) }
 
 func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
-	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, px(x), px(y), px(cw), px(ch), w.hwnd, uintptr(id), winapi.GetModuleHandle())
+	x, y, cw, ch = pxRect(x, y, cw, ch)
+	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, w.hwnd, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}
@@ -479,7 +480,10 @@ func (w *settingsWindow) build() {
 	if w.cfg.mode == traysettings.ReadOnly {
 		button(idSetElevate, i18n.KeySetElevate, 165)
 	}
-	w.add("BUTTON", w.t(i18n.KeySetClose), 0, winapi.WS_TABSTOP, idSetClose, 665, 674, 90, gridButtonH)
+	if bx < 665 {
+		bx = 665 // read-only: «Изменить (администратор)» pushes «Закрыть» right
+	}
+	w.add("BUTTON", w.t(i18n.KeySetClose), 0, winapi.WS_TABSTOP, idSetClose, bx, 674, 90, gridButtonH)
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}

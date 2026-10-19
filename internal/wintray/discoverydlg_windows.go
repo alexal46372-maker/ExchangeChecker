@@ -213,7 +213,8 @@ func (w *settingsWindow) openDiscovery() {
 func (dd *discoveryDialog) t(key string) string { return dd.w.t(key) }
 
 func (dd *discoveryDialog) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
-	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, px(x), px(y), px(cw), px(ch), dd.hwnd, uintptr(id), winapi.GetModuleHandle())
+	x, y, cw, ch = pxRect(x, y, cw, ch)
+	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, dd.hwnd, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}
@@ -238,11 +239,11 @@ func (dd *discoveryDialog) build() {
 	label(i18n.KeyDiscPoint, 12, row, 60)
 	dd.add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWN|winapi.CBS_AUTOHSCROLL, idDiscPoint, 75, row, 230, 220)
 	label(i18n.KeyDiscTime, 313, row, 147)
-	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idDiscTime, 462, row, 115, 23)
-	label(i18n.KeyDiscTolerance, 585, row, 75)
+	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idDiscTime, 462, row, 100, 23)
+	label(i18n.KeyDiscTolerance, 568, row, 92)
 	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idDiscTol, 662, row, 45, 23)
 	dd.add("BUTTON", dd.t(i18n.KeyDiscByValue), 0, winapi.WS_TABSTOP, idDiscByValue, 714, row-1, 134, 26)
-	dd.add("STATIC", dd.t(i18n.KeyDiscToleranceHint), 0, winapi.SS_LEFT, 0, 462, row+26, 386, 16)
+	dd.add("STATIC", dd.t(i18n.KeyDiscToleranceHint), 0, winapi.SS_LEFT, 0, 462, row+26, 386, 18)
 	// candidates and the details of the selected one (no horizontal
 	// scrolling: the details box shows the whole candidate)
 	row = 92

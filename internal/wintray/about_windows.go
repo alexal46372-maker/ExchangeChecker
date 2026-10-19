@@ -26,11 +26,11 @@ func newAboutWindow(owner uintptr, title, text, okText, okTip string, show bool,
 		switch msg {
 		case winapi.WM_COMMAND:
 			if wp&0xFFFF == winapi.IDOK {
-				winapi.DestroyWindow(hw)
+				destroyWindow(hw)
 				return 0, true
 			}
 		case winapi.WM_CLOSE:
-			winapi.DestroyWindow(hw)
+			destroyWindow(hw)
 			return 0, true
 		case winapi.WM_DESTROY:
 			if onClose != nil {

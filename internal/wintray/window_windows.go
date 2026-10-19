@@ -23,6 +23,24 @@ var (
 	classes  = map[string]bool{}
 )
 
+// msgDeferDestroy destroys the window that receives it. A window closed
+// from a control's WM_COMMAND (a button still inside BM_CLICK) is hidden
+// and destroyed after the click returns: destroying it under the button
+// is an access violation in user32 (CI #309, #316).
+const msgDeferDestroy = winapi.WM_APP + 10
+
+var ctlDepth int // nesting of control WM_COMMAND on the UI thread
+
+// destroyWindow destroys hwnd now, or after the current control command.
+func destroyWindow(hwnd uintptr) {
+	if ctlDepth > 0 && winapi.IsWindow(hwnd) {
+		winapi.ShowWindow(hwnd, winapi.SW_HIDE)
+		winapi.PostMessage(hwnd, msgDeferDestroy, 0, 0)
+		return
+	}
+	winapi.DestroyWindow(hwnd)
+}
+
 func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 	hmu.Lock()
 	h := handlers[hwnd]
@@ -31,8 +49,20 @@ func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 	if sc != nil && sc.handle(uint32(msg), wp, lp) {
 		return 0
 	}
+	if uint32(msg) == msgDeferDestroy {
+		winapi.DestroyWindow(hwnd)
+		return 0
+	}
 	if h != nil {
-		if r, ok := h(hwnd, uint32(msg), wp, lp); ok {
+		ctl := uint32(msg) == winapi.WM_COMMAND && lp != 0
+		if ctl {
+			ctlDepth++
+		}
+		r, ok := h(hwnd, uint32(msg), wp, lp)
+		if ctl {
+			ctlDepth--
+		}
+		if ok {
 			return r
 		}
 	}

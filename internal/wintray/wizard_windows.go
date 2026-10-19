@@ -661,7 +661,7 @@ func (wd *wizardDialog) close() {
 	if owner {
 		winapi.EnableWindow(w.hwnd, true)
 	}
-	winapi.DestroyWindow(wd.hwnd)
+	destroyWindow(wd.hwnd)
 	if !owner {
 		return
 	}

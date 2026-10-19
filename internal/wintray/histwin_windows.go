@@ -113,11 +113,11 @@ func newHistWindow(a *App, row trayui.StatusRow, show bool) (*histWindow, error)
 				hw.export(exportHTML)
 				return 0, true
 			case idHistClose:
-				winapi.DestroyWindow(hwnd)
+				destroyWindow(hwnd)
 				return 0, true
 			}
 		case winapi.WM_CLOSE:
-			winapi.DestroyWindow(hwnd)
+			destroyWindow(hwnd)
 			return 0, true
 		case winapi.WM_DESTROY:
 			hw.stop() // cancel {ref} of a running page
@@ -149,7 +149,7 @@ func newHistWindow(a *App, row trayui.StatusRow, show bool) (*histWindow, error)
 			return 0, false
 		})
 	if err != nil {
-		winapi.DestroyWindow(hwnd)
+		destroyWindow(hwnd)
 		return nil, err
 	}
 	by := int32(h - 84)

@@ -297,7 +297,7 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	}
 	w.hwnd = hwnd
 	if err := w.createHost(); err != nil {
-		winapi.DestroyWindow(hwnd)
+		destroyWindow(hwnd)
 		return nil, err
 	}
 	w.build()
@@ -1469,7 +1469,7 @@ func (w *settingsWindow) close() {
 		w.testCancel()
 		w.testCancel = nil
 	}
-	winapi.DestroyWindow(w.hwnd)
+	destroyWindow(w.hwnd)
 	if w.cfg.onClose != nil {
 		w.cfg.onClose()
 	}

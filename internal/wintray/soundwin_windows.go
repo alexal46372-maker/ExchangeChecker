@@ -272,7 +272,7 @@ func (w *soundWindow) command(id int32) {
 func (w *soundWindow) close() {
 	w.a.stopTestSound()
 	if winapi.IsWindow(w.hwnd) {
-		winapi.DestroyWindow(w.hwnd)
+		destroyWindow(w.hwnd)
 	}
 	if w.a.soundWin == w {
 		w.a.soundWin = nil
@@ -309,7 +309,7 @@ func (a *App) OpenVolume() *volumeWindow {
 					winapi.PostMessage(hw, winapi.WM_CLOSE, 0, 0)
 				}
 			case winapi.WM_CLOSE:
-				winapi.DestroyWindow(hw)
+				destroyWindow(hw)
 				if a.volWin == v {
 					a.volWin = nil
 				}

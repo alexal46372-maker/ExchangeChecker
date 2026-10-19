@@ -110,7 +110,7 @@ func (a *App) OpenHistory(row trayui.StatusRow) *histWindow {
 		return nil
 	}
 	if hw := a.histWin; hw != nil && hw.alive() {
-		winapi.DestroyWindow(hw.hwnd) // one history window: the new point replaces it
+		destroyWindow(hw.hwnd) // one history window: the new point replaces it
 	}
 	hw, err := newHistWindow(a, row, !a.opt.HiddenStatus)
 	if err != nil {

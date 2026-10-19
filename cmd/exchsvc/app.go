@@ -175,7 +175,8 @@ func runService(ctx context.Context, ac appConfig) error {
 
 	// phase 10 (CHK-SVC-06): Viber notifications (settings.viber +
 	// viber.dpapi); the settings arrive with the snapshots
-	viber := notify.New(notify.Options{Store: store, Client: ac.ViberClient, URL: ac.ViberURL, Lang: lang, Log: log, Now: ac.Now})
+	viber := notify.New(notify.Options{Store: store, Client: ac.ViberClient, URL: ac.ViberURL, Lang: lang, Log: log, Now: ac.Now,
+		StateDir: ac.Dir}) // viber_state.json: date of the last summary
 	vctx, vcancel := context.WithCancel(ctx)
 	vdone := make(chan struct{})
 	go func() { defer close(vdone); viber.Run(vctx) }()

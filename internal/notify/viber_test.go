@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -140,6 +142,7 @@ func TestCHK_SVC_06_SummaryOncePerWindow(t *testing.T) {
 	}
 	// mid-window start: not ready yet -> no summary
 	ck.set(at(11, 0))
+	n.started = ck.now() // the service started now (mid-window)
 	n.Snapshot(snap(false, true))
 	n.Step(ctx)
 	if len(f.sent()) != 0 {
@@ -347,5 +350,144 @@ func TestCHK_SVC_06_ViberTest(t *testing.T) {
 	n.ReloadToken()
 	if res, err := n.ViberTest(context.Background(), "r9", ""); err != nil || !res.OK || len(res.Results) != 1 || res.Results[0].ID != "r9" || f.tokens[2] != "saved-tok" {
 		t.Fatalf("single %+v %v", res, err)
+	}
+}
+
+// TestCHK_SVC_06_SummaryStateAndReadyCap — the date of the last summary
+// survives a restart (viber_state.json, atomic): a restart inside the
+// window does not resend; a missing / unreadable file = not sent yet; a
+// profile still not polled after ReadyWait is listed as
+// notify.not_checked.
+func TestCHK_SVC_06_SummaryStateAndReadyCap(t *testing.T) {
+	f := newFake(t)
+	dir := t.TempDir()
+	ck := &clock{t: at(10, 0)}
+	mk := func() *Notifier {
+		n := New(Options{Store: &memStore{tok: "t"}, Client: f.client(), URL: f.srv.URL + "/pa/send_message", Lang: model.LangRU,
+			Now: ck.now, Loc: loc, StateDir: dir})
+		return n
+	}
+	ctx := context.Background()
+	n := mk()
+	n.Snapshot(snap(true, false))
+	n.Step(ctx)
+	if len(f.sent()) != 2 {
+		t.Fatalf("summary %d", len(f.sent()))
+	}
+	b, err := os.ReadFile(filepath.Join(dir, StateFile))
+	if err != nil || string(b) != `{"version":1,"lastSummaryDate":"2026-10-19"}` {
+		t.Fatalf("state %s %v", b, err)
+	}
+	if m, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(m) != 0 {
+		t.Fatalf("temp files %v", m)
+	}
+	// restart inside the window: no second summary
+	ck.add(time.Hour)
+	n2 := mk()
+	n2.Snapshot(snap(true, false))
+	n2.Step(ctx)
+	if len(f.sent()) != 2 {
+		t.Fatal("summary resent after a restart")
+	}
+	// unreadable state: treated as not sent yet
+	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte("{garbage"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	n3 := mk()
+	n3.Snapshot(snap(true, false))
+	n3.Step(ctx)
+	if len(f.sent()) != 4 {
+		t.Fatal("no summary with an unreadable state file")
+	}
+	// next day: a profile never polled; summary after ReadyWait
+	os.Remove(filepath.Join(dir, StateFile))
+	ck.set(at(9, 0).AddDate(0, 0, 1))
+	n4 := mk()
+	s := snap(true, false)
+	s.Profiles = append(s.Profiles, model.ProfileSnapshot{ProfileID: "p2", Name: "Офис", Enabled: true},
+		model.ProfileSnapshot{ProfileID: "p3", Name: "Выкл", Enabled: false})
+	n4.Snapshot(s)
+	n4.Step(ctx)
+	ck.add(ReadyWait - time.Second)
+	n4.Step(ctx)
+	if len(f.sent()) != 4 {
+		t.Fatal("summary before ReadyWait without all polls")
+	}
+	ck.add(time.Second)
+	n4.Step(ctx)
+	got := f.sent()
+	if len(got) != 6 || !strings.Contains(got[4].Text, "- Офис: ещё не проверена") || strings.Contains(got[4].Text, "Выкл") {
+		t.Fatalf("capped summary %+v", got[len(got)-1])
+	}
+}
+
+// TestCHK_SVC_06_NoHeadOfLineBlocking — a message in backoff does not
+// hold back the messages after it.
+func TestCHK_SVC_06_NoHeadOfLineBlocking(t *testing.T) {
+	f := newFake(t)
+	ck := &clock{t: at(10, 0)}
+	n, _ := newN(t, f, ck, true)
+	v := viberOn()
+	v.Recipients = v.Recipients[:1]
+	n.Snapshot(snapV(v, true, false))
+	n.summaryDay = "2026-10-19"
+	f.mu.Lock()
+	f.answers = [][2]int{{500, 0}}
+	f.mu.Unlock()
+	n.Alert(model.AlertEvent{ProfileID: "p1", ProfileName: "A", PointName: "x", From: model.LevelOK, To: model.LevelError})
+	n.Alert(model.AlertEvent{ProfileID: "p1", ProfileName: "B", PointName: "y", From: model.LevelOK, To: model.LevelWarning})
+	n.Step(context.Background())
+	got := f.sent()
+	if g := n.Status(); len(got) != 2 || g.Sent != 1 || g.Queued != 1 || !strings.Contains(got[1].Text, "«B»") {
+		t.Fatalf("HOL %+v %+v", got, g)
+	}
+	n.Alert(model.AlertEvent{ProfileID: "p1", ProfileName: "C", PointName: "z", From: model.LevelOK, To: model.LevelError})
+	ck.add(time.Second)
+	n.Step(context.Background()) // A still in backoff, C goes out
+	if got := f.sent(); len(got) != 3 || !strings.Contains(got[2].Text, "«C»") {
+		t.Fatalf("after backoff head %+v", got)
+	}
+	ck.add(5 * time.Second)
+	n.Step(context.Background())
+	if g := n.Status(); len(f.sent()) != 4 || g.Queued != 0 || g.Sent != 3 {
+		t.Fatalf("retry %+v", g)
+	}
+}
+
+// TestCHK_SVC_06_NoRawErrorText — events, summaries and reminders carry
+// the localized text of the error key, never the raw SQL error.
+func TestCHK_SVC_06_NoRawErrorText(t *testing.T) {
+	f := newFake(t)
+	ck := &clock{t: at(10, 0)}
+	n, _ := newN(t, f, ck, true)
+	raw := "Login failed for user 'sa'. RAW-SQL-SECRET"
+	s := snap(true, false)
+	s.Profiles[0].Level, s.Profiles[0].Error, s.Profiles[0].ErrorKey = model.LevelError, raw, model.MsgSQLTLSCertificate
+	s.Profiles = append(s.Profiles, model.ProfileSnapshot{ProfileID: "p2", Name: "Офис", Enabled: true, CheckedAt: at(9, 0),
+		Level: model.LevelError, Error: raw})
+	n.Snapshot(s)
+	n.Alert(model.AlertEvent{ProfileID: "p1", ProfileName: "Склад", From: model.LevelOK, To: model.LevelError, Error: raw, ErrorKey: model.MsgSQLTLSCertificate})
+	n.Alert(model.AlertEvent{ProfileID: "p2", ProfileName: "Офис", From: model.LevelOK, To: model.LevelError, Error: raw})
+	n.Step(context.Background())
+	ck.add(time.Hour)
+	n.Step(context.Background()) // reminder
+	got := f.sent()
+	if len(got) != 8 {
+		t.Fatalf("sent %d", len(got))
+	}
+	known := model.SQLMessage(model.MsgSQLTLSCertificate, model.LangRU)
+	unknown := model.MonitorMessage(model.MsgViberErrorUnknown, model.LangRU)
+	for _, m := range got {
+		if strings.Contains(m.Text, "RAW-SQL") || strings.Contains(m.Text, "Login failed") {
+			t.Fatalf("raw error text sent: %q", m.Text)
+		}
+	}
+	if known == "" || unknown == "" || !strings.Contains(got[0].Text, known) || !strings.Contains(got[2].Text, unknown) ||
+		!strings.Contains(got[4].Text, known) || !strings.Contains(got[4].Text, unknown) || !strings.Contains(got[6].Text, known) {
+		t.Fatalf("texts %q", []string{got[0].Text, got[2].Text, got[4].Text, got[6].Text})
+	}
+	if en := EventText(model.AlertEvent{ProfileName: "X", From: model.LevelOK, To: model.LevelError, Error: raw}, model.LangEN); strings.Contains(en, "RAW") ||
+		!strings.Contains(en, "connection or query error") {
+		t.Fatalf("en %q", en)
 	}
 }

@@ -79,6 +79,9 @@ const (
 	MsgViberTLS             = "notify.viber_tls"
 	MsgViberFailed          = "notify.viber_failed"
 	MsgViberInvalid         = "notify.viber_invalid"
+	// texts of the messages themselves
+	MsgViberNotChecked   = "notify.not_checked"   // summary: profile not polled yet
+	MsgViberErrorUnknown = "notify.error_unknown" // an error without a known key
 )
 
 // ViberSchedule: days ISO 1 = Monday .. 7 = Sunday; From / To "HH:MM"

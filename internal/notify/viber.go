@@ -9,6 +9,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -57,9 +59,25 @@ type Options struct {
 	Now    func() time.Time
 	// Loc is the schedule time zone (nil = time.Local: the machine time).
 	Loc *time.Location
+	// StateDir holds viber_state.json (the date of the last summary); ""
+	// = not persisted (tests).
+	StateDir string
+}
+
+// StateFile keeps the date of the last summary across restarts.
+const StateFile = "viber_state.json"
+
+// ReadyWait caps the wait for the first poll of every enabled profile
+// before the summary (then listed as notify.not_checked).
+const ReadyWait = 10 * time.Minute
+
+type stateDoc struct {
+	Version         int    `json:"version"`
+	LastSummaryDate string `json:"lastSummaryDate"`
 }
 
 type item struct {
+	id       uint64
 	receiver string
 	text     string
 	attempts int
@@ -79,6 +97,8 @@ type Notifier struct {
 	summaryDay string    // local date of the window whose summary was queued
 	lastRemind time.Time // last summary / reminder
 	lastTest   time.Time
+	started    time.Time
+	seq        uint64
 	wake       chan struct{}
 }
 
@@ -102,8 +122,66 @@ func New(o Options) *Notifier {
 	}
 	n := &Notifier{o: o, settings: model.DefaultViberSettings(), wake: make(chan struct{}, 1)}
 	n.settings.Enabled = false
+	n.started = o.Now()
+	n.summaryDay = n.loadState()
 	n.ReloadToken()
 	return n
+}
+
+// loadState reads viber_state.json; missing / unreadable = no summary
+// sent yet.
+func (n *Notifier) loadState() string {
+	if n.o.StateDir == "" {
+		return ""
+	}
+	b, err := os.ReadFile(filepath.Join(n.o.StateDir, StateFile))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			n.o.Log.Printf("viber: %s: %v (no summary sent yet)", StateFile, err)
+		}
+		return ""
+	}
+	var d stateDoc
+	if err := json.Unmarshal(b, &d); err != nil {
+		n.o.Log.Printf("viber: %s: %v (no summary sent yet)", StateFile, err)
+		return ""
+	}
+	if _, err := time.Parse("2006-01-02", d.LastSummaryDate); err != nil {
+		return ""
+	}
+	return d.LastSummaryDate
+}
+
+// saveState writes viber_state.json atomically (temp file + rename).
+func (n *Notifier) saveState(day string) {
+	if n.o.StateDir == "" {
+		return
+	}
+	b, _ := json.Marshal(stateDoc{Version: 1, LastSummaryDate: day})
+	err := func() error {
+		f, err := os.CreateTemp(n.o.StateDir, StateFile+".*.tmp")
+		if err != nil {
+			return err
+		}
+		tmp := f.Name()
+		_, werr := f.Write(b)
+		if werr == nil {
+			werr = f.Sync()
+		}
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr == nil {
+			werr = os.Rename(tmp, filepath.Join(n.o.StateDir, StateFile))
+		}
+		if werr != nil {
+			_ = os.Remove(tmp)
+		}
+		return werr
+	}()
+	if err != nil {
+		n.o.Log.Printf("viber: %s: %v", StateFile, err)
+	}
 }
 
 // ReloadToken rereads viber.dpapi (after save_settings changed it).
@@ -154,7 +232,8 @@ func (n *Notifier) enqueueLocked(text string, now time.Time) {
 			n.status.Dropped++
 			continue
 		}
-		n.queue = append(n.queue, item{receiver: r.ID, text: text, next: now})
+		n.seq++
+		n.queue = append(n.queue, item{id: n.seq, receiver: r.ID, text: text, next: now})
 	}
 }
 
@@ -176,7 +255,7 @@ func (n *Notifier) Alert(e model.AlertEvent) {
 		n.status.Dropped++
 		return
 	}
-	n.enqueueLocked(alert.Format(e, n.o.Lang), now)
+	n.enqueueLocked(EventText(e, n.o.Lang), now)
 	n.kick()
 }
 
@@ -234,9 +313,46 @@ func problems(s *model.StatusSnapshot) []model.ProfileSnapshot {
 	return out
 }
 
+// ErrorText is the localized text of an error key (sql.* / monitor.*),
+// notify.error_unknown otherwise: the raw (SQL) error text is never sent.
+func ErrorText(key, lang string) string {
+	if t := model.SQLMessage(key, lang); t != "" {
+		return t
+	}
+	if t := model.MonitorMessage(key, lang); t != "" {
+		return t
+	}
+	return model.MonitorMessage(model.MsgViberErrorUnknown, lang)
+}
+
+// EventText renders an alert for Viber: alert.Format without the raw
+// error, the error as its localized key.
+func EventText(e model.AlertEvent, lang string) string {
+	raw := e.Error != "" || e.ErrorKey != ""
+	key := e.ErrorKey
+	e.Error, e.ErrorKey = "", ""
+	t := alert.Format(e, lang)
+	if raw {
+		if lang == model.LangEN {
+			t += "; error: "
+		} else {
+			t += "; ошибка: "
+		}
+		t += ErrorText(key, lang)
+	}
+	return t
+}
+
 func (n *Notifier) summaryText(s *model.StatusSnapshot, reminder bool) string {
 	en := n.o.Lang == model.LangEN
 	pr := problems(s)
+	if !reminder {
+		for _, p := range s.Profiles {
+			if p.Enabled && p.CheckedAt.IsZero() {
+				pr = append(pr, p)
+			}
+		}
+	}
 	var b strings.Builder
 	switch {
 	case reminder && en:
@@ -258,12 +374,12 @@ func (n *Notifier) summaryText(s *model.StatusSnapshot, reminder bool) string {
 	}
 	for _, p := range pr {
 		b.WriteString("\n- " + p.Name + ": ")
+		if p.CheckedAt.IsZero() {
+			b.WriteString(model.MonitorMessage(model.MsgViberNotChecked, n.o.Lang))
+			continue
+		}
 		if p.Error != "" || p.ErrorKey != "" {
-			if en {
-				b.WriteString("no connection / query error")
-			} else {
-				b.WriteString("нет связи / ошибка запроса")
-			}
+			b.WriteString(ErrorText(p.ErrorKey, n.o.Lang))
 			continue
 		}
 		var bad []string
@@ -297,9 +413,12 @@ func (n *Notifier) Step(ctx context.Context) {
 		return
 	}
 	day := now.Format("2006-01-02")
-	if n.summaryDay != day && ready(n.snap) {
+	if n.summaryDay != day && n.snap != nil && (ready(n.snap) || n.o.Now().Sub(n.started) >= ReadyWait) {
 		// one summary per window, also when the service starts mid-window
+		// (persisted: a restart inside the window does not resend it);
+		// profiles still not polled after ReadyWait are listed as such
 		n.summaryDay = day
+		n.saveState(day)
 		n.lastRemind = now
 		n.enqueueLocked(n.summaryText(n.snap, false), now)
 	} else if n.summaryDay == day && n.settings.ReminderMinutes > 0 && n.snap != nil && len(problems(n.snap)) > 0 &&
@@ -310,39 +429,61 @@ func (n *Notifier) Step(ctx context.Context) {
 	token, sender := n.token, model.ViberSenderName
 	n.mu.Unlock()
 
+	// every ready message once per round (no head-of-line blocking by a
+	// message in backoff); a network / rate-limit error ends the round
+	tried := map[uint64]bool{}
 	for ctx.Err() == nil {
 		n.mu.Lock()
-		if len(n.queue) == 0 || n.queue[0].next.After(now) || !n.settings.InWindow(n.local()) {
+		if !n.settings.InWindow(n.local()) {
 			n.mu.Unlock()
 			return
 		}
-		it := n.queue[0]
+		var it item
+		found := false
+		for _, q := range n.queue {
+			if !tried[q.id] && !q.next.After(now) {
+				it, found = q, true
+				break
+			}
+		}
 		n.mu.Unlock()
+		if !found {
+			return
+		}
+		tried[it.id] = true
 		key, _, retry := n.send(ctx, token, sender, it.receiver, it.text)
 		n.mu.Lock()
-		if len(n.queue) == 0 || n.queue[0].receiver != it.receiver || n.queue[0].text != it.text {
-			n.mu.Unlock() // settings changed meanwhile
-			return
+		idx := -1
+		for i, q := range n.queue {
+			if q.id == it.id {
+				idx = i
+			}
+		}
+		if idx < 0 {
+			n.mu.Unlock() // dropped meanwhile (settings / token changed)
+			continue
 		}
 		t := n.o.Now()
 		if key == "" {
 			n.status.Sent++
 			n.status.LastOKAt = &t
-			n.queue = n.queue[1:]
+			n.queue = append(n.queue[:idx:idx], n.queue[idx+1:]...)
 			n.mu.Unlock()
 			continue
 		}
 		n.status.LastErrorAt, n.status.LastErrorKey = &t, key
-		n.queue[0].attempts++
-		if retry && n.queue[0].attempts < MaxAttempts {
-			att := n.queue[0].attempts
-			n.queue[0].next = now.Add(Backoff[att-1])
+		n.queue[idx].attempts++
+		if att := n.queue[idx].attempts; retry && att < MaxAttempts {
+			n.queue[idx].next = now.Add(Backoff[att-1])
 			n.mu.Unlock()
 			n.o.Log.Printf("viber: %s, retry %d", key, att)
-			return
+			if key == model.MsgViberNetwork || key == model.MsgViberRateLimited {
+				return
+			}
+			continue
 		}
 		n.status.Dropped++
-		n.queue = n.queue[1:]
+		n.queue = append(n.queue[:idx:idx], n.queue[idx+1:]...)
 		n.mu.Unlock()
 		n.o.Log.Printf("viber: %s, message dropped", key)
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/monitor"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/notify"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/sqlcheck"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/version"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -58,6 +59,10 @@ type appConfig struct {
 	// SecureHistory overrides the DACL of the history folder (tests; nil =
 	// secureHistoryDir: protected SYSTEM + Administrators on Windows).
 	SecureHistory func(dir string) error
+	// Viber overrides the HTTPS client / URL of the Viber notifier
+	// (tests: a fake server); nil = hcwinnet + chatapi.viber.com.
+	ViberClient notify.Poster
+	ViberURL    string
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -168,6 +173,17 @@ func runService(ctx context.Context, ac appConfig) error {
 	hist := history.Open(history.Options{Dir: filepath.Join(ac.Dir, model.HistoryDir), Prepare: secureHist, Now: ac.Now, Log: log})
 	defer hist.Close()
 
+	// phase 10 (CHK-SVC-06): Viber notifications (viber.json + viber.dpapi)
+	viber := notify.New(notify.Options{Store: store, Client: ac.ViberClient, URL: ac.ViberURL, Lang: lang, Log: log, Now: ac.Now,
+		OnSave: func(account string, v model.ViberSettings, tokenChanged bool) {
+			report(alert.EventTypeInformation, alert.EventIDConfig,
+				fmt.Sprintf("Viber: settings saved by %s (enabled %t, receivers %d, token changed %t)", account, v.Enabled, len(v.Receivers), tokenChanged))
+		}})
+	vctx, vcancel := context.WithCancel(ctx)
+	vdone := make(chan struct{})
+	go func() { defer close(vdone); viber.Run(vctx) }()
+	defer func() { vcancel(); <-vdone }()
+
 	var srv *ipc.Server
 	mon := monitor.New(monitor.Options{
 		Source:    monitor.FileConfig{Store: store},
@@ -199,7 +215,8 @@ func runService(ctx context.Context, ac appConfig) error {
 		Sink: alert.Multi{
 			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),
-			hist, // transition records of the history (CHK-SVC-03)
+			hist,  // transition records of the history (CHK-SVC-03)
+			viber, // Viber (CHK-SVC-06)
 		},
 		// config-load failures and hung readers (already rate-limited by
 		// the monitor) -> Event Log warning (CHK-MON-10, CHK-MON-13)
@@ -210,6 +227,7 @@ func runService(ctx context.Context, ac appConfig) error {
 		OnSnapshot: func(s model.StatusSnapshot) {
 			srv.PublishStatus(s)
 			hist.RecordSnapshot(s) // profiles polled since the last snapshot
+			viber.Snapshot(s)
 		},
 		Now:          ac.Now,
 		PollInterval: ac.PollInterval,
@@ -218,6 +236,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	srv = ipc.NewServer(mon, log)
 	srv.Authorize = ac.Authorize
 	srv.History = historySource{h: hist, mon: mon}
+	srv.Viber = viber
 	if autostart != nil {
 		// get_status.trayAutostartError + capability tray_autostart_status
 		srv.TrayAutostartError = autostart.ErrorCode

@@ -208,6 +208,9 @@ type Server struct {
 	TrayAutostartError func() string
 	// History serves the history command (phase 9); nil = no capability.
 	History HistorySource
+	// Viber (phase 10, CHK-SVC-06): get_viber / save_viber / viber_test
+	// and capability viber; nil = not offered.
+	Viber ViberManager
 
 	histN int // running history requests (s.mu)
 }
@@ -353,6 +356,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if wiz {
 		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
+	}
+	if s.Viber != nil {
+		caps = append(caps, model.CapViber) // phase 10 (CHK-SVC-06)
 	}
 	return caps
 }
@@ -701,6 +707,12 @@ func (s *Server) readLoop(c *conn) {
 			reply = s.checkNow(c, req)
 		case req.Cmd == model.CmdEventsSince:
 			reply = s.eventsSince(req)
+		case s.Viber != nil && viberCommand(req.Cmd):
+			if !s.startViber(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
 		case model.AdminCommand(req.Cmd):
 			reply = s.handleAdmin(c, req)
 		default:
@@ -1056,7 +1068,7 @@ func (s *Server) runRecovered(ctx context.Context, req model.IPCRequest, run fun
 
 // scrubRequest removes the password and manual SQL texts of req from msg.
 func scrubRequest(msg string, req model.IPCRequest) string {
-	secrets := []string{req.Password}
+	secrets := []string{req.Password, req.ViberToken}
 	if req.Mapping != nil {
 		secrets = append(secrets, req.Mapping.ManualSQL)
 	}

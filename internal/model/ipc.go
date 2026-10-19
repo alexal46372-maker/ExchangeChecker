@@ -182,6 +182,13 @@ type IPCRequest struct {
 	Config *ConfigExport `json:"config,omitempty"`
 	Mode   string        `json:"mode,omitempty"`
 	DryRun bool          `json:"dryRun,omitempty"`
+	// Viber (phase 10, CHK-SVC-06): save_viber settings; ViberToken
+	// (save_viber: set, viber_test: use once; write-only, never logged),
+	// ClearViberToken (save_viber), Receiver (viber_test).
+	Viber           *ViberSettings `json:"viber,omitempty"`
+	ViberToken      string         `json:"viberToken,omitempty"`
+	ClearViberToken bool           `json:"clearViberToken,omitempty"`
+	Receiver        string         `json:"receiver,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
 	// Query of discover_by_value (phase 6, G2).
@@ -231,9 +238,9 @@ func (r IPCRequest) String() string {
 		prof = r.Profile.ID + "@" + r.Profile.Server + "/" + r.Profile.Database
 	}
 	// query / mapping only as present (no point names, no manual SQL)
-	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t query:%t mapping:%t limit:%d}",
+	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t query:%t mapping:%t limit:%d viber:%t viberToken:%t receiver:%s}",
 		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey, r.ClearPassword, r.ExpectedRevision, r.Ref, r.Settings != nil,
-		r.Query != nil, r.Mapping != nil, r.Limit)
+		r.Query != nil, r.Mapping != nil, r.Limit, r.Viber != nil, r.ViberToken != "", r.Receiver)
 }
 
 // GoString masks the password (fmt %#v).
@@ -317,6 +324,10 @@ type IPCMessage struct {
 	// CHK-CFG-06).
 	Export *ConfigExport `json:"export,omitempty"`
 	Import *ImportResult `json:"import,omitempty"`
+	// Viber: get_viber / save_viber reply; ViberTest: viber_test reply
+	// (phase 10, CHK-SVC-06).
+	Viber     *ViberView       `json:"viber,omitempty"`
+	ViberTest *ViberTestResult `json:"viberTest,omitempty"`
 
 	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
 	// node_points, check_mapping; CHK-IPC-08/09):

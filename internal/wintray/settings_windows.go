@@ -165,6 +165,7 @@ type settingsWindow struct {
 	labelText map[int32]string
 	missing   map[int32]bool
 	reqBrush  uintptr
+	brushOff  bool // closing: requiredColor no longer creates the brush
 	// groups: the group boxes by caption key (phase 10 D3)
 	groups map[string]uintptr
 	// vbTestIDs: recipient ids of the «Тест для» items; vbTesting: the
@@ -1453,6 +1454,7 @@ func (w *settingsWindow) close() {
 	if already {
 		return
 	}
+	w.brushOff = true
 	if w.reqBrush != 0 {
 		winapi.DeleteObject(w.reqBrush)
 		w.reqBrush = 0

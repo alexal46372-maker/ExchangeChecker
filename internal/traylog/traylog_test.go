@@ -81,3 +81,21 @@ func TestCHK_TRAY_28_Rotation(t *testing.T) {
 		t.Error(DefaultPath())
 	}
 }
+
+// Review of c50d3bb: Viber tokens never reach the tray log.
+func TestScrubTokens(t *testing.T) {
+	for _, in := range []string{
+		`viberToken=4a1b2c3d-secret`,
+		`"viberToken":"4a1b2c3d-secret"`,
+		`token: 4a1b2c3d-secret`,
+		`save_settings {"token":"4a1b2c3d-secret","x":1}`,
+		`viber_token=4a1b2c3d-secret`,
+	} {
+		if out := Scrub(in); strings.Contains(out, "secret") {
+			t.Errorf("Scrub(%q) = %q", in, out)
+		}
+	}
+	if out := Scrub("tokens are fine"); out != "tokens are fine" {
+		t.Errorf("plain text changed: %q", out)
+	}
+}

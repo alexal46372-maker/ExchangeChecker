@@ -49,7 +49,7 @@ var (
 	// follow a non-letter (Russian keys «пароль», «логин» included). The
 	// value is quoted ("..." / '...') or runs to the end of the segment
 	// (; , or end of line), spaces included.
-	credRe = regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}_])(password|passwd|pwd|login|user ?id|user|uid|пароль|логин|пользователь)(\s*[=:]\s*)("[^"]*"?|'[^']*'?|[^;,\r\n]*)`)
+	credRe = regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}_])(password|passwd|pwd|viber_?token|token|login|user ?id|user|uid|пароль|логин|пользователь)("?\s*[=:]\s*)("[^"]*"?|'[^']*'?|[^;,\r\n]*)`)
 	// user:password@ of a URL (scheme://u:p@host) or a bare //u:p@
 	urlCredRe = regexp.MustCompile(`(//)[^/\s@:]+:[^/@\r\n]*@`)
 )

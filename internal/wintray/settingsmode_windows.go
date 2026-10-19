@@ -115,6 +115,9 @@ func (w *settingsWindow) Missing() map[int32]bool { return w.missing }
 
 // requiredColor answers WM_CTLCOLOREDIT of an empty required box.
 func (w *settingsWindow) requiredColor(dc, ctl uintptr) (uintptr, bool) {
+	if w.brushOff {
+		return 0, false
+	}
 	for id, on := range w.missing {
 		if on && w.ctl[id] == ctl {
 			if w.reqBrush == 0 {

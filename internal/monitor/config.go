@@ -96,7 +96,7 @@ func (f FileConfig) Load() Config {
 		// config.Store returns exactly the defaults for read / parse /
 		// version errors and the parsed (hence non-default: the defaults
 		// are valid) settings with a validation error.
-		if st == model.DefaultSettings() {
+		if st.Equal(model.DefaultSettings()) {
 			settingsFatal = err
 		} else {
 			errs = append(errs, err)

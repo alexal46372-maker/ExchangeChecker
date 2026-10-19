@@ -182,6 +182,13 @@ type IPCRequest struct {
 	Config *ConfigExport `json:"config,omitempty"`
 	Mode   string        `json:"mode,omitempty"`
 	DryRun bool          `json:"dryRun,omitempty"`
+	// Viber (phase 10, CHK-SVC-06): ViberToken (save_settings: set,
+	// empty / absent = no change; viber_test: use once, not saved;
+	// write-only, never logged), ClearViberToken (save_settings: remove
+	// the saved token), RecipientID (viber_test).
+	ViberToken      string `json:"viberToken,omitempty"`
+	ClearViberToken bool   `json:"clearViberToken,omitempty"`
+	RecipientID     string `json:"recipientId,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
 	// Query of discover_by_value (phase 6, G2).
@@ -231,9 +238,9 @@ func (r IPCRequest) String() string {
 		prof = r.Profile.ID + "@" + r.Profile.Server + "/" + r.Profile.Database
 	}
 	// query / mapping only as present (no point names, no manual SQL)
-	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t query:%t mapping:%t limit:%d}",
+	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t query:%t mapping:%t limit:%d viberToken:%t clearViberToken:%t recipientId:%s}",
 		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey, r.ClearPassword, r.ExpectedRevision, r.Ref, r.Settings != nil,
-		r.Query != nil, r.Mapping != nil, r.Limit)
+		r.Query != nil, r.Mapping != nil, r.Limit, r.ViberToken != "", r.ClearViberToken, r.RecipientID)
 }
 
 // GoString masks the password (fmt %#v).
@@ -317,6 +324,8 @@ type IPCMessage struct {
 	// CHK-CFG-06).
 	Export *ConfigExport `json:"export,omitempty"`
 	Import *ImportResult `json:"import,omitempty"`
+	// ViberTest: viber_test reply (phase 10, CHK-SVC-06).
+	ViberTest *ViberTestResult `json:"viberTest,omitempty"`
 
 	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
 	// node_points, check_mapping; CHK-IPC-08/09):

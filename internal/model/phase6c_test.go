@@ -16,8 +16,8 @@ func TestCHK_CFG_03_BeepEnabledJSON(t *testing.T) {
 	if d.Beep.Enabled != OptTrue || !d.Beep.BeepEnabled() {
 		t.Fatalf("default: %v", d.Beep.Enabled)
 	}
-	if d != DefaultSettings() {
-		t.Fatal("Settings no longer comparable")
+	if !d.Equal(DefaultSettings()) {
+		t.Fatal("Settings.Equal: defaults differ")
 	}
 	for _, c := range []struct {
 		in   OptBool

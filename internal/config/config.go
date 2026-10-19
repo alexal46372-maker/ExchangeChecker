@@ -130,6 +130,8 @@ func ParseSettings(raw []byte) (model.Settings, error) {
 	// beep.enabled: missing -> the default (true) prefilled above; an
 	// explicit null -> true as well; false stays false
 	doc.Settings = doc.Settings.Normalized()
+	v := doc.Settings.Viber.Stored() // hasToken / status are views only
+	doc.Settings.Viber = &v
 	if err := doc.Settings.Validate(); err != nil {
 		return doc.Settings, fmt.Errorf("config: %s: %w", SettingsFile, err)
 	}
@@ -140,6 +142,10 @@ func ParseSettings(raw []byte) (model.Settings, error) {
 func (s *Store) SaveSettings(st model.Settings) error {
 	if err := st.Validate(); err != nil {
 		return err
+	}
+	if st.Viber != nil { // hasToken / status are views only
+		v := st.Viber.Stored()
+		st.Viber = &v
 	}
 	b, err := marshalJSON(settingsDoc{Version: SchemaVersion, Settings: st})
 	if err != nil {

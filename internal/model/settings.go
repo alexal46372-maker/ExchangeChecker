@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 )
 
@@ -111,6 +112,9 @@ type Settings struct {
 	Beep            BeepSettings `json:"beep"`
 	Language        string       `json:"language"`
 	TrayAutostart   bool         `json:"trayAutostart"`
+	// Viber (phase 10, CHK-SVC-06): nil in save_settings = keep the
+	// stored value; always set in views; never in export_config.
+	Viber *ViberSettings `json:"viber,omitempty"`
 }
 
 // DefaultSettings returns the settings used when settings.json is missing.
@@ -129,6 +133,7 @@ func DefaultSettings() Settings {
 		},
 		Language:      LangAuto,
 		TrayAutostart: true,
+		Viber:         defaultViberPtr(),
 	}
 }
 
@@ -141,6 +146,38 @@ func (s Settings) Normalized() Settings {
 	if s.Beep.Enabled == OptUnset {
 		s.Beep.Enabled = OptTrue
 	}
+	if s.Viber == nil {
+		s.Viber = defaultViberPtr()
+	} else {
+		v := *s.Viber
+		v.Recipients = append([]ViberRecipient{}, v.Recipients...)
+		v.Events = append([]string{}, v.Events...)
+		v.Schedule.Days = append([]int{}, v.Schedule.Days...)
+		s.Viber = &v
+	}
+	return s
+}
+
+func defaultViberPtr() *ViberSettings {
+	v := DefaultViberSettings()
+	return &v
+}
+
+// Equal compares settings field by field (Settings holds slices since
+// phase 10): Normalized forms, the read-only viber fields ignored.
+func (s Settings) Equal(o Settings) bool {
+	a, b := s.Normalized(), o.Normalized()
+	va, vb := a.Viber.Stored(), b.Viber.Stored()
+	a.Viber, b.Viber = nil, nil
+	return reflect.DeepEqual(a, b) && reflect.DeepEqual(va, vb)
+}
+
+// Stored returns the form written to settings.json (viber without the
+// read-only fields).
+func (s Settings) Stored() Settings {
+	s = s.Normalized()
+	v := s.Viber.Stored()
+	s.Viber = &v
 	return s
 }
 
@@ -175,6 +212,11 @@ func (s Settings) Validate() error {
 			"2", itoa(MaxThresholdMinutes), itoa(s.ErrorMinutes)))
 	}
 	errs = append(errs, s.Beep.validate()...)
+	if s.Viber != nil {
+		if err := s.Viber.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	switch s.Language {
 	case LangAuto, LangRU, LangEN:
 	default:

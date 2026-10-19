@@ -164,6 +164,15 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgImportMode:              {"Неверный режим импорта (merge или replace).", "Invalid import mode (merge or replace)."},
 	MsgImportDuplicateID:       {"В файле конфигурации повторяется идентификатор профиля.", "The configuration file contains a duplicate profile id."},
 	MsgImportNoConfig:          {"Не передана конфигурация для импорта.", "No configuration to import."},
+	MsgViberNoToken:            {"Не задан токен бота Viber.", "The Viber bot token is not set."},
+	MsgViberNoRecipients:       {"Не заданы получатели Viber.", "No Viber recipients are set."},
+	MsgViberAuthFailed:         {"Viber отклонил токен бота.", "Viber rejected the bot token."},
+	MsgViberReceiverInvalid:    {"Получатель Viber не найден или не подписан на бота.", "The Viber receiver is unknown or not subscribed to the bot."},
+	MsgViberRateLimited:        {"Слишком много запросов к Viber; повторите позже.", "Too many Viber requests; try again later."},
+	MsgViberNetwork:            {"Нет связи с сервером Viber (сеть, прокси).", "Cannot reach the Viber server (network, proxy)."},
+	MsgViberTLS:                {"Ошибка TLS при подключении к Viber: обновите корневые сертификаты Windows.", "TLS error connecting to Viber: update the Windows root certificates."},
+	MsgViberFailed:             {"Viber не принял сообщение.", "Viber did not accept the message."},
+	MsgViberInvalid:            {"Неверные настройки Viber.", "Invalid Viber settings."},
 	MsgImportTrayTooLarge:      {"Блок настроек трея в файле конфигурации слишком большой.", "The tray block of the configuration file is too large."},
 	MsgImportRollbackFailed:    {"Импорт не удался, и прежнюю конфигурацию восстановить не удалось: состояние не восстановлено, проверьте настройки.", "The import failed and the previous configuration could not be restored: state not restored, check the configuration."},
 	MsgMonitorConfigChanged:    {"Конфигурация изменена.", "Configuration changed."},
@@ -226,5 +235,7 @@ func MonitorMessageKeys() []string {
 		MsgDiscoverMappingInvalid, MsgMonitorInternal,
 		MsgPasswordTargetChange, MsgCheckRateLimited, MsgBrowseRateLimited, MsgMonitorProfileOff, MsgHistoryDisabled, MsgHistoryBadRange,
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
-		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed}
+		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
+		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid}
 }

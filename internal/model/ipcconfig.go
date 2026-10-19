@@ -87,7 +87,8 @@ const (
 func AdminCommand(cmd string) bool {
 	switch cmd {
 	case CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdSaveSettings,
-		CmdDiscover, CmdDiscoverByValue, CmdListNodePoints, CmdCheckMapping:
+		CmdDiscover, CmdDiscoverByValue, CmdListNodePoints, CmdCheckMapping,
+		CmdExportConfig, CmdImportConfig:
 		return true
 	}
 	return false

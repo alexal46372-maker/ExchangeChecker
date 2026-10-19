@@ -177,6 +177,11 @@ type IPCRequest struct {
 	// mandatory since phase 6b (missing -> invalid_request, errorArgs
 	// ["expectedRevision", "validation.required"]); mismatch -> conflict.
 	ExpectedRevision string `json:"expectedRevision,omitempty"`
+	// import_config (phase 10, CHK-CFG-06): Config, Mode (merge default |
+	// replace), DryRun (validate and report, write nothing).
+	Config *ConfigExport `json:"config,omitempty"`
+	Mode   string        `json:"mode,omitempty"`
+	DryRun bool          `json:"dryRun,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
 	// Query of discover_by_value (phase 6, G2).
@@ -308,6 +313,10 @@ type IPCMessage struct {
 	Revision string `json:"revision,omitempty"`
 	// Config is the get_config reply (MsgConfig).
 	Config *ConfigView `json:"config,omitempty"`
+	// Export: export_config reply; Import: import_config reply (phase 10,
+	// CHK-CFG-06).
+	Export *ConfigExport `json:"export,omitempty"`
+	Import *ImportResult `json:"import,omitempty"`
 
 	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
 	// node_points, check_mapping; CHK-IPC-08/09):

@@ -3,6 +3,7 @@ package ipc
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,6 +86,15 @@ type ConfigManager interface {
 	SaveProfile(p model.Profile, password string, clearPassword bool, expectedRevision, account string) (model.SavedProfile, error)
 	DeleteProfile(profileID, expectedRevision, account string) (revision string, err error)
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
+}
+
+// ConfigTransfer runs export_config / import_config (admin only; phase
+// 10, CHK-CFG-06). import_config requests may be up to
+// model.IPCMaxImportRequest (1 MiB) from an elevated administrator; every
+// other request keeps model.IPCMaxRequest.
+type ConfigTransfer interface {
+	ExportConfig() (model.ConfigExport, error)
+	ImportConfig(cfg *model.ConfigExport, mode, expectedRevision string, dryRun bool, account string) (model.ImportResult, error)
 }
 
 // Discoverer runs the admin-only interactive SQL commands (phase 6,
@@ -335,6 +345,9 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(EventFeed); ok {
 		caps = append(caps, model.CapEventsSince)
 	}
+	if _, ok := s.H.(ConfigTransfer); ok {
+		caps = append(caps, model.CapExportConfig, model.CapImportConfig) // phase 10 (CHK-CFG-06)
+	}
 	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
 		caps = append(caps, model.CapProblems, model.CapAlertRepeat) // phase 10 (CHK-MON-17)
 	}
@@ -581,11 +594,43 @@ func (s *Server) readRequest(c *conn, req *model.IPCRequest) error {
 	if max <= 0 {
 		max = model.IPCMaxRequest
 	}
-	err = ReadFrame(io.MultiReader(bytes.NewReader(first[:]), c.rw), req, max)
+	var hdr [4]byte
+	hdr[0] = first[0]
+	_, err = io.ReadFull(c.rw, hdr[1:])
+	if err == nil {
+		n := int64(binary.LittleEndian.Uint32(hdr[:]))
+		large := n > int64(max)
+		// phase 10 (CHK-CFG-06): a frame above the limit is read only for
+		// an elevated administrator of a ConfigTransfer handler, up to
+		// IPCMaxImportRequest, and must be import_config; else the client
+		// is dropped (ErrTooLarge) as before
+		if large && (n > model.IPCMaxImportRequest || !s.largeAllowed(c)) {
+			err = ErrTooLarge
+		} else {
+			err = ReadFrame(io.MultiReader(bytes.NewReader(hdr[:]), c.rw), req, model.IPCMaxImportRequest)
+			if err == nil && large && req.Cmd != model.CmdImportConfig {
+				err = ErrTooLarge
+			}
+		}
+	}
 	if !wd.Stop() || atomic.LoadInt32(&fired) == 1 {
 		return errReadTimeout
 	}
+	if errors.Is(err, io.EOF) {
+		err = io.ErrUnexpectedEOF
+	}
 	return err
+}
+
+// largeAllowed: the client may send an import_config request above
+// IPCMaxRequest (handler with ConfigTransfer, elevated administrator,
+// checked now).
+func (s *Server) largeAllowed(c *conn) bool {
+	if _, ok := s.H.(ConfigTransfer); !ok {
+		return false
+	}
+	cl, err := s.identify(c)
+	return err == nil && cl.Admin
 }
 
 func (s *Server) writeLoop(c *conn) {
@@ -1055,6 +1100,10 @@ func (s *Server) cancelOp(c *conn, req model.IPCRequest) model.IPCMessage {
 // (BUILTIN\Administrators) on Windows (CHK-IPC-06).
 func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 	cm, ok := s.H.(ConfigManager)
+	ct, okT := s.H.(ConfigTransfer)
+	if req.Cmd == model.CmdExportConfig || req.Cmd == model.CmdImportConfig {
+		ok = okT
+	}
 	if !ok {
 		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 	}
@@ -1068,6 +1117,22 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 		return errorReply(req.ID, ErrAccessDenied, "")
 	}
 	switch req.Cmd {
+	case model.CmdExportConfig: // phase 10 (CHK-CFG-06)
+		exp, err := ct.ExportConfig()
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		return model.IPCMessage{ID: req.ID, Type: model.MsgConfigExport, Export: &exp}
+	case model.CmdImportConfig:
+		res, err := ct.ImportConfig(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		result := model.ResultImported
+		if res.DryRun {
+			result = model.ResultImportChecked
+		}
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: result, Reloaded: !res.DryRun, Revision: res.Revision, Import: &res}
 	case model.CmdGetConfig:
 		cfg, rev, err := cm.GetConfig()
 		if err != nil {

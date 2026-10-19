@@ -377,13 +377,20 @@ func TestCHK_TRAY_36_AlertRepeatPush(t *testing.T) {
 	}
 	winapi.SendMessage(winapi.GetDlgItem(app.awin.hwnd, idAlertAck), winapi.BM_CLICK, 0, 0)
 	pumpUntil(t, "acked", func() bool { return !app.AlertView().Visible && len(base.ackCalls()) == 1 })
-	srv.AlertRepeat(model.AlertEvent{Kind: model.AlertKindRepeat, ProfileID: "a", PointKey: "k1", Level: model.LevelError, Acknowledged: true, CheckSeq: 5})
+	lastID, runID := app.tracker.LastID, app.tracker.RunID
+	srv.AlertRepeat(model.AlertEvent{Kind: model.AlertKindRepeat, ProfileID: "a", PointKey: "k1", Level: model.LevelError, Acknowledged: true, CheckSeq: 5, ID: 900, EventID: 900})
 	pumpFor(150 * time.Millisecond)
 	if app.AlertView().Visible {
 		t.Fatal("acknowledged repeat must be filtered")
 	}
 	srv.AlertRepeat(model.AlertEvent{Kind: model.AlertKindRepeat, ProfileID: "a", PointKey: "k1", Level: model.LevelError, CheckSeq: 6})
 	pumpUntil(t, "repeat reopens", func() bool { return app.AlertView().Visible })
+	// a repeat as a regular alert push must not reach Observe either
+	srv.Alert(model.AlertEvent{Kind: model.AlertKindRepeat, ProfileID: "a", ID: 901, EventID: 901, RunID: "r"})
+	pumpFor(100 * time.Millisecond)
+	if app.tracker.LastID != lastID || app.tracker.RunID != runID || app.tracker.Observe(model.AlertEvent{ID: 900, EventID: 900, RunID: runID}) == false {
+		t.Errorf("repeats moved the events_since cursor: %d→%d", lastID, app.tracker.LastID)
+	}
 	// the panel follows status.problems[]
 	srv.PublishStatus(model.StatusSnapshot{Seq: 9, HasProblems: true,
 		Problems: []model.Problem{{Kind: model.ProblemWarning, ProfileID: "z", PointKey: "p"}}})

@@ -106,6 +106,12 @@ func (a *App) balloonEvents(q []trayipc.Event) {
 		if e.Kind != trayipc.EventAlert || e.Alert == nil {
 			continue
 		}
+		if e.Alert.Kind == model.AlertKindRepeat {
+			// never through Observe: repeat ids are not in the events_since
+			// ring, a LastID on them would make the service answer
+			// resetRequired
+			continue
+		}
 		if !a.tracker.Observe(*e.Alert) { // (runId, eventId) seen: duplicate push
 			continue
 		}

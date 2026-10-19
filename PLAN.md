@@ -26,7 +26,7 @@
 | Трей | `cmd/exchtray` | `ExchangeCheckerTray.exe` | NotifyIcon, меню, окна настроек/«О программе», статус, алерт-UI + Beep |
 | Инсталлятор | `cmd/exchsetup` | `ExchangeCheckerSetup.exe` | Wizard: папка, ярлыки, Uninstall, галочка автозапуска службы |
 
-Поставка заказчику (после явной просьбы собрать): zip по `DELIVERY.md` с `ExchangeCheckerSetup.exe` (внутри или рядом — служба и трей по схеме инсталлятора).
+Поставка заказчику (после явной просьбы собрать): zip по `DELIVERY.md` с одной записью `ExchangeChecker-<V>-windows-amd64.exe` (имя = basename zip с `.exe`; промежуточная сборка по-прежнему `ExchangeCheckerSetup.exe`).
 
 Toolchain (жёстко): **Go 1.20.14**, `GOOS=windows` `GOARCH=amd64` `CGO_ENABLED=0`, цель **NT 6.1+**.
 

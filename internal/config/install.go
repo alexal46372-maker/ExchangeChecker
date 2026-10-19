@@ -9,9 +9,13 @@ const (
 	// ServiceExeName is the Windows service executable (ImagePath of the
 	// ExchangeChecker service, EventMessageFile of the Event Log source).
 	ServiceExeName = "ExchangeCheckerSvc.exe"
-	// SetupExeName is the installer delivered in the zip (CHK-DELIV-01).
+	// SetupExeName is the installer's OriginalFilename / CI intermediate
+	// build name (tools/mkres VERSIONINFO). The delivery zip entry is not
+	// this name: it is ExchangeChecker-<V>-windows-amd64.exe (CHK-DELIV-01,
+	// phase 10). The running setup works under any file name.
 	SetupExeName = "ExchangeCheckerSetup.exe"
 	// UninstallExeName is the payload-free uninstaller copied into the
-	// install folder (UninstallString; decision 11, variant C2).
+	// install folder (UninstallString; decision 11, variant C2). Fixed
+	// canonical name of the installed copy (phase 10).
 	UninstallExeName = "ExchangeCheckerUninstall.exe"
 )

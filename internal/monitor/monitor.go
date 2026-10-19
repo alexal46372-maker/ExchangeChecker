@@ -24,9 +24,15 @@ type ReaderFactory func(p model.Profile, password string, opt sqlcheck.Options) 
 
 // Defaults of Options.
 const (
-	DefaultConfigCheck   = 5 * time.Second
-	DefaultMaxConcurrent = 4
-	DefaultMaxJitter     = 2 * time.Second
+	DefaultConfigCheck = 5 * time.Second
+	// DefaultMaxConcurrent = MaxSQLConnections: polls running at the same
+	// time, shared by all profile workers (phase 10, CHK-MON-16).
+	DefaultMaxConcurrent = MaxSQLConnections
+	// MaxSQLConnections is the global semaphore of poll connections (phase
+	// 10, CHK-MON-16); interactive / test commands keep their own limits
+	// and never queue behind polls.
+	MaxSQLConnections = 8
+	DefaultMaxJitter  = 2 * time.Second
 	// DefaultCommandInterval: poll_now / reload_config from IPC are
 	// executed at most once per 10 s (globally and per profile); extra
 	// calls are answered "accepted, coalesced" (CHK-MON-12).
@@ -65,7 +71,8 @@ type Options struct {
 	PollInterval time.Duration
 	// ConfigCheck is how often config files are stat'ed (default 5 s).
 	ConfigCheck time.Duration
-	// MaxConcurrent bounds the profiles polled at the same time (default 4).
+	// MaxConcurrent bounds the profiles polled at the same time (default
+	// and maximum MaxSQLConnections = 8; tests use less).
 	MaxConcurrent int
 	// Jitter is the max random start delay of each profile in a poll
 	// (default min(2 s, interval/10)); negative = none.
@@ -134,6 +141,16 @@ type Options struct {
 	// RunID identifies this run of the service in the heartbeat and in
 	// every AlertEvent (phase 9, CHK-SVC-05); "" = random.
 	RunID string
+
+	// OnRepeat receives the repeat push of an active alert after every
+	// failing check that was no transition (phase 10, CHK-MON-17): the
+	// service sends it to the IPC clients only (not the Event Log, the
+	// log file, history or events_since).
+	OnRepeat func(model.AlertEvent)
+	// OnAlertRepeat receives the alert_repeat event of every repeat
+	// (kind alert_repeat, own id, also in events_since; CHK-MON-17): the
+	// service pushes it as MsgAlertRepeat.
+	OnAlertRepeat func(model.AlertEvent)
 }
 
 // entry is the per-profile runtime state.
@@ -347,6 +364,16 @@ type Monitor struct {
 	checkCounter uint64
 	checkPend    map[string]uint64
 	lastCheckSeq uint64
+
+	// phase 10 (CHK-MON-16): one worker per enabled profile while Run is
+	// active (runCtx != nil, mu); pollSem is the global poll semaphore;
+	// checkAllWait: profiles that still have to start a poll for the
+	// pending check_now of all profiles (mu).
+	runCtx       context.Context
+	workers      map[string]*worker
+	wwg          sync.WaitGroup
+	pollSem      chan struct{}
+	checkAllWait map[string]bool
 }
 
 // New returns a Monitor; call Run to start it.
@@ -369,7 +396,7 @@ func New(opt Options) *Monitor {
 	if opt.ConfigCheck <= 0 {
 		opt.ConfigCheck = DefaultConfigCheck
 	}
-	if opt.MaxConcurrent <= 0 {
+	if opt.MaxConcurrent <= 0 || opt.MaxConcurrent > MaxSQLConnections {
 		opt.MaxConcurrent = DefaultMaxConcurrent
 	}
 	if opt.Rand == nil {
@@ -399,6 +426,8 @@ func New(opt Options) *Monitor {
 			WithTimeout: opt.InteractiveWithTimeout},
 	}
 	m.explorer.defaults()
+	m.workers = map[string]*worker{}
+	m.pollSem = make(chan struct{}, opt.MaxConcurrent)
 	m.checkLast = map[string]time.Time{}
 	m.runID = opt.RunID
 	if m.runID == "" {
@@ -543,7 +572,9 @@ func (h hb) apply(s *model.StatusSnapshot) {
 //
 // A cycle normally ends within cycleBudget (a hung profile is cut off at
 // its timeout), so "no completed cycle for hungAfter" means the poll loop
-// itself is stuck.
+// itself is stuck. Phase 10 (CHK-MON-16): with per-profile workers
+// lastCycle is the end of the last published poll of ANY profile (or the
+// idle heartbeat cycle when no profile is enabled).
 func (m *Monitor) hungAfterLocked() time.Duration {
 	interval := m.intervalLocked()
 	n := 0
@@ -652,8 +683,12 @@ func (m *Monitor) LoadConfig() {
 	}
 }
 
-// Run polls until ctx is canceled, then closes every reader. It returns
-// nil on a normal stop.
+// Run polls until ctx is canceled, then stops the profile workers and
+// closes every reader. It returns nil on a normal stop. Phase 10
+// (CHK-MON-16): every enabled profile is polled by its own worker
+// (workers.go); this loop handles config checks, reloads and poll_now /
+// check_now requests, and keeps the heartbeat alive when no profile is
+// enabled.
 func (m *Monitor) Run(ctx context.Context) error {
 	if atomic.CompareAndSwapInt32(&m.initLoaded, 0, 1) {
 		m.reloadConfig(true)
@@ -676,14 +711,21 @@ func (m *Monitor) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	var only map[string]bool
+	m.mu.Lock()
+	m.runCtx = ctx
+	m.syncWorkersLocked()
+	m.mu.Unlock()
+	defer m.stopWorkers()
+	if m.Workers() == 0 { // the workers poll right away
+		m.pollSome(ctx, nil) // nothing enabled: the heartbeat cycle
+	}
 	for {
-		m.pollSome(ctx, only)
-		only = nil
 		if ctx.Err() != nil {
 			return nil
 		}
 		timer := time.NewTimer(m.interval())
+		var only map[string]bool
+		kick, reload := false, false
 	wait:
 		for {
 			select {
@@ -691,22 +733,30 @@ func (m *Monitor) Run(ctx context.Context) error {
 				timer.Stop()
 				return nil
 			case <-timer.C:
+				if m.kickWorkers(map[string]bool{}, false) == 0 {
+					m.pollSome(ctx, nil) // idle heartbeat cycle
+				}
 				break wait
 			case <-m.pollNow:
 				timer.Stop()
-				only = m.takePending()
+				only, kick = m.takePending(), true
 				break wait
 			case <-m.reload:
 				timer.Stop()
 				m.takePending()
 				m.reloadConfig(true)
+				kick, reload = true, true
 				break wait
 			case <-tick.C:
 				if m.reloadConfig(false) {
 					timer.Stop()
+					kick, reload = true, true
 					break wait
 				}
 			}
+		}
+		if kick && m.kickWorkers(only, reload) == 0 && only == nil {
+			m.pollSome(ctx, nil)
 		}
 	}
 }
@@ -825,6 +875,7 @@ func (m *Monitor) reloadConfigLocked(force bool) bool {
 	recovered := m.retry && settingsErr == nil
 	m.entries, m.cfg, m.stamp, m.loaded, m.good = next, cfg, stamp, true, true
 	m.dropChecksLocked(cfg.Profiles) // phase 9 (CHK-SVC-04)
+	m.syncWorkersLocked()            // phase 10 (CHK-MON-16)
 	m.revision = rev
 	if settingsErr == nil {
 		m.retry, m.cfgFatal, m.stale, m.warnMsg = false, nil, false, ""
@@ -986,10 +1037,11 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 		}
 	}
 	settings := m.cfg.Settings
+	startSeq := m.checkCounter
 	m.takeChecksLocked(only) // phase 9: check_now requests covered by this poll
 	m.mu.Unlock()
 	interval := m.interval()
-	sem := make(chan struct{}, m.opt.MaxConcurrent)
+	sem := m.pollSem // global poll semaphore (CHK-MON-16)
 	results := make([]*model.ProfileStatus, len(es))
 	latency := make([]int64, len(es))
 	var wg sync.WaitGroup
@@ -1033,6 +1085,7 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 			snap.LatencyMs = &ms // phase 9 (CHK-SVC-03)
 			qms := ms
 			snap.LastQueryMs = &qms
+			snap.LastCheckSeq = startSeq // phase 10 (CHK-MON-17)
 			res[e.profile.ID] = snap
 			polled[e.profile.ID] = true
 		}
@@ -1210,7 +1263,7 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 // single-profile poll_now must not advance the debounce of the others).
 func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg Config, now time.Time) map[string]bool) {
 	now := m.opt.Now().In(model.DBZone)
-	var events []model.AlertEvent
+	var events, repeats, repEvents []model.AlertEvent
 	var polled map[string]bool
 	m.mu.Lock()
 	cfg := m.cfg
@@ -1233,7 +1286,9 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		ps.MappingSummary = model.MappingSummaryOf(p)
 		profiles = append(profiles, ps)
 		if ok && p.Enabled && polled[p.ID] {
-			events = append(events, m.observe(ps, now)...)
+			evs, reps := m.observe(ps, now)
+			events = append(events, evs...)
+			repeats = append(repeats, reps...)
 		}
 	}
 	var keep func(string) bool
@@ -1246,8 +1301,24 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	m.markAckedLocked(profiles, alerts)
 	for i := range events {
 		m.markEventLocked(&events[i])
-		m.classifyEventLocked(&events[i]) // phase 9 (CHK-SVC-05)
-		m.ring.add(events[i])
+		m.classifyEventLocked(&events[i]) // phase 9 (CHK-SVC-05); adds it to the ring once
+	}
+	for i := range repeats { // phase 10 (CHK-MON-17)
+		r := &repeats[i]
+		m.markEventLocked(r)
+		r.RunID, r.EventID, r.Kind = m.runID, r.ID, model.AlertKindAlert
+		r.CheckSeq = m.results[r.ProfileID].LastCheckSeq
+		// the distinct alert_repeat event: own id (events_since cursor),
+		// RepeatOf the original alert
+		ev := *r
+		ev.ID = m.tracker.NewID()
+		ev.EventID, ev.Kind, ev.RepeatOf = ev.ID, model.AlertKindRepeat, r.ID
+		ev.Level, ev.PointKey, ev.From = r.To, r.Key, r.To
+		if r.LastCheckedAt != nil {
+			ev.At = *r.LastCheckedAt
+		}
+		m.ring.add(ev)
+		repEvents = append(repEvents, ev)
 	}
 	m.seq++
 	snap := model.StatusSnapshot{
@@ -1256,6 +1327,8 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		LastPollAt: m.lastPoll, ConfigRevision: m.revision,
 		ServerNow: now, LastCheckSeq: m.lastCheckSeq,
 	}
+	snap.Problems, snap.ProblemsTruncated = model.ProblemsOf(alerts)
+	snap.HasProblems = len(snap.Problems) > 0
 	switch {
 	case m.good: // a configuration has been applied
 		st := cfg.Settings.Normalized() // beep.enabled always explicit
@@ -1292,7 +1365,20 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	if m.opt.OnSnapshot != nil {
 		m.opt.OnSnapshot(snap)
 	}
+	if m.opt.OnRepeat != nil {
+		for _, ev := range repeats {
+			m.opt.OnRepeat(ev)
+		}
+	}
+	if m.opt.OnAlertRepeat != nil {
+		for _, ev := range repEvents {
+			m.opt.OnAlertRepeat(ev)
+		}
+	}
 }
+
+// ReportsProblems: hasProblems / problems and repeat pushes (CHK-MON-17).
+func (m *Monitor) ReportsProblems() bool { return true }
 
 func (m *Monitor) intervalLocked() time.Duration {
 	if m.opt.PollInterval > 0 {
@@ -1307,18 +1393,26 @@ func (m *Monitor) intervalLocked() time.Duration {
 // observe feeds one profile snapshot into the tracker. A profile error is
 // a profile-level alert; its points keep their last confirmed level (the
 // points are unknown while the database is unreachable).
-func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) []model.AlertEvent {
-	var out []model.AlertEvent
+//
+// Phase 10 (CHK-MON-17): reps are the repeat pushes of active alerts whose
+// check failed again without a transition (the alarm persists until the
+// error is resolved; acknowledging does not stop checks or repeats).
+func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) (out, reps []model.AlertEvent) {
+	obs := func(o alert.Observation) {
+		if ev, ok := m.tracker.Observe(o, now); ok {
+			out = append(out, ev)
+		} else if r, ok := m.tracker.Repeat(o.Key, now); ok {
+			reps = append(reps, r)
+		}
+	}
 	lvl := model.LevelOK
 	if ps.Error != "" {
 		lvl = model.LevelError
 	}
-	if ev, ok := m.tracker.Observe(alert.Observation{Key: alert.ProfileKey(ps.ProfileID), Profile: true, Level: lvl,
-		Event: model.AlertEvent{ProfileID: ps.ProfileID, ProfileName: ps.Name, Error: ps.Error, ErrorKey: ps.ErrorKey}}, now); ok {
-		out = append(out, ev)
-	}
+	obs(alert.Observation{Key: alert.ProfileKey(ps.ProfileID), Profile: true, Level: lvl,
+		Event: model.AlertEvent{ProfileID: ps.ProfileID, ProfileName: ps.Name, Error: ps.Error, ErrorKey: ps.ErrorKey}})
 	if ps.Error != "" {
-		return out
+		return out, reps
 	}
 	for _, pt := range ps.Points {
 		tmpl := model.AlertEvent{ProfileID: ps.ProfileID, ProfileName: ps.Name, PointName: pt.Name,
@@ -1329,12 +1423,10 @@ func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) []model.Alert
 		if pt.FreshAt == nil {
 			tmpl.Error = pt.Message
 		}
-		if ev, ok := m.tracker.Observe(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)),
-			Level: pt.Level, Event: tmpl}, now); ok {
-			out = append(out, ev)
-		}
+		obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)),
+			Level: pt.Level, Event: tmpl})
 	}
-	return out
+	return out, reps
 }
 
 // keepKeys: tracker keys of existing enabled profiles/points; points of a

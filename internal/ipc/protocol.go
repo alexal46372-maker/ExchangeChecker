@@ -20,8 +20,12 @@ func WriteMessage(w io.Writer, v interface{}) error {
 	return WriteFrame(w, v, model.IPCMaxMessage)
 }
 
-// WriteRequest writes a tray -> service request (limit IPCMaxRequest).
+// WriteRequest writes a tray -> service request (limit IPCMaxRequest;
+// import_config: IPCMaxImportRequest, phase 10).
 func WriteRequest(w io.Writer, req model.IPCRequest) error {
+	if req.Cmd == model.CmdImportConfig {
+		return WriteFrame(w, req, model.IPCMaxImportRequest)
+	}
 	return WriteFrame(w, req, model.IPCMaxRequest)
 }
 

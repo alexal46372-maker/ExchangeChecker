@@ -160,6 +160,10 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgMonitorUnknownRequest:   {"Нет такой выполняющейся операции.", "No such running operation."},
 	MsgMonitorUnknownCommand:   {"Служба не знает этой команды (обновите службу).", "The service does not know this command (update the service)."},
 	MsgMonitorBadRequest:       {"Неверный запрос.", "Malformed request."},
+	MsgImportFormat:            {"Неподдерживаемый формат файла конфигурации (ожидается ec-config/1).", "Unsupported configuration file format (expected ec-config/1)."},
+	MsgImportMode:              {"Неверный режим импорта (merge или replace).", "Invalid import mode (merge or replace)."},
+	MsgImportDuplicateID:       {"В файле конфигурации повторяется идентификатор профиля.", "The configuration file contains a duplicate profile id."},
+	MsgImportNoConfig:          {"Не передана конфигурация для импорта.", "No configuration to import."},
 	MsgMonitorConfigChanged:    {"Конфигурация изменена.", "Configuration changed."},
 	MsgDiscoverBusy:            {"Служба уже ищет таблицы обмена или проверяет настройки, повторите позже.", "The service is already searching for exchange tables or checking a mapping, try again later."},
 	MsgDiscoverProfileBusy:     {"Для этой базы уже выполняется операция, дождитесь её окончания.", "An operation for this database is already running, wait for it to finish."},
@@ -219,5 +223,6 @@ func MonitorMessageKeys() []string {
 		MsgDiscoverBusy, MsgDiscoverProfileBusy, MsgDiscoverTimeout, MsgDiscoverFailed, MsgDiscoverPointNameEmpty,
 		MsgDiscoverMappingInvalid, MsgMonitorInternal,
 		MsgPasswordTargetChange, MsgCheckRateLimited, MsgBrowseRateLimited, MsgMonitorProfileOff, MsgHistoryDisabled, MsgHistoryBadRange,
-		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed}
+		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
+		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig}
 }

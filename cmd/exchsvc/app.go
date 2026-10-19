@@ -204,6 +204,11 @@ func runService(ctx context.Context, ac appConfig) error {
 		// config-load failures and hung readers (already rate-limited by
 		// the monitor) -> Event Log warning (CHK-MON-10, CHK-MON-13)
 		Warn: func(msg string) { report(alert.EventTypeWarning, alert.EventIDInternal, msg) },
+		// repeat pushes of active alerts after every failing check, to
+		// the tray only (CHK-MON-17)
+		OnRepeat: func(e model.AlertEvent) { srv.Alert(e) },
+		// the distinct alert_repeat event (also in events_since)
+		OnAlertRepeat: func(e model.AlertEvent) { srv.AlertRepeat(e) },
 		OnSnapshot: func(s model.StatusSnapshot) {
 			srv.PublishStatus(s)
 			hist.RecordSnapshot(s) // profiles polled since the last snapshot

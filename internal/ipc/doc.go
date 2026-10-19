@@ -2,7 +2,8 @@
 //
 // Framing: 4-byte little-endian length + UTF-8 JSON (model.IPCRequest from
 // the tray, model.IPCMessage from the service): requests at most
-// model.IPCMaxRequest (64 KB), service messages at most
+// model.IPCMaxRequest (64 KB; import_config from an elevated administrator:
+// model.IPCMaxImportRequest, 1 MiB, phase 10), service messages at most
 // model.IPCMaxMessage. Per connection the server enforces a read timeout
 // for a started request and an idle timeout, and it serves at most
 // model.IPCMaxClients clients (CHK-MON-11). The connection is persistent: the service

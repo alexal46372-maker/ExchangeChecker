@@ -127,7 +127,7 @@ func (s *FileAckStore) Path() string { return filepath.Join(s.dir, s.name) }
 func (s *FileAckStore) Load() ([]AckRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	b, err := os.ReadFile(s.Path())
+	b, err := config.ReadFileShared(s.Path())
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

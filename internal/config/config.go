@@ -66,7 +66,7 @@ type profilesDoc struct {
 // it and derives both the parsed configuration (Parse*, DecodeSecrets) and
 // the configuration revision from the same bytes (phase 6b).
 func (s *Store) ReadFileRaw(name string) ([]byte, error) {
-	b, err := os.ReadFile(s.Path(name))
+	b, err := ReadFileShared(s.Path(name))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

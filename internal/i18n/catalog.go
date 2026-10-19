@@ -575,6 +575,13 @@ const (
 	KeyTipVolume        = "tip.volume"
 )
 
+// phase 10 D
+const (
+	KeySetModeExpert = "set.mode_expert"
+	KeySetModeSimple = "set.mode_simple"
+	KeyTipSetUIMode  = "tip.set_ui_mode"
+)
+
 var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyCheckRateLimited:      {"Проверка уже запрашивалась недавно, повторите через %d с", "A check was requested recently, try again in %d s"},
 	KeyCheckRunning:          {"Проверка выполняется…", "Check in progress…"},
@@ -1144,4 +1151,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipSoundSave:     {"Сохранить настройки звука для текущего пользователя Windows", "Save the sound settings for the current Windows user"},
 	KeyVolumeTitle:      {"Громкость тревог", "Alarm volume"},
 	KeyTipVolume:        {"Общая громкость звуков тревог, 0–100%. Сохраняется сразу", "Master volume of the alarm sounds, 0–100%. Saved at once"},
+	KeySetModeExpert:    {"Экспертный режим", "Expert mode"},
+	KeySetModeSimple:    {"Простой режим", "Simple mode"},
+	KeyTipSetUIMode:     {"Простой режим — только основные поля; экспертный — все настройки. Выбор запоминается для пользователя Windows", "Simple mode shows the main fields only; expert mode shows all settings. The choice is kept for the Windows user"},
 }

@@ -94,6 +94,9 @@ type Options struct {
 	// HiddenPanel keeps the problem panel and the volume window hidden
 	// (tests); their state is maintained.
 	HiddenPanel bool
+	// UIModeStore keeps «Простой» / «Экспертный» of the settings window
+	// (phase 10 D; nil = every field, tests).
+	UIModeStore UIModeStore
 	// NoBlink disables the icon blinking timer (tests drive blinkTick).
 	NoBlink bool
 }
@@ -612,6 +615,7 @@ func (a *App) OpenSettings() uintptr {
 	}
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
+		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onClose: func() {
 			if a.settings == w {

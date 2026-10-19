@@ -25,6 +25,7 @@ var (
 	procKillTimer              = moduser32.NewProc("KillTimer")
 	procGetOpenFileNameW       = modcomdlg32.NewProc("GetOpenFileNameW")
 	procShellNotifyIconGetRect = modshell32.NewProc("Shell_NotifyIconGetRect")
+	procSetBkColor             = modgdi32.NewProc("SetBkColor")
 	procIsIconic               = moduser32.NewProc("IsIconic")
 )
 
@@ -192,3 +193,10 @@ func NotifyIconRect(hwnd uintptr, id uint32) (RECT, bool) {
 	}
 	return r, r.Right > r.Left
 }
+
+// WM_CTLCOLOREDIT: the parent colors an edit control (phase 10 D,
+// required fields, CHK-TRAY-41).
+const WM_CTLCOLOREDIT = 0x0133
+
+// SetBkColor sets the text background color of a DC.
+func SetBkColor(dc uintptr, color uint32) { callProc(procSetBkColor, dc, uintptr(color)) }

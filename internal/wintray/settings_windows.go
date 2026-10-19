@@ -79,7 +79,8 @@ const (
 	idSetError
 	idSetConnTO
 	idSetQueryTO
-	idSetClose = winapi.IDCANCEL
+	idSetUIMode // «Экспертный режим» / «Простой режим» (phase 10 D)
+	idSetClose  = winapi.IDCANCEL
 )
 
 // Elevator starts the elevated settings process («Изменить
@@ -139,6 +140,16 @@ type settingsConfig struct {
 	// clipboard puts the grant script on the clipboard (nil =
 	// winapi.SetClipboardText; tests use a fake)
 	clipboard func(owner uintptr, text string) error
+	// uiMode / uiStore: «Простой» / «Экспертный» (HKCU UIMode, phase 10
+	// D, CHK-TRAY-40); nil store = not stored
+	uiMode  traysettings.UIMode
+	uiStore UIModeStore
+}
+
+// UIModeStore keeps the settings window mode.
+type UIModeStore interface {
+	Load() (traysettings.UIMode, error)
+	Save(traysettings.UIMode) error
 }
 
 // settingsWindow is the database settings window (CHK-TRAY-04/05/06): the
@@ -148,10 +159,18 @@ type settingsConfig struct {
 // window's own queue. Closing the window cancels a running test (cancel
 // {ref}, G6).
 type settingsWindow struct {
-	cfg  settingsConfig
-	ed   *traysettings.Editor
-	hwnd uintptr
-	ctl  map[int32]uintptr
+	// phase 10 D (CHK-TRAY-40/41): mode, field labels, required fields
+	uiMode    traysettings.UIMode
+	labels    map[int32]uintptr
+	labelText map[int32]string
+	missing   map[int32]bool
+	reqBrush  uintptr
+	// expertShown: the expert-only controls are shown (test hook)
+	expertShown bool
+	cfg         settingsConfig
+	ed          *traysettings.Editor
+	hwnd        uintptr
+	ctl         map[int32]uintptr
 
 	qmu    sync.Mutex
 	tasks  []func()
@@ -236,7 +255,13 @@ func profText(f *traysettings.Form, id int32) *string {
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	cfg.lang = i18n.Normalize(cfg.lang)
-	w := &settingsWindow{cfg: cfg, ed: traysettings.NewEditor(cfg.lang, cfg.mode), ctl: map[int32]uintptr{}}
+	w := &settingsWindow{cfg: cfg, ed: traysettings.NewEditor(cfg.lang, cfg.mode), ctl: map[int32]uintptr{},
+		labels: map[int32]uintptr{}, labelText: map[int32]string{}, missing: map[int32]bool{}}
+	// no mode given (tests, older callers): every field, as before
+	w.uiMode = traysettings.UIExpert
+	if cfg.uiMode != "" {
+		w.uiMode = traysettings.NormalizeUIMode(string(cfg.uiMode))
+	}
 	if w.cfg.elevator == nil {
 		w.cfg.elevator = ShellElevator{}
 	}
@@ -338,7 +363,8 @@ func (w *settingsWindow) build() {
 	}
 	row := int32(10)
 	line := func(label string, id int32, class string, style uint32, width int32) {
-		w.add("STATIC", label, 0, winapi.SS_LEFT, 0, lx, row+3, lw, 18)
+		w.labels[id] = w.add("STATIC", label, 0, winapi.SS_LEFT, 0, lx, row+3, lw, 18)
+		w.labelText[id] = label
 		ex := uint32(0)
 		if class == "EDIT" {
 			ex = winapi.WS_EX_CLIENTEDGE
@@ -373,9 +399,9 @@ func (w *settingsWindow) build() {
 	}
 	// two number boxes per row: own thresholds, then timeouts (phase 8)
 	pair := func(k1 string, id1 int32, k2 string, id2 int32) {
-		w.add("STATIC", w.t(k1), 0, winapi.SS_LEFT, 0, lx, row+3, lw, 18)
+		w.labels[id1] = w.add("STATIC", w.t(k1), 0, winapi.SS_LEFT, 0, lx, row+3, lw, 18)
 		w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id1, cx, row, 70, 23)
-		w.add("STATIC", w.t(k2), 0, winapi.SS_LEFT, 0, cx+85, row+3, 215, 18)
+		w.labels[id2] = w.add("STATIC", w.t(k2), 0, winapi.SS_LEFT, 0, cx+85, row+3, 215, 18)
 		w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id2, cx+305, row, 70, 23)
 		row += rh
 	}
@@ -405,6 +431,7 @@ func (w *settingsWindow) build() {
 	w.cur = nil
 
 	w.add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, 12, 440, 205, 26)
+	w.add("BUTTON", "", 0, winapi.WS_TABSTOP, idSetUIMode, 12, 472, 205, 26)
 	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idSetStatus, 12, 556, 743, 100)
 	bx := int32(12)
@@ -454,6 +481,7 @@ func (w *settingsWindow) build() {
 	for _, h := range w.pageCtl[1] {
 		winapi.ShowWindow(h, winapi.SW_HIDE)
 	}
+	w.applyUIMode()
 	if w.cfg.mode == traysettings.ReadOnly {
 		winapi.ShowWindow(w.ctl[idSetAdd], winapi.SW_HIDE)
 		winapi.ShowWindow(w.ctl[idSetDelete], winapi.SW_HIDE)
@@ -494,6 +522,10 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 	case winapi.WM_COMMAND:
 		w.command(int32(wp&0xFFFF), uint32(wp>>16&0xFFFF))
 		return 0, true
+	case winapi.WM_CTLCOLOREDIT:
+		if br, ok := w.requiredColor(wp, lp); ok {
+			return br, true
+		}
 	case winapi.WM_CLOSE:
 		w.userClose()
 		return 0, true
@@ -527,6 +559,8 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idSetPage:
 		w.setPage(1 - w.page)
+	case idSetUIMode:
+		w.toggleUIMode()
 	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetWarn, idSetError, idSetConnTO, idSetQueryTO:
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readForm()
@@ -759,6 +793,7 @@ func (w *settingsWindow) update() {
 	if w.text(idSetStatus) != st {
 		winapi.SetWindowText(w.ctl[idSetStatus], st)
 	}
+	w.updateRequired()
 }
 
 func boolPtr(b bool) uintptr {
@@ -883,6 +918,7 @@ func (w *settingsWindow) setPage(p int) {
 		key = i18n.KeyGenProfilesPage
 	}
 	winapi.SetWindowText(w.ctl[idSetPage], w.t(key))
+	w.applyUIMode()
 	w.update()
 }
 
@@ -1341,6 +1377,10 @@ func (w *settingsWindow) close() {
 	if already {
 		return
 	}
+	if w.reqBrush != 0 {
+		winapi.DeleteObject(w.reqBrush)
+		w.reqBrush = 0
+	}
 	if w.disc != nil {
 		w.disc.close()
 	}
@@ -1364,6 +1404,17 @@ type SettingsOptions struct {
 	// Session: Dial and Verify (G7: the pipe server PID is checked
 	// before any command, so no password goes to a foreign process).
 	Session trayipc.Options
+	// UIModeStore: «Простой» / «Экспертный» (HKCU; nil = every field).
+	UIModeStore UIModeStore
+}
+
+// loadUIMode reads the stored mode ("" without a store).
+func loadUIMode(s UIModeStore) traysettings.UIMode {
+	if s == nil {
+		return ""
+	}
+	m, _ := s.Load() // missing / unreadable = «Простой»
+	return m
 }
 
 // SettingsMutexName keeps one settings window per logon session.
@@ -1403,6 +1454,7 @@ func RunSettings(opt SettingsOptions) int {
 	}
 	s := trayipc.New(so)
 	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,
+		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
 		onClose: func() { winapi.PostQuitMessage(0) }})
 	if err != nil {
 		return 1

@@ -37,7 +37,7 @@ func run() int {
 		if a == wintray.SettingsArg {
 			// elevated settings window (ShellExecuteExW "runas" from the
 			// read-only window): own process, own connection
-			return wintray.RunSettings(wintray.SettingsOptions{Lang: lang, Session: session})
+			return wintray.RunSettings(wintray.SettingsOptions{Lang: lang, Session: session, UIModeStore: wintray.RegistryUIModeStore{}})
 		}
 	}
 	release, ok, err := wintray.SingleInstance(wintray.MutexName)
@@ -56,6 +56,7 @@ func run() int {
 		LangStore:    wintray.RegistryLangStore{},
 		BalloonStore: wintray.RegistryBalloonStore{},
 		SoundStore:   wintray.RegistrySoundStore{},
+		UIModeStore:  wintray.RegistryUIModeStore{},
 		Session:      session,
 		// %LOCALAPPDATA%\ExchangeChecker\tray.log, 1 MB + tray.log.1
 		// (phase 9b, CHK-TRAY-28); no passwords / logins are written

@@ -176,7 +176,7 @@ var winAPIMinVersion = map[string]float64{
 	// dialog, minimized alert window, tray icon rectangle for the panel
 	// by the clock (CHK-TRAY-33..39)
 	"PlaySoundW": 5.0, "mciSendStringW": 5.0, "mciGetErrorStringW": 5.0,
-	"SetTimer": 5.0, "KillTimer": 5.0, "GetOpenFileNameW": 5.0, "IsIconic": 5.0,
+	"SetTimer": 5.0, "KillTimer": 5.0, "GetOpenFileNameW": 5.0, "IsIconic": 5.0, "SetBkColor": 5.0,
 	"Shell_NotifyIconGetRect": 6.1,
 	"Polyline":                5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
 	// phase 9b part 2 «Скопировать SQL-скрипт прав» (CHK-TRAY-32)

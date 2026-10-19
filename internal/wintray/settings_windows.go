@@ -171,6 +171,14 @@ type settingsWindow struct {
 	// running viber_test (phase 10 D4)
 	vbTestIDs []string
 	vbTesting *model.IPCRequest
+	// phase 10 E: the scrolled page host, the px rectangles of its
+	// controls (unscrolled), the view / content sizes, the bar buttons
+	host                           uintptr
+	hostRect                       map[uintptr]winapi.RECT
+	scrollX, scrollY, viewW, viewH int32
+	contentW, contentH             int32
+	scrollSet, inBar               bool
+	barLeft, barRight              []barButton
 	// expertShown: the expert-only controls are shown (test hook)
 	expertShown bool
 	cfg         settingsConfig
@@ -281,13 +289,18 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	}
 	// client 774×706 (controls up to 755 / 694), clamped to the work area
 	const style = winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | winapi.WS_MINIMIZEBOX
-	x, y, ww, wh := windowRect(774, 706, style, 0)
+	x, y, ww, wh := settingsRect(style)
 	hwnd, err := createWindowPx(class, title, 0, style, x, y, ww, wh, 0, w.wndProc)
 	if err != nil {
 		return nil, err
 	}
 	w.hwnd = hwnd
+	if err := w.createHost(); err != nil {
+		winapi.DestroyWindow(hwnd)
+		return nil, err
+	}
 	w.build()
+	w.layoutFit()
 	w.fill()
 	if !cfg.hidden {
 		winapi.ShowWindow(hwnd, winapi.SW_SHOWNORMAL)
@@ -300,7 +313,11 @@ func (w *settingsWindow) t(key string) string { return i18n.T(key, w.cfg.lang) }
 
 func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
 	x, y, cw, ch = pxRect(x, y, cw, ch)
-	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, w.hwnd, uintptr(id), winapi.GetModuleHandle())
+	parent := w.host
+	if w.inBar || parent == 0 {
+		parent = w.hwnd
+	}
+	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, parent, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}
@@ -310,6 +327,9 @@ func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw,
 	}
 	if w.cur != nil {
 		*w.cur = append(*w.cur, h)
+	}
+	if parent == w.host { // a combo box keeps its drop-down height on MoveWindow
+		w.hostRect[h] = winapi.RECT{Left: x, Top: y, Right: x + cw, Bottom: y + ch}
 	}
 	return h
 }
@@ -463,31 +483,32 @@ func (w *settingsWindow) build() {
 
 	w.add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, 12, 440, 205, 26)
 	w.add("BUTTON", "", 0, winapi.WS_TABSTOP, idSetUIMode, 12, 472, 205, 26)
+	// the bar: children of the window, pinned to the bottom (layoutFit)
+	w.inBar = true
 	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idSetStatus, 12, 628, 743, 40)
-	bx := int32(12)
-	button := func(id int32, key string, width int32) {
-		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, bx, 674, width, gridButtonH)
-		bx += width + 6
+	button := func(id int32, key string, width int32, right bool) {
+		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, 12, 674, width, gridButtonH)
+		if right {
+			w.barRight = append(w.barRight, barButton{id, width})
+		} else {
+			w.barLeft = append(w.barLeft, barButton{id, width})
+		}
 	}
 	w.cur = &w.pageCtl[0]
-	button(idSetTest, i18n.KeySetTest, 150)
-	button(idSetCancelTest, i18n.KeySetCancelTest, 120)
+	button(idSetTest, i18n.KeySetTest, 150, false)
+	button(idSetCancelTest, i18n.KeySetCancelTest, 120, false)
+	button(idSetPoll, i18n.KeySetPoll, 110, false)
 	w.cur = nil
-	if w.cfg.mode == traysettings.Admin {
-		button(idSetSave, i18n.KeySetSave, 90)
-	}
-	w.cur = &w.pageCtl[0]
-	button(idSetPoll, i18n.KeySetPoll, 110)
-	w.cur = nil
-	button(idSetReload, i18n.KeySetReload, 90)
+	button(idSetReload, i18n.KeySetReload, 90, false)
 	if w.cfg.mode == traysettings.ReadOnly {
-		button(idSetElevate, i18n.KeySetElevate, 165)
+		button(idSetElevate, i18n.KeySetElevate, 165, false)
 	}
-	if bx < 665 {
-		bx = 665 // read-only: «Изменить (администратор)» pushes «Закрыть» right
+	if w.cfg.mode == traysettings.Admin {
+		button(idSetSave, i18n.KeySetSave, 90, true)
 	}
-	w.add("BUTTON", w.t(i18n.KeySetClose), 0, winapi.WS_TABSTOP, idSetClose, bx, 674, 90, gridButtonH)
+	button(idSetClose, i18n.KeySetClose, 90, true)
+	w.inBar = false
 	w.buildViber()
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
@@ -908,6 +929,7 @@ func (w *settingsWindow) focus(f traysettings.Field) {
 		w.setPage(page)
 	}
 	if id, ok := fieldControl[f]; ok {
+		w.scrollIntoView(w.ctl[id])
 		winapi.SetFocus(w.ctl[id])
 	}
 }
@@ -965,6 +987,9 @@ func (w *settingsWindow) setPage(p int) {
 		key = i18n.KeyGenProfilesPage
 	}
 	winapi.SetWindowText(w.ctl[idSetPage], w.t(key))
+	if w.host != 0 {
+		w.scrollTo(0, 0)
+	}
 	w.applyUIMode()
 	w.update()
 }

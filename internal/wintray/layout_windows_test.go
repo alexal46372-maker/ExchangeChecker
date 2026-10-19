@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -44,6 +45,19 @@ func contains(o, i winapi.RECT) bool {
 // text fits its control in the control's own font.
 func checkLayout(t *testing.T, what string, hwnd uintptr) {
 	t.Helper()
+	// phase 10 E: every visible control lies inside its parent's client
+	// area (a scrolled page host: inside its content extent)
+	ox, oy := winapi.ClientOrigin(hwnd)
+	cr := winapi.GetClientRect(hwnd)
+	bounds := winapi.RECT{Left: ox, Top: oy, Right: ox + cr.Right, Bottom: oy + cr.Bottom}
+	if ext, ok := hostExtent[hwnd]; ok {
+		if ox+ext[0] > bounds.Right {
+			bounds.Right = ox + ext[0]
+		}
+		if oy+ext[1] > bounds.Bottom {
+			bounds.Bottom = oy + ext[1]
+		}
+	}
 	var cs []laidCtl
 	for _, h := range winapi.Children(hwnd) {
 		st := winapi.WindowStyle(h)
@@ -54,6 +68,14 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 	}
 	if len(cs) == 0 {
 		t.Errorf("%s: no visible controls", what)
+	}
+	for _, c := range cs {
+		if !contains(bounds, c.r) {
+			t.Errorf("%s: %v outside the window %+v", what, c, bounds)
+		}
+		if c.class == SettingsPageClass {
+			checkLayout(t, what+" (page)", c.h)
+		}
 	}
 	for i := range cs {
 		for j := i + 1; j < len(cs); j++ {
@@ -133,10 +155,17 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer func() { testDPI = 0 }()
+	defer func() { testWorkArea = nil }()
+	small := winapi.RECT{Right: 1024, Bottom: 728} // 1024×768 minus a 40 px taskbar
 	for _, dpi := range []int32{96, 120, 144} {
 		for _, lang := range []string{i18n.RU, i18n.EN} {
 			testDPI = dpi
 			tag := fmt.Sprintf("%s %d dpi", lang, dpi)
+			func() {
+				testWorkArea = &small
+				defer func() { testWorkArea = nil }()
+				checkSettingsFit(t, "small "+tag, lang, small)
+			}()
 			func() {
 				ds := newDiscService()
 				app := startCfgApp(t, ds.cfgService, true, nil)
@@ -180,6 +209,22 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 				}
 				checkLayout(t, "history "+tag, hw.hwnd)
 				winapi.DestroyWindow(hw.hwnd)
+				app.opt.HiddenPanel = true
+				if v := app.OpenVolume(); v != nil {
+					checkLayout(t, "volume "+tag, v.hwnd)
+					winapi.DestroyWindow(v.hwnd)
+				} else {
+					t.Error("volume window")
+				}
+				app.problems = []trayalert.Problem{{Kind: trayalert.ProblemError, Text: "Склад / Exchange — ЦБ: 45 мин без обмена"},
+					{Kind: trayalert.ProblemNoConnection, Text: "Магазин 12: нет подключения к SQL Server"},
+					{Kind: trayalert.ProblemWarning, Text: "Офис — Розница: 25 мин без обмена"}}
+				app.updatePanel()
+				if p := app.Panel(); p != nil {
+					checkLayout(t, "panel "+tag, p.hwnd)
+				} else {
+					t.Error("panel")
+				}
 				ab, err := newAboutWindow(0, trayui.AboutTitle(lang), trayui.AboutText(app.session.Status(), lang),
 					i18n.T(i18n.KeyAboutOK, lang), "", false, nil)
 				if err == nil {
@@ -212,5 +257,54 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 			checkLayout(t, "status "+tag, st.hwnd)
 			winapi.DestroyWindow(st.hwnd)
 		}
+	}
+}
+
+// checkSettingsFit — the settings window (admin expert / simple /
+// «Общие», read-only) inside the work area, «Сохранить» / «Закрыть»
+// inside the client, every page control reachable by scrolling.
+func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
+	t.Helper()
+	ds := newDiscService()
+	app := startCfgApp(t, ds.cfgService, true, nil)
+	defer app.Exit()
+	for _, mode := range []traysettings.Mode{traysettings.Admin, traysettings.ReadOnly} {
+		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: mode, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert, elevator: &fakeElevator{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := winapi.GetWindowRect(w.hwnd)
+		if !contains(work, r) {
+			t.Errorf("%s: settings window %+v outside the work area %+v", tag, r, work)
+		}
+		ox, oy := winapi.ClientOrigin(w.hwnd)
+		cr := winapi.GetClientRect(w.hwnd)
+		client := winapi.RECT{Left: ox, Top: oy, Right: ox + cr.Right, Bottom: oy + cr.Bottom}
+		for _, id := range []int32{idSetSave, idSetClose, idSetStatus} {
+			if h := w.ctl[id]; h != 0 && !contains(client, winapi.GetWindowRect(h)) {
+				t.Errorf("%s: bar control %d not visible", tag, id)
+			}
+		}
+		w.Reload()
+		pumpUntil(t, "loaded", func() bool { return !w.busy })
+		for page := 0; page < 2; page++ {
+			w.setPage(page)
+			checkLayout(t, fmt.Sprintf("settings %v page %d %s", mode, page, tag), w.hwnd)
+			// scrolled to the end: the last control of the page is in the view
+			w.scrollTo(1<<20, 1<<20)
+			last := w.ctl[idSetInfo]
+			if page == 1 {
+				last = w.ctl[idGenNote]
+			}
+			hx, hy := winapi.ClientOrigin(w.host)
+			view := winapi.RECT{Left: hx, Top: hy, Right: hx + w.viewW, Bottom: hy + w.viewH}
+			lr := winapi.GetWindowRect(last)
+			if lr.Bottom > view.Bottom || lr.Right > view.Right {
+				t.Errorf("%s page %d: last control %+v not reachable (view %+v)", tag, page, lr, view)
+			}
+			w.scrollTo(0, 0)
+		}
+		w.close()
 	}
 }

@@ -113,3 +113,54 @@ func WindowStyle(hwnd uintptr) uint32 {
 	r, _, _ := callProc(procGetWindowLong, hwnd, uintptr(^uintptr(15))) // GWL_STYLE = -16
 	return uint32(r)
 }
+
+// Phase 10 E (CHK-TRAY-42): scrolled settings pages and the
+// controls-inside-the-window check. Windows 2000+ (NT 5.0).
+var (
+	procSetScrollInfo  = moduser32.NewProc("SetScrollInfo")
+	procClientToScreen = moduser32.NewProc("ClientToScreen")
+)
+
+const (
+	WS_CLIPCHILDREN     = 0x02000000
+	WS_EX_CONTROLPARENT = 0x00010000
+	SB_HORZ             = 0
+	SB_VERT             = 1
+	SIF_RANGE           = 0x1
+	SIF_PAGE            = 0x2
+	SIF_POS             = 0x4
+	SB_LINEUP           = 0
+	SB_LINEDOWN         = 1
+	SB_PAGEUP           = 2
+	SB_PAGEDOWN         = 3
+	SB_THUMBTRACK       = 5
+	SB_THUMBPOSITION    = 4
+	SB_TOP              = 6
+	SB_BOTTOM           = 7
+	WM_VSCROLL          = 0x0115
+	WM_MOUSEWHEEL       = 0x020A
+	SM_CXVSCROLL        = 2
+	SM_CYHSCROLL        = 3
+)
+
+type scrollInfo struct {
+	Size, Mask    uint32
+	Min, Max      int32
+	Page          uint32
+	Pos, TrackPos int32
+}
+
+// SetScroll sets the range 0..max-1, the page and the position of a
+// scroll bar (a page >= max hides it).
+func SetScroll(hwnd uintptr, bar int32, max, page, pos int32) {
+	si := scrollInfo{Mask: SIF_RANGE | SIF_PAGE | SIF_POS, Max: max - 1, Page: uint32(page), Pos: pos}
+	si.Size = uint32(unsafe.Sizeof(si))
+	callProc(procSetScrollInfo, hwnd, uintptr(bar), uintptr(unsafe.Pointer(&si)), 1)
+}
+
+// ClientOrigin is the screen position of the client area of hwnd.
+func ClientOrigin(hwnd uintptr) (x, y int32) {
+	var p [2]int32
+	callProc(procClientToScreen, hwnd, uintptr(unsafe.Pointer(&p[0])))
+	return p[0], p[1]
+}

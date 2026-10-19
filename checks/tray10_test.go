@@ -181,6 +181,8 @@ var winAPIMinVersion = map[string]float64{
 	// phase 10 D3: system DPI, Segoe UI 9, the layout overlap test (CHK-TRAY-42)
 	"GetDC": 5.0, "ReleaseDC": 5.0, "GetDeviceCaps": 5.0, "CreateFontW": 5.0, "DrawTextW": 5.0,
 	"GetWindowRect": 5.0, "GetWindow": 5.0, "GetWindowLongW": 5.0,
+	// phase 10 E: scrolled settings pages, controls inside the window (CHK-TRAY-42)
+	"SetScrollInfo": 5.0, "ClientToScreen": 5.0,
 	"Polyline": 5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
 	// phase 9b part 2 «Скопировать SQL-скрипт прав» (CHK-TRAY-32)
 	"OpenClipboard": 5.0, "EmptyClipboard": 5.0, "SetClipboardData": 5.0, "CloseClipboard": 5.0,

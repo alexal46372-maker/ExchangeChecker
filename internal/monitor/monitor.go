@@ -24,9 +24,15 @@ type ReaderFactory func(p model.Profile, password string, opt sqlcheck.Options) 
 
 // Defaults of Options.
 const (
-	DefaultConfigCheck   = 5 * time.Second
-	DefaultMaxConcurrent = 4
-	DefaultMaxJitter     = 2 * time.Second
+	DefaultConfigCheck = 5 * time.Second
+	// DefaultMaxConcurrent = MaxSQLConnections: polls running at the same
+	// time, shared by all profile workers (phase 10, CHK-MON-16).
+	DefaultMaxConcurrent = MaxSQLConnections
+	// MaxSQLConnections is the global semaphore of poll connections (phase
+	// 10, CHK-MON-16); interactive / test commands keep their own limits
+	// and never queue behind polls.
+	MaxSQLConnections = 8
+	DefaultMaxJitter  = 2 * time.Second
 	// DefaultCommandInterval: poll_now / reload_config from IPC are
 	// executed at most once per 10 s (globally and per profile); extra
 	// calls are answered "accepted, coalesced" (CHK-MON-12).
@@ -65,7 +71,8 @@ type Options struct {
 	PollInterval time.Duration
 	// ConfigCheck is how often config files are stat'ed (default 5 s).
 	ConfigCheck time.Duration
-	// MaxConcurrent bounds the profiles polled at the same time (default 4).
+	// MaxConcurrent bounds the profiles polled at the same time (default
+	// and maximum MaxSQLConnections = 8; tests use less).
 	MaxConcurrent int
 	// Jitter is the max random start delay of each profile in a poll
 	// (default min(2 s, interval/10)); negative = none.
@@ -353,6 +360,16 @@ type Monitor struct {
 	checkCounter uint64
 	checkPend    map[string]uint64
 	lastCheckSeq uint64
+
+	// phase 10 (CHK-MON-16): one worker per enabled profile while Run is
+	// active (runCtx != nil, mu); pollSem is the global poll semaphore;
+	// checkAllWait: profiles that still have to start a poll for the
+	// pending check_now of all profiles (mu).
+	runCtx       context.Context
+	workers      map[string]*worker
+	wwg          sync.WaitGroup
+	pollSem      chan struct{}
+	checkAllWait map[string]bool
 }
 
 // New returns a Monitor; call Run to start it.
@@ -375,7 +392,7 @@ func New(opt Options) *Monitor {
 	if opt.ConfigCheck <= 0 {
 		opt.ConfigCheck = DefaultConfigCheck
 	}
-	if opt.MaxConcurrent <= 0 {
+	if opt.MaxConcurrent <= 0 || opt.MaxConcurrent > MaxSQLConnections {
 		opt.MaxConcurrent = DefaultMaxConcurrent
 	}
 	if opt.Rand == nil {
@@ -405,6 +422,8 @@ func New(opt Options) *Monitor {
 			WithTimeout: opt.InteractiveWithTimeout},
 	}
 	m.explorer.defaults()
+	m.workers = map[string]*worker{}
+	m.pollSem = make(chan struct{}, opt.MaxConcurrent)
 	m.checkLast = map[string]time.Time{}
 	m.runID = opt.RunID
 	if m.runID == "" {
@@ -549,7 +568,9 @@ func (h hb) apply(s *model.StatusSnapshot) {
 //
 // A cycle normally ends within cycleBudget (a hung profile is cut off at
 // its timeout), so "no completed cycle for hungAfter" means the poll loop
-// itself is stuck.
+// itself is stuck. Phase 10 (CHK-MON-16): with per-profile workers
+// lastCycle is the end of the last published poll of ANY profile (or the
+// idle heartbeat cycle when no profile is enabled).
 func (m *Monitor) hungAfterLocked() time.Duration {
 	interval := m.intervalLocked()
 	n := 0
@@ -658,8 +679,12 @@ func (m *Monitor) LoadConfig() {
 	}
 }
 
-// Run polls until ctx is canceled, then closes every reader. It returns
-// nil on a normal stop.
+// Run polls until ctx is canceled, then stops the profile workers and
+// closes every reader. It returns nil on a normal stop. Phase 10
+// (CHK-MON-16): every enabled profile is polled by its own worker
+// (workers.go); this loop handles config checks, reloads and poll_now /
+// check_now requests, and keeps the heartbeat alive when no profile is
+// enabled.
 func (m *Monitor) Run(ctx context.Context) error {
 	if atomic.CompareAndSwapInt32(&m.initLoaded, 0, 1) {
 		m.reloadConfig(true)
@@ -682,14 +707,21 @@ func (m *Monitor) Run(ctx context.Context) error {
 			}
 		}
 	}()
-	var only map[string]bool
+	m.mu.Lock()
+	m.runCtx = ctx
+	m.syncWorkersLocked()
+	m.mu.Unlock()
+	defer m.stopWorkers()
+	if m.Workers() == 0 { // the workers poll right away
+		m.pollSome(ctx, nil) // nothing enabled: the heartbeat cycle
+	}
 	for {
-		m.pollSome(ctx, only)
-		only = nil
 		if ctx.Err() != nil {
 			return nil
 		}
 		timer := time.NewTimer(m.interval())
+		var only map[string]bool
+		kick, reload := false, false
 	wait:
 		for {
 			select {
@@ -697,22 +729,30 @@ func (m *Monitor) Run(ctx context.Context) error {
 				timer.Stop()
 				return nil
 			case <-timer.C:
+				if m.kickWorkers(map[string]bool{}, false) == 0 {
+					m.pollSome(ctx, nil) // idle heartbeat cycle
+				}
 				break wait
 			case <-m.pollNow:
 				timer.Stop()
-				only = m.takePending()
+				only, kick = m.takePending(), true
 				break wait
 			case <-m.reload:
 				timer.Stop()
 				m.takePending()
 				m.reloadConfig(true)
+				kick, reload = true, true
 				break wait
 			case <-tick.C:
 				if m.reloadConfig(false) {
 					timer.Stop()
+					kick, reload = true, true
 					break wait
 				}
 			}
+		}
+		if kick && m.kickWorkers(only, reload) == 0 && only == nil {
+			m.pollSome(ctx, nil)
 		}
 	}
 }
@@ -831,6 +871,7 @@ func (m *Monitor) reloadConfigLocked(force bool) bool {
 	recovered := m.retry && settingsErr == nil
 	m.entries, m.cfg, m.stamp, m.loaded, m.good = next, cfg, stamp, true, true
 	m.dropChecksLocked(cfg.Profiles) // phase 9 (CHK-SVC-04)
+	m.syncWorkersLocked()            // phase 10 (CHK-MON-16)
 	m.revision = rev
 	if settingsErr == nil {
 		m.retry, m.cfgFatal, m.stale, m.warnMsg = false, nil, false, ""
@@ -995,7 +1036,7 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 	m.takeChecksLocked(only) // phase 9: check_now requests covered by this poll
 	m.mu.Unlock()
 	interval := m.interval()
-	sem := make(chan struct{}, m.opt.MaxConcurrent)
+	sem := m.pollSem // global poll semaphore (CHK-MON-16)
 	results := make([]*model.ProfileStatus, len(es))
 	latency := make([]int64, len(es))
 	var wg sync.WaitGroup

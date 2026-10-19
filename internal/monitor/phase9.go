@@ -196,7 +196,35 @@ func (m *Monitor) registerCheck(profileID string) uint64 {
 		m.checkPend = map[string]uint64{}
 	}
 	m.checkPend[profileID] = m.checkCounter
+	if profileID == "" {
+		// phase 10 (CHK-MON-16): complete when every enabled profile has
+		// started a poll after this request
+		m.checkAllWait = map[string]bool{}
+		for _, p := range m.cfg.Profiles {
+			if p.Enabled && m.entries[p.ID] != nil {
+				m.checkAllWait[p.ID] = true
+			}
+		}
+	}
 	return m.checkCounter
+}
+
+// coverCheckLocked completes the pending checks covered by a published
+// worker poll of profile id that started when the check counter was
+// startSeq: the profile's own check and, once every awaited profile
+// published such a poll, the check of all profiles (m.mu held,
+// CHK-MON-16). A check registered after the poll started stays pending.
+func (m *Monitor) coverCheckLocked(id string, startSeq uint64) {
+	if s, ok := m.checkPend[id]; ok && s <= startSeq {
+		delete(m.checkPend, id)
+	}
+	if s, ok := m.checkPend[""]; ok && s <= startSeq && m.checkAllWait != nil {
+		delete(m.checkAllWait, id)
+		if len(m.checkAllWait) == 0 {
+			delete(m.checkPend, "")
+			m.checkAllWait = nil
+		}
+	}
 }
 
 // takeChecksLocked removes the pending checks a poll starting now covers:
@@ -208,6 +236,9 @@ func (m *Monitor) takeChecksLocked(only map[string]bool) {
 		if only == nil || (scope != "" && only[scope]) {
 			delete(m.checkPend, scope)
 		}
+	}
+	if only == nil {
+		m.checkAllWait = nil
 	}
 }
 
@@ -237,6 +268,16 @@ func (m *Monitor) dropChecksLocked(profiles []model.Profile) {
 	for scope := range m.checkPend {
 		if scope != "" && !enabled[scope] {
 			delete(m.checkPend, scope)
+			changed = true
+		}
+	}
+	for id := range m.checkAllWait { // phase 10 (CHK-MON-16)
+		if !enabled[id] {
+			delete(m.checkAllWait, id)
+			if len(m.checkAllWait) == 0 {
+				delete(m.checkPend, "")
+				m.checkAllWait = nil
+			}
 			changed = true
 		}
 	}

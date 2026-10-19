@@ -332,7 +332,6 @@ func TestCHK_TRAY_07_TimeoutLateReply(t *testing.T) {
 func TestCHK_TRAY_07_SecondSettingsAndLayout(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	PumpPending() // dialogs of earlier tests closed from a button are destroyed after the click
 	ds := newDiscService()
 	app := startCfgApp(t, ds.cfgService, true, nil)
 	w := openAdmin(t, app)
@@ -340,7 +339,13 @@ func TestCHK_TRAY_07_SecondSettingsAndLayout(t *testing.T) {
 	if h := app.OpenSettings(); h != dd.hwnd {
 		t.Errorf("second Settings returned %#x, want the dialog %#x", h, dd.hwnd)
 	}
-	if winapi.FindWindow(DiscoveryClass) != dd.hwnd {
+	// (EnumWindows: a hidden dialog of an earlier test, closed from a
+	// button on another OS thread, may wait there for its deferred destroy)
+	found := false
+	for _, h := range winapi.EnumWindowsByClass(DiscoveryClass) {
+		found = found || h == dd.hwnd
+	}
+	if !found {
 		t.Error("the settings process finds the dialog by its class")
 	}
 	w.openDiscovery() // e.g. a stray command: the open dialog stays the only one

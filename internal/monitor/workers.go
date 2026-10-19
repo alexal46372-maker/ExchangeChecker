@@ -128,7 +128,6 @@ func (m *Monitor) pollWorker(ctx context.Context, e *entry) {
 		return
 	}
 	settings := m.cfg.Settings
-	startSeq := m.checkCounter // check_now requests this poll covers
 	m.mu.Unlock()
 	if d := m.jitterFor(m.interval()); d > 0 {
 		t := time.NewTimer(d)
@@ -148,6 +147,11 @@ func (m *Monitor) pollWorker(ctx context.Context, e *entry) {
 		<-m.pollSem
 		return
 	}
+	// check_now requests this poll covers: taken right before the poll,
+	// after the jitter and the semaphore (architect review)
+	m.mu.Lock()
+	startSeq := m.checkCounter
+	m.mu.Unlock()
 	t0 := time.Now()
 	ps := m.pollOne(ctx, e, settings)
 	ms := time.Since(t0).Milliseconds()

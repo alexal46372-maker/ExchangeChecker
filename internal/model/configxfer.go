@@ -37,6 +37,12 @@ const (
 	// (64 KiB). The export reply is one message within IPCMaxMessage (like
 	// get_config; the 64 KiB cap is for interactive replies only).
 	IPCMaxImportRequest = 1 << 20
+
+	// ImportTrayMax caps the raw "tray" block of import_config (bytes;
+	// EC Tray's block, ignored by the service): above -> invalid_request
+	// MsgImportTrayTooLarge, errorArgs ["tray", "validation.too_long",
+	// "262144"].
+	ImportTrayMax = 256 << 10
 )
 
 // Error keys of import_config (texts in monitorMessages).
@@ -50,6 +56,13 @@ const (
 	MsgImportDuplicateID = "monitor.import_duplicate_id"
 	// MsgImportNoConfig: import_config without config.
 	MsgImportNoConfig = "monitor.import_no_config"
+	// MsgImportTrayTooLarge: the tray block is longer than ImportTrayMax.
+	MsgImportTrayTooLarge = "monitor.import_tray_too_large"
+	// MsgImportRollbackFailed (code save_failed): a write step failed and
+	// the previous files could not all be restored: the configuration on
+	// disk is partly imported (state not restored); the service reloaded
+	// what is on disk.
+	MsgImportRollbackFailed = "monitor.import_rollback_failed"
 )
 
 // ConfigExport is the exported configuration (export_config reply,

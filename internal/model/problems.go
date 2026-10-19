@@ -12,16 +12,15 @@ import (
 // also pushes the alert again (AlertEvent.StillFailing / Repeat), also
 // when it is acknowledged, so EC Tray can show its window again.
 
-// CapProblems: the service sends hasProblems / problems and repeat alert
-// pushes (stillFailing).
+// CapProblems: the service sends hasProblems / problems.
 const CapProblems = "problems"
 
-// Phase 10 (CHK-MON-17, contract with EC Tray): every repeat is ALSO a
-// distinct event of kind AlertKindRepeat with its own id / eventId (the
-// cursor of events_since), RepeatOf = eventId of the original alert,
-// Level, PointKey, CheckSeq, At (the check), Acknowledged. It is added to
-// the events_since ring and pushed as MsgAlertRepeat; never written to
-// the history or the Event Log.
+// Phase 10 (CHK-MON-17, contract with EC Tray): every repeat is an event
+// of kind AlertKindRepeat with its own id / eventId, RepeatOf = eventId of
+// the original alert, Level, PointKey, CheckSeq, At (the check),
+// Acknowledged, StillFailing, Repeat, Since. It is pushed as
+// MsgAlertRepeat only: not in events_since, the history or the Event Log
+// (the current state is status.problems).
 const (
 	CapAlertRepeat  = "alert_repeat"
 	AlertKindRepeat = "alert_repeat"

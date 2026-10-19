@@ -142,14 +142,12 @@ type Options struct {
 	// every AlertEvent (phase 9, CHK-SVC-05); "" = random.
 	RunID string
 
-	// OnRepeat receives the repeat push of an active alert after every
-	// failing check that was no transition (phase 10, CHK-MON-17): the
-	// service sends it to the IPC clients only (not the Event Log, the
-	// log file, history or events_since).
-	OnRepeat func(model.AlertEvent)
-	// OnAlertRepeat receives the alert_repeat event of every repeat
-	// (kind alert_repeat, own id, also in events_since; CHK-MON-17): the
-	// service pushes it as MsgAlertRepeat.
+	// OnAlertRepeat receives the alert_repeat event after every failing
+	// check of an active alert that was no transition (phase 10,
+	// CHK-MON-17; kind alert_repeat, own id, repeatOf; also for
+	// acknowledged alerts): the service pushes it as MsgAlertRepeat to
+	// the IPC clients only (not the Event Log, log file, history or
+	// events_since).
 	OnAlertRepeat func(model.AlertEvent)
 }
 
@@ -1308,8 +1306,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		m.markEventLocked(r)
 		r.RunID, r.EventID, r.Kind = m.runID, r.ID, model.AlertKindAlert
 		r.CheckSeq = m.results[r.ProfileID].LastCheckSeq
-		// the distinct alert_repeat event: own id (events_since cursor),
-		// RepeatOf the original alert
+		// the alert_repeat event: own id, RepeatOf the original alert
 		ev := *r
 		ev.ID = m.tracker.NewID()
 		ev.EventID, ev.Kind, ev.RepeatOf = ev.ID, model.AlertKindRepeat, r.ID
@@ -1317,7 +1314,8 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		if r.LastCheckedAt != nil {
 			ev.At = *r.LastCheckedAt
 		}
-		m.ring.add(ev)
+		// not in the events_since ring (architect review): push only; the
+		// current state is in status.problems
 		repEvents = append(repEvents, ev)
 	}
 	m.seq++
@@ -1364,11 +1362,6 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	}
 	if m.opt.OnSnapshot != nil {
 		m.opt.OnSnapshot(snap)
-	}
-	if m.opt.OnRepeat != nil {
-		for _, ev := range repeats {
-			m.opt.OnRepeat(ev)
-		}
 	}
 	if m.opt.OnAlertRepeat != nil {
 		for _, ev := range repEvents {

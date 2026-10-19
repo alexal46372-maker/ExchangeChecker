@@ -2,9 +2,11 @@ package monitor
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
@@ -132,5 +134,71 @@ func TestCHK_CFG_06_ExportImport(t *testing.T) {
 	}
 	if e.lg.has("Pw-Secret!") {
 		t.Fatal("password in the log")
+	}
+}
+
+// failStore fails chosen writes of a config.Store.
+type failStore struct {
+	*config.Store
+	failSecrets   bool
+	failProfilesN int // fail the n-th SaveProfiles call (1-based), 0 = never
+	profCalls     int
+}
+
+func (f *failStore) SaveSecrets(s config.Secrets) error {
+	if f.failSecrets {
+		return errors.New("disk full")
+	}
+	return f.Store.SaveSecrets(s)
+}
+
+func (f *failStore) SaveProfiles(ps []model.Profile) error {
+	f.profCalls++
+	if f.failProfilesN == f.profCalls {
+		return errors.New("disk gone")
+	}
+	return f.Store.SaveProfiles(ps)
+}
+
+// TestCHK_CFG_06_TrayLimitAndRollback — a tray block above 256 KiB is
+// refused (validation.too_long); write order profiles -> settings ->
+// secrets: a failed secrets write restores profiles.json (save_failed),
+// a failed restore is reported as monitor.import_rollback_failed.
+func TestCHK_CFG_06_TrayLimitAndRollback(t *testing.T) {
+	e := newCfgEnv(t)
+	if _, err := e.m.SaveProfile(sqlProf6("s1"), "Pw-Secret!", false, e.rev(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	exp, _ := e.m.ExportConfig()
+	big := exp
+	big.Tray = json.RawMessage(`"` + strings.Repeat("x", model.ImportTrayMax) + `"`)
+	ie := wantCode(t, "tray", func() error { _, err := e.m.ImportConfig(&big, "", e.rev(), true, "a"); return err }(),
+		model.ErrCodeInvalidRequest, model.MsgImportTrayTooLarge)
+	if len(ie.Args) != 3 || ie.Args[0] != "tray" || ie.Args[1] != model.ValTooLong || ie.Args[2] != "262144" {
+		t.Fatalf("tray args %v", ie.Args)
+	}
+	ok := exp
+	ok.Tray = json.RawMessage(`"` + strings.Repeat("x", model.ImportTrayMax-2) + `"`)
+	if _, err := e.m.ImportConfig(&ok, "", e.rev(), true, "a"); err != nil {
+		t.Fatalf("tray at the limit: %v", err)
+	}
+
+	fs := &failStore{Store: e.st, failSecrets: true}
+	e.m.opt.ConfigStore = fs
+	in := exp
+	s1 := in.Profiles[0]
+	s1.Server = "other" // the password must go: secrets are written
+	in.Profiles = []model.Profile{s1}
+	before := e.files()
+	wantCode(t, "secrets fail", func() error { _, err := e.m.ImportConfig(&in, "", e.rev(), false, "a"); return err }(),
+		model.ErrCodeSaveFailed, model.MsgMonitorConfigSaveFailed)
+	if e.files() != before {
+		t.Fatal("profiles not restored after the failed secrets write")
+	}
+	fs.profCalls, fs.failProfilesN = 0, 2 // the restore of profiles.json fails too
+	wantCode(t, "rollback fails", func() error { _, err := e.m.ImportConfig(&in, "", e.rev(), false, "a"); return err }(),
+		model.ErrCodeSaveFailed, model.MsgImportRollbackFailed)
+	if e.secrets()["s1"] != "Pw-Secret!" {
+		t.Fatal("secrets written although the import failed")
 	}
 }

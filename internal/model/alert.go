@@ -49,10 +49,8 @@ type AlertEvent struct {
 	// Phase 10 (CHK-MON-17): the alarm persists until the error is
 	// resolved. Since: when the point / profile left ok (active alerts and
 	// repeats). Repeat: failing checks since then that were no transition.
-	// StillFailing: this push is a repeat of an active alert after another
-	// failing check (no new ID/eventId, not in events_since / history),
-	// also for acknowledged alerts (Acknowledged set); LastCheckedAt: that
-	// check.
+	// StillFailing: an alert_repeat event (push only), also for
+	// acknowledged alerts (Acknowledged set); LastCheckedAt: that check.
 	Since         *time.Time `json:"since,omitempty"`
 	Repeat        uint32     `json:"repeat,omitempty"`
 	StillFailing  bool       `json:"stillFailing,omitempty"`

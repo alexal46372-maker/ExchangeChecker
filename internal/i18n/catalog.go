@@ -527,6 +527,54 @@ const (
 	KeyTipWizCancel        = "tip.wiz_cancel"
 )
 
+// phase 10 A–C (CHK-TRAY-33..39)
+const (
+	KeyPanelNoService   = "panel.no_service"
+	KeyPanelNoSQL       = "panel.no_sql"
+	KeyPanelTitle       = "panel.title"
+	KeyAlertMute        = "alert.mute"
+	KeyAlertUnmute      = "alert.unmute"
+	KeyTipAlertMute     = "tip.alert_mute"
+	KeyMenuSound        = "menu.sound"
+	KeyMenuVolume       = "menu.volume"
+	KeyMenuPinHelp      = "menu.pin_help"
+	KeyPinHelpTitle     = "pin.title"
+	KeyPinHelpText      = "pin.text"
+	KeySoundTitle       = "sound.title"
+	KeySoundWarning     = "sound.warning"
+	KeySoundError       = "sound.error"
+	KeySoundBeep        = "sound.beep"
+	KeySoundFile        = "sound.file"
+	KeySoundFreq        = "sound.freq"
+	KeySoundDur         = "sound.dur"
+	KeySoundBrowse      = "sound.browse"
+	KeySoundVolume      = "sound.volume"
+	KeySoundLoop        = "sound.loop"
+	KeySoundGap         = "sound.gap"
+	KeySoundTest        = "sound.test"
+	KeySoundStop        = "sound.stop"
+	KeySoundSave        = "sound.save"
+	KeySoundCancel      = "sound.cancel"
+	KeySoundFilterAudio = "sound.filter_audio"
+	KeySoundFilterAll   = "sound.filter_all"
+	KeySoundBadFile     = "sound.bad_file"
+	KeySoundBadValue    = "sound.bad_value"
+	KeySoundSaved       = "sound.saved"
+	KeySoundFallback    = "sound.fallback"
+	KeyTipSoundKind     = "tip.sound_kind"
+	KeyTipSoundFreq     = "tip.sound_freq"
+	KeyTipSoundDur      = "tip.sound_dur"
+	KeyTipSoundFile     = "tip.sound_file"
+	KeyTipSoundBrowse   = "tip.sound_browse"
+	KeyTipSoundVolume   = "tip.sound_volume"
+	KeyTipSoundLoop     = "tip.sound_loop"
+	KeyTipSoundGap      = "tip.sound_gap"
+	KeyTipSoundTest     = "tip.sound_test"
+	KeyTipSoundSave     = "tip.sound_save"
+	KeyVolumeTitle      = "volume.title"
+	KeyTipVolume        = "tip.volume"
+)
+
 var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyCheckRateLimited:      {"Проверка уже запрашивалась недавно, повторите через %d с", "A check was requested recently, try again in %d s"},
 	KeyCheckRunning:          {"Проверка выполняется…", "Check in progress…"},
@@ -1051,4 +1099,49 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipWizAdvanced:      {"Продолжить в полной форме настроек с уже введёнными данными.", "Continue in the full settings form with what was entered."},
 	KeyTipWizGrant:         {"Скопировать в буфер обмена T-SQL, выдающий права только на чтение; EC скрипт не выполняет.", "Copy the T-SQL that grants read-only access to the clipboard; EC never runs the script."},
 	KeyTipWizCancel:        {"Закрыть мастер без сохранения.", "Close the wizard without saving."},
+	// phase 10 A–C
+	KeyPanelNoService:   {"Нет связи со службой Exchange Checker", "No connection to the Exchange Checker service"},
+	KeyPanelNoSQL:       {"%s: нет связи с SQL Server", "%s: no connection to SQL Server"},
+	KeyPanelTitle:       {"Exchange Checker — проблемы", "Exchange Checker — problems"},
+	KeyAlertMute:        {"Звук выкл", "Sound off"},
+	KeyAlertUnmute:      {"Звук вкл", "Sound on"},
+	KeyTipAlertMute:     {"Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком", "Turn the sound of this alarm off or on. The next new alarm sounds again"},
+	KeyMenuSound:        {"Звук тревог…", "Alarm sounds…"},
+	KeyMenuVolume:       {"Громкость…", "Volume…"},
+	KeyMenuPinHelp:      {"Как закрепить значок…", "How to pin the icon…"},
+	KeyPinHelpTitle:     {"Значок Exchange Checker", "Exchange Checker icon"},
+	KeyPinHelpText:      {"Чтобы значок всегда был виден рядом с часами (Windows 7):\r\n1. Нажмите стрелку «Отображать скрытые значки» слева от часов.\r\n2. Выберите «Настроить…».\r\n3. Для Exchange Checker выберите «Показать значок и уведомления».\r\n\r\nВ Windows 10 и 11: Параметры → Персонализация → Панель задач → Значки в углу панели задач — включите Exchange Checker.", "To keep the icon always visible next to the clock (Windows 7):\r\n1. Click the «Show hidden icons» arrow left of the clock.\r\n2. Choose «Customize…».\r\n3. For Exchange Checker select «Show icon and notifications».\r\n\r\nOn Windows 10 and 11: Settings → Personalization → Taskbar → Taskbar corner overflow — turn Exchange Checker on."},
+	KeySoundTitle:       {"Звук тревог", "Alarm sounds"},
+	KeySoundWarning:     {"Предупреждение", "Warning"},
+	KeySoundError:       {"Ошибка", "Error"},
+	KeySoundBeep:        {"Тон", "Tone"},
+	KeySoundFile:        {"Файл", "File"},
+	KeySoundFreq:        {"Частота, Гц:", "Frequency, Hz:"},
+	KeySoundDur:         {"Длительность, мс:", "Duration, ms:"},
+	KeySoundBrowse:      {"Обзор…", "Browse…"},
+	KeySoundVolume:      {"Громкость, %:", "Volume, %:"},
+	KeySoundLoop:        {"Повторять до подтверждения", "Repeat until acknowledged"},
+	KeySoundGap:         {"Пауза между повторами, мс:", "Pause between repeats, ms:"},
+	KeySoundTest:        {"Прослушать", "Listen"},
+	KeySoundStop:        {"Стоп", "Stop"},
+	KeySoundSave:        {"Сохранить", "Save"},
+	KeySoundCancel:      {"Отмена", "Cancel"},
+	KeySoundFilterAudio: {"Звуковые файлы (*.wav; *.mp3; *.wma; *.mid)", "Sound files (*.wav; *.mp3; *.wma; *.mid)"},
+	KeySoundFilterAll:   {"Все файлы (*.*)", "All files (*.*)"},
+	KeySoundBadFile:     {"Файл не найден или не поддерживается: %s", "The file is not found or not supported: %s"},
+	KeySoundBadValue:    {"Проверьте значение: %s", "Check the value: %s"},
+	KeySoundSaved:       {"Сохранено", "Saved"},
+	KeySoundFallback:    {"Не удалось воспроизвести «%s» (%s), звучит тон", "Could not play «%s» (%s), a tone is used"},
+	KeyTipSoundKind:     {"Тон — синусоида с заданной частотой; Файл — WAV, MP3, WMA или MID", "Tone is a sine wave of the given frequency; File is a WAV, MP3, WMA or MID file"},
+	KeyTipSoundFreq:     {"Частота тона, 37–32767 Гц", "Tone frequency, 37–32767 Hz"},
+	KeyTipSoundDur:      {"Длительность одного сигнала, мс", "Length of one signal, ms"},
+	KeyTipSoundFile:     {"Путь к звуковому файлу. Если файл не воспроизводится, звучит тон", "Path to the sound file. If it cannot be played, the tone is used"},
+	KeyTipSoundBrowse:   {"Выбрать звуковой файл", "Choose a sound file"},
+	KeyTipSoundVolume:   {"Громкость этого профиля, 0–100%; умножается на общую громкость", "Volume of this profile, 0–100%; multiplied by the master volume"},
+	KeyTipSoundLoop:     {"Повторять звук, пока тревогу не подтвердят или не закроют окно; иначе — один раз", "Repeat the sound until the alarm is acknowledged or the window closed; otherwise once"},
+	KeyTipSoundGap:      {"Пауза между повторами звука, мс", "Pause between repeats, ms"},
+	KeyTipSoundTest:     {"Проиграть звук с текущими настройками", "Play the sound with the current settings"},
+	KeyTipSoundSave:     {"Сохранить настройки звука для текущего пользователя Windows", "Save the sound settings for the current Windows user"},
+	KeyVolumeTitle:      {"Громкость тревог", "Alarm volume"},
+	KeyTipVolume:        {"Общая громкость звуков тревог, 0–100%. Сохраняется сразу", "Master volume of the alarm sounds, 0–100%. Saved at once"},
 }

@@ -86,6 +86,16 @@ type Options struct {
 	BalloonDebounce time.Duration
 	// HiddenStatus keeps the «Состояние» window hidden (tests).
 	HiddenStatus bool
+	// Sounder plays the alarm sounds (phase 10, CHK-TRAY-33); nil = the
+	// Windows one, or Beeper through trayalert.BeeperSounder when set.
+	Sounder trayalert.Sounder
+	// SoundStore keeps the per-user sound profiles (nil = not stored).
+	SoundStore SoundStore
+	// HiddenPanel keeps the problem panel and the volume window hidden
+	// (tests); their state is maintained.
+	HiddenPanel bool
+	// NoBlink disables the icon blinking timer (tests drive blinkTick).
+	NoBlink bool
 }
 
 // exitWait bounds the wait for the session goroutine in Exit (well under
@@ -97,11 +107,6 @@ var exitWaitHook func()
 
 // ackTimeout bounds one ack_alert request.
 const ackTimeout = 10 * time.Second
-
-// speaker is the kernel32 Beep (PC speaker).
-type speaker struct{}
-
-func (speaker) Beep(freqHz, durMs int) error { return winapi.Beep(uint32(freqHz), uint32(durMs)) }
 
 // App is the tray application. All methods except the session callback
 // run on the thread that called NewApp (a locked OS thread).
@@ -117,10 +122,25 @@ type App struct {
 	tasks   []func()
 	closing bool
 
-	alerts    *trayalert.Controller
-	player    *trayalert.Player
-	awin      *alertWindow
-	alertView trayalert.View
+	alerts  *trayalert.Controller
+	player  *trayalert.SoundPlayer
+	tester  *trayalert.SoundPlayer
+	sounder trayalert.Sounder
+	// phase 10: sound profiles (CHK-TRAY-33..35), problem list, blinking
+	// icon and panel (CHK-TRAY-38/39)
+	soundPrefs  trayalert.SoundPrefs
+	soundStored bool
+	soundWin    *soundWindow
+	volWin      *volumeWindow
+	problems    []trayalert.Problem
+	statusExt   trayalert.StatusExt
+	blink       trayalert.Blink
+	blinkOff    bool // the icon is in its dark phase
+	blinkTimer  bool
+	blinks      int // icon changes by the blink timer (test hook)
+	panel       *panelWindow
+	awin        *alertWindow
+	alertView   trayalert.View
 
 	status         trayipc.Status
 	ind            trayui.Indicator
@@ -133,6 +153,8 @@ type App struct {
 	settings       *settingsWindow
 	// iconRemoves counts NIM_DELETE calls (test hook, CHK-TRAY-11)
 	iconRemoves int
+	// taskbarRecreated counts TaskbarCreated messages (test hook)
+	taskbarRecreated int
 	// phase 9a: balloons (CHK-TRAY-18), «Состояние» (CHK-TRAY-19/21),
 	// «Проверить сейчас» results (CHK-TRAY-20, test hook)
 	balloonsOn   bool
@@ -166,11 +188,15 @@ func NewApp(opt Options) (*App, error) {
 	trayExitMsg()
 	a.taskbarCreated = winapi.RegisterWindowMessage("TaskbarCreated")
 	a.alerts = trayalert.New(a.opt.Lang)
-	b := opt.Beeper
-	if b == nil {
-		b = speaker{}
+	a.sounder = opt.Sounder
+	if a.sounder == nil && opt.Beeper != nil {
+		a.sounder = trayalert.BeeperSounder{B: opt.Beeper}
 	}
-	a.player = trayalert.NewPlayer(b)
+	if a.sounder == nil {
+		a.sounder = &winSounder{log: func(l string) { a.logf("%s", l) }, lang: func() string { return a.opt.Lang }}
+	}
+	a.player = trayalert.NewSoundPlayer(a.sounder)
+	a.loadSoundPrefs()
 	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
 	a.loadBalloonPref()
 	a.addIcon()
@@ -231,7 +257,7 @@ func (a *App) AlertWindow() uintptr {
 // applyAlert shows the alert view: window and sound.
 func (a *App) applyAlert(v trayalert.View) {
 	a.alertView = v
-	a.player.Set(v.Sound, v.Tone)
+	a.player.Set(v.Sound, a.alertSound(v))
 	if a.awin == nil {
 		if !v.Visible {
 			return
@@ -241,6 +267,7 @@ func (a *App) applyAlert(v trayalert.View) {
 		if err != nil {
 			return
 		}
+		aw.onMute = a.muteAlerts
 		a.awin = aw
 	}
 	a.awin.apply(v, !a.opt.HiddenAlerts)
@@ -249,6 +276,9 @@ func (a *App) applyAlert(v trayalert.View) {
 // closeAlerts: the user closed the alert window (mute until the next
 // change, PLAN §12 p.50).
 func (a *App) closeAlerts() { a.applyAlert(a.alerts.Close()) }
+
+// muteAlerts: «Звук вкл/выкл» of the current alarm (CHK-TRAY-36).
+func (a *App) muteAlerts() { a.applyAlert(a.alerts.ToggleMute()) }
 
 // ackAlerts: «Подтвердить» — ack_alert for the shown alerts, off the UI
 // thread; replies come back through runOnUI.
@@ -327,6 +357,19 @@ func (a *App) Exit() {
 	}
 	a.removeIcon()
 	a.player.Close()
+	if a.tester != nil {
+		a.tester.Close()
+	}
+	a.stopBlink()
+	if a.panel != nil && winapi.IsWindow(a.panel.hwnd) {
+		winapi.DestroyWindow(a.panel.hwnd)
+	}
+	if a.volWin != nil && winapi.IsWindow(a.volWin.hwnd) {
+		winapi.DestroyWindow(a.volWin.hwnd)
+	}
+	if a.soundWin != nil && winapi.IsWindow(a.soundWin.hwnd) {
+		winapi.DestroyWindow(a.soundWin.hwnd)
+	}
 	a.cancel()
 	// bounded: a hung session must not keep the tray (the icon is already
 	// gone) — the installer terminates it after 5 s (CHK-TRAY-11)
@@ -369,9 +412,14 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 		a.onNotify(uint32(lp & 0xFFFF))
 		return 0, true
 	case a.taskbarCreated != 0 && msg == a.taskbarCreated:
-		// Explorer restarted: the icon is gone, add it again
+		// Explorer restarted: the icon is gone, add it again (with
+		// NOTIFYICON_VERSION_4, CHK-TRAY-37)
 		a.nidAdded = false
+		a.taskbarRecreated++
 		a.addIcon()
+		return 0, true
+	case msg == winapi.WM_TIMER && wp == blinkTimerID:
+		a.blinkTick()
 		return 0, true
 	case isTrayExit(msg), msg == winapi.WM_CLOSE:
 		// CHK-TRAY-11: the installer's exit message and WM_CLOSE remove
@@ -419,6 +467,7 @@ func (a *App) drain() {
 	} else if old.Icon != a.ind.Icon || old.Tooltip != a.ind.Tooltip {
 		a.modifyIcon()
 	}
+	a.updateProblems()
 	a.afterDrain(q)
 	a.balloonEvents(q)
 	if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) {
@@ -449,6 +498,7 @@ func (a *App) RightMenu() []trayui.Item {
 	m := trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref, a.serviceState())
 	// phase 9a items before the separator above «Выход»
 	ext := trayui.Phase9Items(a.opt.Lang, a.balloonsOn, a.connected() && !a.check.Busy)
+	ext = append(ext, trayui.Phase10Items(a.opt.Lang)...)
 	at := len(m) - 2
 	out := append(append(append([]trayui.Item(nil), m[:at]...), ext...), m[at:]...)
 	return out
@@ -485,6 +535,12 @@ func (a *App) Command(cmd int) {
 		a.CheckNow()
 	case trayui.CmdBalloons:
 		a.SetBalloons(!a.balloonsOn)
+	case trayui.CmdSound:
+		a.OpenSound()
+	case trayui.CmdVolume:
+		a.OpenVolume()
+	case trayui.CmdPinHelp:
+		a.ShowPinHelp()
 	}
 }
 
@@ -585,7 +641,7 @@ func (a *App) nid() winapi.NOTIFYICONDATAW {
 	n.ID = trayID
 	n.Flags = winapi.NIF_MESSAGE | winapi.NIF_ICON | winapi.NIF_TIP | winapi.NIF_SHOWTIP
 	n.CallbackMessage = msgNotify
-	n.Icon = a.icons.get(a.ind.Icon)
+	n.Icon = a.icons.get(a.shownIcon())
 	tip, _ := utf16From(a.ind.Tooltip)
 	copy(n.Tip[:len(n.Tip)-1], tip)
 	return n

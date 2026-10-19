@@ -55,6 +55,7 @@ func run() int {
 		LangPref:     langPref,
 		LangStore:    wintray.RegistryLangStore{},
 		BalloonStore: wintray.RegistryBalloonStore{},
+		SoundStore:   wintray.RegistrySoundStore{},
 		Session:      session,
 		// %LOCALAPPDATA%\ExchangeChecker\tray.log, 1 MB + tray.log.1
 		// (phase 9b, CHK-TRAY-28); no passwords / logins are written

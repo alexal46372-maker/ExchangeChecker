@@ -17,22 +17,29 @@ const (
 	idAlertStatus = 302
 	idAlertHint   = 303
 	idAlertAck    = 310
+	idAlertMute   = 311
 	idAlertClose  = winapi.IDCANCEL
 )
 
-// alertWindow is the topmost alert window (PLAN §6.3, §12 p.50). It is
-// created once and hidden / shown; «Закрыть» and the close box only
-// call onClose (mute until the next change), «Подтвердить» calls onAck.
+// alertWindow is the topmost exchange error window (PLAN §6.3, §12 p.50,
+// reworked in phase 10: §12 p.117, CHK-TRAY-03/36). It is created once
+// and hidden / shown; only the Minimize and Close boxes (no maximize, no
+// hooks, no BlockInput). «Закрыть» and the close box call onClose (mute
+// until the next change), «Подтвердить» calls onAck (hidden until the
+// next check that still sees the error), «Звук вкл/выкл» calls onMute.
 type alertWindow struct {
 	hwnd                     uintptr
 	icon, text, status, hint uintptr
-	ack, close               uintptr
+	ack, close, mute         uintptr
+	muted                    bool
 	tips                     *tooltips
 	level                    model.AlertLevel
 	shown                    bool
 	raised                   int // bring-to-front requests (tests)
 	lang                     string
 	onAck, onClose           func()
+	onMute                   func()
+	style                    uint32 // window style (tests: only Minimize / Close)
 }
 
 func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWindow, error) {
@@ -47,6 +54,11 @@ func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWi
 			case idAlertAck:
 				if aw.onAck != nil {
 					aw.onAck()
+				}
+				return 0, true
+			case idAlertMute:
+				if aw.onMute != nil {
+					aw.onMute()
 				}
 				return 0, true
 			case idAlertClose:
@@ -64,8 +76,9 @@ func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWi
 		}
 		return 0, false
 	}
+	aw.style = winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | winapi.WS_MINIMIZEBOX
 	hwnd, err := createWindow(alertClass, i18n.T(i18n.KeyAlertTitleWarning, lang), winapi.WS_EX_DLGMODALFRAME|winapi.WS_EX_TOPMOST,
-		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU, x, y, w, h, owner, handler)
+		aw.style, x, y, w, h, owner, handler)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +87,7 @@ func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWi
 	aw.text = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertText, 64, 16, w-96, h-150)
 	aw.status = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertStatus, 64, h-128, w-96, 20)
 	aw.hint = child(hwnd, "STATIC", i18n.T(i18n.KeyAlertCloseHint, lang), winapi.SS_LEFT, idAlertHint, 16, h-104, w-48, 32)
+	aw.mute = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertMute, lang), winapi.WS_TABSTOP, idAlertMute, 16, h-70, 120, 28)
 	aw.ack = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertAck, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idAlertAck, w-264, h-70, 120, 28)
 	aw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertClose, lang), winapi.WS_TABSTOP, idAlertClose, w-136, h-70, 104, 28)
 	aw.tips = newTooltips(hwnd) // CHK-TRAY-15
@@ -95,6 +109,8 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 	winapi.SetWindowText(aw.text, trayalert.Text(v, aw.lang))
 	winapi.SetWindowText(aw.status, v.Message)
 	winapi.EnableWindow(aw.ack, v.CanAck)
+	aw.muted = v.Muted
+	winapi.SetWindowText(aw.mute, aw.muteText())
 	switch {
 	case v.Visible && (!aw.shown || v.Raise):
 		// first show, or a new alert / escalation while already open:
@@ -113,6 +129,9 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 // bringToFront: topmost + foreground with the Win7-compatible APIs; when
 // the foreground lock refuses, the taskbar button flashes.
 func (aw *alertWindow) bringToFront() {
+	if winapi.IsIconic(aw.hwnd) {
+		winapi.ShowWindow(aw.hwnd, winapi.SW_RESTORE)
+	}
 	winapi.ShowWindow(aw.hwnd, winapi.SW_SHOWNORMAL)
 	winapi.SetWindowPos(aw.hwnd, winapi.HWND_TOPMOST, 0, 0, 0, 0, winapi.SWP_NOMOVE|winapi.SWP_NOSIZE|winapi.SWP_SHOWWINDOW)
 	winapi.SetForegroundWindow(aw.hwnd)
@@ -128,6 +147,7 @@ func (aw *alertWindow) setLang(lang string) {
 	winapi.SetWindowText(aw.hint, i18n.T(i18n.KeyAlertCloseHint, lang))
 	winapi.SetWindowText(aw.ack, i18n.T(i18n.KeyAlertAck, lang))
 	winapi.SetWindowText(aw.close, i18n.T(i18n.KeyAlertClose, lang))
+	winapi.SetWindowText(aw.mute, aw.muteText())
 	aw.setTips()
 }
 
@@ -135,4 +155,13 @@ func (aw *alertWindow) setLang(lang string) {
 func (aw *alertWindow) setTips() {
 	aw.tips.set(aw.ack, i18n.T(i18n.KeyTipAlertAck, aw.lang))
 	aw.tips.set(aw.close, i18n.T(i18n.KeyTipAlertClose, aw.lang))
+	aw.tips.set(aw.mute, i18n.T(i18n.KeyTipAlertMute, aw.lang))
+}
+
+// muteText: the button names the action («Звук выкл» while it sounds).
+func (aw *alertWindow) muteText() string {
+	if aw.muted {
+		return i18n.T(i18n.KeyAlertUnmute, aw.lang)
+	}
+	return i18n.T(i18n.KeyAlertMute, aw.lang)
 }

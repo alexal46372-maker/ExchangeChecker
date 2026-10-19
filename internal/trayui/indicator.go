@@ -32,6 +32,7 @@ const (
 	IconError               // red
 	IconOffline             // grey: no data from the service
 	IconProblem             // grey with a red center: not responding / hung / untrusted
+	IconBlank               // phase 10: the dark phase of the blinking icon (CHK-TRAY-38)
 )
 
 // Indicator is the evaluated tray state.

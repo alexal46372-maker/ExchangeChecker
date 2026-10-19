@@ -3,6 +3,7 @@ package trayalert
 import (
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -36,6 +37,8 @@ type View struct {
 	// brings the window to the front even when it is already visible
 	// (one-shot, only in the View returned by Update).
 	Raise bool
+	// Muted: «Звук выкл» of the window for the current alarm (phase 10).
+	Muted bool
 }
 
 // AckRequest is one ack_alert request and the alerts it covers.
@@ -59,11 +62,21 @@ type Controller struct {
 	ackable   bool // service supports ack_alert
 	settings  *model.Settings
 
-	shown    map[ID]model.AlertEvent // unacknowledged active alerts shown
-	suppress map[ID]model.AlertLevel // acknowledged by us, until the snapshot agrees
+	shown map[ID]model.AlertEvent // unacknowledged active alerts shown
+	// acked: acknowledged alerts (by us or by the service), hidden until a
+	// later check of the profile still sees them (PLAN §12 p.117,
+	// CHK-TRAY-36) or the level changes
+	acked   map[ID]ackMark
+	checked map[string]time.Time // profile → checkedAt of the last snapshot
+	// muted: «Звук выкл» of the current alarm (until the next Raise)
+	muted bool
 
 	visible, sound, pending bool
-	msg                     string
+	reshown                 bool
+	repeat                  map[string]bool // alert_repeat since the last Update
+	// Policy decides when an acknowledged alert is shown again.
+	Policy AckPolicy
+	msg    string
 }
 
 // SetLang switches the UI language of the texts (tray menu choice).
@@ -71,7 +84,8 @@ func (c *Controller) SetLang(lang string) { c.lang = i18n.Normalize(lang) }
 
 // New returns a controller for the UI language lang.
 func New(lang string) *Controller {
-	return &Controller{lang: i18n.Normalize(lang), shown: map[ID]model.AlertEvent{}, suppress: map[ID]model.AlertLevel{}}
+	return &Controller{Policy: CheckedAtPolicy{}, lang: i18n.Normalize(lang), shown: map[ID]model.AlertEvent{},
+		acked: map[ID]ackMark{}, checked: map[string]time.Time{}}
 }
 
 // Update applies a session status. ackable = the session supports
@@ -88,23 +102,55 @@ func (c *Controller) Update(st trayipc.Status, ackable bool) View {
 		s := *snap.Settings
 		c.settings = &s
 	}
+	for _, p := range snap.Profiles {
+		c.checked[p.ProfileID] = p.CheckedAt
+	}
 	cur := map[ID]model.AlertEvent{}
 	for _, a := range snap.Alerts {
-		if a.To <= model.LevelOK || a.Acknowledged {
+		if a.To <= model.LevelOK {
 			continue
 		}
-		cur[idOf(a)] = a
+		id := idOf(a)
+		m, ours := c.acked[id]
+		if ours && m.level != a.To {
+			ours = false // a level change is a new alarm
+			delete(c.acked, id)
+		}
+		if a.Acknowledged && !ours {
+			m, ours = ackMark{level: a.To}, true
+			if a.AckedAt != nil {
+				m.at = *a.AckedAt
+			}
+			c.acked[id] = m
+		}
+		if ours {
+			if !c.repeat[a.ProfileID] && !c.Policy.Reshow(a, m.at, c.checked[a.ProfileID]) {
+				continue
+			}
+			// a later check still sees it: shown again, and the mark is
+			// dropped so a new «Подтвердить» is needed
+			delete(c.acked, id)
+			if old, ok := c.shown[id]; !ok || old.To != a.To {
+				c.reshown = true
+			}
+			a.Acknowledged = false
+		}
+		cur[id] = a
 	}
-	// our own acks hide an alert until the snapshot shows it acknowledged
-	// or gone; a level change ends the suppression (new status)
-	for id, lvl := range c.suppress {
-		if a, ok := cur[id]; !ok || a.To != lvl {
-			delete(c.suppress, id)
-		} else {
-			delete(cur, id)
+	for id := range c.acked {
+		found := false
+		for _, a := range snap.Alerts {
+			if idOf(a) == id && a.To > model.LevelOK {
+				found = true
+				break
+			}
+		}
+		if !found {
+			delete(c.acked, id)
 		}
 	}
-	changed := false
+	changed := c.reshown
+	c.reshown, c.repeat = false, nil
 	for id, a := range cur {
 		if old, ok := c.shown[id]; !ok || a.To > old.To {
 			changed = true
@@ -115,7 +161,7 @@ func (c *Controller) Update(st trayipc.Status, ackable bool) View {
 	case len(cur) == 0:
 		c.visible, c.sound, c.msg = false, false, ""
 	case changed:
-		c.visible, c.sound, c.msg = true, true, ""
+		c.visible, c.sound, c.msg, c.muted = true, true, "", false
 	}
 	v := c.View()
 	v.Raise = changed && len(cur) > 0
@@ -211,7 +257,7 @@ func (c *Controller) AckDone(results []AckResult) (v View, refresh bool) {
 			refresh = true
 			for _, id := range r.Req.IDs {
 				if a, ok := c.shown[id]; ok {
-					c.suppress[id] = a.To
+					c.acked[id] = ackMark{level: a.To, at: c.checked[id.ProfileID]}
 					delete(c.shown, id)
 				}
 			}
@@ -271,9 +317,9 @@ func (c *Controller) sorted() []model.AlertEvent {
 // View is the current view. beep.enabled = false (PLAN §12 p.65) mutes the
 // sound only; the window is shown as usual.
 func (c *Controller) View() View {
-	muted := c.settings != nil && !c.settings.Beep.BeepEnabled()
+	muted := c.muted || (c.settings != nil && !c.settings.Beep.BeepEnabled())
 	v := View{Visible: c.visible && len(c.shown) > 0, Sound: c.sound && len(c.shown) > 0 && !muted,
-		Alerts: c.sorted(), CanAck: c.canAck(), Pending: c.pending, Message: c.msg}
+		Alerts: c.sorted(), CanAck: c.canAck(), Pending: c.pending, Message: c.msg, Muted: c.muted}
 	for _, a := range v.Alerts {
 		if a.To > v.Level {
 			v.Level = a.To
@@ -282,3 +328,50 @@ func (c *Controller) View() View {
 	v.Tone = ToneFor(v.Level, c.settings)
 	return v
 }
+
+type ackMark struct {
+	level model.AlertLevel
+	// at: the profile checkedAt when acknowledged (ours) or AckedAt
+	at time.Time
+}
+
+// AckPolicy decides when an acknowledged alert is shown again. Today:
+// CheckedAtPolicy (a later check of the profile, from status); with the
+// service alert_repeat event (phase10-svc) RepeatEvent can drive it
+// instead — one place to switch (Кончита's decision 4).
+type AckPolicy interface {
+	// Reshow: a is active and acknowledged at ackAt; checkedAt is the
+	// profile's last check from the current snapshot.
+	Reshow(a model.AlertEvent, ackAt, checkedAt time.Time) bool
+}
+
+// CheckedAtPolicy reshows when the profile was checked after the ack.
+// Unknown times (an older service) keep the old behaviour: hidden until
+// the level changes.
+type CheckedAtPolicy struct{}
+
+// Reshow implements AckPolicy.
+func (CheckedAtPolicy) Reshow(a model.AlertEvent, ackAt, checkedAt time.Time) bool {
+	return !ackAt.IsZero() && !checkedAt.IsZero() && checkedAt.After(ackAt)
+}
+
+// Repeat is the alert_repeat event (phase10-svc, capability
+// alert_repeat, optional): the check checkSeq of profileID still sees the
+// alarm. The next Update shows its acknowledged alerts again. The service also sends it for acknowledged alarms; the
+// tray decides here.
+func (c *Controller) Repeat(profileID string) {
+	if c.repeat == nil {
+		c.repeat = map[string]bool{}
+	}
+	c.repeat[profileID] = true
+}
+
+// ToggleMute is «Звук вкл/выкл» of the window: mutes or unmutes the
+// current alarm only (the next new alarm or escalation sounds again).
+func (c *Controller) ToggleMute() View {
+	c.muted = !c.muted
+	return c.View()
+}
+
+// Muted reports the window's mute toggle.
+func (c *Controller) Muted() bool { return c.muted }

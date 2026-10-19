@@ -172,7 +172,13 @@ var winAPIMinVersion = map[string]float64{
 	// phase 9b history chart, plain GDI (CHK-TRAY-26)
 	"BeginPaint": 5.0, "EndPaint": 5.0, "GetClientRect": 5.0, "InvalidateRect": 5.0, "FillRect": 5.0,
 	"CreatePen": 5.0, "CreateSolidBrush": 5.0, "SelectObject": 5.0, "MoveToEx": 5.0, "LineTo": 5.0,
-	"Polyline": 5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
+	// phase 10 A–C: alarm sounds (winmm), blinking icon timer, sound file
+	// dialog, minimized alert window, tray icon rectangle for the panel
+	// by the clock (CHK-TRAY-33..39)
+	"PlaySoundW": 5.0, "mciSendStringW": 5.0, "mciGetErrorStringW": 5.0,
+	"SetTimer": 5.0, "KillTimer": 5.0, "GetOpenFileNameW": 5.0, "IsIconic": 5.0,
+	"Shell_NotifyIconGetRect": 6.1,
+	"Polyline":                5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
 	// phase 9b part 2 «Скопировать SQL-скрипт прав» (CHK-TRAY-32)
 	"OpenClipboard": 5.0, "EmptyClipboard": 5.0, "SetClipboardData": 5.0, "CloseClipboard": 5.0,
 	"GlobalAlloc": 5.0, "GlobalLock": 5.0, "GlobalUnlock": 5.0, "GlobalFree": 5.0,

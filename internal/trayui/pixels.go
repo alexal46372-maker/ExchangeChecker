@@ -72,6 +72,12 @@ func IconPixels(k Icon, size int) []uint32 {
 			if d2 > rad*rad {
 				continue
 			}
+			if k == IconBlank { // only a faint rim keeps the place visible
+				if d2 > (rad-1.2)*(rad-1.2) {
+					px[y*size+x] = argb(96, 48, 48, 48)
+				}
+				continue
+			}
 			r, g, b := r0, g0, b0
 			if d2 > (rad-1.2)*(rad-1.2) { // darker rim
 				r, g, b = r/2, g/2, b/2

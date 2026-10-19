@@ -195,11 +195,12 @@ func TestCHK_TRAY_15_Tooltips(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer winapi.DestroyWindow(aw.hwnd)
-	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck, i18n.RU) || aw.tips.text(aw.close) != i18n.T(i18n.KeyTipAlertClose, i18n.RU) || aw.tips.count() != 2 {
+	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck, i18n.RU) || aw.tips.text(aw.close) != i18n.T(i18n.KeyTipAlertClose, i18n.RU) ||
+		aw.tips.text(aw.mute) != i18n.T(i18n.KeyTipAlertMute, i18n.RU) || aw.tips.count() != 3 {
 		t.Error("alert tooltips")
 	}
 	aw.setLang(i18n.EN)
-	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck, i18n.EN) || aw.tips.count() != 2 {
+	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck, i18n.EN) || aw.tips.count() != 3 {
 		t.Error("alert tooltips after the language switch")
 	}
 	h, err := newAboutWindow(0, "About", "text", "OK", i18n.T(i18n.KeyTipAboutOK, i18n.EN), false, nil)

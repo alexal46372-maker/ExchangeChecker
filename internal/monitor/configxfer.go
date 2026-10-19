@@ -28,6 +28,7 @@ func (m *Monitor) ExportConfig() (model.ConfigExport, error) {
 	}
 	now := m.opt.Now().In(model.DBZone)
 	st := view.Settings
+	st.Viber = nil // settings.viber is not exported (CHK-SVC-06)
 	logins := false
 	for _, p := range view.Profiles {
 		if p.AuthMode == model.AuthSQL && strings.TrimSpace(p.Login) != "" {
@@ -42,7 +43,54 @@ func (m *Monitor) ExportConfig() (model.ConfigExport, error) {
 // the struct), ignoring the HasPassword hint.
 func sameProfile(a, b model.Profile) bool {
 	a.HasPassword, b.HasPassword = false, false
-	return reflect.DeepEqual(a, b)
+	return reflect.DeepEqual(normalizeEmpty(a), normalizeEmpty(b))
+}
+
+// normalizeEmpty returns a copy of v with every nil slice and map
+// (nested, incl. behind pointers) made empty, so that e.g. "mappings":
+// [] and an absent mappings compare equal (CHK-MON-16).
+func normalizeEmpty(v interface{}) interface{} {
+	rv := reflect.ValueOf(v)
+	out := reflect.New(rv.Type()).Elem()
+	out.Set(normalizeValue(rv))
+	return out.Interface()
+}
+
+func normalizeValue(v reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Slice:
+		if v.IsNil() {
+			return reflect.MakeSlice(v.Type(), 0, 0)
+		}
+		out := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := 0; i < v.Len(); i++ {
+			out.Index(i).Set(normalizeValue(v.Index(i)))
+		}
+		return out
+	case reflect.Map:
+		out := reflect.MakeMapWithSize(v.Type(), v.Len())
+		for _, k := range v.MapKeys() {
+			out.SetMapIndex(k, normalizeValue(v.MapIndex(k)))
+		}
+		return out
+	case reflect.Ptr:
+		if v.IsNil() {
+			return v
+		}
+		out := reflect.New(v.Type().Elem())
+		out.Elem().Set(normalizeValue(v.Elem()))
+		return out
+	case reflect.Struct:
+		out := reflect.New(v.Type()).Elem()
+		out.Set(v)
+		for i := 0; i < v.NumField(); i++ {
+			if out.Field(i).CanSet() {
+				out.Field(i).Set(normalizeValue(v.Field(i)))
+			}
+		}
+		return out
+	}
+	return v
 }
 
 // ImportConfig implements ipc.ConfigTransfer: full validation first, then
@@ -82,6 +130,11 @@ func (m *Monitor) ImportConfig(in *model.ConfigExport, mode, expectedRevision st
 		return res, saveFailed(errNoStore)
 	}
 	if in.Settings != nil {
+		// settings.viber is never imported (CHK-SVC-06): the stored one is
+		// kept below
+		cp := *in.Settings
+		cp.Viber = nil
+		in.Settings = &cp
 		if err := in.Settings.Validate(); err != nil {
 			return res, invalid(model.MsgMonitorSettingsInvalid, err)
 		}
@@ -122,6 +175,9 @@ func (m *Monitor) ImportConfig(in *model.ConfigExport, mode, expectedRevision st
 		return res, err
 	}
 	curSet, setErr := w.LoadSettings()
+	if in.Settings != nil {
+		in.Settings.Viber = curSet.Normalized().Viber
+	}
 	old := map[string]model.Profile{}
 	for _, p := range cur {
 		old[p.ID] = p
@@ -183,7 +239,7 @@ func (m *Monitor) ImportConfig(in *model.ConfigExport, mode, expectedRevision st
 	if err := model.ValidateProfiles(next); err != nil {
 		return res, invalidOther(err, "")
 	}
-	setChanged := in.Settings != nil && (setErr != nil || in.Settings.Normalized() != curSet.Normalized())
+	setChanged := in.Settings != nil && (setErr != nil || !in.Settings.Equal(curSet))
 	secChanged := len(nsec) != len(sec)
 	for k, v := range nsec {
 		if sec[k] != v {

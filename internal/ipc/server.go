@@ -208,9 +208,9 @@ type Server struct {
 	TrayAutostartError func() string
 	// History serves the history command (phase 9); nil = no capability.
 	History HistorySource
-	// Viber (phase 10, CHK-SVC-06): get_viber / save_viber / viber_test
-	// and capability viber; nil = not offered.
-	Viber ViberManager
+	// Viber (phase 10, CHK-SVC-06): viber_test and capability viber; nil
+	// = not offered.
+	Viber ViberTester
 
 	histN int // running history requests (s.mu)
 }
@@ -1175,7 +1175,14 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorSettingsInvalid,
 				Message: "ipc: save_settings without settings", Args: []string{"settings", model.ValRequired}}, "")
 		}
-		rev, err := cm.SaveSettings(*req.Settings, req.ExpectedRevision, cl.Account)
+		var rev string
+		if vs, ok := s.H.(ViberSettingsSaver); ok {
+			rev, err = vs.SaveSettingsViber(*req.Settings, req.ViberToken, req.ClearViberToken, req.ExpectedRevision, cl.Account)
+		} else if req.ViberToken != "" || req.ClearViberToken {
+			return errorReply(req.ID, errors.New("viber token: not supported"), model.ErrCodeUnknownCommand)
+		} else {
+			rev, err = cm.SaveSettings(*req.Settings, req.ExpectedRevision, cl.Account)
+		}
 		if err != nil {
 			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
 		}

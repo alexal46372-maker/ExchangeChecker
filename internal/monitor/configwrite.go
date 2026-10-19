@@ -196,7 +196,7 @@ func (m *Monitor) GetConfig() (model.ConfigView, string, error) {
 	m.cfgMu.Lock()
 	defer m.cfgMu.Unlock()
 	st, err := w.LoadSettings()
-	if err != nil && st == model.DefaultSettings() {
+	if err != nil && st.Equal(model.DefaultSettings()) {
 		// unreadable (not just invalid) settings.json: show the defaults
 		// the service runs with; the snapshot reports the config error
 		m.opt.Log.Printf("config: get_config: %v", err)
@@ -218,7 +218,9 @@ func (m *Monitor) GetConfig() (model.ConfigView, string, error) {
 	if err != nil {
 		return model.ConfigView{}, "", saveFailed(err)
 	}
-	return model.ConfigView{Settings: st.Normalized(), Profiles: out}, rev, nil
+	st = st.Normalized()
+	m.viberView(&st)
+	return model.ConfigView{Settings: st, Profiles: out}, rev, nil
 }
 
 // loadForWrite reads profiles and secrets for a write. A profiles.json or
@@ -406,6 +408,36 @@ func (m *Monitor) DeleteProfile(profileID, expectedRevision, account string) (st
 // SaveSettings implements ipc.ConfigManager (admin only): the whole
 // settings object incl. trayAutostart.
 func (m *Monitor) SaveSettings(st model.Settings, expectedRevision, account string) (string, error) {
+	return m.SaveSettingsViber(st, "", false, expectedRevision, account)
+}
+
+// viberTokenStore is the Viber token part of config.Store (CHK-SVC-06).
+type viberTokenStore interface {
+	HasViberToken() bool
+	LoadViberToken() (string, error)
+	SaveViberToken(string) error
+}
+
+// viberView fills the read-only settings.viber.hasToken / status (st
+// normalized: Viber is a private copy).
+func (m *Monitor) viberView(st *model.Settings) {
+	if st.Viber == nil {
+		return
+	}
+	if ts, ok := m.configWriter().(viberTokenStore); ok && m.configWriter() != nil {
+		st.Viber.HasToken = ts.HasViberToken()
+	}
+	if m.opt.ViberStatus != nil {
+		st.Viber.Status = m.opt.ViberStatus()
+	}
+}
+
+// SaveSettingsViber implements ipc.ViberSettingsSaver: save_settings with
+// viberToken (set; "" = no change) / clearViberToken. settings.viber
+// absent = the stored one is kept; enabled needs a token (saved or
+// given). The token is written first, a failed settings write restores
+// it (best effort).
+func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken bool, expectedRevision, account string) (string, error) {
 	if err := requireRevision(expectedRevision); err != nil {
 		return "", err
 	}
@@ -416,22 +448,72 @@ func (m *Monitor) SaveSettings(st model.Settings, expectedRevision, account stri
 	if err := st.Validate(); err != nil {
 		return "", invalid(model.MsgMonitorSettingsInvalid, err)
 	}
+	if token != "" && !model.ValidViberToken(token) {
+		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberInvalid,
+			Message: "viber: invalid token", Args: []string{"viberToken", model.ValRequired}}
+	}
 	m.cfgMu.Lock()
 	defer m.cfgMu.Unlock()
 	if err := m.checkRevisionLocked(w, expectedRevision); err != nil {
 		return "", err
+	}
+	if st.Viber == nil {
+		// a client that does not know settings.viber: keep the stored one
+		cur, _ := w.LoadSettings()
+		st.Viber = cur.Normalized().Viber
+	}
+	if st.Viber != nil {
+		v := st.Viber.Stored()
+		st.Viber = &v
+	}
+	ts, _ := w.(viberTokenStore)
+	if (token != "" || clearToken) && ts == nil {
+		return "", saveFailed(errors.New("viber: no token store"))
+	}
+	var oldTok string
+	hasTok := false
+	if ts != nil {
+		var err error
+		if oldTok, err = ts.LoadViberToken(); err != nil && (token != "" || clearToken) {
+			return "", saveFailed(fmt.Errorf("viber token: %w", err))
+		}
+		hasTok = oldTok != "" || ts.HasViberToken()
+	}
+	newTok, tokChanged := oldTok, false
+	if clearToken {
+		newTok, hasTok, tokChanged = "", false, oldTok != "" || ts.HasViberToken()
+	}
+	if token != "" {
+		newTok, hasTok, tokChanged = token, true, token != oldTok
+	}
+	if st.Viber != nil && st.Viber.Enabled && !hasTok {
+		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberNoToken,
+			Message: "viber: enabled without a token", Args: []string{"viberToken", model.ValRequired}}
+	}
+	if tokChanged {
+		if err := ts.SaveViberToken(newTok); err != nil {
+			return "", saveFailed(fmt.Errorf("save viber token: %w", err))
+		}
 	}
 	if st.Beep.Enabled == model.OptUnset {
 		// beep.enabled not sent (a client that does not know the field,
 		// e.g. tray 6c): keep the stored value instead of silently
 		// switching the sound back on
 		st.Beep.Enabled = model.OptTrue
-		if cur, err := w.LoadSettings(); err == nil || cur != model.DefaultSettings() {
+		if cur, err := w.LoadSettings(); err == nil || !cur.Equal(model.DefaultSettings()) {
 			st.Beep.Enabled = cur.Normalized().Beep.Enabled
 		}
 	}
 	if err := w.SaveSettings(st); err != nil {
+		if tokChanged {
+			if rerr := ts.SaveViberToken(oldTok); rerr != nil {
+				m.opt.Log.Printf("config: save_settings: restoring the Viber token failed: %v", rerr)
+			}
+		}
 		return "", saveFailed(fmt.Errorf("save settings: %w", err))
+	}
+	if tokChanged && m.opt.OnViberToken != nil {
+		m.opt.OnViberToken()
 	}
 	rev := m.afterWriteLocked(w)
 	if m.opt.ApplySettings != nil {

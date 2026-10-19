@@ -5,63 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"os"
-
-	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// Phase 10 (CHK-SVC-06): Viber settings (viber.json) and the bot token
-// (viber.dpapi: DPAPI LocalMachine like secrets.dpapi, DACL
-// SYSTEM+Administrators). Neither is part of export_config.
-const (
-	ViberFile      = "viber.json"
-	ViberTokenFile = "viber.dpapi"
-)
-
-type viberDoc struct {
-	Version int                 `json:"version"`
-	Viber   model.ViberSettings `json:"viber"`
-}
+// Phase 10 (CHK-SVC-06): the Viber bot token (viber.dpapi: DPAPI
+// LocalMachine like secrets.dpapi, DACL SYSTEM+Administrators). The
+// settings are settings.viber (settings.json). Neither is part of
+// export_config.
+const ViberTokenFile = "viber.dpapi"
 
 type viberTokenDoc struct {
 	Version int    `json:"version"`
 	Token   string `json:"token"`
 }
 
-// LoadViber reads viber.json; missing = model.DefaultViberSettings().
-func (s *Store) LoadViber() (model.ViberSettings, error) {
-	b, err := s.readFile(ViberFile)
-	if err != nil {
-		return model.DefaultViberSettings(), err
-	}
-	if b == nil {
-		return model.DefaultViberSettings(), nil
-	}
-	doc := viberDoc{Viber: model.DefaultViberSettings()}
-	if err := json.Unmarshal(b, &doc); err != nil {
-		return model.DefaultViberSettings(), fmt.Errorf("config: parse %s: %w", ViberFile, err)
-	}
-	if err := checkVersion(ViberFile, doc.Version); err != nil {
-		return model.DefaultViberSettings(), err
-	}
-	if doc.Viber.Receivers == nil {
-		doc.Viber.Receivers = []string{}
-	}
-	if err := doc.Viber.Validate(); err != nil {
-		return model.DefaultViberSettings(), fmt.Errorf("config: %s: %w", ViberFile, err)
-	}
-	return doc.Viber, nil
-}
-
-// SaveViber validates and atomically writes viber.json.
-func (s *Store) SaveViber(v model.ViberSettings) error {
-	if err := v.Validate(); err != nil {
-		return err
-	}
-	b, err := marshalJSON(viberDoc{Version: SchemaVersion, Viber: v})
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(s.Dir, ViberFile, b, 0o644)
+// HasViberToken reports whether viber.dpapi exists (no decryption).
+func (s *Store) HasViberToken() bool {
+	fi, err := os.Stat(s.Path(ViberTokenFile))
+	return err == nil && fi.Mode().IsRegular() && fi.Size() > 0
 }
 
 // LoadViberToken decrypts viber.dpapi ("" when missing).

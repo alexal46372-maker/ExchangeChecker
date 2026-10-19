@@ -8,51 +8,65 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// TestCHK_SVC_06_ViberStore — viber.json defaults / round trip /
-// validation, the token only in viber.dpapi (encrypted), "" removes it,
-// and neither is part of export_config.
+// TestCHK_SVC_06_ViberStore — settings.viber defaults / round trip /
+// validation in settings.json (hasToken and status never stored), the
+// token only in viber.dpapi (encrypted), "" removes it.
 func TestCHK_SVC_06_ViberStore(t *testing.T) {
 	s := newTestStore(t)
-	v, err := s.LoadViber()
-	if err != nil || v.Enabled || v.Schedule.From != "08:30" || v.Schedule.To != "17:00" || len(v.Schedule.Days) != 5 || v.ReminderMinutes != 60 {
+	st, err := s.LoadSettings()
+	v := st.Viber
+	if err != nil || v == nil || v.Enabled || v.Schedule.From != "08:30" || v.Schedule.To != "17:00" || len(v.Schedule.Days) != 5 ||
+		v.ReminderMinutes != 60 || strings.Join(v.Events, ",") != "error,warning,recovered,no_connection" || v.Recipients == nil {
 		t.Fatalf("defaults %+v %v", v, err)
 	}
-	v.Enabled, v.Receivers = true, []string{"abc=="}
-	if err := s.SaveViber(v); err != nil {
+	v.Enabled, v.Recipients, v.HasToken = true, []model.ViberRecipient{{ID: "abc==", Name: "Иван"}}, true
+	v.Status = &model.ViberStatus{Sent: 3}
+	if err := s.SaveSettings(st); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.LoadViber(); err != nil || !got.Enabled || got.Receivers[0] != "abc==" {
-		t.Fatalf("load %+v %v", got, err)
+	js, _ := os.ReadFile(s.Path(SettingsFile))
+	if strings.Contains(string(js), `"hasToken": true`) || strings.Contains(string(js), "status") {
+		t.Fatalf("view fields stored: %s", js)
 	}
-	bad := v
-	bad.Schedule.To = "08:00"
-	if err := s.SaveViber(bad); err == nil {
-		t.Fatal("to <= from saved")
+	if got, err := s.LoadSettings(); err != nil || !got.Viber.Enabled || got.Viber.Recipients[0].Name != "Иван" || got.Viber.HasToken || got.Viber.Status != nil {
+		t.Fatalf("load %+v %v", got.Viber, err)
 	}
-	if tok, err := s.LoadViberToken(); err != nil || tok != "" {
+	// a settings.json from before phase 10: viber defaults
+	if err := os.WriteFile(s.Path(SettingsFile), []byte(`{"version":1,"settings":{"pollIntervalSec":60,"warnMinutes":15,"errorMinutes":30,"beep":{"warningFreqHz":800,"warningDurMs":200,"errorFreqHz":1200,"errorDurMs":400,"gapMs":100}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.LoadSettings(); err != nil || got.Viber == nil || got.Viber.Enabled || len(got.Viber.Events) != 4 {
+		t.Fatalf("old file %+v %v", got.Viber, err)
+	}
+	bad := model.DefaultSettings()
+	bad.Viber.Schedule.To = "08:00"
+	if err := s.SaveSettings(bad); model.AsFieldError(err) == nil || model.AsFieldError(err).Field != "viber.schedule.to" {
+		t.Fatalf("to <= from: %v", err)
+	}
+	bad = model.DefaultSettings()
+	bad.Viber.Events = []string{"overdue"}
+	if err := s.SaveSettings(bad); model.AsFieldError(err) == nil || model.AsFieldError(err).Field != "viber.events[0]" {
+		t.Fatalf("unknown event: %v", err)
+	}
+
+	if tok, err := s.LoadViberToken(); err != nil || tok != "" || s.HasViberToken() {
 		t.Fatalf("no token %q %v", tok, err)
 	}
 	if err := s.SaveViberToken("SECRET-tok-123"); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(s.Path(ViberTokenFile))
-	js, _ := os.ReadFile(s.Path(ViberFile))
-	if len(raw) == 0 || strings.Contains(string(js), "SECRET") {
+	js, _ = os.ReadFile(s.Path(SettingsFile))
+	if len(raw) == 0 || strings.Contains(string(js), "SECRET") || !s.HasViberToken() {
 		t.Fatalf("token placement %q", js)
 	}
 	if tok, err := s.LoadViberToken(); err != nil || tok != "SECRET-tok-123" {
 		t.Fatalf("token %q %v", tok, err)
 	}
-	// export_config (ec-config/1) has no Viber field: settings and
-	// receivers live outside settings.json, the token in viber.dpapi
-	b, _ := marshalJSON(model.ConfigExport{Format: model.ConfigFormatV1})
-	if strings.Contains(strings.ToLower(string(b)), "viber") {
-		t.Fatalf("export shape contains Viber: %s", b)
-	}
 	if err := s.SaveViberToken(""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(s.Path(ViberTokenFile)); !os.IsNotExist(err) {
+	if _, err := os.Stat(s.Path(ViberTokenFile)); !os.IsNotExist(err) || s.HasViberToken() {
 		t.Fatalf("token file kept: %v", err)
 	}
 }

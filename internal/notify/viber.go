@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -34,12 +33,10 @@ const (
 // Backoff between attempts (index = attempts already made - 1).
 var Backoff = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute, 10 * time.Minute}
 
-// Store keeps the settings and the token (config.Store).
+// Store keeps the token (config.Store); the settings come with the
+// snapshots (settings.viber).
 type Store interface {
-	LoadViber() (model.ViberSettings, error)
-	SaveViber(model.ViberSettings) error
 	LoadViberToken() (string, error)
-	SaveViberToken(string) error
 }
 
 // Poster is the HTTPS client (hcwinnet.Client).
@@ -60,8 +57,6 @@ type Options struct {
 	Now    func() time.Time
 	// Loc is the schedule time zone (nil = time.Local: the machine time).
 	Loc *time.Location
-	// OnSave is called after save_viber (Event Log 105).
-	OnSave func(account string, s model.ViberSettings, tokenChanged bool)
 }
 
 type item struct {
@@ -85,11 +80,10 @@ type Notifier struct {
 	lastRemind time.Time // last summary / reminder
 	lastTest   time.Time
 	wake       chan struct{}
-	loadErr    error
 }
 
-// New loads the settings and the token (errors are logged; Viber stays
-// off until a valid save).
+// New loads the token (an error is logged: Viber stays off). The
+// settings arrive with the first snapshot (Viber off until then).
 func New(o Options) *Notifier {
 	if o.Client == nil {
 		o.Client = hcwinnet.NewClient(15*time.Second, nil)
@@ -107,18 +101,34 @@ func New(o Options) *Notifier {
 		o.Log = nopLog{}
 	}
 	n := &Notifier{o: o, settings: model.DefaultViberSettings(), wake: make(chan struct{}, 1)}
-	if s, err := o.Store.LoadViber(); err != nil {
-		n.loadErr = err
-		o.Log.Printf("viber: %v (Viber off)", err)
-	} else {
-		n.settings = s
-	}
-	if t, err := o.Store.LoadViberToken(); err != nil {
-		o.Log.Printf("viber: token: %v", err)
-	} else {
-		n.token = t
-	}
+	n.settings.Enabled = false
+	n.ReloadToken()
 	return n
+}
+
+// ReloadToken rereads viber.dpapi (after save_settings changed it).
+func (n *Notifier) ReloadToken() {
+	t, err := n.o.Store.LoadViberToken()
+	if err != nil {
+		n.o.Log.Printf("viber: token: %v (Viber off)", err)
+		t = ""
+	}
+	n.mu.Lock()
+	if t != n.token {
+		n.queue = nil
+	}
+	n.token = t
+	n.mu.Unlock()
+	n.kick()
+}
+
+// Status is settings.viber.status.
+func (n *Notifier) Status() *model.ViberStatus {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	st := n.status
+	st.Queued = len(n.queue)
+	return &st
 }
 
 type nopLog struct{}
@@ -128,7 +138,7 @@ func (nopLog) Printf(string, ...interface{}) {}
 func (n *Notifier) local() time.Time { return n.o.Now().In(n.o.Loc) }
 
 func (n *Notifier) activeLocked() bool {
-	return n.settings.Enabled && n.token != "" && len(n.settings.Receivers) > 0 && n.loadErr == nil
+	return n.settings.Enabled && n.token != "" && len(n.settings.Recipients) > 0
 }
 
 func (n *Notifier) kick() {
@@ -139,27 +149,26 @@ func (n *Notifier) kick() {
 }
 
 func (n *Notifier) enqueueLocked(text string, now time.Time) {
-	for _, r := range n.settings.Receivers {
+	for _, r := range n.settings.Recipients {
 		if len(n.queue) >= MaxQueue {
 			n.status.Dropped++
 			continue
 		}
-		n.queue = append(n.queue, item{receiver: r, text: text, next: now})
+		n.queue = append(n.queue, item{receiver: r.ID, text: text, next: now})
 	}
 }
 
-// Alert implements alert.Sink: overdue (level raised) and recovered (back
-// to ok) per settings.events; outside the window nothing is queued.
+// Alert implements alert.Sink: model.ViberEventOf (error, warning,
+// no_connection, recovered) per settings.viber.events; outside the
+// window nothing is queued.
 func (n *Notifier) Alert(e model.AlertEvent) {
-	if e.To == e.From {
+	kind := model.ViberEventOf(e)
+	if kind == "" {
 		return
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if !n.activeLocked() {
-		return
-	}
-	if e.To == model.LevelOK && !n.settings.Events.Recovered || e.To != model.LevelOK && (e.To < e.From || !n.settings.Events.Overdue) {
+	if !n.activeLocked() || !n.settings.HasEvent(kind) {
 		return
 	}
 	now := n.local()
@@ -171,12 +180,35 @@ func (n *Notifier) Alert(e model.AlertEvent) {
 	n.kick()
 }
 
-// Snapshot feeds the current status (problems of the summary/reminders).
+// Snapshot feeds the current status (problems of the summary /
+// reminders) and settings.viber.
 func (n *Notifier) Snapshot(s model.StatusSnapshot) {
 	n.mu.Lock()
 	n.snap = &s
+	if s.Settings != nil && s.Settings.Viber != nil {
+		v := s.Settings.Viber.Stored()
+		v.Recipients = append([]model.ViberRecipient{}, v.Recipients...)
+		v.Events = append([]string{}, v.Events...)
+		v.Schedule.Days = append([]int{}, v.Schedule.Days...)
+		if !sameRecipients(n.settings.Recipients, v.Recipients) || !v.Enabled {
+			n.queue = nil
+		}
+		n.settings = v
+	}
 	n.mu.Unlock()
 	n.kick()
+}
+
+func sameRecipients(a, b []model.ViberRecipient) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID {
+			return false
+		}
+	}
+	return true
 }
 
 // ready: every enabled profile was polled at least once.
@@ -275,7 +307,7 @@ func (n *Notifier) Step(ctx context.Context) {
 		n.lastRemind = now
 		n.enqueueLocked(n.summaryText(n.snap, true), now)
 	}
-	token, sender := n.token, n.settings.SenderName
+	token, sender := n.token, model.ViberSenderName
 	n.mu.Unlock()
 
 	for ctx.Err() == nil {
@@ -382,84 +414,10 @@ func (n *Notifier) send(ctx context.Context, token, sender, receiver, text strin
 	return model.MsgViberFailed, r.Status, false
 }
 
-// GetViber is the get_viber reply (never the token).
-func (n *Notifier) GetViber() (model.ViberView, error) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	return n.viewLocked(), nil
-}
-
-func (n *Notifier) viewLocked() model.ViberView {
-	st := n.status
-	st.Queued = len(n.queue)
-	s := n.settings
-	s.Receivers = append([]string{}, s.Receivers...)
-	s.Schedule.Days = append([]int{}, s.Schedule.Days...)
-	return model.ViberView{Settings: s, HasToken: n.token != "", InWindow: s.InWindow(n.local()), Status: st}
-}
-
-func invalid(err error) error {
-	ie := &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberInvalid, Message: err.Error()}
-	if fe := model.AsFieldError(err); fe != nil {
-		ie.Args = append([]string{fe.Field, fe.Key}, fe.Args...)
-	}
-	return ie
-}
-
-// SaveViber validates and saves the settings and, when given, the token
-// (write-only; clear removes it). Enabled needs a token.
-func (n *Notifier) SaveViber(s model.ViberSettings, token string, clear bool, account string) (model.ViberView, error) {
-	if s.Receivers == nil {
-		s.Receivers = []string{}
-	}
-	if err := s.Validate(); err != nil {
-		return model.ViberView{}, invalid(err)
-	}
-	if token != "" && !model.ValidViberToken(token) {
-		return model.ViberView{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberInvalid,
-			Message: "viber: invalid token", Args: []string{"viberToken", model.ValRequired}}
-	}
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	newTok := n.token
-	if clear {
-		newTok = ""
-	}
-	if token != "" {
-		newTok = token
-	}
-	if s.Enabled && newTok == "" {
-		return model.ViberView{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberNoToken,
-			Message: "viber: enabled without a token", Args: []string{"viberToken", model.ValRequired}}
-	}
-	changed := newTok != n.token
-	if changed {
-		if err := n.o.Store.SaveViberToken(newTok); err != nil {
-			return model.ViberView{}, &model.IPCError{Code: model.ErrCodeSaveFailed, Key: model.MsgMonitorConfigSaveFailed, Message: "viber: " + err.Error()}
-		}
-	}
-	if err := n.o.Store.SaveViber(s); err != nil {
-		if changed { // keep the files consistent with the memory state
-			_ = n.o.Store.SaveViberToken(n.token)
-		}
-		return model.ViberView{}, &model.IPCError{Code: model.ErrCodeSaveFailed, Key: model.MsgMonitorConfigSaveFailed, Message: "viber: " + err.Error()}
-	}
-	old := n.settings
-	n.settings, n.token, n.loadErr = s, newTok, nil
-	if !n.activeLocked() || fmt.Sprint(old.Receivers) != fmt.Sprint(s.Receivers) {
-		n.queue = nil
-	}
-	if n.o.OnSave != nil {
-		n.o.OnSave(account, s, changed)
-	}
-	n.kick()
-	return n.viewLocked(), nil
-}
-
-// ViberTest sends a test message to receiver (or every saved receiver)
-// with token (or the saved one); ignores enabled and the schedule; one
-// test per model.ViberTestInterval.
-func (n *Notifier) ViberTest(ctx context.Context, receiver, token string) (model.ViberTestResult, error) {
+// ViberTest sends a test message to recipientID (or every saved
+// recipient) with token (or the saved one); ignores enabled and the
+// schedule; one test per model.ViberTestInterval.
+func (n *Notifier) ViberTest(ctx context.Context, recipientID, token string) (model.ViberTestResult, error) {
 	n.mu.Lock()
 	now := n.o.Now()
 	if !n.lastTest.IsZero() && now.Sub(n.lastTest) < model.ViberTestInterval {
@@ -471,20 +429,22 @@ func (n *Notifier) ViberTest(ctx context.Context, receiver, token string) (model
 	if token == "" {
 		token = n.token
 	}
-	recv := append([]string{}, n.settings.Receivers...)
-	sender := n.settings.SenderName
+	var recv []string
+	for _, r := range n.settings.Recipients {
+		recv = append(recv, r.ID)
+	}
 	n.mu.Unlock()
-	if token != "" && !model.ValidViberToken(token) || receiver != "" && !(model.ViberSettings{Receivers: []string{receiver}}).ValidReceivers() {
-		return model.ViberTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberInvalid, Message: "viber: invalid token or receiver"}
+	if token != "" && !model.ValidViberToken(token) || recipientID != "" && !model.ValidViberID(recipientID) {
+		return model.ViberTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberInvalid, Message: "viber: invalid token or recipient id"}
 	}
 	if token == "" {
 		return model.ViberTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberNoToken, Message: "viber: no token"}
 	}
-	if receiver != "" {
-		recv = []string{receiver}
+	if recipientID != "" {
+		recv = []string{recipientID}
 	}
 	if len(recv) == 0 {
-		return model.ViberTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberNoReceivers, Message: "viber: no receivers"}
+		return model.ViberTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberNoRecipients, Message: "viber: no recipients"}
 	}
 	n.mu.Lock()
 	n.lastTest = now
@@ -493,13 +453,14 @@ func (n *Notifier) ViberTest(ctx context.Context, receiver, token string) (model
 	if n.o.Lang == model.LangEN {
 		text = "ExchangeChecker: test message"
 	}
-	res := model.ViberTestResult{Results: []model.ViberTestItem{}}
+	res := model.ViberTestResult{OK: true, Results: []model.ViberTestItem{}}
 	for _, r := range recv {
 		if ctx.Err() != nil {
 			return res, ctx.Err()
 		}
-		key, vs, _ := n.send(ctx, token, sender, r, text)
-		res.Results = append(res.Results, model.ViberTestItem{Receiver: r, OK: key == "", ErrorKey: key, ViberStatus: vs})
+		key, _, _ := n.send(ctx, token, model.ViberSenderName, r, text)
+		res.Results = append(res.Results, model.ViberTestItem{ID: r, OK: key == "", ErrorKey: key})
+		res.OK = res.OK && key == ""
 	}
 	return res, nil
 }

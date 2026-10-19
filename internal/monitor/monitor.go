@@ -149,6 +149,12 @@ type Options struct {
 	// the IPC clients only (not the Event Log, log file, history or
 	// events_since).
 	OnAlertRepeat func(model.AlertEvent)
+	// ViberStatus is settings.viber.status of the views (phase 10,
+	// CHK-SVC-06; notify.Notifier.Status); nil = none.
+	ViberStatus func() *model.ViberStatus
+	// OnViberToken is called after save_settings changed the Viber token
+	// (the notifier reloads it).
+	OnViberToken func()
 }
 
 // entry is the per-profile runtime state.
@@ -808,7 +814,7 @@ func (m *Monitor) reloadConfigLocked(force bool) bool {
 				st = st.Normalized()
 				fs = &st
 			}
-			changed = m.loaded && (fs == nil) != (m.failSettings == nil) || fs != nil && m.failSettings != nil && *fs != *m.failSettings
+			changed = m.loaded && (fs == nil) != (m.failSettings == nil) || fs != nil && m.failSettings != nil && !fs.Equal(*m.failSettings)
 			m.failSettings = fs
 		}
 		m.mu.Unlock()
@@ -1330,11 +1336,13 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	switch {
 	case m.good: // a configuration has been applied
 		st := cfg.Settings.Normalized() // beep.enabled always explicit
+		m.viberView(&st)
 		snap.Settings = &st
 	case m.failSettings != nil:
 		// the first load failed (profiles.json / secrets): the real
 		// settings.json, never zero thresholds / trayAutostart=false
-		st := *m.failSettings
+		st := m.failSettings.Normalized()
+		m.viberView(&st)
 		snap.Settings = &st
 	}
 	m.heartbeatLocked(now).apply(&snap)

@@ -173,12 +173,9 @@ func runService(ctx context.Context, ac appConfig) error {
 	hist := history.Open(history.Options{Dir: filepath.Join(ac.Dir, model.HistoryDir), Prepare: secureHist, Now: ac.Now, Log: log})
 	defer hist.Close()
 
-	// phase 10 (CHK-SVC-06): Viber notifications (viber.json + viber.dpapi)
-	viber := notify.New(notify.Options{Store: store, Client: ac.ViberClient, URL: ac.ViberURL, Lang: lang, Log: log, Now: ac.Now,
-		OnSave: func(account string, v model.ViberSettings, tokenChanged bool) {
-			report(alert.EventTypeInformation, alert.EventIDConfig,
-				fmt.Sprintf("Viber: settings saved by %s (enabled %t, receivers %d, token changed %t)", account, v.Enabled, len(v.Receivers), tokenChanged))
-		}})
+	// phase 10 (CHK-SVC-06): Viber notifications (settings.viber +
+	// viber.dpapi); the settings arrive with the snapshots
+	viber := notify.New(notify.Options{Store: store, Client: ac.ViberClient, URL: ac.ViberURL, Lang: lang, Log: log, Now: ac.Now})
 	vctx, vcancel := context.WithCancel(ctx)
 	vdone := make(chan struct{})
 	go func() { defer close(vdone); viber.Run(vctx) }()
@@ -224,6 +221,10 @@ func runService(ctx context.Context, ac appConfig) error {
 		// alert_repeat after every failing check of an active alert, to
 		// the tray only (CHK-MON-17)
 		OnAlertRepeat: func(e model.AlertEvent) { srv.AlertRepeat(e) },
+		// settings.viber.status of get_config / get_status, token reload
+		// after save_settings (CHK-SVC-06)
+		ViberStatus:  viber.Status,
+		OnViberToken: viber.ReloadToken,
 		OnSnapshot: func(s model.StatusSnapshot) {
 			srv.PublishStatus(s)
 			hist.RecordSnapshot(s) // profiles polled since the last snapshot

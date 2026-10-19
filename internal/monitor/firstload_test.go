@@ -90,7 +90,7 @@ func TestCHK_MON_10_FirstLoadFailedSettings(t *testing.T) {
 	}
 	s = mon().Snapshot()
 	wantErr("settings missing", s)
-	if s.Settings == nil || *s.Settings != model.DefaultSettings().Normalized() {
+	if s.Settings == nil || !s.Settings.Equal(model.DefaultSettings()) {
 		t.Fatalf("settings missing: %+v", s.Settings)
 	}
 

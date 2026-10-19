@@ -165,7 +165,7 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgImportDuplicateID:       {"В файле конфигурации повторяется идентификатор профиля.", "The configuration file contains a duplicate profile id."},
 	MsgImportNoConfig:          {"Не передана конфигурация для импорта.", "No configuration to import."},
 	MsgViberNoToken:            {"Не задан токен бота Viber.", "The Viber bot token is not set."},
-	MsgViberNoReceivers:        {"Не заданы получатели Viber.", "No Viber receivers are set."},
+	MsgViberNoRecipients:       {"Не заданы получатели Viber.", "No Viber recipients are set."},
 	MsgViberAuthFailed:         {"Viber отклонил токен бота.", "Viber rejected the bot token."},
 	MsgViberReceiverInvalid:    {"Получатель Viber не найден или не подписан на бота.", "The Viber receiver is unknown or not subscribed to the bot."},
 	MsgViberRateLimited:        {"Слишком много запросов к Viber; повторите позже.", "Too many Viber requests; try again later."},
@@ -236,6 +236,6 @@ func MonitorMessageKeys() []string {
 		MsgPasswordTargetChange, MsgCheckRateLimited, MsgBrowseRateLimited, MsgMonitorProfileOff, MsgHistoryDisabled, MsgHistoryBadRange,
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
-		MsgViberNoToken, MsgViberNoReceivers, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
+		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
 		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid}
 }

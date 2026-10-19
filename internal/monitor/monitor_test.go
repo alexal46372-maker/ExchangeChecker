@@ -453,7 +453,7 @@ func TestCHK_MON_04_FileConfigReload(t *testing.T) {
 	fc := FileConfig{Store: st}
 	s0 := fc.Stamp()
 	c := fc.Load()
-	if c.Err != nil || len(c.Profiles) != 0 || c.Settings != model.DefaultSettings() {
+	if c.Err != nil || len(c.Profiles) != 0 || !c.Settings.Equal(model.DefaultSettings()) {
 		t.Fatalf("empty dir: %+v", c)
 	}
 	if err := st.SaveProfiles([]model.Profile{prof("a")}); err != nil {

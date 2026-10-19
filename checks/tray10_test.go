@@ -176,8 +176,6 @@ var winAPIMinVersion = map[string]float64{
 	// phase 9b part 2 «Скопировать SQL-скрипт прав» (CHK-TRAY-32)
 	"OpenClipboard": 5.0, "EmptyClipboard": 5.0, "SetClipboardData": 5.0, "CloseClipboard": 5.0,
 	"GlobalAlloc": 5.0, "GlobalLock": 5.0, "GlobalUnlock": 5.0, "GlobalFree": 5.0,
-	// EC SQL SSRP decoding of ANSI server names (phase9-sql, internal/sqlcheck)
-	"MultiByteToWideChar": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {
@@ -235,11 +233,6 @@ func TestCHK_TRAY_10_CallsThroughFind(t *testing.T) {
 	srcs := goSources(t, root, "cmd", "internal")
 	reDirect := regexp.MustCompile(`\bproc\w+\.Call\(`)
 	for file, src := range srcs {
-		// internal/sqlcheck (EC SQL, service only, never linked into the
-		// tray: TestCHK_TRAY_10_TrayDeps) has its own call convention
-		if strings.HasPrefix(file, "internal/sqlcheck/") {
-			continue
-		}
 		if loc := reDirect.FindStringIndex(src); loc != nil {
 			line := strings.Count(src[:loc[0]], "\n") + 1
 			t.Errorf("CHK-TRAY-10: %s:%d calls a LazyProc directly; use callProc (Find first)", file, line)

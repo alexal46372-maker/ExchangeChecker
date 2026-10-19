@@ -81,6 +81,25 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 	if pr != nil || treq.Profile.Database != "ut" || treq.Profile.Name != "ut" {
 		t.Fatalf("test %+v %+v", treq, pr)
 	}
+	// the name is the database, « (2)», « (3)» when taken
+	p1, p2 := model.NewProfile("a"), model.NewProfile("b")
+	p1.Name, p2.Name = "UT", "ut (2)"
+	if n := UniqueProfileName([]model.Profile{p1, p2}, "ut"); n != "ut (3)" {
+		t.Errorf("unique %q", n)
+	}
+	if n := UniqueProfileName([]model.Profile{p2}, "ut"); n != "ut" {
+		t.Errorf("free %q", n)
+	}
+	if UniqueProfileName(nil, " ") != "" {
+		t.Error("empty")
+	}
+	e2 := NewEditor(i18n.RU, Admin)
+	e2.LoadConfig(model.ConfigView{Settings: model.DefaultSettings(), Profiles: []model.Profile{p1}}, "r1")
+	e2.New()
+	z.ToForm(e2, true)
+	if e2.Form.Name != "ut (2)" {
+		t.Errorf("form name %q", e2.Form.Name)
+	}
 	// autoPick: autoApply; a single candidate ≥ autoPickMin; several -> ask
 	c := []model.DiscoveryCandidate{{Table: "_Node1", PointCol: "_Description", SendCol: "a", RecvCol: "b"}, {Table: "_Node2", PointCol: "_Description"}}
 	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c, AutoPick: &model.SQLAutoPick{AutoApply: true, Index: 1}}); i != 1 {

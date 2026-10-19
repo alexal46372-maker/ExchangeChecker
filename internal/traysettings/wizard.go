@@ -96,9 +96,7 @@ func (z *Wizard) ToForm(e *Editor, passwordTyped bool) {
 	if f.Database == "" {
 		f.Database = "master" // sql_databases needs a database to log in to
 	}
-	if f.Name == "" || z.Step < WizFinish {
-		f.Name = z.Database
-	}
+	f.Name = UniqueProfileName(e.Profiles, z.Database)
 	f.PasswordTyped = passwordTyped && !z.Windows
 }
 
@@ -436,3 +434,21 @@ func (e *Editor) WizardProblem(m model.IPCMessage, err error) *Problem {
 
 // ClearMapping drops a mapping chosen for another database.
 func (e *Editor) ClearMapping() { e.clearMapping() }
+
+// UniqueProfileName is the database name, with « (2)», « (3)», … when a
+// profile already has that name (case-insensitive, spaces trimmed).
+func UniqueProfileName(ps []model.Profile, db string) string {
+	db = strings.TrimSpace(db)
+	if db == "" {
+		return ""
+	}
+	taken := map[string]bool{}
+	for _, p := range ps {
+		taken[strings.ToLower(strings.TrimSpace(p.Name))] = true
+	}
+	name := db
+	for n := 2; taken[strings.ToLower(name)]; n++ {
+		name = fmt.Sprintf("%s (%d)", db, n)
+	}
+	return name
+}

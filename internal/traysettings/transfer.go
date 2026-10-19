@@ -47,14 +47,19 @@ func stripViber(s *model.Settings) *model.Settings {
 }
 
 // ExportFile is the file of an export_config reply with the tray block.
-func ExportFile(exp model.ConfigExport, tray TrayBlock) ([]byte, error) {
+// tray nil: no tray block (elevated as another user).
+func ExportFile(exp model.ConfigExport, tray *TrayBlock) ([]byte, error) {
 	exp.Settings = stripViber(exp.Settings)
-	tray.Format = TrayFormat
-	raw, err := json.Marshal(tray)
-	if err != nil {
-		return nil, err
+	exp.Tray = nil
+	if tray != nil {
+		t := *tray
+		t.Format = TrayFormat
+		raw, err := json.Marshal(t)
+		if err != nil {
+			return nil, err
+		}
+		exp.Tray = raw
 	}
-	exp.Tray = raw
 	return json.MarshalIndent(exp, "", "  ")
 }
 

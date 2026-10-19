@@ -139,7 +139,7 @@ type xferEnv struct {
 	ui      *memUI
 }
 
-func newXferEnv(t *testing.T, lang string) *xferEnv {
+func newXferEnv(t *testing.T, lang string, otherUser ...bool) *xferEnv {
 	t.Helper()
 	e := &xferEnv{x: newXferService(), path: filepath.Join(t.TempDir(), "cfg.json"),
 		lang: &memLang{v: "en"}, bal: &memBalloon{on: false}, snd: &memSound{}, ui: &memUI{m: traysettings.UIExpert}}
@@ -150,7 +150,7 @@ func newXferEnv(t *testing.T, lang string) *xferEnv {
 	w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
 		uiMode: traysettings.UIExpert, uiStore: e.ui, stores: trayStores{Lang: e.lang, Balloon: e.bal, Sound: e.snd},
 		fileDialog: func(uintptr, bool) (string, bool) { return e.path, true },
-		notice:     func(s string) { e.notices = append(e.notices, s) }})
+		notice:     func(s string) { e.notices = append(e.notices, s) }, otherUser: len(otherUser) > 0 && otherUser[0]})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func writeImportFile(t *testing.T, path string, tray *traysettings.TrayBlock, pr
 	var b []byte
 	var err error
 	if tray != nil {
-		b, err = traysettings.ExportFile(exp, *tray)
+		b, err = traysettings.ExportFile(exp, tray)
 	} else {
 		b, err = json.Marshal(exp)
 	}
@@ -364,5 +364,113 @@ func TestCHK_TRAY_44_ImportLayout(t *testing.T) {
 				e.w.close()
 			}
 		}
+	}
+}
+
+// TestCHK_TRAY_44_OtherUser — elevated as another Windows user (over the
+// shoulder): no tray block in the export, «Также звук и вид трея» off and
+// disabled, a RU / EN warning; HKCU is never written.
+func TestCHK_TRAY_44_OtherUser(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if sid := CurrentUserSID(); !strings.HasPrefix(sid, "S-1-") || OtherUser(sid, sid) || OtherUser("", sid) {
+		t.Fatalf("own SID %q", sid)
+	}
+	if !OtherUser("S-1-5-21-1-2-3-1001", "S-1-5-21-1-2-3-500") || OtherUser("s-1-5-21-1", "S-1-5-21-1") {
+		t.Fatal("SID compare")
+	}
+	if OwnerSIDFromArgs([]string{SettingsArg, OwnerSIDArg + "S-1-5-21-9"}) != "S-1-5-21-9" || OwnerSIDFromArgs([]string{SettingsArg}) != "" {
+		t.Fatal("argument")
+	}
+	for _, lang := range []string{i18n.RU, i18n.EN} {
+		warn := i18n.T(i18n.KeyXferOtherUser, lang)
+		e := newXferEnv(t, lang, true)
+		e.w.click(t, idSetExport)
+		pumpUntil(t, "exported", func() bool { return !e.w.busy })
+		b, err := os.ReadFile(e.path)
+		if err != nil || strings.Contains(string(b), `"tray"`) || !strings.Contains(e.w.statusText(), warn) {
+			t.Fatalf("%s: export %v tray block present / status %q", lang, err, e.w.statusText())
+		}
+		snd := trayalert.DefaultSoundPrefs(nil)
+		writeImportFile(t, e.path, &traysettings.TrayBlock{Language: "ru", Balloons: true, Sound: &snd}, e.x.profiles[0])
+		e.w.click(t, idSetImport)
+		d := e.w.imp
+		if d == nil || d.checked(idImpTray) || winapi.IsWindowEnabled(d.ctl[idImpTray]) || d.applyTray() {
+			t.Fatalf("%s: tray check box must be off and disabled", lang)
+		}
+		pumpUntil(t, "dry run", func() bool { return d.res != nil })
+		if !strings.Contains(d.preview, warn) {
+			t.Errorf("%s: preview %q", lang, d.preview)
+		}
+		winapi.SendMessage(d.ctl[idImpDo], winapi.BM_CLICK, 0, 0)
+		pumpUntil(t, "imported", func() bool { return e.w.imp == nil && !e.w.busy && e.w.loaded })
+		if e.lang.v != "en" || e.bal.on || e.ui.m != traysettings.UIExpert {
+			t.Errorf("%s: HKCU written as another user", lang)
+		}
+	}
+	if i18n.T(i18n.KeyXferTrayApplied, i18n.RU) != "Звук и вид трея применятся после перезапуска трея" ||
+		i18n.T(i18n.KeyXferTrayApplied, i18n.EN) != "Tray sound and appearance will apply after the tray restarts" {
+		t.Error("restart hint text")
+	}
+}
+
+// TestCHK_TRAY_42_FocusScroll — focus on a page control (EN_SETFOCUS,
+// CBN_SETFOCUS, BN_SETFOCUS: also by Tab) scrolls it into the view.
+func TestCHK_TRAY_42_FocusScroll(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	testWorkArea = &winapi.RECT{Right: 1024, Bottom: 500}
+	defer func() { testWorkArea = nil }()
+	e := newXferEnv(t, i18n.RU)
+	w := e.w
+	visible := func(h uintptr) bool {
+		r := w.hostRect[h]
+		x, y := w.ScrollPos()
+		return r.Top-y >= 0 && r.Bottom-y <= w.viewH && r.Left-x >= 0
+	}
+	low, lowEdit := uintptr(0), uintptr(0)
+	for _, h := range w.pageCtl[0] {
+		r, ok := w.hostRect[h]
+		if !ok || winapi.WindowStyle(h)&winapi.WS_VISIBLE == 0 {
+			continue
+		}
+		if w.notifyBtn[h] && (low == 0 || r.Bottom > w.hostRect[low].Bottom) {
+			low = h
+		}
+		if winapi.WindowStyle(h)&winapi.ES_MULTILINE == 0 && !w.notifyBtn[h] && (lowEdit == 0 || r.Bottom > w.hostRect[lowEdit].Bottom) {
+			lowEdit = h
+		}
+	}
+	if low == 0 || lowEdit == 0 || visible(low) {
+		t.Fatalf("no control below the view (view %d)", w.viewH)
+	}
+	if winapi.WindowStyle(low)&winapi.BS_NOTIFY == 0 {
+		t.Error("page button without BS_NOTIFY")
+	}
+	notify := func(h uintptr, code uint32) {
+		id := int32(0)
+		for k, c := range w.ctl {
+			if c == h {
+				id = k
+			}
+		}
+		winapi.SendMessage(w.host, winapi.WM_COMMAND, uintptr(code)<<16|uintptr(id&0xFFFF), h)
+	}
+	notify(low, winapi.BN_SETFOCUS)
+	if _, y := w.ScrollPos(); y == 0 || !visible(low) {
+		t.Errorf("BN_SETFOCUS: scroll %d", y)
+	}
+	top := w.ctl[idSetName]
+	notify(top, winapi.EN_SETFOCUS)
+	if !visible(top) {
+		t.Error("EN_SETFOCUS did not scroll back")
+	}
+	notify(lowEdit, winapi.EN_SETFOCUS)
+	if !visible(lowEdit) {
+		t.Error("EN_SETFOCUS: low control not visible")
+	}
+	notify(w.ctl[idSetAuth], winapi.CBN_SETFOCUS)
+	if !visible(w.ctl[idSetAuth]) {
+		t.Error("CBN_SETFOCUS")
 	}
 }

@@ -670,6 +670,7 @@ const (
 	KeyXferNoSoundFile    = "set.xfer_no_sound_file"
 	KeyXferDone           = "set.xfer_done"
 	KeyXferTrayApplied    = "set.xfer_tray_applied"
+	KeyXferOtherUser      = "set.xfer_other_user"
 	KeyXferEnterPw        = "set.xfer_enter_pw"
 	KeyXferTrayFailed     = "set.xfer_tray_failed"
 	KeyTipXferMerge       = "tip.xfer_merge"
@@ -1338,7 +1339,8 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyXferOff:            {"выкл.", "off"},
 	KeyXferNoSoundFile:    {"Внимание: звуковой файл не найден на этом компьютере, будет звучать тон: %s", "Warning: the sound file is not on this computer, the tone plays instead: %s"},
 	KeyXferDone:           {"Импорт выполнен.", "Import done."},
-	KeyXferTrayApplied:    {"Звук и вид трея применятся после перезапуска трея.", "The tray sound and look apply after the tray restarts."},
+	KeyXferTrayApplied:    {"Звук и вид трея применятся после перезапуска трея", "Tray sound and appearance will apply after the tray restarts"},
+	KeyXferOtherUser:      {"Окно настроек запущено от имени другого пользователя Windows, чем трей: звук и вид трея не экспортируются и не импортируются (они хранятся в профиле пользователя трея).", "The settings window runs as a different Windows user than the tray: the tray sound and appearance are neither exported nor imported (they belong to the tray user's profile)."},
 	KeyXferEnterPw:        {"Введите пароль заново для «%s» и сохраните (осталось: %d).", "Enter the password again for «%s» and save (left: %d)."},
 	KeyXferTrayFailed:     {"Не удалось сохранить настройки трея: %s", "Could not save the tray settings: %s"},
 	KeyTipXferMerge:       {"Базы с тем же идентификатором обновляются, новые добавляются, остальные остаются", "Databases with the same id are updated, new ones added, the others kept"},

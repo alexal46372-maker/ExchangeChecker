@@ -19,7 +19,7 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 	exp := model.ConfigExport{Format: model.ConfigFormatV1, ContainsLogins: true,
 		Settings: &model.Settings{Viber: &model.ViberSettings{}},
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад"}}}
-	b, err := ExportFile(exp, TrayBlock{Language: "en", Balloons: true, Sound: &snd, UIMode: UIExpert})
+	b, err := ExportFile(exp, &TrayBlock{Language: "en", Balloons: true, Sound: &snd, UIMode: UIExpert})
 	if err != nil {
 		t.Fatal(err)
 	}

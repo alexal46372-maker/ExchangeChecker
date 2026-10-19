@@ -164,3 +164,14 @@ func ClientOrigin(hwnd uintptr) (x, y int32) {
 	callProc(procClientToScreen, hwnd, uintptr(unsafe.Pointer(&p[0])))
 	return p[0], p[1]
 }
+
+// Focus notifications (phase 10 E: the settings page scrolls to the
+// focused control).
+const (
+	BS_NOTIFY    = 0x00004000
+	EN_SETFOCUS  = 0x0100
+	CBN_SETFOCUS = 3
+	LBN_SETFOCUS = 4
+	BN_DBLCLK    = 5
+	BN_SETFOCUS  = 6
+)

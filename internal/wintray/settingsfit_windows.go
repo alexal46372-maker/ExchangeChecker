@@ -75,7 +75,22 @@ func (w *settingsWindow) createHost() error {
 // window and scrolls.
 func (w *settingsWindow) hostProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 	switch msg {
-	case winapi.WM_COMMAND, winapi.WM_CTLCOLOREDIT, winapi.WM_NOTIFY:
+	case winapi.WM_COMMAND:
+		// focus (also by Tab): scroll the control into the view; the
+		// buttons have BS_NOTIFY for BN_SETFOCUS, so their BN_DBLCLK is
+		// a second BN_CLICKED (as without BS_NOTIFY)
+		code := uint32(wp >> 16 & 0xFFFF)
+		switch {
+		case lp != 0 && w.notifyBtn[lp] && code == winapi.BN_SETFOCUS:
+			w.scrollIntoView(lp)
+			return 0, true
+		case lp != 0 && w.notifyBtn[lp] && code == winapi.BN_DBLCLK:
+			wp &^= 0xFFFF << 16 // BN_CLICKED
+		case lp != 0 && !w.notifyBtn[lp] && (code == winapi.EN_SETFOCUS || code == winapi.CBN_SETFOCUS || code == winapi.LBN_SETFOCUS):
+			w.scrollIntoView(lp)
+		}
+		return w.wndProc(w.hwnd, msg, wp, lp)
+	case winapi.WM_CTLCOLOREDIT, winapi.WM_NOTIFY:
 		return w.wndProc(w.hwnd, msg, wp, lp)
 	case winapi.WM_VSCROLL, winapi.WM_HSCROLL:
 		vert := msg == winapi.WM_VSCROLL

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -137,7 +139,12 @@ func (w *settingsWindow) exportConfig() {
 		case m.Export == nil:
 			w.problem(&traysettings.Problem{Text: fmt.Sprintf(w.t(i18n.KeySetFailed), "export_config: "+m.Type)})
 		default:
-			b, err := traysettings.ExportFile(*m.Export, w.trayBlock())
+			var tray *traysettings.TrayBlock
+			if !w.cfg.otherUser {
+				t := w.trayBlock()
+				tray = &t
+			}
+			b, err := traysettings.ExportFile(*m.Export, tray)
 			if err == nil {
 				err = os.WriteFile(path, b, 0o600)
 			}
@@ -145,7 +152,11 @@ func (w *settingsWindow) exportConfig() {
 				w.problem(&traysettings.Problem{Text: fmt.Sprintf(w.t(i18n.KeyXferWriteFailed), err.Error())})
 				return
 			}
-			w.setStatus(fmt.Sprintf(w.t(i18n.KeyXferExported), path))
+			st := fmt.Sprintf(w.t(i18n.KeyXferExported), path)
+			if w.cfg.otherUser {
+				st += " " + w.t(i18n.KeyXferOtherUser)
+			}
+			w.setStatus(st)
 			if m.Export.ContainsLogins {
 				w.notice(w.t(i18n.KeyXferContainsLogins))
 			}
@@ -232,7 +243,7 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 	add("BUTTON", w.t(i18n.KeyXferDo), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, idImpDo, impCW-gridMargin-2*120-gridGap, by, 120, gridButtonH)
 	add("BUTTON", w.t(i18n.KeyStClose), winapi.WS_TABSTOP, idImpCancel, impCW-gridMargin-120, by, 120, gridButtonH)
 	winapi.SendMessage(d.ctl[idImpMerge], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
-	if f.Tray != nil {
+	if f.Tray != nil && !w.cfg.otherUser {
 		winapi.SendMessage(d.ctl[idImpTray], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
 	} else {
 		winapi.EnableWindow(d.ctl[idImpTray], false)
@@ -257,7 +268,9 @@ func (d *importDialog) mode() string {
 	return model.ImportMerge
 }
 
-func (d *importDialog) applyTray() bool { return d.file.Tray != nil && d.checked(idImpTray) }
+func (d *importDialog) applyTray() bool {
+	return d.file.Tray != nil && !d.w.cfg.otherUser && d.checked(idImpTray)
+}
 
 func (d *importDialog) setPreview(s string) {
 	d.preview = s
@@ -268,7 +281,11 @@ func (d *importDialog) showPreview() {
 	if d.res == nil {
 		return
 	}
-	d.setPreview(traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists, d.w.cfg.lang))
+	p := traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists, d.w.cfg.lang)
+	if d.w.cfg.otherUser {
+		p += "\r\n" + d.w.t(i18n.KeyXferOtherUser)
+	}
+	d.setPreview(p)
 }
 
 func fileExists(p string) bool {
@@ -432,4 +449,41 @@ func (w *settingsWindow) savedNeedPassword(id string) {
 		w.needPw = w.needPw[1:]
 		w.nextNeedPassword()
 	}
+}
+
+// OwnerSIDArg passes the user SID of the tray to the elevated settings
+// process (phase 10 E: elevation as another user, over the shoulder).
+const OwnerSIDArg = "--owner-sid="
+
+// CurrentUserSID is the user SID of this process token ("" on error).
+func CurrentUserSID() string {
+	tok, err := syscall.OpenCurrentProcessToken()
+	if err != nil {
+		return ""
+	}
+	defer tok.Close()
+	u, err := tok.GetTokenUser()
+	if err != nil {
+		return ""
+	}
+	s, err := u.User.Sid.String()
+	if err != nil {
+		return ""
+	}
+	return s
+}
+
+// OwnerSIDFromArgs reads --owner-sid= of the command line.
+func OwnerSIDFromArgs(args []string) string {
+	for _, a := range args {
+		if strings.HasPrefix(a, OwnerSIDArg) {
+			return strings.TrimPrefix(a, OwnerSIDArg)
+		}
+	}
+	return ""
+}
+
+// OtherUser: the tray owner is known and is not this user.
+func OtherUser(owner, current string) bool {
+	return owner != "" && current != "" && !strings.EqualFold(owner, current)
 }

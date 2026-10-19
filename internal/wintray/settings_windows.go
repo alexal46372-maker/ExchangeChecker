@@ -108,7 +108,7 @@ func (ShellElevator) Elevate(owner uintptr) error {
 	if err != nil {
 		return err
 	}
-	h, err := winapi.ShellExecuteEx(owner, "runas", exe, SettingsArg)
+	h, err := winapi.ShellExecuteEx(owner, "runas", exe, SettingsArg+" "+OwnerSIDArg+CurrentUserSID())
 	if err != nil {
 		return err
 	}
@@ -152,6 +152,9 @@ type settingsConfig struct {
 	stores     trayStores
 	fileDialog func(owner uintptr, save bool) (string, bool)
 	notice     func(text string)
+	// otherUser: elevated as another user than the tray owner: no tray
+	// block in export / import (this HKCU is not the tray user's)
+	otherUser bool
 }
 
 // UIModeStore keeps the settings window mode.
@@ -193,6 +196,7 @@ type settingsWindow struct {
 	// phase 10 E: the import dialog, the profiles of needPassword, the
 	// status after the import
 	imp         *importDialog
+	notifyBtn   map[uintptr]bool // page buttons with BS_NOTIFY
 	needPw      []string
 	afterImport string
 	cfg         settingsConfig
@@ -331,6 +335,10 @@ func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw,
 	if w.inBar || parent == 0 {
 		parent = w.hwnd
 	}
+	btn := class == "BUTTON" && style&0xF != winapi.BS_GROUPBOX && parent == w.host
+	if btn {
+		style |= winapi.BS_NOTIFY
+	}
 	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, parent, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
@@ -341,6 +349,12 @@ func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw,
 	}
 	if w.cur != nil {
 		*w.cur = append(*w.cur, h)
+	}
+	if btn {
+		if w.notifyBtn == nil {
+			w.notifyBtn = map[uintptr]bool{}
+		}
+		w.notifyBtn[h] = true
 	}
 	if parent == w.host { // a combo box keeps its drop-down height on MoveWindow
 		w.hostRect[h] = winapi.RECT{Left: x, Top: y, Right: x + cw, Bottom: y + ch}
@@ -1518,6 +1532,9 @@ type SettingsOptions struct {
 	LangStore    LangStore
 	BalloonStore BalloonStore
 	SoundStore   SoundStore
+	// OwnerSID: the user SID of the tray that started the elevated window
+	// (--owner-sid=; "" = unknown, treated as the same user)
+	OwnerSID string
 }
 
 // loadUIMode reads the stored mode ("" without a store).
@@ -1569,8 +1586,9 @@ func RunSettings(opt SettingsOptions) int {
 	s := trayipc.New(so)
 	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,
 		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
-		stores:  trayStores{Lang: opt.LangStore, Balloon: opt.BalloonStore, Sound: opt.SoundStore},
-		onClose: func() { winapi.PostQuitMessage(0) }})
+		stores:    trayStores{Lang: opt.LangStore, Balloon: opt.BalloonStore, Sound: opt.SoundStore},
+		otherUser: OtherUser(opt.OwnerSID, CurrentUserSID()),
+		onClose:   func() { winapi.PostQuitMessage(0) }})
 	if err != nil {
 		return 1
 	}

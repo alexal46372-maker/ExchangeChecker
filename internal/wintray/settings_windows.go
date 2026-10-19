@@ -219,7 +219,7 @@ var settingsTips = map[int32]string{
 	idSetDiscover: i18n.KeyTipSetDiscover, idSetName: i18n.KeyTipSetName, idSetHost: i18n.KeyTipSetHost,
 	idSetInstance: i18n.KeyTipSetInstance, idSetPort: i18n.KeyTipSetPort, idSetDatabase: i18n.KeyTipSetDatabase,
 	idSetAuth: i18n.KeyTipSetAuth, idSetLogin: i18n.KeyTipSetLogin, idSetPassword: i18n.KeyTipSetPassword,
-	idSetClearPw: i18n.KeyTipSetClearPw, idSetEncrypt: i18n.KeyTipSetEncrypt, idSetPreset: i18n.KeyTipSetPreset,
+	idSetClearPw: i18n.KeyTipSetClearPw, idSetUIMode: i18n.KeyTipSetUIMode, idSetEncrypt: i18n.KeyTipSetEncrypt, idSetPreset: i18n.KeyTipSetPreset,
 	idSetTLS10: i18n.KeyTipSetTLS10, idSetTrust: i18n.KeyTipSetTrust, idSetEnabled: i18n.KeyTipSetEnabled,
 	idSetWarn: i18n.KeyTipSetWarn, idSetError: i18n.KeyTipSetError, idSetConnTO: i18n.KeyTipSetConnTimeout,
 	idSetQueryTO: i18n.KeyTipSetQueryTimeout, idSetPage: i18n.KeyTipSetPage, idSetStatus: i18n.KeyTipSetStatus,
@@ -1413,8 +1413,10 @@ func loadUIMode(s UIModeStore) traysettings.UIMode {
 	if s == nil {
 		return ""
 	}
-	m, _ := s.Load() // missing / unreadable = «Простой»
-	return m
+	if m, err := s.Load(); err == nil && m == traysettings.UIExpert {
+		return m
+	}
+	return traysettings.UISimple // missing / unreadable = «Простой»
 }
 
 // SettingsMutexName keeps one settings window per logon session.

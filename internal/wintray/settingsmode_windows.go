@@ -29,7 +29,7 @@ func (w *settingsWindow) UIMode() traysettings.UIMode { return w.uiMode }
 
 func (w *settingsWindow) applyUIMode() {
 	simple := w.uiMode == traysettings.UISimple
-	if simple && w.page == 1 {
+	if simple && w.page != 0 {
 		w.setPage(0) // calls applyUIMode again
 		return
 	}

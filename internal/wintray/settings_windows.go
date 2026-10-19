@@ -167,6 +167,10 @@ type settingsWindow struct {
 	reqBrush  uintptr
 	// groups: the group boxes by caption key (phase 10 D3)
 	groups map[string]uintptr
+	// vbTestIDs: recipient ids of the «Тест для» items; vbTesting: the
+	// running viber_test (phase 10 D4)
+	vbTestIDs []string
+	vbTesting *model.IPCRequest
 	// expertShown: the expert-only controls are shown (test hook)
 	expertShown bool
 	cfg         settingsConfig
@@ -188,11 +192,11 @@ type settingsWindow struct {
 	// statusRefreshes / statusRefreshed: get_status re-reads started /
 	// done after save_settings (test hook)
 	statusRefreshes, statusRefreshed int
-	page                             int // 0 = databases, 1 = general settings
-	pageCtl                          [2][]uintptr
-	cur                              *[]uintptr // page of the controls being created
-	connected                        bool       // service session state seen by onSessionState
-	loaded                           bool       // get_config (or a snapshot) loaded at least once
+	page                             int          // 0 = databases, 1 = general settings
+	pageCtl                          [3][]uintptr // profiles, «Общие», «Viber» (phase 10 D4)
+	cur                              *[]uintptr   // page of the controls being created
+	connected                        bool         // service session state seen by onSessionState
+	loaded                           bool         // get_config (or a snapshot) loaded at least once
 	disc                             *discoveryDialog
 	wiz                              *wizardDialog // «Добавить базу» (CHK-TRAY-30)
 	diagnoses                        int           // sql_diagnose replies shown (test hook)
@@ -484,6 +488,7 @@ func (w *settingsWindow) build() {
 		bx = 665 // read-only: «Изменить (администратор)» pushes «Закрыть» right
 	}
 	w.add("BUTTON", w.t(i18n.KeySetClose), 0, winapi.WS_TABSTOP, idSetClose, bx, 674, 90, gridButtonH)
+	w.buildViber()
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
@@ -568,6 +573,9 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 }
 
 func (w *settingsWindow) command(id int32, code uint32) {
+	if w.viberCommand(id, code) {
+		return
+	}
 	switch id {
 	case idSetPassword:
 		// Dirty tracking by a flag, not by content: only the length is asked.
@@ -588,7 +596,7 @@ func (w *settingsWindow) command(id int32, code uint32) {
 			w.readGeneral()
 		}
 	case idSetPage:
-		w.setPage(1 - w.page)
+		w.setPage(map[bool]int{true: 1, false: 0}[w.page == 0])
 	case idSetUIMode:
 		w.toggleUIMode()
 	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetWarn, idSetError, idSetConnTO, idSetQueryTO:
@@ -752,6 +760,7 @@ func (w *settingsWindow) fill() {
 	w.setCheck(idSetTrust, f.TrustServerCert && traysettings.TrustApplies(f.Encrypt))
 	w.setCheck(idSetEnabled, f.Enabled)
 	w.fillGeneral()
+	w.fillViber()
 	w.update()
 }
 
@@ -811,6 +820,9 @@ func (w *settingsWindow) update() {
 		if w.page == 1 {
 			canSave = gen
 		}
+		if w.page == pageViber {
+			canSave = ed.CanEditViber()
+		}
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy && w.wiz == nil)
@@ -823,6 +835,7 @@ func (w *settingsWindow) update() {
 	if w.text(idSetStatus) != st {
 		winapi.SetWindowText(w.ctl[idSetStatus], st)
 	}
+	w.updateViber()
 	w.updateRequired()
 }
 
@@ -887,7 +900,11 @@ var fieldControl = map[traysettings.Field]int32{
 // for tests: SetFocus of a hidden window is not reliable).
 func (w *settingsWindow) focus(f traysettings.Field) {
 	w.lastFocus = f
-	if page := map[bool]int{false: 0, true: 1}[traysettings.IsGeneral(f)]; page != w.page {
+	page := map[bool]int{false: 0, true: 1}[traysettings.IsGeneral(f)]
+	if traysettings.IsViber(f) {
+		page = pageViber
+	}
+	if page != w.page {
 		w.setPage(page)
 	}
 	if id, ok := fieldControl[f]; ok {
@@ -944,7 +961,7 @@ func (w *settingsWindow) setPage(p int) {
 		}
 	}
 	key := i18n.KeyGenPage
-	if p == 1 {
+	if p != 0 {
 		key = i18n.KeyGenProfilesPage
 	}
 	winapi.SetWindowText(w.ctl[idSetPage], w.t(key))
@@ -1092,6 +1109,10 @@ func (w *settingsWindow) call(req model.IPCRequest, done func(model.IPCMessage, 
 func (w *settingsWindow) save() {
 	if w.page == 1 {
 		w.saveSettings()
+		return
+	}
+	if w.page == pageViber {
+		w.saveViber()
 		return
 	}
 	if w.busy {

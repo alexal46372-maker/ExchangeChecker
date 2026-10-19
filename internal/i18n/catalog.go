@@ -586,6 +586,58 @@ const (
 	KeySetGroupTLS     = "set.group_tls"
 	KeySetGroupChecks  = "set.group_checks"
 	KeySetGroupGeneral = "set.group_general"
+	// phase 10 D4: «Viber» page
+	KeyVbPage          = "set.vb_page"
+	KeyVbGroup         = "set.vb_group"
+	KeyVbEnabled       = "set.vb_enabled"
+	KeyVbToken         = "set.vb_token"
+	KeyVbClearToken    = "set.vb_clear_token"
+	KeyVbTokenSaved    = "set.vb_token_saved"
+	KeyVbTokenNone     = "set.vb_token_none"
+	KeyVbTokenNew      = "set.vb_token_new"
+	KeyVbTokenClear    = "set.vb_token_clear"
+	KeyVbRecipients    = "set.vb_recipients"
+	KeyVbDays          = "set.vb_days"
+	KeyVbDay1          = "set.vb_day1"
+	KeyVbDay2          = "set.vb_day2"
+	KeyVbDay3          = "set.vb_day3"
+	KeyVbDay4          = "set.vb_day4"
+	KeyVbDay5          = "set.vb_day5"
+	KeyVbDay6          = "set.vb_day6"
+	KeyVbDay7          = "set.vb_day7"
+	KeyVbFrom          = "set.vb_from"
+	KeyVbTo            = "set.vb_to"
+	KeyVbEvents        = "set.vb_events"
+	KeyVbEvError       = "set.vb_ev_error"
+	KeyVbEvWarning     = "set.vb_ev_warning"
+	KeyVbEvRecovered   = "set.vb_ev_recovered"
+	KeyVbEvNoConn      = "set.vb_ev_no_connection"
+	KeyVbReminder      = "set.vb_reminder"
+	KeyVbReminderHint  = "set.vb_reminder_hint"
+	KeyVbTestTo        = "set.vb_test_to"
+	KeyVbTestAll       = "set.vb_test_all"
+	KeyVbTest          = "set.vb_test"
+	KeyVbTesting       = "set.vb_testing"
+	KeyVbTestOK        = "set.vb_test_ok"
+	KeyVbTestFailed    = "set.vb_test_failed"
+	KeyVbTestItemOK    = "set.vb_test_item_ok"
+	KeyVbTestNoResult  = "set.vb_test_no_result"
+	KeyVbStatus        = "set.vb_status"
+	KeyVbLastOK        = "set.vb_last_ok"
+	KeyVbLastError     = "set.vb_last_error"
+	KeyVbSaved         = "set.vb_saved"
+	KeyTipVbPage       = "tip.vb_page"
+	KeyTipVbEnabled    = "tip.vb_enabled"
+	KeyTipVbToken      = "tip.vb_token"
+	KeyTipVbClearToken = "tip.vb_clear_token"
+	KeyTipVbRecipients = "tip.vb_recipients"
+	KeyTipVbDay        = "tip.vb_day"
+	KeyTipVbFrom       = "tip.vb_from"
+	KeyTipVbTo         = "tip.vb_to"
+	KeyTipVbEvent      = "tip.vb_event"
+	KeyTipVbReminder   = "tip.vb_reminder"
+	KeyTipVbTestTo     = "tip.vb_test_to"
+	KeyTipVbTest       = "tip.vb_test"
 )
 
 var catalog = map[string][2]string{ // key -> {ru, en}
@@ -1165,4 +1217,55 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetGroupTLS:      {"Шифрование", "Encryption"},
 	KeySetGroupChecks:   {"Опрос и пороги", "Polling and thresholds"},
 	KeySetGroupGeneral:  {"Общие настройки компьютера", "Computer-wide settings"},
+	KeyVbPage:           {"Уведомления Viber…", "Viber notifications…"},
+	KeyVbGroup:          {"Уведомления Viber", "Viber notifications"},
+	KeyVbEnabled:        {"Отправлять уведомления в Viber", "Send notifications to Viber"},
+	KeyVbToken:          {"Токен бота:", "Bot token:"},
+	KeyVbClearToken:     {"Удалить сохранённый токен", "Delete the saved token"},
+	KeyVbTokenSaved:     {"Токен сохранён (не показывается).", "A token is saved (never shown)."},
+	KeyVbTokenNone:      {"Токен не задан.", "No token is set."},
+	KeyVbTokenNew:       {"Новый токен будет сохранён.", "The new token will be saved."},
+	KeyVbTokenClear:     {"Сохранённый токен будет удалён.", "The saved token will be deleted."},
+	KeyVbRecipients:     {"Получатели (по одному в строке: ID имя):", "Recipients (one per line: ID name):"},
+	KeyVbDays:           {"Дни:", "Days:"},
+	KeyVbDay1:           {"Пн", "Mon"},
+	KeyVbDay2:           {"Вт", "Tue"},
+	KeyVbDay3:           {"Ср", "Wed"},
+	KeyVbDay4:           {"Чт", "Thu"},
+	KeyVbDay5:           {"Пт", "Fri"},
+	KeyVbDay6:           {"Сб", "Sat"},
+	KeyVbDay7:           {"Вс", "Sun"},
+	KeyVbFrom:           {"Время с (ЧЧ:ММ):", "From (HH:MM):"},
+	KeyVbTo:             {"до:", "to:"},
+	KeyVbEvents:         {"События:", "Events:"},
+	KeyVbEvError:        {"Ошибка обмена", "Exchange error"},
+	KeyVbEvWarning:      {"Предупреждение", "Warning"},
+	KeyVbEvRecovered:    {"Восстановление", "Recovered"},
+	KeyVbEvNoConn:       {"Нет подключения к базе", "No database connection"},
+	KeyVbReminder:       {"Напоминание, мин:", "Reminder, min:"},
+	KeyVbReminderHint:   {"0 — без напоминаний, иначе 15–1440", "0 = no reminders, else 15–1440"},
+	KeyVbTestTo:         {"Тест для:", "Test for:"},
+	KeyVbTestAll:        {"Все получатели", "All recipients"},
+	KeyVbTest:           {"Тест", "Test"},
+	KeyVbTesting:        {"Отправка тестового сообщения…", "Sending a test message…"},
+	KeyVbTestOK:         {"Тест Viber: доставлено.", "Viber test: delivered."},
+	KeyVbTestFailed:     {"Тест Viber: есть ошибки.", "Viber test: some messages failed."},
+	KeyVbTestItemOK:     {"доставлено", "delivered"},
+	KeyVbTestNoResult:   {"Служба не вернула результат теста.", "The service returned no test result."},
+	KeyVbStatus:         {"Отправлено: %d, в очереди: %d, отброшено: %d", "Sent: %d, queued: %d, dropped: %d"},
+	KeyVbLastOK:         {"Последняя доставка: %s", "Last delivery: %s"},
+	KeyVbLastError:      {"Последняя ошибка: %s — %s", "Last error: %s — %s"},
+	KeyVbSaved:          {"Настройки Viber сохранены.", "Viber settings saved."},
+	KeyTipVbPage:        {"Уведомления о тревогах в Viber: токен бота, получатели, расписание, события", "Alert notifications in Viber: bot token, recipients, schedule, events"},
+	KeyTipVbEnabled:     {"Служба отправляет сообщения только в окне расписания", "The service sends messages only inside the schedule window"},
+	KeyTipVbToken:       {"Токен бота Viber. Только запись: сохранённый токен не показывается; пусто — не менять", "Viber bot token. Write-only: a saved token is never shown; empty keeps it"},
+	KeyTipVbClearToken:  {"Удалить сохранённый токен при сохранении", "Delete the saved token on save"},
+	KeyTipVbRecipients:  {"ID пользователя Viber (без пробелов, до 64 символов) и имя, до 20 получателей", "Viber user ID (no spaces, up to 64 characters) and a name, up to 20 recipients"},
+	KeyTipVbDay:         {"День недели, в который отправляются уведомления", "A weekday on which notifications are sent"},
+	KeyTipVbFrom:        {"Начало окна отправки, местное время компьютера службы", "Start of the sending window, local time of the service computer"},
+	KeyTipVbTo:          {"Конец окна отправки (позже начала)", "End of the sending window (after the start)"},
+	KeyTipVbEvent:       {"Отправлять сообщение об этом событии", "Send a message on this event"},
+	KeyTipVbReminder:    {"Сводка нерешённых проблем каждые N минут в окне расписания", "Summary of unresolved problems every N minutes inside the schedule"},
+	KeyTipVbTestTo:      {"Кому отправить тест: одному получателю или всем", "Whom to send the test to: one recipient or all"},
+	KeyTipVbTest:        {"Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с", "A test message now (ignores the schedule and «Send»), at most once per 10 s"},
 }

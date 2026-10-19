@@ -124,6 +124,7 @@ func (e *Editor) LoadSettings(s model.Settings) {
 	e.Settings = s.Normalized()
 	e.HasSettings = true
 	e.General = FromSettings(e.Settings)
+	e.loadViber()
 	if clean && !e.IsNew {
 		e.Form = e.fromProfile(e.Base) // new inherited thresholds (phase 8)
 	}

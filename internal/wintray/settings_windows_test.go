@@ -257,6 +257,9 @@ func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ..
 			return *svc.autostart
 		}
 	}
+	if vt, ok := h.(ipc.ViberTester); ok {
+		srv.Viber = vt // capability viber (phase 10 D4)
+	}
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }

@@ -57,6 +57,10 @@ type Editor struct {
 	Settings    model.Settings
 	General     GeneralForm
 	HasSettings bool
+	// Viber is the edited «Viber» page (phase 10 D4), HasViber once
+	// settings.viber is loaded.
+	Viber    ViberForm
+	HasViber bool
 	// MapEdit / MapsEdit: mapping chosen in the Discovery dialog (6d,
 	// CHK-TRAY-07), not saved yet; nil = the profile's own mapping.
 	// MapsEdit (the merged additional mappings, MergeMappings) replaces
@@ -320,6 +324,9 @@ type Problem struct {
 // fieldLabel is the localized name of a JSON path ({0} of validation
 // texts); unknown paths are returned unchanged.
 func (e *Editor) fieldLabel(path string) string {
+	if l, ok := viberFieldLabel(path, e.Lang); ok {
+		return l
+	}
 	if l, ok := discoveryFieldLabel(path, e.Lang); ok {
 		return l
 	}
@@ -665,6 +672,9 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 		return &Problem{Text: base + " " + e.t(i18n.KeySetConflictHint), Reload: true}
 	case model.ErrCodeInvalidRequest:
 		if len(m.ErrorArgs) == 0 {
+			if f, ok := viberKeyFocus[m.ErrorKey]; ok {
+				return &Problem{Text: base, Field: f}
+			}
 			return &Problem{Text: base}
 		}
 		path := m.ErrorArgs[0]
@@ -676,6 +686,9 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 		if m.ProfileID != "" { // only set for ANOTHER profile of the file
 			return e.otherProfile(m, detail)
 		}
+		if f, ok := viberKeyFocus[m.ErrorKey]; ok && !strings.HasPrefix(path, "viber") {
+			return &Problem{Text: base, Field: f} // notify.viber_no_token / _no_receivers
+		}
 		if path == "expectedRevision" {
 			return &Problem{Text: e.t(i18n.KeySetNoRevision), Reload: true}
 		}
@@ -686,6 +699,9 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 		return &Problem{Text: text, Field: e.focus(path, params)}
 	case model.ErrCodeRateLimited:
 		return &Problem{Text: base + " " + e.t(i18n.KeySetRateHint)}
+	}
+	if f, ok := viberKeyFocus[m.ErrorKey]; ok {
+		return &Problem{Text: base, Field: f}
 	}
 	return &Problem{Text: base}
 }

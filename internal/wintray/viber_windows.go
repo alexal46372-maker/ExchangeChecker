@@ -1,0 +1,352 @@
+//go:build windows
+
+package wintray
+
+import (
+	"strings"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+)
+
+// Phase 10 D4 (CHK-TRAY-43, PLAN §12 p.123): the «Уведомления Viber»
+// page (page 2) of the settings window. The button opening it is shown
+// only with capability viber in «Экспертный»; the token box is
+// write-only (the saved token is never read back, only hasToken).
+
+const (
+	idVbBase = 600 + iota
+	idSetViber
+	idVbEnabled
+	idVbToken
+	idVbClearToken
+	idVbTokenState
+	idVbRecipients
+	idVbFrom
+	idVbTo
+	idVbReminder
+	idVbReminderHint
+	idVbTestTo
+	idVbTest
+	idVbResult
+	idVbStatus
+	idVbDay1                // .. idVbDay1+6
+	idVbEv1  = idVbDay1 + 7 // .. idVbEv1+3, model.ViberEventKinds order
+)
+
+// pageViber is the page index of the Viber page.
+const pageViber = 2
+
+var vbDayKeys = []string{i18n.KeyVbDay1, i18n.KeyVbDay2, i18n.KeyVbDay3, i18n.KeyVbDay4, i18n.KeyVbDay5, i18n.KeyVbDay6, i18n.KeyVbDay7}
+var vbEventKeys = []string{i18n.KeyVbEvError, i18n.KeyVbEvWarning, i18n.KeyVbEvRecovered, i18n.KeyVbEvNoConn}
+
+// viberTips: tooltips of the page (CHK-TRAY-15).
+func viberTips() map[int32]string {
+	m := map[int32]string{idSetViber: i18n.KeyTipVbPage, idVbEnabled: i18n.KeyTipVbEnabled, idVbToken: i18n.KeyTipVbToken,
+		idVbClearToken: i18n.KeyTipVbClearToken, idVbRecipients: i18n.KeyTipVbRecipients, idVbFrom: i18n.KeyTipVbFrom,
+		idVbTo: i18n.KeyTipVbTo, idVbReminder: i18n.KeyTipVbReminder, idVbTestTo: i18n.KeyTipVbTestTo, idVbTest: i18n.KeyTipVbTest}
+	for i := int32(0); i < 7; i++ {
+		m[idVbDay1+i] = i18n.KeyTipVbDay
+	}
+	for i := int32(0); i < 4; i++ {
+		m[idVbEv1+i] = i18n.KeyTipVbEvent
+	}
+	return m
+}
+
+// viberOutputs are the read-only texts of the page.
+var viberOutputs = map[int32]bool{idVbTokenState: true, idVbReminderHint: true, idVbResult: true, idVbStatus: true}
+
+var viberFieldControl = map[traysettings.Field]int32{
+	traysettings.FieldViberToken: idVbToken, traysettings.FieldViberRecipients: idVbRecipients, traysettings.FieldViberDays: idVbDay1,
+	traysettings.FieldViberFrom: idVbFrom, traysettings.FieldViberTo: idVbTo, traysettings.FieldViberEvents: idVbEv1,
+	traysettings.FieldViberReminder: idVbReminder, traysettings.FieldViberTest: idVbTest,
+}
+
+func init() {
+	for f, id := range viberFieldControl {
+		fieldControl[f] = id
+	}
+	for id, k := range viberTips() {
+		settingsTips[id] = k
+	}
+	for id := range viberOutputs {
+		settingsOutputs[id] = true
+	}
+}
+
+// viberAvailable: the service offers capability viber.
+func (w *settingsWindow) viberAvailable() bool {
+	return w.cfg.session != nil && w.cfg.session.Status().Has(model.CapViber)
+}
+
+// buildViber creates page 2 (hidden) and the button opening it.
+func (w *settingsWindow) buildViber() {
+	const (
+		lx, lw = 230, 130
+		cx, cw = 365, 390
+		rh     = gridRow
+	)
+	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
+	w.cur = nil
+	w.add("BUTTON", w.t(i18n.KeyVbPage), 0, winapi.WS_TABSTOP, idSetViber, 12, 504, 205, 26)
+	w.cur = &w.pageCtl[pageViber]
+	w.groups[i18n.KeyVbGroup] = w.add("BUTTON", w.t(i18n.KeyVbGroup), 0, winapi.BS_GROUPBOX, 0, lx-8, 4, 540, 580)
+	row := int32(24)
+	label := func(key string, id int32, x, y, width int32) {
+		w.labels[id] = w.add("STATIC", w.t(key), 0, winapi.SS_LEFT, 0, x, y+3, width, gridLabelH)
+		w.labelText[id] = w.t(key)
+	}
+	check := func(key string, id, x, y, width int32) {
+		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, id, x, y, width, gridCheckH)
+	}
+	check(i18n.KeyVbEnabled, idVbEnabled, lx, row, cx+cw-lx)
+	row += gridCheckH + 6
+	label(i18n.KeyVbToken, idVbToken, lx, row, lw)
+	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idVbToken, cx, row, cw, gridEditH)
+	row += rh
+	w.add("STATIC", "", 0, winapi.SS_LEFT, idVbTokenState, cx, row+2, cw, gridLabelH)
+	row += rh
+	check(i18n.KeyVbClearToken, idVbClearToken, cx, row, cw)
+	row += rh
+	label(i18n.KeyVbRecipients, idVbRecipients, lx, row, cx+cw-lx)
+	row += gridLabelH + 4
+	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL|winapi.ES_WANTRETURN,
+		idVbRecipients, lx, row, cx+cw-lx, 120)
+	row += 128
+	label(i18n.KeyVbDays, idVbDay1, lx, row, lw)
+	for i := int32(0); i < 7; i++ {
+		check(vbDayKeys[i], idVbDay1+i, cx+i*55, row+2, 52)
+	}
+	row += rh
+	label(i18n.KeyVbFrom, idVbFrom, lx, row, lw)
+	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idVbFrom, cx, row, 60, gridEditH)
+	label(i18n.KeyVbTo, idVbTo, cx+70, row, 40)
+	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idVbTo, cx+115, row, 60, gridEditH)
+	row += rh + 4
+	label(i18n.KeyVbEvents, idVbEv1, lx, row, lw)
+	for i := int32(0); i < 4; i++ {
+		check(vbEventKeys[i], idVbEv1+i, cx+(i%2)*195, row+2+(i/2)*(gridCheckH+4), 190)
+	}
+	row += 2*(gridCheckH+4) + 6
+	label(i18n.KeyVbReminder, idVbReminder, lx, row, lw)
+	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idVbReminder, cx, row, 60, gridEditH)
+	w.add("STATIC", w.t(i18n.KeyVbReminderHint), 0, winapi.SS_LEFT, idVbReminderHint, cx+70, row+3, cw-70, gridLabelH)
+	row += rh + 8
+	label(i18n.KeyVbTestTo, idVbTestTo, lx, row, lw)
+	w.add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idVbTestTo, cx, row, 270, 200)
+	w.add("BUTTON", w.t(i18n.KeyVbTest), 0, winapi.WS_TABSTOP, idVbTest, cx+280, row-1, 110, 26)
+	row += rh + 8
+	w.add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, lx, row, cx+cw-lx, 64)
+	row += 70
+	w.add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, lx, row, cx+cw-lx, 54)
+	w.cur = nil
+	for _, h := range w.pageCtl[pageViber] {
+		winapi.ShowWindow(h, winapi.SW_HIDE)
+	}
+	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE)
+}
+
+// fillViber shows the editor's page state.
+func (w *settingsWindow) fillViber() {
+	f := w.ed.Viber
+	w.setCheck(idVbEnabled, f.Enabled)
+	w.setCheck(idVbClearToken, f.ClearToken)
+	if f.Token == "" && winapi.GetWindowTextLength(w.ctl[idVbToken]) > 0 {
+		winapi.SetWindowText(w.ctl[idVbToken], "") // the box is only ever cleared
+	}
+	for id, s := range map[int32]string{idVbRecipients: f.Recipients, idVbFrom: f.From, idVbTo: f.To, idVbReminder: f.Reminder} {
+		if w.text(id) != s {
+			winapi.SetWindowText(w.ctl[id], s)
+		}
+	}
+	for i := int32(0); i < 7; i++ {
+		w.setCheck(idVbDay1+i, f.Days[i])
+	}
+	for i := int32(0); i < 4; i++ {
+		w.setCheck(idVbEv1+i, f.Events[i])
+	}
+	w.fillViberTestTo()
+}
+
+// fillViberTestTo: «Все получатели» and the saved recipients.
+func (w *settingsWindow) fillViberTestTo() {
+	cb := w.ctl[idVbTestTo]
+	sel := int(winapi.SendMessage(cb, winapi.CB_GETCURSEL, 0, 0))
+	winapi.SendMessage(cb, winapi.CB_RESETCONTENT, 0, 0)
+	winapi.SendMessageString(cb, winapi.CB_ADDSTRING, 0, w.t(i18n.KeyVbTestAll))
+	w.vbTestIDs = []string{""}
+	if v := w.ed.Settings.Viber; v != nil {
+		for _, r := range v.Recipients {
+			t := r.ID
+			if r.Name != "" {
+				t = r.Name + " (" + r.ID + ")"
+			}
+			winapi.SendMessageString(cb, winapi.CB_ADDSTRING, 0, t)
+			w.vbTestIDs = append(w.vbTestIDs, r.ID)
+		}
+	}
+	if sel < 0 || sel >= len(w.vbTestIDs) {
+		sel = 0
+	}
+	winapi.SendMessage(cb, winapi.CB_SETCURSEL, uintptr(sel), 0)
+}
+
+// readViber takes the page into the editor.
+func (w *settingsWindow) readViber() {
+	if !w.ed.CanEditViber() {
+		return
+	}
+	f := &w.ed.Viber
+	f.Enabled, f.ClearToken = w.check(idVbEnabled), w.check(idVbClearToken)
+	f.Token = w.text(idVbToken)
+	f.Recipients, f.From, f.To, f.Reminder = w.text(idVbRecipients), w.text(idVbFrom), w.text(idVbTo), w.text(idVbReminder)
+	for i := int32(0); i < 7; i++ {
+		f.Days[i] = w.check(idVbDay1 + i)
+	}
+	for i := int32(0); i < 4; i++ {
+		f.Events[i] = w.check(idVbEv1 + i)
+	}
+}
+
+// viberCommand handles WM_COMMAND of the page; false = not a page id.
+func (w *settingsWindow) viberCommand(id int32, code uint32) bool {
+	switch {
+	case id == idSetViber:
+		if w.page != pageViber {
+			w.setPage(pageViber)
+		}
+	case id == idVbTest:
+		w.testViber()
+	case id == idVbToken || id == idVbRecipients || id == idVbFrom || id == idVbTo || id == idVbReminder:
+		if code == winapi.EN_CHANGE && !w.loading {
+			w.readViber()
+			w.update()
+		}
+	case id == idVbEnabled || id == idVbClearToken || id >= idVbDay1 && id < idVbEv1+4:
+		if code == winapi.BN_CLICKED && !w.loading {
+			w.readViber()
+			w.update()
+		}
+	case id == idVbTestTo:
+	default:
+		return false
+	}
+	return true
+}
+
+// updateViber enables the page and the button (capability viber,
+// «Экспертный»).
+func (w *settingsWindow) updateViber() {
+	avail := w.viberAvailable() && w.uiMode != traysettings.UISimple
+	if !avail && w.page == pageViber {
+		w.setPage(0)
+		return
+	}
+	if b := w.ctl[idSetViber]; b != 0 && (winapi.WindowStyle(b)&winapi.WS_VISIBLE != 0) != avail {
+		cmd := int32(winapi.SW_HIDE)
+		if avail {
+			cmd = winapi.SW_SHOW
+		}
+		winapi.ShowWindow(b, cmd)
+	}
+	winapi.EnableWindow(w.ctl[idSetViber], avail && w.page != pageViber)
+	can := w.ed.CanEditViber()
+	for _, id := range []int32{idVbToken, idVbRecipients, idVbFrom, idVbTo, idVbReminder} {
+		winapi.SendMessage(w.ctl[id], winapi.EM_SETREADONLY, boolPtr(!can), 0)
+	}
+	for _, id := range []int32{idVbEnabled, idVbClearToken} {
+		winapi.EnableWindow(w.ctl[id], can)
+	}
+	if can && !(w.ed.Settings.Viber != nil && w.ed.Settings.Viber.HasToken) {
+		winapi.EnableWindow(w.ctl[idVbClearToken], false)
+	}
+	for i := int32(0); i < 11; i++ {
+		winapi.EnableWindow(w.ctl[idVbDay1+i], can)
+	}
+	admin := w.cfg.mode == traysettings.Admin
+	winapi.EnableWindow(w.ctl[idVbTestTo], admin && w.ed.HasViber)
+	winapi.EnableWindow(w.ctl[idVbTest], admin && w.ed.HasViber && !w.busy && w.vbTesting == nil)
+	if t := w.ed.TokenStateText(); w.text(idVbTokenState) != t {
+		winapi.SetWindowText(w.ctl[idVbTokenState], t)
+	}
+	if t := w.viberStatusText(); w.text(idVbStatus) != t {
+		winapi.SetWindowText(w.ctl[idVbStatus], t)
+	}
+}
+
+// viberStatusText: delivery state of the running service (get_status,
+// else get_config).
+func (w *settingsWindow) viberStatusText() string {
+	v := w.ed.Settings.Viber
+	if st := w.cfg.session.Status(); st.Snapshot != nil && st.Snapshot.Settings != nil && st.Snapshot.Settings.Viber != nil &&
+		st.Snapshot.Settings.Viber.Status != nil {
+		v = st.Snapshot.Settings.Viber
+	}
+	return traysettings.ViberStatusText(v, w.cfg.lang)
+}
+
+// saveViber sends save_settings of the page.
+func (w *settingsWindow) saveViber() {
+	if w.busy {
+		return
+	}
+	w.readViber()
+	req, pr := w.ed.ViberRequest()
+	if pr != nil {
+		w.problem(pr)
+		return
+	}
+	w.status = w.t(i18n.KeySetSaving)
+	w.call(req, func(m model.IPCMessage, err error) {
+		switch {
+		case err != nil:
+			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
+		case m.Type == model.MsgError:
+			w.problem(w.ed.Reply(m))
+		default:
+			w.status = w.ed.ViberDone(m, req)
+			w.fill()
+		}
+	})
+}
+
+// testViber sends viber_test to the chosen recipient with the typed
+// token (once, not saved).
+func (w *settingsWindow) testViber() {
+	if w.busy || w.vbTesting != nil {
+		return
+	}
+	w.readViber()
+	id := ""
+	if i := int(winapi.SendMessage(w.ctl[idVbTestTo], winapi.CB_GETCURSEL, 0, 0)); i > 0 && i < len(w.vbTestIDs) {
+		id = w.vbTestIDs[i]
+	}
+	req, pr := w.ed.ViberTestRequest(id)
+	if pr != nil {
+		w.problem(pr)
+		return
+	}
+	w.vbTesting = &req
+	winapi.SetWindowText(w.ctl[idVbResult], w.t(i18n.KeyVbTesting))
+	w.call(req, func(m model.IPCMessage, err error) {
+		w.vbTesting = nil
+		var t string
+		switch {
+		case err != nil:
+			t = w.ed.ErrorProblem(err, traysettings.CallTimeout).Text
+		case m.Type == model.MsgError:
+			pr := w.ed.Reply(m)
+			t = pr.Text
+			if pr.Field != traysettings.FieldNone {
+				w.focus(pr.Field)
+			}
+		default:
+			t = w.ed.ViberTestText(m.ViberTest)
+		}
+		winapi.SetWindowText(w.ctl[idVbResult], strings.TrimSpace(t))
+		w.update()
+	})
+}

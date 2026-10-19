@@ -132,6 +132,12 @@ type IPCError struct {
 	// ProfileID is copied into IPCMessage.ProfileID: the OTHER profile
 	// whose invalid entry in profiles.json refused the write (phase 6).
 	ProfileID string
+	// RetryAfterMs is copied into IPCMessage.RetryAfterMs (rate_limited
+	// of check_now, phase 9).
+	RetryAfterMs int64
+	// Info is copied into IPCMessage.ErrorInfo (SQL errors of the
+	// interactive and wizard commands, phase 9 CHK-IPC-10).
+	Info *SQLErrorInfo
 }
 
 func (e *IPCError) Error() string { return e.Message }
@@ -178,8 +184,35 @@ type IPCRequest struct {
 	// Mapping checked by check_mapping (phase 6, G3).
 	Mapping *Mapping `json:"mapping,omitempty"`
 	// Limit: preview rows of check_mapping (1..20, 0 = 5), points of
-	// list_node_points (0 = all read).
+	// list_node_points (0 = all read), records of history (1..5000,
+	// 0 = 1000), events of events_since (1..1000, 0 = 500).
 	Limit int `json:"limit,omitempty"`
+	// Phase 9: history window [From, To) (RFC 3339), opaque Cursor of the
+	// next page, record Kinds (HistoryKind*, empty = all), and the
+	// events_since position (RunID, SinceID).
+	From    *time.Time `json:"from,omitempty"`
+	To      *time.Time `json:"to,omitempty"`
+	Cursor  string     `json:"cursor,omitempty"`
+	Kinds   []string   `json:"kinds,omitempty"`
+	RunID   string     `json:"runId,omitempty"`
+	SinceID uint64     `json:"sinceId,omitempty"`
+	// Bucket: history aggregation (HistoryBucket1m / 5m / 1h), "" = records.
+	Bucket string `json:"bucket,omitempty"`
+	// Phase 9 wizard (CHK-IPC-10): sql_browse Host / Instance / TimeoutMs
+	// (Limit shared); sql_diagnose Category + ErrorKey or Code + TLSKey;
+	// sql_grant_script Principal, Windows / Auth, Database, Tables.
+	Host      string   `json:"host,omitempty"`
+	Instance  string   `json:"instance,omitempty"`
+	TimeoutMs int      `json:"timeoutMs,omitempty"`
+	Category  string   `json:"category,omitempty"`
+	ErrorKey  string   `json:"errorKey,omitempty"`
+	Code      string   `json:"code,omitempty"`
+	TLSKey    string   `json:"tlsKey,omitempty"`
+	Principal string   `json:"principal,omitempty"`
+	Windows   bool     `json:"windows,omitempty"`
+	Auth      string   `json:"auth,omitempty"`
+	Database  string   `json:"database,omitempty"`
+	Tables    []string `json:"tables,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -216,6 +249,9 @@ type Heartbeat struct {
 	PollerHung      bool `json:"pollerHung"`
 	HungAfterSec    int  `json:"hungAfterSec"`
 	PollIntervalSec int  `json:"pollIntervalSec"`
+	// RunID identifies this run of the service (phase 9, CHK-SVC-05):
+	// AlertEvent.ID restarts with every run.
+	RunID string `json:"runId,omitempty"`
 }
 
 // IPCMessage is a service -> tray reply or push.
@@ -292,4 +328,32 @@ type IPCMessage struct {
 	NodePoints []NodePoint `json:"nodePoints,omitempty"`
 	// MappingCheck of a MsgMappingCheck reply.
 	MappingCheck *MappingCheck `json:"mappingCheck,omitempty"`
+
+	// Phase 9 (capabilities history, check_now, events_since):
+	// History of a MsgHistory reply.
+	History *HistoryPage `json:"history,omitempty"`
+	// RetryAfterMs: rate_limited reply of check_now.
+	RetryAfterMs int64 `json:"retryAfterMs,omitempty"`
+	// CheckSeq: check_now reply (always present there); complete when a
+	// status has lastCheckSeq >= checkSeq.
+	CheckSeq *uint64 `json:"checkSeq,omitempty"`
+	// Events / RunID / LastID / ResetRequired of a MsgEvents reply (Truncated is
+	// shared): LastID is the ID of the last event in Events, or the
+	// newest event ID of the run when Events is empty (always present);
+	// ResetRequired: RunID differs or SinceID is older than the buffer (the
+	// client takes the active alerts from get_status).
+	Events        []AlertEvent `json:"events,omitempty"`
+	RunID         string       `json:"runId,omitempty"`
+	LastID        *uint64      `json:"lastId,omitempty"`
+	ResetRequired bool         `json:"resetRequired,omitempty"`
+	// Phase 9 wizard replies (CHK-IPC-10): SQLBrowse / SQLDatabases /
+	// SQLDiagnosis / SQLGrantScript; AutoPick of a discovery reply
+	// (model.SQLAutoPickFor over the returned candidates); ErrorInfo of
+	// a SQL error (stable code, diagnosis key, SQL error number).
+	SQLBrowse      *SQLBrowseResult    `json:"sqlBrowse,omitempty"`
+	SQLDatabases   *SQLDatabasesResult `json:"sqlDatabases,omitempty"`
+	SQLDiagnosis   *SQLDiagnosis       `json:"sqlDiagnosis,omitempty"`
+	SQLGrantScript *SQLGrantScript     `json:"sqlGrantScript,omitempty"`
+	AutoPick       *SQLAutoPick        `json:"autoPick,omitempty"`
+	ErrorInfo      *SQLErrorInfo       `json:"errorInfo,omitempty"`
 }

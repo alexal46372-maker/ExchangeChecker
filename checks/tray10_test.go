@@ -100,6 +100,7 @@ var winAPIMinVersion = map[string]float64{
 	"GetOverlappedResult": 5.0, "GetSystemDirectoryW": 5.0, "GetUserDefaultUILanguage": 5.0,
 	"LocalFree": 5.0, "MoveFileExW": 5.0, "ResetEvent": 5.0, "SetEvent": 5.0,
 	"WaitForMultipleObjects": 5.0, "WaitNamedPipeW": 5.0,
+	"MultiByteToWideChar": 5.0, // internal/sqlcheck: SSRP ANSI names (CP_ACP), phase 9
 	// advapi32
 	"CloseServiceHandle": 5.0, "ConvertStringSecurityDescriptorToSecurityDescriptorW": 5.0,
 	"DeregisterEventSource": 5.0, "OpenSCManagerW": 5.0, "OpenServiceW": 5.0,
@@ -165,6 +166,16 @@ var winAPIMinVersion = map[string]float64{
 	"SHGetFolderPathW": 5.0, "SHChangeNotify": 5.0, "SHBrowseForFolderW": 5.0, "SHGetPathFromIDListW": 5.0,
 	"InitCommonControlsEx": 5.0, "MoveWindow": 5.0, "DuplicateTokenEx": 5.0, "CreateProcessWithTokenW": 6.0,
 	"SetLastError": 5.0, "GetLastError": 5.0,
+	// phase 9a «Состояние» window: NM_CUSTOMDRAW copy (kernel32) and the
+	// export save dialog (comdlg32) (CHK-TRAY-19 / CHK-TRAY-21)
+	"RtlMoveMemory": 5.0, "GetSaveFileNameW": 5.0,
+	// phase 9b history chart, plain GDI (CHK-TRAY-26)
+	"BeginPaint": 5.0, "EndPaint": 5.0, "GetClientRect": 5.0, "InvalidateRect": 5.0, "FillRect": 5.0,
+	"CreatePen": 5.0, "CreateSolidBrush": 5.0, "SelectObject": 5.0, "MoveToEx": 5.0, "LineTo": 5.0,
+	"Polyline": 5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
+	// phase 9b part 2 «Скопировать SQL-скрипт прав» (CHK-TRAY-32)
+	"OpenClipboard": 5.0, "EmptyClipboard": 5.0, "SetClipboardData": 5.0, "CloseClipboard": 5.0,
+	"GlobalAlloc": 5.0, "GlobalLock": 5.0, "GlobalUnlock": 5.0, "GlobalFree": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

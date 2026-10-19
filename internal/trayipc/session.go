@@ -246,6 +246,10 @@ var commandCapability = map[string]string{
 	model.CmdDeleteProfile: model.CapConfigWrite,
 	model.CmdSaveSettings:  model.CapConfigWrite,
 	model.CmdCancel:        model.CapCancel,
+	// phase 9 (EC Service; tray phase 9b)
+	model.CmdHistory:     model.CapHistory,
+	model.CmdCheckNow:    model.CapCheckNow,
+	model.CmdEventsSince: model.CapEventsSince,
 }
 
 var v1Commands = map[string]bool{

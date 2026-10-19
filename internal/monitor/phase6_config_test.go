@@ -151,20 +151,24 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 	keep("identical", func(*model.Profile) {})
 	keep("renamed + other database", func(q *model.Profile) { q.Name, q.Database = "New name", "other" })
 	keep("host case + stronger encrypt", func(q *model.Profile) { q.Server, q.Encrypt = `SRV\inst`, model.EncryptOn })
-	refuse := func(what string, mut func(*model.Profile)) {
+	refuseKey := func(what, key string, mut func(*model.Profile)) {
 		t.Helper()
 		q := sqlProf6("s1")
 		q.Encrypt = model.EncryptOn
 		mut(&q)
 		before := e.files()
 		_, err := m.SaveProfile(q, "", false, e.rev(), "a")
-		wantCode(t, what, err, model.ErrCodeInvalidRequest, model.MsgTestPasswordRequired)
+		wantCode(t, what, err, model.ErrCodeInvalidRequest, key)
 		if e.files() != before || e.secrets()["s1"] != "Pw-One!" {
 			t.Fatalf("%s: written", what)
 		}
 	}
-	refuse("host swap", func(q *model.Profile) { q.Server = `evil\INST` })
-	refuse("port swap", func(q *model.Profile) { q.Port = 1500 })
+	refuse := func(what string, mut func(*model.Profile)) {
+		t.Helper()
+		refuseKey(what, model.MsgTestPasswordRequired, mut)
+	}
+	refuseKey("host swap", model.MsgPasswordTargetChange, func(q *model.Profile) { q.Server = `evil\INST` })
+	refuseKey("port swap", model.MsgPasswordTargetChange, func(q *model.Profile) { q.Port = 1500 })
 	refuse("login swap", func(q *model.Profile) { q.Login = "sa" })
 	refuse("weaker encrypt", func(q *model.Profile) { q.Encrypt = model.EncryptDisable })
 	refuse("trust cert (weaker)", func(q *model.Profile) { q.TrustServerCert = true })
@@ -216,7 +220,7 @@ func TestCHK_CFG_03_SaveProfilePasswordRules(t *testing.T) {
 	bad = sqlProf6("s1")
 	bad.Server = `\INST`
 	_, err = m.SaveProfile(bad, "pw", false, e.rev(), "a")
-	if ie := wantCode(t, "empty host", err, model.ErrCodeInvalidRequest, model.MsgMonitorProfileInvalid); ie.Args[0] != "server" || ie.Args[1] != model.ValServerFormat {
+	if ie := wantCode(t, "empty host", err, model.ErrCodeInvalidRequest, model.MsgMonitorProfileInvalid); ie.Args[0] != "server" || ie.Args[1] != model.ValSQLServerForbidden { // CHK-CFG-05
 		t.Errorf("args %v", ie.Args)
 	}
 	for _, pw := range []string{"Pw-One!", "Pw-Two!", "Pw-3", "ignored-pw"} {

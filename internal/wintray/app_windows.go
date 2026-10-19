@@ -76,6 +76,16 @@ type Options struct {
 	// Notify shows a tray message (service start / stop result); nil =
 	// MessageBoxW (tests: a fake).
 	Notify func(text string, warn bool)
+	// BalloonStore keeps the per-user balloon switch (nil = on, not
+	// stored; phase 9a, CHK-TRAY-18).
+	BalloonStore BalloonStore
+	// Log receives tray log lines (nil = package log; tests: a fake).
+	Log func(line string)
+	// BalloonDebounce overrides the hold time of recovery balloons (0 =
+	// twice the poll interval, < 0 = none; tests).
+	BalloonDebounce time.Duration
+	// HiddenStatus keeps the «Состояние» window hidden (tests).
+	HiddenStatus bool
 }
 
 // exitWait bounds the wait for the session goroutine in Exit (well under
@@ -123,6 +133,24 @@ type App struct {
 	settings       *settingsWindow
 	// iconRemoves counts NIM_DELETE calls (test hook, CHK-TRAY-11)
 	iconRemoves int
+	// phase 9a: balloons (CHK-TRAY-18), «Состояние» (CHK-TRAY-19/21),
+	// «Проверить сейчас» results (CHK-TRAY-20, test hook)
+	balloonsOn   bool
+	balloons     []trayui.Balloon
+	statusWin    *statusWindow
+	checkResults []string
+	// phase 9b: check_now wait (CHK-TRAY-22), service clock (CHK-TRAY-23),
+	// balloon debounce (CHK-TRAY-24), events_since catch-up (CHK-TRAY-25),
+	// history window (CHK-TRAY-26)
+	check        trayui.CheckState
+	clock        trayui.ServerClock
+	debounce     trayui.Debouncer
+	dueTimer     *time.Timer
+	tracker      trayui.EventTracker
+	wasConnected bool
+	catchUps     int
+	caughtUp     []model.AlertEvent
+	histWin      *histWindow
 }
 
 // NewApp creates the hidden owner window, the tray icon and starts the
@@ -144,6 +172,7 @@ func NewApp(opt Options) (*App, error) {
 	}
 	a.player = trayalert.NewPlayer(b)
 	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
+	a.loadBalloonPref()
 	a.addIcon()
 
 	so := opt.Session
@@ -311,6 +340,15 @@ func (a *App) Exit() {
 	if a.awin != nil {
 		winapi.DestroyWindow(a.awin.hwnd)
 	}
+	if a.histWin != nil && a.histWin.alive() {
+		winapi.DestroyWindow(a.histWin.hwnd) // cancels its history request
+	}
+	if a.dueTimer != nil {
+		a.dueTimer.Stop()
+	}
+	if a.statusWin != nil && winapi.IsWindow(a.statusWin.hwnd) {
+		winapi.DestroyWindow(a.statusWin.hwnd)
+	}
 	if a.about != 0 {
 		winapi.DestroyWindow(a.about)
 	}
@@ -381,6 +419,11 @@ func (a *App) drain() {
 	} else if old.Icon != a.ind.Icon || old.Tooltip != a.ind.Tooltip {
 		a.modifyIcon()
 	}
+	a.afterDrain(q)
+	a.balloonEvents(q)
+	if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) {
+		sw.update(a.status, a.connected() && !a.check.Busy)
+	}
 }
 
 func (a *App) onNotify(ev uint32) {
@@ -403,7 +446,12 @@ func (a *App) onNotify(ev uint32) {
 // LeftMenu / RightMenu are the current menu models.
 func (a *App) LeftMenu() []trayui.Item { return trayui.BuildLeftMenu(a.status, a.opt.Lang) }
 func (a *App) RightMenu() []trayui.Item {
-	return trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref, a.serviceState())
+	m := trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref, a.serviceState())
+	// phase 9a items before the separator above «Выход»
+	ext := trayui.Phase9Items(a.opt.Lang, a.balloonsOn, a.connected() && !a.check.Busy)
+	at := len(m) - 2
+	out := append(append(append([]trayui.Item(nil), m[:at]...), ext...), m[at:]...)
+	return out
 }
 
 // ShowLeftMenu shows the databases menu at the cursor.
@@ -431,6 +479,12 @@ func (a *App) Command(cmd int) {
 		a.SetLanguage(trayui.LangCommands[cmd])
 	case trayui.CmdSvcStart, trayui.CmdSvcStop:
 		a.serviceCommand(cmd == trayui.CmdSvcStart)
+	case trayui.CmdStatusWin:
+		a.OpenStatus()
+	case trayui.CmdCheckNow:
+		a.CheckNow()
+	case trayui.CmdBalloons:
+		a.SetBalloons(!a.balloonsOn)
 	}
 }
 

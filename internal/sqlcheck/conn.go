@@ -28,6 +28,15 @@ func splitServer(server string) (host, instance string) {
 	return server, ""
 }
 
+// forbiddenServerForm is the pre-dial guard of phase 9 (CHK-SQL-09, PLAN
+// §12 p. 109): a thin wrapper over model.ValidateSQLServerAddr, the single
+// source of the rule (np:, lpc:, admin:, UNC, leading '\', pipe paths;
+// owned by EC Service). The service (LocalSystem) never opens SMB / named
+// pipes to arbitrary hosts. go-mssqldb v1.8.2 with the URL DSN built here
+// does not interpret such prefixes (np / lpc dialers are not linked), but
+// the guard does not rely on that.
+func forbiddenServerForm(server string) error { return model.ValidateSQLServerAddr(server) }
+
 // driverConfig builds the go-mssqldb configuration for p. The login and the
 // password are set on the returned struct only: they never appear in a DSN
 // string, a log line or an error message.
@@ -37,6 +46,9 @@ func splitServer(server string) (host, instance string) {
 // Networking: the driver's own net.Dialer (TCP) is used; there is no
 // project network package convention yet (PLAN.md §12).
 func driverConfig(p model.Profile, password string) (msdsn.Config, error) {
+	if err := forbiddenServerForm(p.Server); err != nil {
+		return msdsn.Config{}, err
+	}
 	host, inst := splitServer(p.Server)
 	if host == "" {
 		return msdsn.Config{}, errors.New("server is empty")

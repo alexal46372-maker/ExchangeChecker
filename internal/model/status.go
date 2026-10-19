@@ -64,6 +64,12 @@ type ProfileSnapshot struct {
 	Connection        *ProfileConnection `json:"connection,omitempty"`
 	ThresholdOverride *ThresholdOverride `json:"thresholdOverride,omitempty"`
 	MappingSummary    *MappingSummary    `json:"mappingSummary,omitempty"`
+	// LatencyMs: wall time of the last poll of the profile (connect +
+	// queries), phase 9 (CHK-SVC-03); omitted before the first poll.
+	LatencyMs *int64 `json:"latencyMs,omitempty"`
+	// LastQueryMs: duration of the last poll's queries (phase 9; measured
+	// around the whole poll, = LatencyMs).
+	LastQueryMs *int64 `json:"lastQueryMs,omitempty"`
 }
 
 // StatusSnapshot is the full monitor state sent to the tray.
@@ -72,6 +78,15 @@ type StatusSnapshot struct {
 	Seq uint64 `json:"seq"`
 	// Now is the service clock when the snapshot was built (UTC+3).
 	Now time.Time `json:"now"`
+	// ServerNow: service clock when the snapshot was sent (RFC 3339 with
+	// the +03:00 offset, phase 9).
+	ServerNow time.Time `json:"serverNow"`
+	// LastCheckSeq (phase 9, CHK-SVC-04): every check_now with CheckSeq <=
+	// LastCheckSeq has its requested poll included in this snapshot; 0 =
+	// none. The only completion rule of check_now: LastCheckSeq >=
+	// checkSeq. A status pushed for another reason (ack, a poll of another
+	// profile) does not advance it.
+	LastCheckSeq uint64 `json:"lastCheckSeq,omitempty"`
 	// Level is the worst level of all enabled profiles.
 	Level    AlertLevel        `json:"level"`
 	Profiles []ProfileSnapshot `json:"profiles"`

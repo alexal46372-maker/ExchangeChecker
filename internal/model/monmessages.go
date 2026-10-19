@@ -178,6 +178,18 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	ValServerFormat:            {"Сервер: укажите «хост» или «хост\\экземпляр».", "Server: enter \"host\" or \"host\\instance\"."},
 	ValMapping:                 {"Таблицы обмена: несогласованные поля («{0}»).", "Exchange tables: inconsistent fields (\"{0}\")."},
 	ValDuplicate:               {"Профиль с таким идентификатором уже есть.", "A profile with this id already exists."},
+	ValSQLServerForbidden:      {"Сервер: префиксы протокола (tcp:, np:, lpc:, sm:, via:, admin:) и UNC-пути не допускаются, укажите «хост» или «хост\\экземпляр».", "Server: protocol prefixes (tcp:, np:, lpc:, sm:, via:, admin:) and UNC paths are not allowed; enter \"host\" or \"host\\instance\"."},
+	MsgPasswordTargetChange:    {"Сервер или порт изменён: введите пароль заново.", "The server or port changed: enter the password again."},
+	MsgBrowseRateLimited:       {"Поиск серверов SQL уже выполнялся недавно, повторите позже.", "SQL Server search was run recently, try again later."},
+	MsgCheckRateLimited:        {"Проверка уже запрашивалась недавно, повторите позже.", "A check was requested recently, try again later."},
+	MsgMonitorProfileOff:       {"Профиль отключён.", "The profile is disabled."},
+	MsgHistoryDisabled:         {"История опросов недоступна.", "The poll history is not available."},
+	MsgHistoryBadRange:         {"Неверный интервал истории.", "Invalid history interval."},
+	MsgHistoryRangeTooLong:     {"Интервал истории больше 31 дня.", "The history interval is longer than 31 days."},
+	MsgHistoryBadCursor:        {"Неверная позиция продолжения истории, запросите заново.", "Invalid history continuation, request it again."},
+	MsgHistoryBadFilter:        {"Неверный фильтр истории.", "Invalid history filter."},
+	MsgHistoryBusy:             {"История уже запрашивается, повторите позже.", "The history is already being read, try again later."},
+	MsgHistoryFailed:           {"Не удалось прочитать историю.", "The history could not be read."},
 	ValConflict:                {"Поле «{0}»: нельзя одновременно задать пароль и удалить его.", "Field \"{0}\": a password cannot be set and cleared at once."},
 }
 
@@ -205,5 +217,7 @@ func MonitorMessageKeys() []string {
 		MsgMonitorSettingsInvalid, MsgMonitorCanceled, MsgMonitorUnknownRequest, MsgMonitorUnknownCommand,
 		MsgMonitorBadRequest, MsgMonitorConfigChanged,
 		MsgDiscoverBusy, MsgDiscoverProfileBusy, MsgDiscoverTimeout, MsgDiscoverFailed, MsgDiscoverPointNameEmpty,
-		MsgDiscoverMappingInvalid, MsgMonitorInternal}
+		MsgDiscoverMappingInvalid, MsgMonitorInternal,
+		MsgPasswordTargetChange, MsgCheckRateLimited, MsgBrowseRateLimited, MsgMonitorProfileOff, MsgHistoryDisabled, MsgHistoryBadRange,
+		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed}
 }

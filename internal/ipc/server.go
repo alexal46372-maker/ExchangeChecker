@@ -52,6 +52,24 @@ type Acker interface {
 	AckAlert(profileID, pointKey string) (int, error)
 }
 
+// Checker runs check_now (phase 9, CHK-SVC-04). Errors of type
+// *model.IPCError carry the reply code (rate_limited + RetryAfterMs).
+type Checker interface {
+	CheckNow(profileID string) (model.CheckResult, error)
+}
+
+// EventFeed serves events_since (phase 9, CHK-SVC-05).
+type EventFeed interface {
+	EventsSince(runID string, since uint64, limit int) model.EventsPage
+}
+
+// HistorySource serves the history command (phase 9, CHK-SVC-03): called
+// on its own goroutine (cancel {ref}); errors of type *model.IPCError
+// carry the reply code.
+type HistorySource interface {
+	History(ctx context.Context, req model.IPCRequest) (model.HistoryPage, error)
+}
+
 // HeartbeatSource fills the heartbeat of Hello / Pong (CHK-IPC-04).
 type HeartbeatSource interface {
 	Heartbeat() model.Heartbeat
@@ -82,6 +100,15 @@ type Discoverer interface {
 	DiscoverByValue(ctx context.Context, req model.IPCRequest) ([]model.DiscoveryCandidate, string, error)
 	ListNodePoints(ctx context.Context, req model.IPCRequest) ([]model.NodePoint, string, error)
 	CheckMapping(ctx context.Context, req model.IPCRequest) (model.MappingCheck, error)
+}
+
+// SQLWizard runs the admin-only connection wizard commands of phase 9
+// (CHK-IPC-10) that need I/O: sql_browse and sql_databases (async, cancel
+// {ref}). sql_diagnose and sql_grant_script are answered by the server
+// itself (model, no I/O) when the handler is a SQLWizard.
+type SQLWizard interface {
+	SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQLBrowseResult, error)
+	SQLDatabases(ctx context.Context, req model.IPCRequest) (model.SQLDatabasesResult, error)
 }
 
 // interactiveCommand reports whether cmd is one of the Discoverer
@@ -169,6 +196,10 @@ type Server struct {
 	// replies (CHK-CFG-04); set only when the service manages the Run
 	// value, which also announces CapTrayAutostartStatus.
 	TrayAutostartError func() string
+	// History serves the history command (phase 9); nil = no capability.
+	History HistorySource
+
+	histN int // running history requests (s.mu)
 }
 
 type conn struct {
@@ -187,6 +218,11 @@ type conn struct {
 	// once per connection, admin commands re-check every time)
 	elevOnce sync.Once
 	elev     bool
+
+	// phase 9: running history requests of this connection (Server.mu),
+	// last check_now accepted from it (read loop only)
+	histN     int
+	lastCheck time.Time
 }
 
 type asyncOp struct {
@@ -277,7 +313,8 @@ func (s *Server) Capabilities() []string {
 	}
 	_, tester := s.H.(Tester)
 	_, disc := s.H.(Discoverer)
-	if tester || disc {
+	_, wiz := s.H.(SQLWizard)
+	if tester || disc || wiz || s.History != nil {
 		caps = append(caps, model.CapCancel)
 	}
 	if _, ok := s.H.(ConfigManager); ok {
@@ -288,6 +325,18 @@ func (s *Server) Capabilities() []string {
 	}
 	if s.TrayAutostartError != nil {
 		caps = append(caps, model.CapTrayAutostartStatus)
+	}
+	if s.History != nil {
+		caps = append(caps, model.CapHistory)
+	}
+	if _, ok := s.H.(Checker); ok {
+		caps = append(caps, model.CapCheckNow)
+	}
+	if _, ok := s.H.(EventFeed); ok {
+		caps = append(caps, model.CapEventsSince)
+	}
+	if wiz {
+		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
 	}
 	return caps
 }
@@ -307,6 +356,8 @@ func errorReply(id uint64, err error, code string) model.IPCMessage {
 	var ie *model.IPCError
 	if errors.As(err, &ie) {
 		m.Code, m.ErrorKey, m.ErrorArgs, m.ProfileID = ie.Code, ie.Key, ie.Args, ie.ProfileID
+		m.RetryAfterMs = ie.RetryAfterMs
+		m.ErrorInfo = ie.Info
 	}
 	if m.Code == "" && errors.Is(err, context.Canceled) {
 		m.Code = model.ErrCodeCanceled
@@ -567,6 +618,20 @@ func (s *Server) readLoop(c *conn) {
 			s.startTest(c, t, req)
 			continue
 		}
+		if req.Cmd == model.CmdHistory && s.History != nil {
+			if !s.startHistory(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
+		}
+		if w, ok := s.H.(SQLWizard); ok && model.SQLCommand(req.Cmd) {
+			if !s.startSQL(c, w, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
+		}
 		if d, ok := s.H.(Discoverer); ok && interactiveCommand(req.Cmd) {
 			if !s.startInteractive(c, d, req) {
 				s.Log.Printf("ipc: client too slow, disconnected")
@@ -576,10 +641,14 @@ func (s *Server) readLoop(c *conn) {
 		}
 		var reply model.IPCMessage
 		switch {
-		case interactiveCommand(req.Cmd): // the handler has no Discoverer
+		case interactiveCommand(req.Cmd), model.SQLCommand(req.Cmd): // the handler has no Discoverer / SQLWizard
 			reply = errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 		case req.Cmd == model.CmdCancel:
 			reply = s.cancelOp(c, req)
+		case req.Cmd == model.CmdCheckNow:
+			reply = s.checkNow(c, req)
+		case req.Cmd == model.CmdEventsSince:
+			reply = s.eventsSince(req)
 		case model.AdminCommand(req.Cmd):
 			reply = s.handleAdmin(c, req)
 		default:
@@ -603,6 +672,95 @@ func (s *Server) startTest(c *conn, t Tester, req model.IPCRequest) {
 		res, err := t.TestProfile(ctx, req)
 		return model.IPCMessage{Type: model.MsgTestResult, Test: &res}, err
 	})
+}
+
+// adminOnly checks the client of an admin-only command on every request
+// (no cache); false: refused (reply already queued or not, sent=ok).
+func (s *Server) adminOnly(c *conn, req model.IPCRequest) (allowed, sent bool) {
+	cl, err := s.identify(c)
+	if err != nil || !cl.Admin {
+		why := "not an elevated administrator"
+		if err != nil {
+			why = err.Error()
+		}
+		s.Log.Printf("ipc: %s refused for %q: %s", req.Cmd, cl.Account, why)
+		return false, c.send(errorReply(req.ID, ErrAccessDenied, ""))
+	}
+	return true, true
+}
+
+// startSQL runs a wizard command (phase 9, CHK-IPC-10) for an elevated
+// administrator: sql_diagnose / sql_grant_script synchronously,
+// sql_browse / sql_databases like discover (own goroutine, cancel {ref},
+// reply cut to model.IPCMaxInteractiveReply). false: the client is too
+// slow.
+func (s *Server) startSQL(c *conn, w SQLWizard, req model.IPCRequest) bool {
+	if ok, sent := s.adminOnly(c, req); !ok {
+		return sent
+	}
+	switch req.Cmd {
+	case model.CmdSQLDiagnose:
+		return c.send(sqlDiagnose(req))
+	case model.CmdSQLGrantScript:
+		gr := model.SQLGrantRequest{Principal: req.Principal, Windows: req.Windows, Auth: req.Auth, Database: req.Database, Tables: req.Tables}
+		sc, err := model.SQLGrantScriptFor(gr)
+		if err != nil {
+			return c.send(errorReply(req.ID, fieldRequestError(err), ""))
+		}
+		return c.send(model.IPCMessage{ID: req.ID, Type: model.MsgSQLGrantScript, SQLGrantScript: &sc})
+	}
+	s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
+		m := model.IPCMessage{ID: req.ID}
+		switch req.Cmd {
+		case model.CmdSQLBrowse:
+			res, err := w.SQLBrowse(ctx, req)
+			if err != nil {
+				return m, err
+			}
+			m.Type, m.SQLBrowse = model.MsgSQLBrowse, &res
+			if res.Truncated {
+				m.Truncated, m.TruncatedReason = true, model.TruncatedLimit
+			}
+		default:
+			res, err := w.SQLDatabases(ctx, req)
+			if err != nil {
+				return m, err
+			}
+			m.Type, m.SQLDatabases = model.MsgSQLDatabases, &res
+			if res.Truncated {
+				m.Truncated, m.TruncatedReason = true, model.TruncatedLimit
+			}
+		}
+		fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
+		return m, nil
+	})
+	return true
+}
+
+// sqlDiagnose answers sql_diagnose: Code (+ TLSKey) or Category (+
+// ErrorKey); neither is invalid_request.
+func sqlDiagnose(req model.IPCRequest) model.IPCMessage {
+	var d model.SQLDiagnosis
+	switch {
+	case req.Code != "":
+		d = model.SQLDiagnoseCode(req.Code, req.TLSKey)
+	case req.Category != "" || req.ErrorKey != "":
+		d = model.SQLDiagnose(req.Category, req.ErrorKey)
+	default:
+		return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+			Message: "sql_diagnose: category or code is required", Args: []string{"category", model.ValRequired}}, "")
+	}
+	return model.IPCMessage{ID: req.ID, Type: model.MsgSQLDiagnosis, SQLDiagnosis: &d}
+}
+
+// fieldRequestError: invalid_request, errorKey monitor.bad_request,
+// errorArgs [field, validation key, args...].
+func fieldRequestError(err error) error {
+	if fe := model.AsFieldError(err); fe != nil {
+		return &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest, Message: err.Error(),
+			Args: append([]string{fe.Field, fe.Key}, fe.Args...)}
+	}
+	return &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest, Message: err.Error()}
 }
 
 // startInteractive checks the client (admin, on every request, no cache;
@@ -642,10 +800,14 @@ func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) b
 		if err == nil {
 			m.ID = req.ID
 			m.Truncated = m.TruncatedReason != ""
+
 			if m.Type == model.MsgNodePoints && m.TruncatedReason == model.TruncatedLimit {
 				m.Limit = req.Limit // the limit the list was cut to (EC Tray)
 			}
 			fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
+			if m.Type == model.MsgDiscovery {
+				fitAutoPick(&m, model.IPCMaxInteractiveReply)
+			}
 		}
 		return m, err
 	})
@@ -690,6 +852,18 @@ func fitInteractiveReply(m *model.IPCMessage, max int) {
 		return model.TruncatedSize
 	}
 	switch {
+	case m.SQLBrowse != nil && len(m.SQLBrowse.Instances) > 0:
+		r := *m.SQLBrowse
+		m.SQLBrowse = &r
+		all := r.Instances
+		r.Truncated, m.Truncated, m.TruncatedReason = true, true, model.TruncatedSize
+		cut(len(all), func(k int) { r.Instances = all[:k] })
+	case m.SQLDatabases != nil && len(m.SQLDatabases.Databases) > 0:
+		r := *m.SQLDatabases
+		m.SQLDatabases = &r
+		all := r.Databases
+		r.Truncated, m.Truncated, m.TruncatedReason = true, true, model.TruncatedSize
+		cut(len(all), func(k int) { r.Databases = all[:k] })
 	case len(m.Candidates) > 0:
 		all := m.Candidates
 		m.Truncated, m.TruncatedReason = true, sizeReason(m.TruncatedReason)
@@ -715,15 +889,35 @@ func fitInteractiveReply(m *model.IPCMessage, max int) {
 	}
 }
 
+// fitAutoPick adds AutoPick (model.SQLAutoPickFor over the candidates of
+// the reply, phase 9 CHK-IPC-10) to a discovery reply; if that no longer
+// fits, the last candidates are dropped (reason size) and AutoPick is
+// recomputed.
+func fitAutoPick(m *model.IPCMessage, max int) {
+	for {
+		ap := model.SQLAutoPickFor(m.Candidates)
+		m.AutoPick = &ap
+		b, err := json.Marshal(m)
+		if err != nil || len(b) <= max || len(m.Candidates) == 0 {
+			return
+		}
+		m.Candidates = m.Candidates[:len(m.Candidates)-1]
+		m.Truncated = true
+		if m.TruncatedReason != model.TruncatedBudget {
+			m.TruncatedReason = model.TruncatedSize
+		}
+	}
+}
+
 // startAsync runs one asynchronous request of c (test_profile, the
 // Discoverer commands) on its own goroutine, registered for cancel {ref}
 // (G6, CHK-IPC-07). ctx ends when the client disconnects, cancels the
 // request or the server closes. The reply is matched by ID.
-func (s *Server) startAsync(c *conn, req model.IPCRequest, run func(ctx context.Context) (model.IPCMessage, error)) {
+func (s *Server) startAsync(c *conn, req model.IPCRequest, run func(ctx context.Context) (model.IPCMessage, error)) bool {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		return
+		return false
 	}
 	sctx := s.ctx
 	ctx, cancel := context.WithCancel(sctx)
@@ -737,7 +931,7 @@ func (s *Server) startAsync(c *conn, req model.IPCRequest, run func(ctx context.
 		cancel()
 		c.send(errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
 			Message: "ipc: a request with this id is still running", Args: []string{"id"}}, ""))
-		return
+		return false
 	}
 	op := &asyncOp{cancel: cancel}
 	c.ops[req.ID] = op
@@ -785,6 +979,7 @@ func (s *Server) startAsync(c *conn, req model.IPCRequest, run func(ctx context.
 			}
 		}
 	}()
+	return true
 }
 
 // errInternal answers a request whose handler panicked (CHK-IPC-08): no
@@ -1008,4 +1203,114 @@ func (s *Server) Close() error {
 	}
 	s.wg.Wait()
 	return err
+}
+
+// startHistory runs one history request (phase 9, CHK-SVC-03) like
+// test_profile: asynchronous, canceled by cancel {ref} or a disconnect.
+// At most model.HistoryMaxPerConn per connection and
+// model.HistoryMaxGlobal per service run at once; more -> busy
+// (history.busy). false: the reply could not be queued.
+func (s *Server) startHistory(c *conn, req model.IPCRequest) bool {
+	s.mu.Lock()
+	busy := s.histN >= model.HistoryMaxGlobal || c.histN >= model.HistoryMaxPerConn
+	if !busy {
+		s.histN++
+		c.histN++
+	}
+	s.mu.Unlock()
+	if busy {
+		return c.send(errorReply(req.ID, &model.IPCError{Code: model.ErrCodeBusy, Key: model.MsgHistoryBusy,
+			Message: "ipc: a history request is already running"}, ""))
+	}
+	release := func() {
+		s.mu.Lock()
+		s.histN--
+		c.histN--
+		s.mu.Unlock()
+	}
+	src := s.History
+	if !s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
+		defer release()
+		page, err := src.History(ctx, req)
+		if err != nil {
+			return model.IPCMessage{}, err
+		}
+		if page.Records == nil {
+			page.Records = []model.HistoryRecord{}
+		}
+		return model.IPCMessage{Type: model.MsgHistory, History: &page}, nil
+	}) {
+		release()
+	}
+	return true
+}
+
+// checkNow handles check_now (phase 9, CHK-SVC-04): at most one request
+// per model.CheckConnInterval per connection (rate_limited +
+// retryAfterMs), then the handler's limits.
+//
+// The per-connection limit only damps a chatty client; several pipes can
+// bypass it, which is fine: the monitor's global limits (all profiles once
+// per model.CheckAllInterval, a profile once per
+// model.CheckProfileInterval, coalescing with queued / running polls)
+// bound the SQL load regardless of the number of connections, and the
+// pipe server caps the connections.
+func (s *Server) checkNow(c *conn, req model.IPCRequest) model.IPCMessage {
+	ch, ok := s.H.(Checker)
+	if !ok {
+		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
+	}
+	now := time.Now()
+	if !c.lastCheck.IsZero() {
+		if el := now.Sub(c.lastCheck); el >= 0 && el < model.CheckConnInterval {
+			wait := model.CheckConnInterval - el
+			ms := int64((wait + time.Millisecond - 1) / time.Millisecond)
+			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgCheckRateLimited,
+				Message: "ipc: check_now too often on this connection", RetryAfterMs: ms}, "")
+		}
+	}
+	c.lastCheck = now
+	res, err := ch.CheckNow(req.ProfileID)
+	if err != nil {
+		return errorReply(req.ID, err, "")
+	}
+	seq := res.CheckSeq
+	r := model.ResultAccepted
+	if res.Coalesced {
+		r = model.ResultCheckCoalesced
+	}
+	return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: r, CheckSeq: &seq}
+}
+
+// eventsSince handles events_since (phase 9, CHK-SVC-05); the reply is
+// kept within model.IPCMaxInteractiveReply (tail dropped, truncated
+// "size", lastId = the last event sent).
+func (s *Server) eventsSince(req model.IPCRequest) model.IPCMessage {
+	ef, ok := s.H.(EventFeed)
+	if !ok {
+		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
+	}
+	page := ef.EventsSince(req.RunID, req.SinceID, req.Limit)
+	last := page.LastID
+	m := model.IPCMessage{ID: req.ID, Type: model.MsgEvents, Events: page.Events, RunID: page.RunID, LastID: &last,
+		ResetRequired: page.ResetRequired}
+	if page.Truncated {
+		m.Truncated, m.TruncatedReason = true, model.TruncatedLimit
+	}
+	for len(m.Events) > 0 {
+		b, err := json.Marshal(m)
+		if err == nil && len(b) <= model.IPCMaxInteractiveReply {
+			break
+		}
+		m.Events = m.Events[:len(m.Events)-1]
+		m.Truncated, m.TruncatedReason = true, model.TruncatedSize
+		if n := len(m.Events); n > 0 {
+			l := m.Events[n-1].ID
+			m.LastID = &l
+		} else {
+			l := req.SinceID
+			m.LastID = &l
+		}
+	}
+	return m
 }

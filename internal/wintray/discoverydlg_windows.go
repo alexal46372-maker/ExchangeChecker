@@ -192,8 +192,7 @@ func (w *settingsWindow) openDiscovery() {
 	if n := w.ed.Base.DisplayName(); n != "" && !w.ed.IsNew {
 		title += " — " + n
 	}
-	x, y, ww, wh := windowRect(discCW, discCH, discStyle, 0)
-	hwnd, err := createWindowPx(DiscoveryClass, title, 0, discStyle, x, y, ww, wh, w.hwnd, dd.wndProc)
+	hwnd, err := createWindow(DiscoveryClass, title, 0, discStyle, 0, 0, discCW, discCH, w.hwnd, dd.wndProc)
 	if err != nil {
 		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetFailed), err.Error()))
 		return

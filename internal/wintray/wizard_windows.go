@@ -115,8 +115,7 @@ func (w *settingsWindow) openWizard() {
 		return
 	}
 	wd := &wizardDialog{w: w, ctl: map[int32]uintptr{}, z: traysettings.NewWizard(w.cfg.lang), prevSel: w.ed.Sel}
-	x, y, ww, wh := windowRect(wizCW, wizCH, wizStyle, 0)
-	hwnd, err := createWindowPx(WizardClass, w.t(i18n.KeyWizTitle), 0, wizStyle, x, y, ww, wh, w.hwnd, wd.wndProc)
+	hwnd, err := createWindow(WizardClass, w.t(i18n.KeyWizTitle), 0, wizStyle, 0, 0, wizCW, wizCH, w.hwnd, wd.wndProc)
 	if err != nil {
 		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetFailed), err.Error()))
 		return

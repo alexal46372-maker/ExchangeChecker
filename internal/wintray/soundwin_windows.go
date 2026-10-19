@@ -331,8 +331,9 @@ func (a *App) OpenVolume() *volumeWindow {
 	v.tips = newTooltips(hwnd)
 	v.tips.set(v.bar, i18n.T(i18n.KeyTipVolume, a.opt.Lang))
 	a.volWin = v
-	x, y := a.panelPos(px(W), px(H))
-	winapi.SetWindowPos(hwnd, winapi.HWND_TOPMOST, x, y, px(W), px(H), 0)
+	ow, oh := outerSize(px(W), px(H), winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW)
+	x, y := a.panelPos(ow, oh)
+	winapi.SetWindowPos(hwnd, winapi.HWND_TOPMOST, x, y, ow, oh, 0)
 	if !a.opt.HiddenPanel {
 		frontWindow(hwnd)
 	}

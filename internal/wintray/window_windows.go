@@ -26,7 +26,11 @@ var (
 func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 	hmu.Lock()
 	h := handlers[hwnd]
+	sc := scrollers[hwnd]
 	hmu.Unlock()
+	if sc != nil && sc.handle(uint32(msg), wp, lp) {
+		return 0
+	}
 	if h != nil {
 		if r, ok := h(hwnd, uint32(msg), wp, lp); ok {
 			return r
@@ -35,7 +39,9 @@ func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 	if uint32(msg) == winapi.WM_DESTROY {
 		hmu.Lock()
 		delete(handlers, hwnd)
+		delete(scrollers, hwnd)
 		hmu.Unlock()
+		delete(hostExtent, hwnd)
 	}
 	return winapi.DefWindowProc(hwnd, uint32(msg), wp, lp)
 }
@@ -69,15 +75,16 @@ func createWindow(class, title string, exStyle, style uint32, x, y, w, hgt int32
 	if style&winapi.WS_CHILD != 0 {
 		x, y, w, hgt = pxRect(x, y, w, hgt)
 	} else if w > 0 && hgt > 0 {
-		sw, sh := px(w), px(hgt)
-		x, y = x-(sw-w)/2, y-(sh-hgt)/3
-		if x < 0 {
-			x = 0
+		// w × hgt is the client of the grid; centered in the work area,
+		// clamped to it with scroll bars when larger (phase 10 E)
+		cw, ch := px(w), px(hgt)
+		var scroll bool
+		x, y, w, hgt, style, scroll = fitClient(cw, ch, style, exStyle)
+		hwnd, err := createWindowPx(class, title, exStyle, style, x, y, w, hgt, parent, h)
+		if err == nil && scroll {
+			attachScroller(hwnd, cw, ch)
 		}
-		if y < 0 {
-			y = 0
-		}
-		w, hgt = sw, sh
+		return hwnd, err
 	}
 	return createWindowPx(class, title, exStyle, style, x, y, w, hgt, parent, h)
 }

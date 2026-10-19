@@ -24,6 +24,7 @@ func fitRect(w, h int32, work winapi.RECT) (x, y, cw, ch int32) {
 // cw×ch (AdjustWindowRectEx for the caption and borders), placed by
 // fitRect in the work area (SPI_GETWORKAREA; the screen if unknown).
 func windowRect(cw, ch int32, style, exStyle uint32) (x, y, w, h int32) {
+	cw, ch = px(cw), px(ch)
 	r := winapi.RECT{Right: cw, Bottom: ch}
 	if !winapi.AdjustWindowRectEx(&r, style, exStyle) {
 		r = winapi.RECT{Right: cw + 8, Bottom: ch + 32}
@@ -40,4 +41,79 @@ func windowRect(cw, ch int32, style, exStyle uint32) (x, y, w, h int32) {
 func frontWindow(hwnd uintptr) {
 	winapi.ShowWindow(hwnd, winapi.SW_SHOWNORMAL)
 	winapi.SetForegroundWindow(hwnd)
+}
+
+// Phase 10 D3 (CHK-TRAY-42): every window is laid out on a 96-dpi grid
+// and scaled to the system DPI (the manifest declares dpiAware), the font
+// is Segoe UI 9 pt for that DPI.
+
+// testDPI overrides the screen DPI (the overlap test at 96/120/144).
+var testDPI int32
+
+var (
+	screenDPI int32
+	uiFonts   = map[int32]uintptr{}
+)
+
+// uiDPI is the DPI windows are scaled to.
+func uiDPI() int32 {
+	if testDPI > 0 {
+		return testDPI
+	}
+	if screenDPI == 0 {
+		screenDPI = winapi.ScreenDPI()
+	}
+	return screenDPI
+}
+
+// px scales a 96-dpi grid value to the current DPI.
+func px(v int32) int32 {
+	d := uiDPI()
+	if d == 96 {
+		return v
+	}
+	n := int64(v) * int64(d)
+	if n >= 0 {
+		return int32((n + 48) / 96)
+	}
+	return int32((n - 48) / 96)
+}
+
+// uiFontFace / uiFontPt: the font of every tray window.
+const (
+	uiFontFace = "Segoe UI"
+	uiFontPt   = 9
+)
+
+// uiFont is Segoe UI 9 for the current DPI (cached per DPI, kept for the
+// process lifetime); the stock GUI font if it cannot be created.
+func uiFont() uintptr {
+	d := uiDPI()
+	if f, ok := uiFonts[d]; ok {
+		return f
+	}
+	f := winapi.CreateFont(uiFontFace, -int32((int64(uiFontPt)*int64(d)+36)/72))
+	if f == 0 {
+		return winapi.GetStockObject(winapi.DEFAULT_GUI_FONT)
+	}
+	uiFonts[d] = f
+	return f
+}
+
+// Layout grid of the dialogs (96-dpi units).
+const (
+	gridMargin   = 12 // window edge
+	gridGap      = 6  // between controls / groups
+	gridRow      = 25 // one label + field row
+	gridEditH    = 23 // edit / combo height
+	gridLabelH   = 18
+	gridCheckH   = 20
+	gridButtonH  = 28
+	gridGroupTop = 20 // group box caption to the first row
+	gridGroupPad = 8  // group box inner left / bottom
+)
+
+// groupBox is a BS_GROUPBOX frame on the grid (caption text).
+func groupBox(parent uintptr, text string, x, y, w, h int32) uintptr {
+	return child(parent, "BUTTON", text, winapi.BS_GROUPBOX, -1, x, y, w, h)
 }

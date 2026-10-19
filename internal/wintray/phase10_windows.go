@@ -171,9 +171,9 @@ func (a *App) updatePanel() {
 	p.lines = lines
 	winapi.SetWindowText(p.text, strings.Join(lines, "\r\n"))
 	hgt := int32(len(lines)*panelLineH + 14)
-	winapi.MoveWindow(p.text, 8, 6, panelWidth-18, hgt-12)
-	x, y := a.panelPos(panelWidth, hgt)
-	winapi.SetWindowPos(p.hwnd, winapi.HWND_TOPMOST, x, y, panelWidth, hgt, winapi.SWP_NOACTIVATE)
+	winapi.MoveWindow(p.text, px(8), px(6), px(panelWidth-18), px(hgt-12))
+	x, y := a.panelPos(px(panelWidth), px(hgt))
+	winapi.SetWindowPos(p.hwnd, winapi.HWND_TOPMOST, x, y, px(panelWidth), px(hgt), winapi.SWP_NOACTIVATE)
 	if !p.shown {
 		p.shown = true
 		if !a.opt.HiddenPanel && !a.opt.HiddenAlerts {

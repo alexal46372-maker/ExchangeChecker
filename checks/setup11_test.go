@@ -119,7 +119,7 @@ func checkManifest(t *testing.T, path, level string, comctl bool) {
 			t.Errorf("%s: supportedOS %s missing", path, id)
 		}
 	}
-	// decision 21: no dpiAware (same as the tray)
+	// decision 21: no dpiAware (setup / service; the tray is DPI aware since phase 10 D3)
 	if strings.Contains(strings.ToLower(raw), "dpiaware") {
 		t.Errorf("%s: dpiAware must not be declared", path)
 	}

@@ -63,7 +63,27 @@ func ensureClass(name string) error {
 
 // createWindow creates a window of class (registered on demand) and
 // attaches h.
+// x, y, w, hgt are 96-dpi grid values: a child is scaled as a whole, a
+// top-level window keeps its center (createWindowPx: already pixels).
 func createWindow(class, title string, exStyle, style uint32, x, y, w, hgt int32, parent uintptr, h msgHandler) (uintptr, error) {
+	if style&winapi.WS_CHILD != 0 {
+		x, y, w, hgt = px(x), px(y), px(w), px(hgt)
+	} else if w > 0 && hgt > 0 {
+		sw, sh := px(w), px(hgt)
+		x, y = x-(sw-w)/2, y-(sh-hgt)/3
+		if x < 0 {
+			x = 0
+		}
+		if y < 0 {
+			y = 0
+		}
+		w, hgt = sw, sh
+	}
+	return createWindowPx(class, title, exStyle, style, x, y, w, hgt, parent, h)
+}
+
+// createWindowPx creates a window at pixel coordinates (windowRect).
+func createWindowPx(class, title string, exStyle, style uint32, x, y, w, hgt int32, parent uintptr, h msgHandler) (uintptr, error) {
 	if err := ensureClass(class); err != nil {
 		return 0, err
 	}
@@ -79,11 +99,11 @@ func createWindow(class, title string, exStyle, style uint32, x, y, w, hgt int32
 
 // child creates a standard control (STATIC / BUTTON) with the GUI font.
 func child(parent uintptr, class, text string, style uint32, id int32, x, y, w, h int32) uintptr {
-	hwnd, err := winapi.CreateWindowEx(0, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, w, h, parent, uintptr(id), winapi.GetModuleHandle())
+	hwnd, err := winapi.CreateWindowEx(0, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, px(x), px(y), px(w), px(h), parent, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}
-	winapi.SendMessage(hwnd, winapi.WM_SETFONT, winapi.GetStockObject(winapi.DEFAULT_GUI_FONT), 1)
+	winapi.SendMessage(hwnd, winapi.WM_SETFONT, uiFont(), 1)
 	return hwnd
 }
 

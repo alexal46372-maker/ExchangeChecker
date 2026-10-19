@@ -193,7 +193,7 @@ func (w *settingsWindow) openDiscovery() {
 		title += " — " + n
 	}
 	x, y, ww, wh := windowRect(discCW, discCH, discStyle, 0)
-	hwnd, err := createWindow(DiscoveryClass, title, 0, discStyle, x, y, ww, wh, w.hwnd, dd.wndProc)
+	hwnd, err := createWindowPx(DiscoveryClass, title, 0, discStyle, x, y, ww, wh, w.hwnd, dd.wndProc)
 	if err != nil {
 		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetFailed), err.Error()))
 		return
@@ -213,11 +213,11 @@ func (w *settingsWindow) openDiscovery() {
 func (dd *discoveryDialog) t(key string) string { return dd.w.t(key) }
 
 func (dd *discoveryDialog) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
-	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, dd.hwnd, uintptr(id), winapi.GetModuleHandle())
+	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, px(x), px(y), px(cw), px(ch), dd.hwnd, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}
-	winapi.SendMessage(h, winapi.WM_SETFONT, winapi.GetStockObject(winapi.DEFAULT_GUI_FONT), 1)
+	winapi.SendMessage(h, winapi.WM_SETFONT, uiFont(), 1)
 	if id != 0 {
 		dd.ctl[id] = h
 	}

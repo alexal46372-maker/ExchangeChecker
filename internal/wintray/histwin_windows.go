@@ -312,7 +312,7 @@ func (hw *histWindow) paint(c uintptr) {
 	}
 	winapi.SetBkMode(dc, winapi.TRANSPARENT)
 	winapi.SetTextColor(dc, clrText)
-	font := winapi.SelectObject(dc, winapi.GetStockObject(winapi.DEFAULT_GUI_FONT))
+	font := winapi.SelectObject(dc, uiFont())
 	defer winapi.SelectObject(dc, font)
 	L := hw.model.Layout(rc.Left+48, rc.Top+14, rc.Right-14, rc.Bottom-34, hw.gap)
 	pen := func(style, width int32, clr uint32, draw func()) {

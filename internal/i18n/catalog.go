@@ -580,6 +580,12 @@ const (
 	KeySetModeExpert = "set.mode_expert"
 	KeySetModeSimple = "set.mode_simple"
 	KeyTipSetUIMode  = "tip.set_ui_mode"
+	// phase 10 D3: group boxes of the settings window
+	KeySetGroupConn    = "set.group_conn"
+	KeySetGroupLogin   = "set.group_login"
+	KeySetGroupTLS     = "set.group_tls"
+	KeySetGroupChecks  = "set.group_checks"
+	KeySetGroupGeneral = "set.group_general"
 )
 
 var catalog = map[string][2]string{ // key -> {ru, en}
@@ -1154,4 +1160,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetModeExpert:    {"Экспертный режим", "Expert mode"},
 	KeySetModeSimple:    {"Простой режим", "Simple mode"},
 	KeyTipSetUIMode:     {"Простой режим — только основные поля; экспертный — все настройки. Выбор запоминается для пользователя Windows", "Simple mode shows the main fields only; expert mode shows all settings. The choice is kept for the Windows user"},
+	KeySetGroupConn:     {"Подключение", "Connection"},
+	KeySetGroupLogin:    {"Вход", "Sign-in"},
+	KeySetGroupTLS:      {"Шифрование", "Encryption"},
+	KeySetGroupChecks:   {"Опрос и пороги", "Polling and thresholds"},
+	KeySetGroupGeneral:  {"Общие настройки компьютера", "Computer-wide settings"},
 }

@@ -178,7 +178,10 @@ var winAPIMinVersion = map[string]float64{
 	"PlaySoundW": 5.0, "mciSendStringW": 5.0, "mciGetErrorStringW": 5.0,
 	"SetTimer": 5.0, "KillTimer": 5.0, "GetOpenFileNameW": 5.0, "IsIconic": 5.0, "SetBkColor": 5.0,
 	"Shell_NotifyIconGetRect": 6.1,
-	"Polyline":                5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
+	// phase 10 D3: system DPI, Segoe UI 9, the layout overlap test (CHK-TRAY-42)
+	"GetDC": 5.0, "ReleaseDC": 5.0, "GetDeviceCaps": 5.0, "CreateFontW": 5.0, "DrawTextW": 5.0,
+	"GetWindowRect": 5.0, "GetWindow": 5.0, "GetWindowLongW": 5.0,
+	"Polyline": 5.0, "Polygon": 5.0, "Ellipse": 5.0, "TextOutW": 5.0, "SetBkMode": 5.0, "SetTextColor": 5.0,
 	// phase 9b part 2 «Скопировать SQL-скрипт прав» (CHK-TRAY-32)
 	"OpenClipboard": 5.0, "EmptyClipboard": 5.0, "SetClipboardData": 5.0, "CloseClipboard": 5.0,
 	"GlobalAlloc": 5.0, "GlobalLock": 5.0, "GlobalUnlock": 5.0, "GlobalFree": 5.0,
@@ -309,6 +312,12 @@ func TestCHK_TRAY_10_Manifest(t *testing.T) {
 	}
 	if !hasWin7 {
 		t.Error("supportedOS Windows 7 missing")
+	}
+	// phase 10 D3 (CHK-TRAY-42): system DPI aware, no per-monitor mode
+	// (Windows 7 has none; the windows scale to the system DPI)
+	if !bytes.Contains(raw, []byte(`<dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>`)) ||
+		bytes.Contains(raw, []byte("dpiAwareness")) {
+		t.Error("tray manifest: dpiAware true (system), no dpiAwareness")
 	}
 	syso, err := os.ReadFile(filepath.Join(dir, "rsrc_windows_amd64.syso"))
 	if err != nil {

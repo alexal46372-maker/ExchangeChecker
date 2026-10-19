@@ -108,7 +108,7 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 		winapi.WS_BORDER|winapi.WS_TABSTOP, idStList, 10, 10, w-36, h-110)
 	winapi.SendMessage(sw.list, winapi.LVM_SETEXTENDEDLISTVIEWSTYLE, 0, winapi.LVS_EX_FULLROWSELECT|winapi.LVS_EX_GRIDLINES)
 	for i, k := range trayui.StatusColumns {
-		winapi.ListViewInsertColumn(sw.list, i, i18n.T(k, lang), statusColWidths[i])
+		winapi.ListViewInsertColumn(sw.list, i, i18n.T(k, lang), px(statusColWidths[i]))
 	}
 	by := int32(h - 90)
 	sw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idStInfo, 10, by+5, 320, 22)

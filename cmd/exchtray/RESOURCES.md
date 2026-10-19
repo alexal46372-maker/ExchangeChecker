@@ -6,7 +6,7 @@
 (только стандартная библиотека, без внешних тулов). Содержимое:
 
 - `RT_MANIFEST` 1 — `exchtray.manifest`: asInvoker, Common Controls v6,
-  supportedOS Windows 7 / 8 / 8.1 / 10+, без `dpiAware` (как в фазе 6a);
+  supportedOS Windows 7 / 8 / 8.1 / 10+, `dpiAware` = true (system DPI, с фазы 10 D3: окна трея масштабируются сами, шрифт Segoe UI 9);
 - `RT_GROUP_ICON` 1 + `RT_ICON` 1–3 — `exchtray.ico` (16, 32, 48 px, 32 бит
   с альфой);
 - `RT_VERSION` 1 — VERSIONINFO: `FileVersion`/`ProductVersion` = версия сборки,

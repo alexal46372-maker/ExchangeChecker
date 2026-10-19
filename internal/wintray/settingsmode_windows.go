@@ -51,6 +51,13 @@ func (w *settingsWindow) applyUIMode() {
 			winapi.ShowWindow(h, cmd)
 		}
 	}
+	if g := w.groups[i18n.KeySetGroupTLS]; g != 0 {
+		cmd := int32(winapi.SW_SHOW)
+		if simple || w.page != 0 {
+			cmd = winapi.SW_HIDE
+		}
+		winapi.ShowWindow(g, cmd)
+	}
 	w.expertShown = !simple && w.page == 0
 	key := i18n.KeySetModeExpert
 	if !simple {

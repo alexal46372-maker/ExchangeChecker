@@ -116,7 +116,7 @@ func (w *settingsWindow) openWizard() {
 	}
 	wd := &wizardDialog{w: w, ctl: map[int32]uintptr{}, z: traysettings.NewWizard(w.cfg.lang), prevSel: w.ed.Sel}
 	x, y, ww, wh := windowRect(wizCW, wizCH, wizStyle, 0)
-	hwnd, err := createWindow(WizardClass, w.t(i18n.KeyWizTitle), 0, wizStyle, x, y, ww, wh, w.hwnd, wd.wndProc)
+	hwnd, err := createWindowPx(WizardClass, w.t(i18n.KeyWizTitle), 0, wizStyle, x, y, ww, wh, w.hwnd, wd.wndProc)
 	if err != nil {
 		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetFailed), err.Error()))
 		return
@@ -139,11 +139,11 @@ func (w *settingsWindow) openWizard() {
 func (wd *wizardDialog) t(key string) string { return wd.w.t(key) }
 
 func (wd *wizardDialog) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
-	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, x, y, cw, ch, wd.hwnd, uintptr(id), winapi.GetModuleHandle())
+	h, err := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style, px(x), px(y), px(cw), px(ch), wd.hwnd, uintptr(id), winapi.GetModuleHandle())
 	if err != nil {
 		return 0
 	}
-	winapi.SendMessage(h, winapi.WM_SETFONT, winapi.GetStockObject(winapi.DEFAULT_GUI_FONT), 1)
+	winapi.SendMessage(h, winapi.WM_SETFONT, uiFont(), 1)
 	if id != 0 {
 		wd.ctl[id] = h
 	}

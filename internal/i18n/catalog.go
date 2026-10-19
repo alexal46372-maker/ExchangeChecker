@@ -644,6 +644,7 @@ const (
 	KeyTipXferImport      = "tip.xfer_import"
 	KeyXferFilter         = "set.xfer_filter"
 	KeyXferContainsLogins = "set.xfer_contains_logins"
+	KeyXferConflict       = "set.xfer_conflict"
 	KeyXferExported       = "set.xfer_exported"
 	KeyXferWriteFailed    = "set.xfer_write_failed"
 	KeyXferReadFailed     = "set.xfer_read_failed"
@@ -1313,7 +1314,8 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipXferExport:      {"Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей и Viber)", "Save the databases and the general service settings, plus the tray sound and look, to a file (no passwords, no Viber)"},
 	KeyTipXferImport:      {"Загрузить настройки из файла: сначала показывается, что изменится", "Load settings from a file: what will change is shown first"},
 	KeyXferFilter:         {"Настройки EC (*.json)", "EC settings (*.json)"},
-	KeyXferContainsLogins: {"Файл содержит адреса серверов и логины SQL (без паролей). Храните его в надёжном месте.", "The file contains server addresses and SQL logins (no passwords). Keep it in a safe place."},
+	KeyXferContainsLogins: {"Файл содержит адреса серверов, логины SQL (без паролей) и пути к звуковым файлам. Храните его в надёжном месте.", "The file contains server addresses, SQL logins (no passwords) and sound file paths. Keep it in a safe place."},
+	KeyXferConflict:       {"Конфигурация изменилась, проверьте заново", "The configuration has changed, check again"},
 	KeyXferExported:       {"Настройки сохранены в файл %s", "Settings saved to %s"},
 	KeyXferWriteFailed:    {"Не удалось записать файл: %s", "Could not write the file: %s"},
 	KeyXferReadFailed:     {"Не удалось прочитать файл: %s", "Could not read the file: %s"},

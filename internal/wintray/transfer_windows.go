@@ -157,7 +157,7 @@ func (w *settingsWindow) exportConfig() {
 				st += " " + w.t(i18n.KeyXferOtherUser)
 			}
 			w.setStatus(st)
-			if m.Export.ContainsLogins {
+			if m.Export.ContainsLogins || tray != nil {
 				w.notice(w.t(i18n.KeyXferContainsLogins))
 			}
 		}
@@ -175,7 +175,7 @@ func (w *settingsWindow) importConfig() {
 	var f *traysettings.ImportFile
 	fi, err := os.Stat(path)
 	if err == nil && fi.Size() > traysettings.TransferFileMax {
-		_, err = traysettings.ParseImport(make([]byte, traysettings.TransferFileMax+1), w.cfg.lang)
+		err = fmt.Errorf(w.t(i18n.KeyXferTooLarge), traysettings.TransferFileMax/1024)
 	} else if err == nil {
 		var b []byte
 		if b, err = os.ReadFile(path); err == nil {
@@ -206,6 +206,8 @@ type importDialog struct {
 	closed  bool
 	tips    *tooltips
 	preview string // test hook
+	// head: the first line of the next previews (config_conflict)
+	head string
 }
 
 func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
@@ -281,7 +283,7 @@ func (d *importDialog) showPreview() {
 	if d.res == nil {
 		return
 	}
-	p := traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists, d.w.cfg.lang)
+	p := d.head + traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists, d.w.cfg.lang)
 	if d.w.cfg.otherUser {
 		p += "\r\n" + d.w.t(i18n.KeyXferOtherUser)
 	}
@@ -357,8 +359,8 @@ func (d *importDialog) doImport() {
 	d.run(false, func(m model.IPCMessage, err error) {
 		if pr, bad := d.problemText(m, err); bad {
 			if pr.Reload { // config_conflict: the dry run again on the new configuration
+				d.head = d.w.t(i18n.KeyXferConflict) + "\r\n"
 				d.dryRun()
-				d.setPreview(pr.Text)
 				return
 			}
 			d.res = nil
@@ -402,6 +404,7 @@ func (d *importDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintpt
 		switch id {
 		case idImpMerge, idImpReplace:
 			if code == winapi.BN_CLICKED && !d.running {
+				d.head = ""
 				d.dryRun()
 			}
 		case idImpTray:

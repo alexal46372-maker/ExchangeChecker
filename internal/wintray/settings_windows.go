@@ -1377,10 +1377,14 @@ func (w *settingsWindow) reload(keep bool) {
 		default:
 			w.ed.LoadConfig(*m.Config, m.Revision)
 			w.loaded = true
-			w.status = w.afterImport
+			note := w.afterImport
+			w.status = note
 			w.afterImport = ""
 			w.fill()
 			w.nextNeedPassword()
+			if note != "" && w.status != note { // the import result stays visible
+				w.setStatus(note + "\r\n" + w.status)
+			}
 		}
 	})
 }

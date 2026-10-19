@@ -188,8 +188,8 @@ func TestCHK_TRAY_44_Export(t *testing.T) {
 		if len(e.notices) != 1 || e.notices[0] != i18n.T(i18n.KeyXferContainsLogins, lang) {
 			t.Errorf("%s: containsLogins warning %q", lang, e.notices)
 		}
-		want := map[string]string{i18n.RU: "Файл содержит адреса серверов и логины SQL (без паролей). Храните его в надёжном месте.",
-			i18n.EN: "The file contains server addresses and SQL logins (no passwords). Keep it in a safe place."}[lang]
+		want := map[string]string{i18n.RU: "Файл содержит адреса серверов, логины SQL (без паролей) и пути к звуковым файлам. Храните его в надёжном месте.",
+			i18n.EN: "The file contains server addresses, SQL logins (no passwords) and sound file paths. Keep it in a safe place."}[lang]
 		if i18n.T(i18n.KeyXferContainsLogins, lang) != want {
 			t.Errorf("%s: warning text", lang)
 		}
@@ -267,12 +267,18 @@ func TestCHK_TRAY_44_Import(t *testing.T) {
 	if e.w.imp != d || e.lang.v != "en" {
 		t.Fatal("conflict closed the dialog / applied the tray")
 	}
+	if !strings.HasPrefix(d.preview, i18n.T(i18n.KeyXferConflict, i18n.RU)+"\r\n") || !strings.Contains(d.preview, "Магазин") {
+		t.Errorf("conflict line not on top of the new preview: %q", d.preview)
+	}
 	winapi.SendMessage(d.ctl[idImpDo], winapi.BM_CLICK, 0, 0)
 	pumpUntil(t, "imported", func() bool { return e.w.imp == nil && !e.w.busy && e.w.loaded && len(e.w.ed.Profiles) == 2 })
 	calls := e.x.calls()
 	last := calls[len(calls)-1]
 	if last.dry || last.mode != model.ImportMerge || last.rev != "r1" || last.n != 2 {
 		t.Errorf("real import %+v (all %+v)", last, calls)
+	}
+	if st := e.w.statusText(); !strings.Contains(st, i18n.T(i18n.KeyXferTrayApplied, i18n.RU)) || strings.Contains(st, "применены") {
+		t.Errorf("status after import: %q", st)
 	}
 	if e.lang.v != "ru" || !e.bal.on || e.ui.m != traysettings.UISimple || !strings.Contains(e.snd.raw, `Z:\\нет\\alarm.wav`) {
 		t.Errorf("tray block: %q %v %q %q", e.lang.v, e.bal.on, e.ui.m, e.snd.raw)

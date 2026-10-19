@@ -380,6 +380,7 @@ func TestCHK_TRAY_26_HistoryWindow(t *testing.T) {
 		}
 	})
 	winapi.SendMessage(hw.close, winapi.BM_CLICK, 0, 0)
+	PumpPending() // destroyed after the click (deferred destroy)
 	if hw.alive() || app.histWin != nil {
 		t.Fatal("window must close")
 	}

@@ -104,6 +104,7 @@ func TestCHK_TRAY_33_SoundWindow(t *testing.T) {
 	winapi.SendMessage(w.err.test, winapi.BM_CLICK, 0, 0)
 	pumpUntil(t, "listen", func() bool { return b.has(1500) })
 	winapi.SendMessage(w.save, winapi.BM_CLICK, 0, 0)
+	PumpPending() // destroyed after the click (deferred destroy)
 	if store.saves != 1 || app.soundWin != nil || winapi.IsWindow(w.hwnd) {
 		t.Fatalf("not saved / not closed: %d", store.saves)
 	}

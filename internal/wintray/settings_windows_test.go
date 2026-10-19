@@ -607,6 +607,7 @@ func TestCHK_TRAY_04_SettingsReadOnly(t *testing.T) {
 	}
 	el.err = nil
 	w.click(t, idSetElevate)
+	PumpPending() // destroyed after the click (deferred destroy)
 	if el.calls != 2 || app.settings != nil || winapi.IsWindow(w.hwnd) {
 		t.Error("read-only window must close after the elevated one started")
 	}
@@ -682,6 +683,7 @@ func TestCHK_TRAY_04_SettingsDiscardPrompt(t *testing.T) {
 	w.set(idSetDatabase, "d3")
 	w.click(t, idSetClose)
 	want(6, "close button with edits")
+	PumpPending() // destroyed after the click (deferred destroy)
 	if winapi.IsWindow(w.hwnd) || app.settings != nil {
 		t.Error("«Да» on close must close the window")
 	}

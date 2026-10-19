@@ -66,6 +66,9 @@ func (wd *wizardDialog) click(t *testing.T, id int32) {
 		t.Fatalf("wizard control %d missing or disabled", id)
 	}
 	winapi.SendMessage(h, winapi.BM_CLICK, 0, 0)
+	if id == idWizCancel {
+		PumpPending() // the posted WM_CLOSE
+	}
 }
 
 func (wd *wizardDialog) pick(id int32, i int) {

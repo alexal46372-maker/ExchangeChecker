@@ -280,7 +280,10 @@ func (wd *wizardDialog) command(id int32, code uint32) {
 	case idWizAdvanced:
 		wd.advanced()
 	case idWizCancel:
-		wd.abort()
+		// closed after BM_CLICK returns: destroying the dialog inside the
+		// button's own click let the button touch freed state (access
+		// violation in CI, phase 10 D4)
+		winapi.PostMessage(wd.hwnd, winapi.WM_CLOSE, 0, 0)
 	}
 }
 

@@ -119,6 +119,12 @@ type StatusSnapshot struct {
 	// revision (as returned by get_config / save_*).
 	Settings       *Settings `json:"settings,omitempty"`
 	ConfigRevision string    `json:"configRevision,omitempty"`
+	// Phase 10 (CHK-MON-17): HasProblems (always sent) = at least one
+	// active alert; Problems lists them (model.ProblemsOf), at most
+	// ProblemsMax (ProblemsTruncated).
+	HasProblems       bool      `json:"hasProblems"`
+	Problems          []Problem `json:"problems,omitempty"`
+	ProblemsTruncated bool      `json:"problemsTruncated,omitempty"`
 }
 
 // minutesFloor returns whole minutes of d (d >= 0).

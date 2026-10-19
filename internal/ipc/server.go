@@ -335,11 +335,18 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(EventFeed); ok {
 		caps = append(caps, model.CapEventsSince)
 	}
+	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
+		caps = append(caps, model.CapProblems) // phase 10 (CHK-MON-17)
+	}
 	if wiz {
 		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
 	}
 	return caps
 }
+
+// ProblemsReporter: the handler sends hasProblems / problems and repeat
+// alert pushes (phase 10, CHK-MON-17).
+type ProblemsReporter interface{ ReportsProblems() bool }
 
 func (s *Server) heartbeat() *model.Heartbeat {
 	if h, ok := s.H.(HeartbeatSource); ok {

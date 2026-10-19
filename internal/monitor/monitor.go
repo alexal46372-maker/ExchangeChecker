@@ -134,6 +134,12 @@ type Options struct {
 	// RunID identifies this run of the service in the heartbeat and in
 	// every AlertEvent (phase 9, CHK-SVC-05); "" = random.
 	RunID string
+
+	// OnRepeat receives the repeat push of an active alert after every
+	// failing check that was no transition (phase 10, CHK-MON-17): the
+	// service sends it to the IPC clients only (not the Event Log, the
+	// log file, history or events_since).
+	OnRepeat func(model.AlertEvent)
 }
 
 // entry is the per-profile runtime state.
@@ -1210,7 +1216,7 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 // single-profile poll_now must not advance the debounce of the others).
 func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg Config, now time.Time) map[string]bool) {
 	now := m.opt.Now().In(model.DBZone)
-	var events []model.AlertEvent
+	var events, repeats []model.AlertEvent
 	var polled map[string]bool
 	m.mu.Lock()
 	cfg := m.cfg
@@ -1233,7 +1239,9 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		ps.MappingSummary = model.MappingSummaryOf(p)
 		profiles = append(profiles, ps)
 		if ok && p.Enabled && polled[p.ID] {
-			events = append(events, m.observe(ps, now)...)
+			evs, reps := m.observe(ps, now)
+			events = append(events, evs...)
+			repeats = append(repeats, reps...)
 		}
 	}
 	var keep func(string) bool
@@ -1246,8 +1254,11 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	m.markAckedLocked(profiles, alerts)
 	for i := range events {
 		m.markEventLocked(&events[i])
-		m.classifyEventLocked(&events[i]) // phase 9 (CHK-SVC-05)
-		m.ring.add(events[i])
+		m.classifyEventLocked(&events[i]) // phase 9 (CHK-SVC-05); adds it to the ring once
+	}
+	for i := range repeats { // phase 10 (CHK-MON-17)
+		m.markEventLocked(&repeats[i])
+		repeats[i].RunID, repeats[i].EventID, repeats[i].Kind = m.runID, repeats[i].ID, model.AlertKindAlert
 	}
 	m.seq++
 	snap := model.StatusSnapshot{
@@ -1256,6 +1267,8 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		LastPollAt: m.lastPoll, ConfigRevision: m.revision,
 		ServerNow: now, LastCheckSeq: m.lastCheckSeq,
 	}
+	snap.Problems, snap.ProblemsTruncated = model.ProblemsOf(alerts)
+	snap.HasProblems = len(snap.Problems) > 0
 	switch {
 	case m.good: // a configuration has been applied
 		st := cfg.Settings.Normalized() // beep.enabled always explicit
@@ -1292,7 +1305,15 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	if m.opt.OnSnapshot != nil {
 		m.opt.OnSnapshot(snap)
 	}
+	if m.opt.OnRepeat != nil {
+		for _, ev := range repeats {
+			m.opt.OnRepeat(ev)
+		}
+	}
 }
+
+// ReportsProblems: hasProblems / problems and repeat pushes (CHK-MON-17).
+func (m *Monitor) ReportsProblems() bool { return true }
 
 func (m *Monitor) intervalLocked() time.Duration {
 	if m.opt.PollInterval > 0 {
@@ -1307,18 +1328,26 @@ func (m *Monitor) intervalLocked() time.Duration {
 // observe feeds one profile snapshot into the tracker. A profile error is
 // a profile-level alert; its points keep their last confirmed level (the
 // points are unknown while the database is unreachable).
-func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) []model.AlertEvent {
-	var out []model.AlertEvent
+//
+// Phase 10 (CHK-MON-17): reps are the repeat pushes of active alerts whose
+// check failed again without a transition (the alarm persists until the
+// error is resolved; acknowledging does not stop checks or repeats).
+func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) (out, reps []model.AlertEvent) {
+	obs := func(o alert.Observation) {
+		if ev, ok := m.tracker.Observe(o, now); ok {
+			out = append(out, ev)
+		} else if r, ok := m.tracker.Repeat(o.Key, now); ok {
+			reps = append(reps, r)
+		}
+	}
 	lvl := model.LevelOK
 	if ps.Error != "" {
 		lvl = model.LevelError
 	}
-	if ev, ok := m.tracker.Observe(alert.Observation{Key: alert.ProfileKey(ps.ProfileID), Profile: true, Level: lvl,
-		Event: model.AlertEvent{ProfileID: ps.ProfileID, ProfileName: ps.Name, Error: ps.Error, ErrorKey: ps.ErrorKey}}, now); ok {
-		out = append(out, ev)
-	}
+	obs(alert.Observation{Key: alert.ProfileKey(ps.ProfileID), Profile: true, Level: lvl,
+		Event: model.AlertEvent{ProfileID: ps.ProfileID, ProfileName: ps.Name, Error: ps.Error, ErrorKey: ps.ErrorKey}})
 	if ps.Error != "" {
-		return out
+		return out, reps
 	}
 	for _, pt := range ps.Points {
 		tmpl := model.AlertEvent{ProfileID: ps.ProfileID, ProfileName: ps.Name, PointName: pt.Name,
@@ -1329,12 +1358,10 @@ func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) []model.Alert
 		if pt.FreshAt == nil {
 			tmpl.Error = pt.Message
 		}
-		if ev, ok := m.tracker.Observe(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)),
-			Level: pt.Level, Event: tmpl}, now); ok {
-			out = append(out, ev)
-		}
+		obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)),
+			Level: pt.Level, Event: tmpl})
 	}
-	return out
+	return out, reps
 }
 
 // keepKeys: tracker keys of existing enabled profiles/points; points of a

@@ -77,6 +77,12 @@ type keyState struct {
 	// an observation equal to stable); false for a new key whose first
 	// observations are still debounced (e.g. right after a restart).
 	confirmed bool
+	// since: when the key left OK (phase 10, CHK-MON-17); repeat: failing
+	// observations since then that emitted no transition; last: level of
+	// the latest observation.
+	since  time.Time
+	repeat uint32
+	last   model.AlertLevel
 }
 
 // Tracker turns per-poll observations into debounced transition events.
@@ -103,6 +109,7 @@ func (t *Tracker) Observe(o Observation, now time.Time) (model.AlertEvent, bool)
 		st = &keyState{stable: model.LevelOK, pending: model.LevelOK}
 		t.states[o.Key] = st
 	}
+	st.last = o.Level
 	if o.Level == st.stable {
 		st.pending, st.count, st.confirmed = st.stable, 0, true
 		if st.stable != model.LevelOK {
@@ -129,9 +136,46 @@ func (t *Tracker) Observe(o Observation, now time.Time) (model.AlertEvent, bool)
 	t.nextID++
 	ev := o.Event
 	ev.ID, ev.From, ev.To, ev.At = t.nextID, st.stable, o.Level, now.In(model.DBZone)
+	switch {
+	case o.Level == model.LevelOK:
+		st.since, st.repeat = time.Time{}, 0
+	case st.stable == model.LevelOK:
+		st.since, st.repeat = ev.At, 0
+	}
 	st.stable, st.pending, st.count, st.confirmed = o.Level, o.Level, 0, true
 	st.active = ev
 	return ev, true
+}
+
+// Repeat is called after an Observe of key that emitted no event (phase
+// 10, CHK-MON-17): when the confirmed level is not OK and the latest
+// observation failed too (level != OK), the repeat counter is advanced and
+// the active alert is returned with StillFailing, Repeat, Since and
+// LastCheckedAt = now. The alarm stays until the key returns to OK;
+// acknowledging does not stop it. No new event ID is used.
+func (t *Tracker) Repeat(key string, now time.Time) (model.AlertEvent, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	st, ok := t.states[key]
+	if !ok || st.stable == model.LevelOK || st.last == model.LevelOK {
+		return model.AlertEvent{}, false
+	}
+	st.repeat++
+	ev := t.activeLocked(st)
+	at := now.In(model.DBZone)
+	ev.StillFailing, ev.LastCheckedAt = true, &at
+	return ev, true
+}
+
+// activeLocked returns the active alert of st with Since / Repeat.
+func (t *Tracker) activeLocked(st *keyState) model.AlertEvent {
+	ev := st.active
+	if !st.since.IsZero() {
+		s := st.since
+		ev.Since = &s
+	}
+	ev.Repeat = st.repeat
+	return ev
 }
 
 // refresh updates the details of an active alert (lag, freshAt, error)
@@ -183,7 +227,7 @@ func (t *Tracker) Active() []model.AlertEvent {
 	var out []model.AlertEvent
 	for _, st := range t.states {
 		if st.stable != model.LevelOK {
-			out = append(out, st.active)
+			out = append(out, t.activeLocked(st))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

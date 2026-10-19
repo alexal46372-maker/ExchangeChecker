@@ -26,7 +26,7 @@
 | Трей | `cmd/exchtray` | `ExchangeCheckerTray.exe` | NotifyIcon, меню, окна настроек/«О программе», статус, алерт-UI + Beep |
 | Инсталлятор | `cmd/exchsetup` | `ExchangeCheckerSetup.exe` | Wizard: папка, ярлыки, Uninstall, галочка автозапуска службы |
 
-Поставка заказчику (после явной просьбы собрать): zip по `DELIVERY.md` с `ExchangeCheckerSetup.exe` (внутри или рядом — служба и трей по схеме инсталлятора).
+Поставка заказчику (после явной просьбы собрать): zip по `DELIVERY.md` с одной записью `ExchangeChecker-<V>.exe` (имя = basename zip с `.exe`; промежуточная сборка по-прежнему `ExchangeCheckerSetup.exe`).
 
 Toolchain (жёстко): **Go 1.20.14**, `GOOS=windows` `GOARCH=amd64` `CGO_ENABLED=0`, цель **NT 6.1+**.
 
@@ -813,6 +813,8 @@ Wizard Win32 (страницы):
 131. **HTTPS для Viber (фаза 10, `CHK-SVC-06`, реализовано):** исходящие запросы службы к `chatapi.viber.com` — `net/http` / `crypto/tls` стандартной библиотеки внутри `internal/hcwinnet` (POLICY §4), TLS ≥ 1.2, `http.ProxyFromEnvironment`; без пиннинга, на Win7 без корневых сертификатов — `notify.viber_tls` (DELIVERY.md: «обновите корневые сертификаты»). Реализация: `hcwinnet.NewClient` / `PostJSON` (таймаут 15 с, ответ ≤ 64 КиБ, редиректы не выполняются), ошибки `hcwinnet.ErrTLS` / `ErrNetwork`; отправка — `internal/notify`.
 132. **Будущая задача (не v1): системный прокси WinHTTP для Viber.** Сейчас прокси службы — только переменные окружения (`HTTPS_PROXY` / `NO_PROXY`, значение `Environment` службы, DELIVERY.md). Позже: при пустом окружении брать прокси WinHTTP (`netsh winhttp set proxy` / `WinHttpGetDefaultProxyConfiguration`, при необходимости WPAD через `WinHttpGetProxyForUrl`) через `internal/winapi` callProc внутри `internal/hcwinnet` (allowlist CHK-TRAY-10 дополнить), с тестом на фейковом прокси.
 133. **Будущая задача (не v1): блок трея через обычный трей.** При повышении от имени другого пользователя звук и вид трея сейчас не переносятся (п.124). Позже: окно администратора передаёт блок `tray` работающему трею пользователя (и получает его оттуда при экспорте), чтобы он записал его в свой HKCU и сразу применил; для этого нужен канал между процессами трея (сейчас есть только `TrayExitMessage`).
+
+150. **Имя exe в zip поставки (фаза 10, `CHK-DELIV-01`):** внутри `ExchangeChecker-<V>.zip` ровно одна запись `ExchangeChecker-<V>.exe` (basename zip с `.exe` вместо `.zip`; суффикса `-windows-amd64` нет). Инсталлятор не зависит от имени своего файла (`os.Args` только для ключей; путь к себе — `os.Executable`). Установленный деинсталлятор сохраняет каноническое имя `ExchangeCheckerUninstall.exe` (UninstallString). Пункты 114–124 — трей, 125+ — служба (зарезервированы отдельно).
 
 ### Ещё желательно (не блокер каркаса)
 

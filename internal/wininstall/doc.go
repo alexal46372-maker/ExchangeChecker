@@ -1,5 +1,5 @@
 // Package wininstall is the installer logic of Exchange Checker
-// (ExchangeCheckerSetup.exe / ExchangeCheckerUninstall.exe, PLAN.md §9,
+// (delivery setup (any name) / ExchangeCheckerUninstall.exe, PLAN.md §9,
 // docs/PHASE7.md, PLAN §12 п. 90).
 //
 // The portable part (this file set without a build tag) parses the command

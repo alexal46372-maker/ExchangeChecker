@@ -100,7 +100,7 @@ func configRevision(w ConfigWriter) (string, error) {
 	}
 	var raw [3][]byte
 	for i, name := range []string{config.SettingsFile, config.ProfilesFile, config.SecretsFile} {
-		b, err := os.ReadFile(w.Path(name))
+		b, err := config.ReadFileShared(w.Path(name))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", err
 		}

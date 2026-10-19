@@ -86,7 +86,7 @@ func OpenFileCounterStore(dir string, log Logger) *FileCounterStore {
 func (s *FileCounterStore) Path() string { return filepath.Join(s.dir, s.name) }
 
 func (s *FileCounterStore) load() {
-	b, err := os.ReadFile(s.Path())
+	b, err := config.ReadFileShared(s.Path())
 	if errors.Is(err, os.ErrNotExist) {
 		return
 	}

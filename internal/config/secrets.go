@@ -146,6 +146,7 @@ func (s *Store) SaveSecrets(sec Secrets) error {
 // an error: present = false, nothing is created.
 func (s *Store) SecureSecretsFile() (present bool, err error) {
 	path := s.Path(SecretsFile)
+	defer LockPath(path)() // not while a write replaces the file
 	if _, err := os.Lstat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return false, nil

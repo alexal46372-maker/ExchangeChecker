@@ -4,8 +4,11 @@ package config
 
 import "os"
 
-// replaceFile is a portable fallback (rename is atomic on POSIX).
-func replaceFile(from, to string) error { return os.Rename(from, to) }
+// moveFileReplace is a portable fallback (rename is atomic on POSIX).
+var moveFileReplace = os.Rename
+
+// replaceRetryable: POSIX has no sharing violations (test hook).
+var replaceRetryable = func(error) bool { return false }
 
 // createSecret creates the temp file readable by the owner only.
 func createSecret(tmp string) (*os.File, error) {

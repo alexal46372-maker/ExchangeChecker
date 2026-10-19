@@ -50,7 +50,9 @@ func (s *Store) LoadViberToken() (string, error) {
 // the file.
 func (s *Store) SaveViberToken(token string) error {
 	if token == "" {
+		unlock := LockPath(s.Path(ViberTokenFile))
 		err := os.Remove(s.Path(ViberTokenFile))
+		unlock()
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}

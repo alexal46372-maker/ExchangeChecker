@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"syscall"
-	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
@@ -22,39 +21,14 @@ const (
 	errorLockViolation    syscall.Errno = 33
 )
 
-// replaceBackoff: waits between MoveFileEx attempts (~1.9 s in total).
-// Holders like antivirus scanners keep a just-written file open for a few
-// milliseconds; without the retry the write failed outright (windows CI
-// runs 37124067521: counters-state.json "Access is denied").
-var replaceBackoff = []time.Duration{
-	5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond,
-	80 * time.Millisecond, 160 * time.Millisecond, 250 * time.Millisecond, 250 * time.Millisecond,
-	250 * time.Millisecond, 250 * time.Millisecond, 250 * time.Millisecond, 250 * time.Millisecond,
-}
+// moveFileReplace is MoveFileExW(MOVEFILE_REPLACE_EXISTING|
+// MOVEFILE_WRITE_THROUGH) (test hook).
+var moveFileReplace = winapi.MoveFileReplace
 
-// test hooks
-var (
-	moveFileReplace = winapi.MoveFileReplace
-	replaceSleep    = time.Sleep
-)
-
-// replaceFile uses MoveFileExW(MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)
-// and retries with a short backoff while the file is held open by someone
-// else (ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION);
-// any other error is returned at once.
-func replaceFile(from, to string) error {
-	err := moveFileReplace(from, to)
-	for _, d := range replaceBackoff {
-		if err == nil || !replaceRetryable(err) {
-			return err
-		}
-		replaceSleep(d)
-		err = moveFileReplace(from, to)
-	}
-	return err
-}
-
-func replaceRetryable(err error) bool {
+// replaceRetryable: the file is held open by someone else
+// (ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION);
+// used for the replace and for reads (test hook).
+var replaceRetryable = func(err error) bool {
 	var e syscall.Errno
 	if !errors.As(err, &e) {
 		return false

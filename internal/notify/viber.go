@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/alert"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/hcwinnet"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
@@ -134,7 +135,7 @@ func (n *Notifier) loadState() string {
 	if n.o.StateDir == "" {
 		return ""
 	}
-	b, err := os.ReadFile(filepath.Join(n.o.StateDir, StateFile))
+	b, err := config.ReadFileShared(filepath.Join(n.o.StateDir, StateFile))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			n.o.Log.Printf("viber: %s: %v (no summary sent yet)", StateFile, err)
@@ -152,33 +153,14 @@ func (n *Notifier) loadState() string {
 	return d.LastSummaryDate
 }
 
-// saveState writes viber_state.json atomically (temp file + rename).
+// saveState writes viber_state.json atomically (config.WriteFileAtomic).
 func (n *Notifier) saveState(day string) {
 	if n.o.StateDir == "" {
 		return
 	}
 	b, _ := json.Marshal(stateDoc{Version: 1, LastSummaryDate: day})
-	err := func() error {
-		f, err := os.CreateTemp(n.o.StateDir, StateFile+".*.tmp")
-		if err != nil {
-			return err
-		}
-		tmp := f.Name()
-		_, werr := f.Write(b)
-		if werr == nil {
-			werr = f.Sync()
-		}
-		if cerr := f.Close(); werr == nil {
-			werr = cerr
-		}
-		if werr == nil {
-			werr = os.Rename(tmp, filepath.Join(n.o.StateDir, StateFile))
-		}
-		if werr != nil {
-			_ = os.Remove(tmp)
-		}
-		return werr
-	}()
+	// atomic, serialized per path, MoveFileEx retried (CHK-CFG-03)
+	err := config.WriteFileAtomic(n.o.StateDir, StateFile, b, 0o644)
 	if err != nil {
 		n.o.Log.Printf("viber: %s: %v", StateFile, err)
 	}

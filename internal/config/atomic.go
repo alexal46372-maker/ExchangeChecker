@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 )
 
 // SecretsSDDL is the DACL of secrets.dpapi (phase 6, CHK-CFG-03, Вика's
@@ -42,6 +45,10 @@ func writeSecretAtomic(dir, name string, data []byte) error {
 }
 
 func writeAtomic(dir, name string, data []byte, create func(tmp string) (*os.File, error)) (err error) {
+	// one writer per target path at a time (CHK-CFG-03): concurrent saves
+	// of the same file no longer race their MoveFileEx calls
+	unlock := LockPath(filepath.Join(dir, name))
+	defer unlock()
 	if err = os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("config: create dir: %w", err)
 	}
@@ -82,4 +89,88 @@ func writeAtomic(dir, name string, data []byte, create func(tmp string) (*os.Fil
 // counters state (CHK-MON-02).
 func WriteFileAtomic(dir, name string, data []byte, perm os.FileMode) error {
 	return writeFileAtomic(dir, name, data, perm)
+}
+
+// Per-path write serialization (CHK-CFG-03).
+var (
+	pathLocksMu sync.Mutex
+	pathLocks   = map[string]*sync.Mutex{}
+)
+
+func pathKey(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	path = filepath.Clean(path)
+	if os.PathSeparator == '\\' {
+		path = strings.ToLower(path) // NTFS names are case-insensitive
+	}
+	return path
+}
+
+// LockPath locks the write mutex of path (one per cleaned absolute path)
+// and returns the unlock function. Every atomic write and the removal of
+// a config file take it.
+func LockPath(path string) (unlock func()) {
+	k := pathKey(path)
+	pathLocksMu.Lock()
+	m := pathLocks[k]
+	if m == nil {
+		m = &sync.Mutex{}
+		pathLocks[k] = m
+	}
+	pathLocksMu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
+
+// replaceBackoff: waits between MoveFileEx attempts (~1.9 s in total).
+// Holders like antivirus scanners keep a just-written file open for a few
+// milliseconds; without the retry the write failed outright (windows CI
+// runs 37124067521: counters-state.json "Access is denied"). It is longer
+// than the read retry on purpose: a failed replace loses the write.
+var replaceBackoff = []time.Duration{
+	5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond,
+	80 * time.Millisecond, 160 * time.Millisecond, 250 * time.Millisecond, 250 * time.Millisecond,
+	250 * time.Millisecond, 250 * time.Millisecond, 250 * time.Millisecond, 250 * time.Millisecond,
+}
+
+// test hook
+var replaceSleep = time.Sleep
+
+// replaceFile moves from over to (MoveFileExW on Windows) and retries with
+// a short backoff while the file is held open by someone else
+// (replaceRetryable); any other error is returned at once.
+func replaceFile(from, to string) error {
+	err := moveFileReplace(from, to)
+	for _, d := range replaceBackoff {
+		if err == nil || !replaceRetryable(err) {
+			return err
+		}
+		replaceSleep(d)
+		err = moveFileReplace(from, to)
+	}
+	return err
+}
+
+// ReadAttempts / ReadPause: a read that hits a sharing violation (the
+// file is being replaced or held by a scanner) is retried (CHK-CFG-03).
+const (
+	ReadAttempts = 5
+	ReadPause    = 50 * time.Millisecond
+)
+
+// test hook
+var readFile = os.ReadFile
+
+// ReadFileShared is os.ReadFile with up to ReadAttempts attempts, ReadPause
+// apart, while the error is a sharing / lock violation or access denied
+// (Windows); a missing file and other errors are returned at once.
+func ReadFileShared(path string) ([]byte, error) {
+	b, err := readFile(path)
+	for i := 1; i < ReadAttempts && err != nil && replaceRetryable(err); i++ {
+		replaceSleep(ReadPause)
+		b, err = readFile(path)
+	}
+	return b, err
 }

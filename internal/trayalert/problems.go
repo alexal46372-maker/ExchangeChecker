@@ -93,6 +93,20 @@ func Problems(st trayipc.Status, ext StatusExt, lang string) []Problem {
 		names[p.ProfileID] = p.Name
 	}
 	var out []Problem
+	if ext.HasProblems == nil && hasCap(st.Capabilities, model.CapProblems) {
+		// phase10-svc: the panel is built from status.problems[]
+		h := snap.HasProblems
+		ext.HasProblems, ext.ProblemsTruncated = &h, snap.ProblemsTruncated
+		ext.Problems = nil
+		for _, p := range snap.Problems {
+			q := Problem{Kind: p.Kind, ProfileID: p.ProfileID, PointKey: p.PointKey,
+				Acknowledged: p.Acknowledged, Repeat: int(p.Repeat)}
+			if p.Since != nil {
+				q.Since = *p.Since
+			}
+			ext.Problems = append(ext.Problems, q)
+		}
+	}
 	if ext.HasProblems != nil {
 		if !*ext.HasProblems {
 			return nil
@@ -188,4 +202,13 @@ func PanelLines(ps []Problem, lang string) []string {
 		all = append(all[:MaxPanelLines-1], sprintf(i18n.T(i18n.KeyAlertMore, lang), n))
 	}
 	return all
+}
+
+func hasCap(caps []string, c string) bool {
+	for _, x := range caps {
+		if x == c {
+			return true
+		}
+	}
+	return false
 }

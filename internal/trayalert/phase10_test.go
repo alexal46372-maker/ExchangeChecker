@@ -256,6 +256,18 @@ func TestCHK_TRAY_38_Blink(t *testing.T) {
 	if len(ps) != 1 || BlinkFor(ps) != BlinkRed || !strings.Contains(ps[0].Text, "DB-a") {
 		t.Fatalf("ext problems %+v", ps)
 	}
+	// phase10-svc (capability problems): status.problems[]
+	sv := snapAt(3, fresh)
+	sv.Capabilities = []string{model.CapProblems}
+	sv.Snapshot.HasProblems = true
+	sv.Snapshot.Problems = []model.Problem{{Kind: model.ProblemWarning, ProfileID: "a", PointKey: "k9", Since: &fresh}}
+	if ps = Problems(sv, StatusExt{}, i18n.RU); len(ps) != 1 || BlinkFor(ps) != BlinkYellow || ps[0].PointKey != "k9" {
+		t.Fatalf("svc problems %+v", ps)
+	}
+	sv.Snapshot.HasProblems, sv.Snapshot.Problems = false, nil
+	if Problems(sv, StatusExt{}, i18n.RU) != nil {
+		t.Error("svc hasProblems=false")
+	}
 	no := false
 	if Problems(st, StatusExt{HasProblems: &no}, i18n.RU) != nil {
 		t.Error("hasProblems=false")

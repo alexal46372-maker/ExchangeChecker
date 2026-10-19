@@ -1,8 +1,8 @@
 package monitor
 
 import (
-	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -28,15 +28,21 @@ func (m *Monitor) ExportConfig() (model.ConfigExport, error) {
 	}
 	now := m.opt.Now().In(model.DBZone)
 	st := view.Settings
+	logins := false
+	for _, p := range view.Profiles {
+		if p.AuthMode == model.AuthSQL && strings.TrimSpace(p.Login) != "" {
+			logins = true
+		}
+	}
 	return model.ConfigExport{Format: model.ConfigFormatV1, ExportedAt: &now, ServiceVersion: version.Version,
-		Settings: &st, Profiles: view.Profiles}, nil
+		Settings: &st, Profiles: view.Profiles, ContainsLogins: logins}, nil
 }
 
-// profileJSON compares profiles without the HasPassword hint.
-func profileJSON(p model.Profile) string {
-	p.HasPassword = false
-	b, _ := json.Marshal(p)
-	return string(b)
+// sameProfile compares two profiles field by field (reflect.DeepEqual of
+// the struct), ignoring the HasPassword hint.
+func sameProfile(a, b model.Profile) bool {
+	a.HasPassword, b.HasPassword = false, false
+	return reflect.DeepEqual(a, b)
 }
 
 // ImportConfig implements ipc.ConfigTransfer: full validation first, then
@@ -66,6 +72,10 @@ func (m *Monitor) ImportConfig(in *model.ConfigExport, mode, expectedRevision st
 	}
 	if in.Format != model.ConfigFormatV1 {
 		return res, importErr(model.MsgImportFormat, "format", model.ValEnum, "format must be "+model.ConfigFormatV1)
+	}
+	if len(in.Tray) > model.ImportTrayMax {
+		return res, invalid(model.MsgImportTrayTooLarge, &model.FieldError{Field: "tray", Key: model.ValTooLong,
+			Args: []string{strconv.Itoa(model.ImportTrayMax)}, Msg: "tray block longer than " + strconv.Itoa(model.ImportTrayMax) + " bytes"})
 	}
 	w := m.configWriter()
 	if w == nil {
@@ -138,7 +148,7 @@ func (m *Monitor) ImportConfig(in *model.ConfigExport, mode, expectedRevision st
 		switch {
 		case !existed:
 			res.Added = append(res.Added, p.ID)
-		case profileJSON(p) != profileJSON(o) || had != p.HasPassword:
+		case !sameProfile(p, o) || had != p.HasPassword:
 			res.Updated = append(res.Updated, p.ID)
 		}
 	}
@@ -189,32 +199,51 @@ func (m *Monitor) ImportConfig(in *model.ConfigExport, mode, expectedRevision st
 		res.Revision = rev
 		return res, nil
 	}
-	if secChanged {
-		if err := w.SaveSecrets(nsec); err != nil {
-			return res, saveFailed(err)
-		}
-	}
-	restore := func(stage string, err error) error {
-		if secChanged {
-			if rerr := w.SaveSecrets(sec); rerr != nil {
-				m.opt.Log.Printf("config: import_config: restoring secrets failed: %v", rerr)
-			}
-		}
-		if stage == "settings" && profChanged {
+	// write order (architect review): profiles -> settings -> secrets
+	// (import only deletes passwords, so the secrets go last); a failed
+	// step restores the files written before it; a failed restore is
+	// reported (monitor.import_rollback_failed), not only logged
+	var restored []error
+	undo := func(stage string, err error, prof, set bool) error {
+		if prof {
 			if rerr := w.SaveProfiles(cur); rerr != nil {
-				m.opt.Log.Printf("config: import_config: restoring profiles failed: %v", rerr)
+				restored = append(restored, fmt.Errorf("profiles: %w", rerr))
 			}
+		}
+		if set {
+			if setErr != nil {
+				restored = append(restored, fmt.Errorf("settings: the previous settings.json was unreadable: %w", setErr))
+			} else if rerr := w.SaveSettings(curSet); rerr != nil {
+				restored = append(restored, fmt.Errorf("settings: %w", rerr))
+			}
+		}
+		if prof || set {
+			m.reloadConfigLocked(true) // the snapshot shows what is on disk
+		}
+		if len(restored) > 0 {
+			msg := fmt.Sprintf("import_config: %s failed (%v) and the previous configuration was not restored: %v", stage, err, restored)
+			m.opt.Log.Printf("config: %s", msg)
+			if m.opt.Warn != nil {
+				m.opt.Warn(msg)
+			}
+			return &model.IPCError{Code: model.ErrCodeSaveFailed, Key: model.MsgImportRollbackFailed,
+				Message: "monitor: " + msg + " (state not restored)"}
 		}
 		return saveFailed(fmt.Errorf("import %s: %w", stage, err))
 	}
 	if profChanged {
 		if err := w.SaveProfiles(next); err != nil {
-			return res, restore("profiles", err)
+			return res, saveFailed(fmt.Errorf("import profiles: %w", err))
 		}
 	}
 	if setChanged {
 		if err := w.SaveSettings(*in.Settings); err != nil {
-			return res, restore("settings", err)
+			return res, undo("settings", err, profChanged, false)
+		}
+	}
+	if secChanged {
+		if err := w.SaveSecrets(nsec); err != nil {
+			return res, undo("secrets", err, profChanged, setChanged)
 		}
 	}
 	res.Revision = m.afterWriteLocked(w)

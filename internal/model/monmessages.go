@@ -164,6 +164,8 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgImportMode:              {"Неверный режим импорта (merge или replace).", "Invalid import mode (merge or replace)."},
 	MsgImportDuplicateID:       {"В файле конфигурации повторяется идентификатор профиля.", "The configuration file contains a duplicate profile id."},
 	MsgImportNoConfig:          {"Не передана конфигурация для импорта.", "No configuration to import."},
+	MsgImportTrayTooLarge:      {"Блок настроек трея в файле конфигурации слишком большой.", "The tray block of the configuration file is too large."},
+	MsgImportRollbackFailed:    {"Импорт не удался, и прежнюю конфигурацию восстановить не удалось: состояние не восстановлено, проверьте настройки.", "The import failed and the previous configuration could not be restored: state not restored, check the configuration."},
 	MsgMonitorConfigChanged:    {"Конфигурация изменена.", "Configuration changed."},
 	MsgDiscoverBusy:            {"Служба уже ищет таблицы обмена или проверяет настройки, повторите позже.", "The service is already searching for exchange tables or checking a mapping, try again later."},
 	MsgDiscoverProfileBusy:     {"Для этой базы уже выполняется операция, дождитесь её окончания.", "An operation for this database is already running, wait for it to finish."},
@@ -224,5 +226,5 @@ func MonitorMessageKeys() []string {
 		MsgDiscoverMappingInvalid, MsgMonitorInternal,
 		MsgPasswordTargetChange, MsgCheckRateLimited, MsgBrowseRateLimited, MsgMonitorProfileOff, MsgHistoryDisabled, MsgHistoryBadRange,
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
-		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig}
+		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed}
 }

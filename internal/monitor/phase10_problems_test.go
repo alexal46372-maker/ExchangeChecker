@@ -14,15 +14,13 @@ import (
 
 // TestCHK_MON_17_AlarmPersists — phase 10: acknowledging does not stop
 // the checks; every failing check of an active alert is pushed again
-// (stillFailing, repeat, since, lastCheckedAt; acknowledged too) without a
-// new event id; hasProblems / problems in every snapshot; recovery clears
+// as alert_repeat (own id, repeatOf, stillFailing, repeat, since,
+// lastCheckedAt; acknowledged too), push only (not in events_since); hasProblems / problems in every snapshot; recovery clears
 // them with the normal recovered event.
 func TestCHK_MON_17_AlarmPersists(t *testing.T) {
 	e := newAckEnv(t, nil, alert.Policy{RaisePolls: 1, ClearPolls: 2, ProfileRaisePolls: 1})
 	var reps []model.AlertEvent
-	e.m.opt.OnRepeat = func(ev model.AlertEvent) { e.mu.Lock(); reps = append(reps, ev); e.mu.Unlock() }
-	var arep []model.AlertEvent
-	e.m.opt.OnAlertRepeat = func(ev model.AlertEvent) { arep = append(arep, ev) }
+	e.m.opt.OnAlertRepeat = func(ev model.AlertEvent) { e.mu.Lock(); reps = append(reps, ev); e.mu.Unlock() }
 
 	s := e.poll(1)
 	if s.HasProblems || len(s.Problems) != 0 {
@@ -54,7 +52,8 @@ func TestCHK_MON_17_AlarmPersists(t *testing.T) {
 			t.Fatalf("repeat %d: %d pushes", i, len(reps))
 		}
 		r := reps[i-1]
-		if !r.StillFailing || r.Repeat != uint32(i) || !r.Acknowledged || r.ID != evID || r.EventID != evID ||
+		if !r.StillFailing || r.Repeat != uint32(i) || !r.Acknowledged || r.RepeatOf != evID || r.EventID != r.ID || r.ID <= evID ||
+			r.Kind != model.AlertKindRepeat || r.Level != model.LevelWarning || r.PointKey != "_Node1/A" || r.ProfileID != "a" ||
 			r.Since == nil || !r.Since.Equal(*p.Since) || r.LastCheckedAt == nil || r.RunID == "" {
 			t.Fatalf("repeat %+v", r)
 		}
@@ -62,21 +61,9 @@ func TestCHK_MON_17_AlarmPersists(t *testing.T) {
 			t.Fatalf("problem %+v", s.Problems[0])
 		}
 	}
-	// events_since: the transition + 3 alert_repeat events with their own
-	// ids; RepeatOf = the original eventId
-	pg := e.m.EventsSince(e.m.RunID(), 0, 0)
-	if len(pg.Events) != 4 || pg.Events[0].Kind != model.AlertKindAlert {
+	// alert_repeat is push only: not in events_since
+	if pg := e.m.EventsSince(e.m.RunID(), 0, 0); len(pg.Events) != 1 {
 		t.Fatalf("events_since: %+v", pg.Events)
-	}
-	for i, ev := range pg.Events[1:] {
-		if ev.Kind != model.AlertKindRepeat || ev.RepeatOf != evID || ev.ID <= pg.Events[i].ID || ev.EventID != ev.ID ||
-			ev.Level != model.LevelWarning || ev.PointKey != "_Node1/A" || ev.ProfileID != "a" || !ev.Acknowledged ||
-			ev.CheckSeq != 0 || ev.At.IsZero() || ev.Repeat != uint32(i+1) {
-			t.Fatalf("alert_repeat %d: %+v", i, ev)
-		}
-	}
-	if len(arep) != 3 || arep[2].ID != pg.Events[3].ID {
-		t.Fatalf("alert_repeat pushes %+v", arep)
 	}
 	if len(e.evs) != 1 { // the Sink (Event Log, history) saw the transition only
 		t.Fatalf("sink events %d", len(e.evs))
@@ -100,7 +87,7 @@ func TestCHK_MON_17_AlarmPersists(t *testing.T) {
 func TestCHK_MON_17_NoConnectionProblem(t *testing.T) {
 	e := newAckEnv(t, nil, alert.Policy{RaisePolls: 1, ClearPolls: 1, ProfileRaisePolls: 1})
 	var reps []model.AlertEvent
-	e.m.opt.OnRepeat = func(ev model.AlertEvent) { reps = append(reps, ev) }
+	e.m.opt.OnAlertRepeat = func(ev model.AlertEvent) { reps = append(reps, ev) }
 	e.poll(40)
 	e.f.set("b", behavior{err: &sqlcheck.Error{Kind: sqlcheck.KindConn, Op: "ping", Err: errors.New("down")}})
 	e.poll(40)

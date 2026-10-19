@@ -136,11 +136,12 @@ func init() {
 // the dialog is open; closing it cancels a running request (cancel {ref}).
 // Errors and check results go to the multi-line result box (full text).
 type discoveryDialog struct {
-	w    *settingsWindow
-	hwnd uintptr
-	ctl  map[int32]uintptr
-	tips *tooltips // CHK-TRAY-15
-	d    *traysettings.Discovery
+	inCommand int // nesting of WM_COMMAND (deferred destroy)
+	w         *settingsWindow
+	hwnd      uintptr
+	ctl       map[int32]uintptr
+	tips      *tooltips // CHK-TRAY-15
+	d         *traysettings.Discovery
 
 	profileID string // profile at opening (Apply refuses another one)
 	isNew     bool
@@ -295,10 +296,19 @@ func (dd *discoveryDialog) build() {
 	}
 }
 
+const msgDiscDestroy = winapi.WM_APP + 9
+
 func (dd *discoveryDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 	switch msg {
 	case winapi.WM_COMMAND:
+		// a button is still inside BM_CLICK: the dialog must not be
+		// destroyed under it (an access violation in user32)
+		dd.inCommand++
 		dd.command(int32(wp&0xFFFF), uint32(wp>>16&0xFFFF))
+		dd.inCommand--
+		return 0, true
+	case msgDiscDestroy:
+		winapi.DestroyWindow(hwnd)
 		return 0, true
 	case winapi.WM_CLOSE:
 		dd.userClose()
@@ -851,7 +861,12 @@ func (dd *discoveryDialog) close() {
 	}
 	w := dd.w
 	winapi.EnableWindow(w.hwnd, true)
-	winapi.DestroyWindow(dd.hwnd)
+	if dd.inCommand > 0 {
+		winapi.ShowWindow(dd.hwnd, winapi.SW_HIDE)
+		winapi.PostMessage(dd.hwnd, msgDiscDestroy, 0, 0)
+	} else {
+		winapi.DestroyWindow(dd.hwnd)
+	}
 	if w.disc == dd {
 		w.disc = nil
 	}

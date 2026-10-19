@@ -4,7 +4,7 @@
 //	                                        no name, no mtime) for the setup payload
 //	mkzip zip -o <out.zip> <Setup.exe>      deterministic zip with exactly one entry:
 //	                                        basename(out.zip) with .exe instead of .zip
-//	                                        (e.g. ExchangeChecker-<V>-windows-amd64.exe)
+//	                                        (e.g. ExchangeChecker-<V>.exe)
 //	mkzip version                           prints X.Y.Z for a vX.Y.Z tag build,
 //	                                        0.0.0-rel.<N> for workflow_dispatch,
 //	                                        else 0.0.0-ci.<GITHUB_RUN_NUMBER>

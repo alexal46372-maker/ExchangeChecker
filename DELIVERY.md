@@ -8,11 +8,11 @@ Check ID: **CHK-DELIV-01**
 
 ## Содержимое zip
 
-Поставка — один архив `ExchangeChecker-<version>-windows-amd64.zip` (собирает `tools/mkzip`, детерминированно), внутри ровно одна запись — имя как у zip, с `.exe` вместо `.zip`:
+Поставка — один архив `ExchangeChecker-<version>.zip` (собирает `tools/mkzip`, детерминированно), внутри ровно одна запись — имя как у zip, с `.exe` вместо `.zip`:
 
 | Файл | Назначение |
 |------|------------|
-| `ExchangeChecker-<version>-windows-amd64.exe` | Инсталлятор (мастер и тихий режим; работает под любым именем файла). Служба, трей и деинсталлятор вложены внутрь, сжаты gzip; распаковываются при установке. |
+| `ExchangeChecker-<version>.exe` | Инсталлятор (мастер и тихий режим; работает под любым именем файла). Служба, трей и деинсталлятор вложены внутрь, сжаты gzip; распаковываются при установке. |
 
 Итоговые артефакты сборки (имена рабочих exe):
 
@@ -31,7 +31,7 @@ Check ID: **CHK-DELIV-01**
 
 ## Ключи командной строки
 
-Установка: `ExchangeChecker-<version>-windows-amd64.exe [/S] [/DIR=<папка>] [/NOSTART] [/NOSHORTCUT] [/LOG=<файл>] [/ALLOWDOWNGRADE] [/LANG=ru|en]` (имя из zip; инсталлятор не зависит от имени файла).
+Установка: `ExchangeChecker-<version>.exe [/S] [/DIR=<папка>] [/NOSTART] [/NOSHORTCUT] [/LOG=<файл>] [/ALLOWDOWNGRADE] [/LANG=ru|en]` (имя из zip; инсталлятор не зависит от имени файла).
 Удаление: `ExchangeCheckerUninstall.exe /uninstall [/S] [/PURGEDATA] [/LOG=<файл>] [/LANG=ru|en]` (или «Программы и компоненты»; установленная копия всегда с каноническим именем).
 
 | Ключ | Смысл |
@@ -136,8 +136,8 @@ CI (`ci.yml`) собирает exe и zip и проверяет их **внут�
 
 - Запуск: вручную (`workflow_dispatch`, версия `0.0.0-rel.<номер запуска release>`, для приёмки) или пушем тега `vX.Y.Z` (версия `X.Y.Z`). Права workflow — `contents: read`.
 - Шаги сборки те же, что в windows-job `ci.yml`, включая `TestCHK_DELIV_01_Zip`; sha256 zip печатается в журнал.
-- Загружается **ровно один** артефакт `ExchangeChecker-<V>-windows-amd64` (срок хранения 7 дней). Это единственное разрешённое исключение (POLICY.md §6, `TestCHK_CI_01_ArtifactsOnlyRelease`).
-- **Zip в zip:** GitHub всегда отдаёт артефакт архивом, поэтому скачивается `ExchangeChecker-<V>-windows-amd64.zip` (внешний), а внутри него — zip поставки с тем же именем (внутренний, одна запись `ExchangeChecker-<V>-windows-amd64.exe`). Координатор распаковывает внешний архив, сверяет sha256 **внутреннего** zip с журналом сборки и передаёт пользователю только внутренний zip.
+- Загружается **ровно один** артефакт `ExchangeChecker-<V>` (срок хранения 7 дней). Это единственное разрешённое исключение (POLICY.md §6, `TestCHK_CI_01_ArtifactsOnlyRelease`).
+- **Zip в zip:** GitHub всегда отдаёт артефакт архивом, поэтому скачивается `ExchangeChecker-<V>.zip` (внешний), а внутри него — zip поставки с тем же именем (внутренний, одна запись `ExchangeChecker-<V>.exe`). Координатор распаковывает внешний архив, сверяет sha256 **внутреннего** zip с журналом сборки и передаёт пользователю только внутренний zip.
 
 ### Тег релиза и повторный тег
 
@@ -149,4 +149,4 @@ CI (`ci.yml`) собирает exe и zip и проверяет их **внут�
 
 ## Проверка CHK-DELIV-01
 
-Zip соответствует этому документу: ровно одна запись `ExchangeChecker-<V>-windows-amd64.exe` (имя = basename zip с `.exe`; PE amd64 GUI, VERSIONINFO = версия сборки, payload сжат gzip), нет исходников и лишних артефактов разработки; zip детерминирован. Инсталлятор работает под любым именем файла; установленный деинсталлятор — всегда `ExchangeCheckerUninstall.exe`. Тесты: `TestCHK_DELIV_01_Zip`, `TestCHK_DELIV_01_InstallerAnyName` (`checks`), `TestCHK_DELIV_01_Version`, `TestCHK_DELIV_01_Deterministic`, `TestCHK_DELIV_01_ZipEntryName`, `TestCHK_DELIV_01_ZipAnyInputName` (`tools/mkzip`). Статус: **implemented (phase 7e, phase 10)**.
+Zip соответствует этому документу: ровно одна запись `ExchangeChecker-<V>.exe` (имя = basename zip с `.exe`; PE amd64 GUI, VERSIONINFO = версия сборки, payload сжат gzip), нет исходников и лишних артефактов разработки; zip детерминирован. Инсталлятор работает под любым именем файла; установленный деинсталлятор — всегда `ExchangeCheckerUninstall.exe`. Тесты: `TestCHK_DELIV_01_Zip`, `TestCHK_DELIV_01_InstallerAnyName` (`checks`), `TestCHK_DELIV_01_Version`, `TestCHK_DELIV_01_Deterministic`, `TestCHK_DELIV_01_ZipEntryName`, `TestCHK_DELIV_01_ZipAnyInputName` (`tools/mkzip`). Статус: **implemented (phase 7e, phase 10)**.

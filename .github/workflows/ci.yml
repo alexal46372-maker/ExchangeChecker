@@ -119,10 +119,10 @@ jobs:
           GOOS=windows GOARCH=amd64 go vet -tags payload ./cmd/exchsetup
           GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
           mkdir -p "$RUNNER_TEMP/zip1" "$RUNNER_TEMP/zip2"
-          # Zip keeps ExchangeChecker-<V>-windows-amd64.zip; entry inside is the
+          # Zip keeps ExchangeChecker-<V>.zip; entry inside is the
           # same basename with .exe (tools/mkzip ZipEntryName). Build dir still
           # uses ExchangeCheckerSetup.exe (OriginalFilename / intermediate).
-          Z="ExchangeChecker-$V-windows-amd64.zip"
+          Z="ExchangeChecker-$V.zip"
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" "$out/ExchangeCheckerSetup.exe"
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" "$out/ExchangeCheckerSetup.exe"
           ls -la "$out" "$pay" "$RUNNER_TEMP/zip1"
@@ -241,10 +241,10 @@ jobs:
           GOOS=windows GOARCH=amd64 go vet -tags payload ./cmd/exchsetup
           GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
           mkdir -p "$RUNNER_TEMP/zip1" "$RUNNER_TEMP/zip2"
-          # Zip keeps ExchangeChecker-<V>-windows-amd64.zip; entry inside is the
+          # Zip keeps ExchangeChecker-<V>.zip; entry inside is the
           # same basename with .exe (tools/mkzip ZipEntryName). Build dir still
           # uses ExchangeCheckerSetup.exe (OriginalFilename / intermediate).
-          Z="ExchangeChecker-$V-windows-amd64.zip"
+          Z="ExchangeChecker-$V.zip"
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" "$out/ExchangeCheckerSetup.exe"
           go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" "$out/ExchangeCheckerSetup.exe"
           ls -la "$out" "$pay" "$RUNNER_TEMP/zip1"

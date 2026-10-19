@@ -11,7 +11,7 @@ const (
 	ServiceExeName = "ExchangeCheckerSvc.exe"
 	// SetupExeName is the installer's OriginalFilename / CI intermediate
 	// build name (tools/mkres VERSIONINFO). The delivery zip entry is not
-	// this name: it is ExchangeChecker-<V>-windows-amd64.exe (CHK-DELIV-01,
+	// this name: it is ExchangeChecker-<V>.exe (CHK-DELIV-01,
 	// phase 10). The running setup works under any file name.
 	SetupExeName = "ExchangeCheckerSetup.exe"
 	// UninstallExeName is the payload-free uninstaller copied into the

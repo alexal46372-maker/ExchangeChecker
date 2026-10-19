@@ -21,7 +21,7 @@ import (
 
 // TestCHK_DELIV_01_Zip — the delivery zip built in the CI job (tools/mkzip,
 // never uploaded, CHK-CI-01): exactly one entry named after the zip
-// (ExchangeChecker-<V>-windows-amd64.exe), byte-identical to the built setup
+// (ExchangeChecker-<V>.exe), byte-identical to the built setup
 // and to a second independent mkzip run (deterministic), PE amd64 GUI with
 // VERSIONINFO = EC_BUILD_VERSION; the setup carries a gzip payload (smaller
 // than the three exe together).
@@ -42,10 +42,10 @@ func TestCHK_DELIV_01_Zip(t *testing.T) {
 	if !bytes.Equal(z1, z2) {
 		t.Fatal("zip is not deterministic (two mkzip runs differ)")
 	}
-	if want := "ExchangeChecker-" + ver + "-windows-amd64.zip"; filepath.Base(zpath) != want {
+	if want := "ExchangeChecker-" + ver + ".zip"; filepath.Base(zpath) != want {
 		t.Errorf("zip name %s, want %s", filepath.Base(zpath), want)
 	}
-	wantEntry := "ExchangeChecker-" + ver + "-windows-amd64.exe"
+	wantEntry := "ExchangeChecker-" + ver + ".exe"
 	zr, err := zip.NewReader(bytes.NewReader(z1), int64(len(z1)))
 	if err != nil {
 		t.Fatal(err)

@@ -50,9 +50,9 @@ func TestCHK_DELIV_01_ZipEntryName(t *testing.T) {
 		in, want string
 		ok       bool
 	}{
-		{"ExchangeChecker-1.2.3-windows-amd64.zip", "ExchangeChecker-1.2.3-windows-amd64.exe", true},
-		{"/tmp/ExchangeChecker-0.0.0-ci.9-windows-amd64.zip", "ExchangeChecker-0.0.0-ci.9-windows-amd64.exe", true},
-		{"ExchangeChecker-0.0.0-rel.4-windows-amd64.zip", "ExchangeChecker-0.0.0-rel.4-windows-amd64.exe", true},
+		{"ExchangeChecker-1.2.3.zip", "ExchangeChecker-1.2.3.exe", true},
+		{"/tmp/ExchangeChecker-0.0.0-ci.9.zip", "ExchangeChecker-0.0.0-ci.9.exe", true},
+		{"ExchangeChecker-0.0.0-rel.4.zip", "ExchangeChecker-0.0.0-rel.4.exe", true},
 		{"out.exe", "", false},
 		{"noid", "", false},
 		{"", "", false},
@@ -82,7 +82,7 @@ func TestCHK_DELIV_01_Deterministic(t *testing.T) {
 	if _, err := wininstall.GunzipPayload(map[string][]byte{"a.exe": g1[:len(g1)/2]}); err == nil {
 		t.Fatal("truncated gzip accepted")
 	}
-	entry := "ExchangeChecker-1.2.3-windows-amd64.exe"
+	entry := "ExchangeChecker-1.2.3.exe"
 	z1, _ := Zip(data, entry)
 	z2, _ := Zip(data, entry)
 	if !bytes.Equal(z1, z2) {
@@ -107,7 +107,7 @@ func TestCHK_DELIV_01_ZipAnyInputName(t *testing.T) {
 	if err := os.WriteFile(in, []byte("MZ fake setup"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	zpath := filepath.Join(dir, "ExchangeChecker-9.9.9-windows-amd64.zip")
+	zpath := filepath.Join(dir, "ExchangeChecker-9.9.9.zip")
 	if err := run([]string{"zip", "-o", zpath, in}); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestCHK_DELIV_01_ZipAnyInputName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "ExchangeChecker-9.9.9-windows-amd64.exe"
+	want := "ExchangeChecker-9.9.9.exe"
 	if len(zr.File) != 1 || zr.File[0].Name != want {
 		t.Fatalf("entry %v, want [%s]", zr.File, want)
 	}

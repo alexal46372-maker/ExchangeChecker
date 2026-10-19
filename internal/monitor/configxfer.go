@@ -28,8 +28,14 @@ func (m *Monitor) ExportConfig() (model.ConfigExport, error) {
 	}
 	now := m.opt.Now().In(model.DBZone)
 	st := view.Settings
+	logins := false
+	for _, p := range view.Profiles {
+		if p.AuthMode == model.AuthSQL && strings.TrimSpace(p.Login) != "" {
+			logins = true
+		}
+	}
 	return model.ConfigExport{Format: model.ConfigFormatV1, ExportedAt: &now, ServiceVersion: version.Version,
-		Settings: &st, Profiles: view.Profiles}, nil
+		Settings: &st, Profiles: view.Profiles, ContainsLogins: logins}, nil
 }
 
 // profileJSON compares profiles without the HasPassword hint.

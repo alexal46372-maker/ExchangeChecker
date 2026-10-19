@@ -17,6 +17,19 @@ import (
 func TestCHK_CFG_06_ExportImport(t *testing.T) {
 	e := newCfgEnv(t)
 	m := e.m
+	if x, err := m.ExportConfig(); err != nil || x.ContainsLogins {
+		t.Fatalf("empty export containsLogins %v %v", x.ContainsLogins, err)
+	}
+	if _, err := m.SaveProfile(prof("w0"), "", false, e.rev(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	x, _ := m.ExportConfig()
+	if b, _ := json.Marshal(x); x.ContainsLogins || !strings.Contains(string(b), `"containsLogins":false`) {
+		t.Fatalf("windows-only export %s", b)
+	}
+	if _, err := m.DeleteProfile("w0", e.rev(), "a"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := m.SaveProfile(sqlProf6("s1"), "Pw-Secret!", false, e.rev(), "a"); err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +41,9 @@ func TestCHK_CFG_06_ExportImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(exp)
+	if !exp.ContainsLogins || exp.Profiles[0].Login != "user1" || !strings.Contains(string(raw), `"containsLogins":true`) {
+		t.Fatalf("containsLogins / login %s", raw)
+	}
 	if exp.Format != model.ConfigFormatV1 || exp.Settings == nil || len(exp.Profiles) != 2 || !exp.Profiles[0].HasPassword ||
 		strings.Contains(string(raw), "Pw-Secret!") || strings.Contains(string(raw), `"tray"`) {
 		t.Fatalf("export %s", raw)

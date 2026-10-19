@@ -62,6 +62,10 @@ type ConfigExport struct {
 	Settings *Settings `json:"settings,omitempty"`
 	// Profiles with HasPassword (export); HasPassword is ignored on import.
 	Profiles []Profile `json:"profiles"`
+	// ContainsLogins (export, always sent): at least one exported profile
+	// has a non-empty SQL login (the file is then personal data; logins
+	// are exported, passwords never). Ignored on import.
+	ContainsLogins bool `json:"containsLogins"`
 	// Tray is EC Tray's own block: ignored by the service.
 	Tray json.RawMessage `json:"tray,omitempty"`
 }

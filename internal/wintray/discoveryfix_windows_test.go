@@ -332,6 +332,7 @@ func TestCHK_TRAY_07_TimeoutLateReply(t *testing.T) {
 func TestCHK_TRAY_07_SecondSettingsAndLayout(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	PumpPending() // dialogs of earlier tests closed from a button are destroyed after the click
 	ds := newDiscService()
 	app := startCfgApp(t, ds.cfgService, true, nil)
 	w := openAdmin(t, app)

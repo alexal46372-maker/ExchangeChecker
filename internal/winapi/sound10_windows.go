@@ -25,7 +25,7 @@ var (
 	procKillTimer              = moduser32.NewProc("KillTimer")
 	procGetOpenFileNameW       = modcomdlg32.NewProc("GetOpenFileNameW")
 	procShellNotifyIconGetRect = modshell32.NewProc("Shell_NotifyIconGetRect")
-	procShowWindowIsIconic     = moduser32.NewProc("IsIconic")
+	procIsIconic               = moduser32.NewProc("IsIconic")
 )
 
 // Phase 10 constants.
@@ -58,47 +58,68 @@ const (
 	BS_AUTORADIOBUTTON = 0x00000009
 )
 
+// soundMu guards every PlaySoundW / mciSendStringW call (one PlaySound
+// per process: the alarm and «Прослушать» share it).
 var soundMu sync.Mutex
 
-// soundBuf keeps the WAV of an async SND_MEMORY sound alive.
-var soundBuf []byte
+var (
+	// soundBufs keep the WAV of each owner's async SND_MEMORY sound
+	// alive until that owner stops it.
+	soundBufs = map[string][]byte{}
+	// soundOwner is the owner of the sound PlaySound plays now.
+	soundOwner string
+)
 
-// PlayWAV plays a RIFF/WAVE image from memory asynchronously (loop =
-// SND_LOOP); the previous sound stops.
-func PlayWAV(wav []byte, loop bool) error {
+// PlayWAV plays a RIFF/WAVE image from memory asynchronously for owner
+// (loop = SND_LOOP); it replaces whatever PlaySound played.
+func PlayWAV(owner string, wav []byte, loop bool) error {
 	if len(wav) == 0 {
 		return errors.New("empty sound")
 	}
 	soundMu.Lock()
 	defer soundMu.Unlock()
-	callProc(procPlaySoundW, 0, 0, 0) // stop, before soundBuf changes
-	soundBuf = wav
+	callProc(procPlaySoundW, 0, 0, 0) // stop before the buffers change
+	soundBufs[owner] = wav
 	f := uintptr(SND_MEMORY | SND_ASYNC | SND_NODEFAULT)
 	if loop {
 		f |= SND_LOOP
 	}
-	r, _, e := callProc(procPlaySoundW, uintptr(unsafe.Pointer(&soundBuf[0])), 0, f)
+	r, _, e := callProc(procPlaySoundW, uintptr(unsafe.Pointer(&wav[0])), 0, f)
 	if r == 0 {
-		soundBuf = nil
+		delete(soundBufs, owner)
+		soundOwner = ""
 		if e != nil && e != syscall.Errno(0) {
 			return e
 		}
 		return errors.New("PlaySound failed")
 	}
+	soundOwner = owner
 	return nil
 }
 
-// StopWAV stops a PlayWAV sound.
-func StopWAV() {
+// StopWAV stops owner's sound; another owner's sound keeps playing.
+func StopWAV(owner string) {
 	soundMu.Lock()
 	defer soundMu.Unlock()
-	callProc(procPlaySoundW, 0, 0, 0)
-	soundBuf = nil
+	if soundOwner == owner {
+		callProc(procPlaySoundW, 0, 0, 0)
+		soundOwner = ""
+	}
+	delete(soundBufs, owner)
+}
+
+// WAVOwner is the owner of the current PlaySound sound ("" = none).
+func WAVOwner() string {
+	soundMu.Lock()
+	defer soundMu.Unlock()
+	return soundOwner
 }
 
 // MCI runs one mciSendStringW command; returns its result string or the
 // MCI error text.
 func MCI(cmd string) (string, error) {
+	soundMu.Lock()
+	defer soundMu.Unlock()
 	buf := make([]uint16, 256)
 	if err := procMciSendStringW.Find(); err != nil {
 		return "", err
@@ -127,7 +148,7 @@ func KillTimer(hwnd, id uintptr) { callProc(procKillTimer, hwnd, id) }
 
 // IsIconic reports a minimized window.
 func IsIconic(hwnd uintptr) bool {
-	r, _, _ := callProc(procShowWindowIsIconic, hwnd)
+	r, _, _ := callProc(procIsIconic, hwnd)
 	return r != 0
 }
 

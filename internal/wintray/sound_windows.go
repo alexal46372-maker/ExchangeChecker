@@ -3,12 +3,14 @@
 package wintray
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -56,16 +58,23 @@ func (s RegistrySoundStore) Save(raw string) error {
 	return winapi.RegSetStringView(winapi.HKEY_CURRENT_USER, s.key(), SoundValue, raw, 0)
 }
 
-// winSounder plays a Sound on Windows.
+// MCI aliases and PlaySound owners: the alarm and «Прослушать» never
+// share a device or a buffer (the deferred close only closes its own
+// alias).
+const (
+	aliasAlarm = "ecalarm"
+	aliasTest  = "ectest"
+)
+
+// winSounder plays a Sound on Windows under its own alias.
 type winSounder struct {
-	log  func(string)
-	lang func() string
+	alias string
+	log   func(string)
+	lang  func() string
 
 	mu     sync.Mutex
 	failed map[string]bool // files already logged as failing
 }
-
-const mciAlias = "ecalarm"
 
 // Play implements trayalert.Sounder.
 func (w *winSounder) Play(s trayalert.Sound, stop <-chan struct{}) error {
@@ -97,13 +106,22 @@ func (w *winSounder) fallback(file string, err error) {
 	}
 }
 
+// waitStep is the tick of waitOrStop.
+const waitStep = 20 * time.Millisecond
+
+// waitOrStop waits d on one ticker; false = stopped.
 func waitOrStop(d time.Duration, stop <-chan struct{}) bool {
-	select {
-	case <-stop:
-		return false
-	case <-time.After(d):
-		return true
+	end := time.Now().Add(d)
+	t := time.NewTicker(waitStep)
+	defer t.Stop()
+	for time.Now().Before(end) {
+		select {
+		case <-stop:
+			return false
+		case <-t.C:
+		}
 	}
+	return true
 }
 
 // playTone: the sine WAV with the volume as amplitude (PLAN §12 p.115);
@@ -113,46 +131,63 @@ func (w *winSounder) playTone(freq, dur, vol int, stop <-chan struct{}) error {
 		waitOrStop(time.Duration(dur)*time.Millisecond, stop)
 		return nil
 	}
-	if err := winapi.PlayWAV(trayalert.SineWAV(freq, dur, vol), false); err != nil {
+	if err := winapi.PlayWAV(w.alias, trayalert.SineWAV(freq, dur, vol), false); err != nil {
 		w.fallback("PlaySound", err)
 		return winapi.Beep(uint32(freq), uint32(dur))
 	}
 	if !waitOrStop(time.Duration(dur)*time.Millisecond+20*time.Millisecond, stop) {
-		winapi.StopWAV()
+		winapi.StopWAV(w.alias)
 	}
 	return nil
 }
 
+// errBadPath: control characters (CR, LF, NUL…) or quotes would end or
+// extend the MCI command string.
+var errBadPath = errors.New("the file name contains control characters or quotes")
+
+// mciOpenCmd builds the open command; paths with control characters or
+// quotes are refused before they reach mciSendString.
+func mciOpenCmd(path, alias string) (string, error) {
+	for _, r := range path {
+		if r < 0x20 || r == 0x7f || r == '"' || unicode.IsControl(r) {
+			return "", errBadPath
+		}
+	}
+	return `open "` + path + `" type ` + trayalert.MCIType(path) + ` alias ` + alias, nil
+}
+
 // playFile plays a file once through MCI on one OS thread.
 func (w *winSounder) playFile(path string, vol int, stop <-chan struct{}) error {
+	cmd, err := mciOpenCmd(path, w.alias)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(path); err != nil {
 		return err
 	}
-	if !trayalert.IsSoundFile(path) {
-		// «Все файлы»: let MCI try (DirectShow knows more types)
-		_ = path
-	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	winapi.MCI("close " + mciAlias)
-	q := strings.ReplaceAll(path, `"`, "")
-	typ := trayalert.MCIType(path)
-	if _, err := winapi.MCI(`open "` + q + `" type ` + typ + ` alias ` + mciAlias); err != nil {
+	winapi.MCI("close " + w.alias) // only our own alias
+	if _, err := winapi.MCI(cmd); err != nil {
 		return err
 	}
-	defer winapi.MCI("close " + mciAlias)
-	if typ == "mpegvideo" {
-		winapi.MCI(fmt.Sprintf("setaudio %s volume to %d", mciAlias, trayalert.MCIVolume(vol)))
+	defer winapi.MCI("close " + w.alias)
+	if trayalert.MCIType(path) == "mpegvideo" {
+		winapi.MCI(fmt.Sprintf("setaudio %s volume to %d", w.alias, trayalert.MCIVolume(vol)))
 	}
-	if _, err := winapi.MCI("play " + mciAlias); err != nil {
+	if _, err := winapi.MCI("play " + w.alias); err != nil {
 		return err
 	}
+	t := time.NewTicker(100 * time.Millisecond)
+	defer t.Stop()
 	for {
-		if !waitOrStop(100*time.Millisecond, stop) {
-			winapi.MCI("stop " + mciAlias)
+		select {
+		case <-stop:
+			winapi.MCI("stop " + w.alias)
 			return nil
+		case <-t.C:
 		}
-		mode, err := winapi.MCI("status " + mciAlias + " mode")
+		mode, err := winapi.MCI("status " + w.alias + " mode")
 		if err != nil || mode != "playing" {
 			return nil
 		}
@@ -212,6 +247,9 @@ func (a *App) SetMasterVolume(v int) error {
 	return a.SaveSoundPrefs(p)
 }
 
+// alarmOn: the alarm sounds now (paused while «Прослушать» plays).
+func (a *App) alarmOn(v trayalert.View) bool { return v.Sound && !a.previewing }
+
 // alertSound is the sound of the alert view v.
 func (a *App) alertSound(v trayalert.View) trayalert.Sound {
 	if !a.soundStored { // follow the service beep settings
@@ -225,22 +263,40 @@ func (a *App) alertSound(v trayalert.View) trayalert.Sound {
 
 // applySound restarts the alarm sound with the current settings.
 func (a *App) applySound() {
-	a.player.Set(a.alertView.Sound, a.alertSound(a.alertView))
+	a.player.Set(a.alarmOn(a.alertView), a.alertSound(a.alertView))
 }
 
-// testSound plays a profile once («Прослушать»), on its own player.
+// testSound plays a profile once («Прослушать») on its own player and
+// alias; there is one PlaySound per process, so the alarm pauses and
+// resumes when the preview ends.
 func (a *App) testSound(p trayalert.SoundProfile, master int) {
 	if a.tester == nil {
-		a.tester = trayalert.NewSoundPlayer(a.sounder)
+		a.tester = trayalert.NewSoundPlayer(a.testSounder)
+		a.tester.OnDone = func() { a.runOnUI(a.endPreview) }
 	}
 	p.Loop = false
 	a.tester.Set(false, trayalert.Sound{})
+	a.previewing = true
+	a.applySound() // pause the alarm
 	a.tester.Set(true, trayalert.Sound{Profile: p, Volume: trayalert.EffectiveVolume(p.Volume, master)})
 }
 
-// stopTestSound stops «Прослушать».
+// endPreview resumes the alarm after «Прослушать».
+func (a *App) endPreview() {
+	if !a.previewing {
+		return
+	}
+	a.previewing = false
+	a.applySound()
+}
+
+// stopTestSound stops «Прослушать» and resumes the alarm.
 func (a *App) stopTestSound() {
 	if a.tester != nil {
 		a.tester.Set(false, trayalert.Sound{})
 	}
+	a.endPreview()
 }
+
+// Previewing reports a running «Прослушать» (test hook).
+func (a *App) Previewing() bool { return a.previewing }

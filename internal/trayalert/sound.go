@@ -234,6 +234,9 @@ type SoundPlayer struct {
 	stop   chan struct{}
 	closed bool
 	plays  int // sounds started (test hook)
+	// OnDone runs (on the player goroutine) when a sound played once
+	// ended by itself.
+	OnDone func()
 }
 
 // NewSoundPlayer returns a stopped player.
@@ -293,10 +296,15 @@ func (p *SoundPlayer) loop(s Sound, stop chan struct{}) {
 		err := p.out.Play(s, stop)
 		if !s.Profile.Loop {
 			p.mu.Lock()
-			if p.stop == stop {
+			natural := p.stop == stop
+			if natural {
 				p.on, p.stop = false, nil
 			}
+			done := p.OnDone
 			p.mu.Unlock()
+			if natural && done != nil {
+				done()
+			}
 			return
 		}
 		wait := time.Duration(s.Profile.GapMs) * time.Millisecond

@@ -121,6 +121,9 @@ func (a *App) feedBalloons(evs []model.AlertEvent) {
 	a.debounce.Window = a.debounceWindow()
 	var bs []trayui.Balloon
 	for _, ev := range evs {
+		if ev.Kind == model.AlertKindRepeat { // a repeat is not a transition
+			continue
+		}
 		bs = append(bs, a.debounce.Feed(ev, now, a.opt.Lang)...)
 	}
 	bs = append(bs, a.debounce.Due(now)...)

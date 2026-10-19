@@ -117,6 +117,10 @@ const (
 	EventStatus
 	// EventAlert: an alert push (Alert).
 	EventAlert
+	// EventAlertRepeat: an alert_repeat push (phase 10, capability
+	// alert_repeat; push only, never in events_since). Alert carries the
+	// repeat (Kind alert_repeat, RepeatOf, Level, CheckSeq, Acknowledged).
+	EventAlertRepeat
 )
 
 // Event is delivered to Options.OnEvent.
@@ -631,6 +635,11 @@ func (s *Session) onPush(m model.IPCMessage) {
 		if m.Alert != nil {
 			a := *m.Alert
 			s.emit(Event{Kind: EventAlert, Status: s.Status(), Alert: &a})
+		}
+	case model.MsgAlertRepeat:
+		if st := s.Status(); m.Alert != nil && st.Has(model.CapAlertRepeat) {
+			a := *m.Alert
+			s.emit(Event{Kind: EventAlertRepeat, Status: st, Alert: &a})
 		}
 	}
 }

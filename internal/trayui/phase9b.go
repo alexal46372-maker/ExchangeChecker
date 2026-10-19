@@ -282,6 +282,9 @@ func (t *EventTracker) Apply(m model.IPCMessage) (fresh []model.AlertEvent, more
 		return nil, false
 	}
 	for _, ev := range m.Events {
+		if ev.Kind == model.AlertKindRepeat { // repeats are push-only; never balloons
+			continue
+		}
 		if ev.RunID == "" {
 			ev.RunID = m.RunID
 		}

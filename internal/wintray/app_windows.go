@@ -126,6 +126,9 @@ type App struct {
 	player  *trayalert.SoundPlayer
 	tester  *trayalert.SoundPlayer
 	sounder trayalert.Sounder
+	// testSounder plays «Прослушать» (own MCI alias / PlaySound owner)
+	testSounder trayalert.Sounder
+	previewing  bool
 	// phase 10: sound profiles (CHK-TRAY-33..35), problem list, blinking
 	// icon and panel (CHK-TRAY-38/39)
 	soundPrefs  trayalert.SoundPrefs
@@ -192,8 +195,12 @@ func NewApp(opt Options) (*App, error) {
 	if a.sounder == nil && opt.Beeper != nil {
 		a.sounder = trayalert.BeeperSounder{B: opt.Beeper}
 	}
+	a.testSounder = a.sounder
 	if a.sounder == nil {
-		a.sounder = &winSounder{log: func(l string) { a.logf("%s", l) }, lang: func() string { return a.opt.Lang }}
+		logf := func(l string) { a.logf("%s", l) }
+		lang := func() string { return a.opt.Lang }
+		a.sounder = &winSounder{alias: aliasAlarm, log: logf, lang: lang}
+		a.testSounder = &winSounder{alias: aliasTest, log: logf, lang: lang}
 	}
 	a.player = trayalert.NewSoundPlayer(a.sounder)
 	a.loadSoundPrefs()
@@ -257,7 +264,7 @@ func (a *App) AlertWindow() uintptr {
 // applyAlert shows the alert view: window and sound.
 func (a *App) applyAlert(v trayalert.View) {
 	a.alertView = v
-	a.player.Set(v.Sound, a.alertSound(v))
+	a.player.Set(a.alarmOn(v), a.alertSound(v))
 	if a.awin == nil {
 		if !v.Visible {
 			return
@@ -459,6 +466,14 @@ func (a *App) drain() {
 			}
 		}
 	}
+	for _, e := range q { // alert_repeat: push only (phase 10)
+		if e.Kind == trayipc.EventAlertRepeat && e.Alert != nil {
+			if r, ok := trayalert.RepeatOf(*e.Alert); ok {
+				a.alerts.Repeat(r.ProfileID)
+			}
+		}
+	}
+	a.statusExt = trayalert.ExtOf(a.status)
 	a.applyAlert(a.alerts.Update(a.status, a.session.Supported(model.CmdAckAlert)))
 	old := a.ind
 	a.ind = trayui.Evaluate(a.status, a.opt.Lang)

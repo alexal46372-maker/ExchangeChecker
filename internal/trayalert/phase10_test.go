@@ -261,12 +261,21 @@ func TestCHK_TRAY_38_Blink(t *testing.T) {
 	sv.Capabilities = []string{model.CapProblems}
 	sv.Snapshot.HasProblems = true
 	sv.Snapshot.Problems = []model.Problem{{Kind: model.ProblemWarning, ProfileID: "a", PointKey: "k9", Since: &fresh}}
-	if ps = Problems(sv, StatusExt{}, i18n.RU); len(ps) != 1 || BlinkFor(ps) != BlinkYellow || ps[0].PointKey != "k9" {
+	if ps = Problems(sv, ExtOf(sv), i18n.RU); len(ps) != 1 || BlinkFor(ps) != BlinkYellow || ps[0].PointKey != "k9" {
 		t.Fatalf("svc problems %+v", ps)
 	}
 	sv.Snapshot.HasProblems, sv.Snapshot.Problems = false, nil
-	if Problems(sv, StatusExt{}, i18n.RU) != nil {
+	if Problems(sv, ExtOf(sv), i18n.RU) != nil {
 		t.Error("svc hasProblems=false")
+	}
+	if ExtOf(snapAt(1, fresh)).HasProblems != nil {
+		t.Error("no capability: derived")
+	}
+	if _, ok := RepeatOf(model.AlertEvent{ProfileID: "a", Acknowledged: true}); ok {
+		t.Error("acknowledged repeat must be filtered")
+	}
+	if r, ok := RepeatOf(model.AlertEvent{ProfileID: "a", Level: model.LevelError, CheckSeq: 3}); !ok || r.CheckSeq != 3 {
+		t.Error("repeat")
 	}
 	no := false
 	if Problems(st, StatusExt{HasProblems: &no}, i18n.RU) != nil {

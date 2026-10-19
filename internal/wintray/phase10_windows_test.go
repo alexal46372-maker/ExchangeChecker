@@ -286,3 +286,109 @@ func TestCHK_TRAY_39_Panel(t *testing.T) {
 	srv.PublishStatus(svc.set(3, ptAlert("a", "Склад", "k1", model.LevelError)))
 	pumpUntil(t, "back", func() bool { return app.Panel().shown && len(app.Panel().lines) == 1 })
 }
+
+// TestCHK_TRAY_34_SoundIsolation — the alarm and «Прослушать» use their
+// own MCI aliases and PlaySound buffers; the preview pauses the alarm and
+// resumes it; file names with control characters or quotes never reach
+// mciSendString.
+func TestCHK_TRAY_34_SoundIsolation(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
+		Session: trayipc.Options{Dial: func(context.Context) (io.ReadWriteCloser, error) { return nil, io.EOF }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, ok1 := app.sounder.(*winSounder)
+	wt, ok2 := app.testSounder.(*winSounder)
+	if !ok1 || !ok2 || ws.alias != "ecalarm" || wt.alias != "ectest" {
+		t.Fatalf("aliases %+v %+v", app.sounder, app.testSounder)
+	}
+	app.Exit()
+	for _, bad := range []string{"a\r\nclose all.wav", "a\x00.wav", `a" alias x.wav`, "a\tb.wav", "a\u0085.wav"} {
+		if _, err := mciOpenCmd(bad, aliasAlarm); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+		if err := (&winSounder{alias: aliasTest}).playFile(bad, 50, nil); err != errBadPath {
+			t.Errorf("playFile %q: %v", bad, err)
+		}
+	}
+	if c, err := mciOpenCmd(`C:\Звуки\тревога.mp3`, aliasTest); err != nil || c != `open "C:\Звуки\тревога.mp3" type mpegvideo alias ectest` {
+		t.Errorf("%q %v", c, err)
+	}
+	// separate PlaySound owners (only when the runner has an audio device)
+	if err := winapi.PlayWAV(aliasAlarm, trayalert.SineWAV(440, 300, 0), true); err == nil {
+		winapi.StopWAV(aliasTest) // must not stop the alarm
+		if winapi.WAVOwner() != aliasAlarm {
+			t.Error("the preview stop closed the alarm sound")
+		}
+		winapi.StopWAV(aliasAlarm)
+		if winapi.WAVOwner() != "" {
+			t.Error("stop")
+		}
+	} else {
+		t.Logf("no audio device: %v", err)
+	}
+
+	// pause / resume around «Прослушать»
+	svc := &alertService{}
+	svc.set(1, ptAlert("a", "Склад", "k1", model.LevelError))
+	b := &testBeeper{}
+	app2, _, _ := startP10App(t, svc, b, nil)
+	pumpUntil(t, "alarm", func() bool { return app2.player.Playing() })
+	app2.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 2222, DurMs: 60, Volume: 50}, 100)
+	if app2.player.Playing() || !app2.Previewing() {
+		t.Fatal("the alarm must pause during the preview")
+	}
+	pumpUntil(t, "preview played and the alarm resumed", func() bool {
+		return b.has(2222) && !app2.Previewing() && app2.player.Playing()
+	})
+}
+
+// repeatService reports problems / alert_repeat (phase10-svc).
+type repeatService struct{ *alertService }
+
+func (repeatService) ReportsProblems() bool { return true }
+
+// TestCHK_TRAY_36_AlertRepeatPush — an alert_repeat push (capability
+// alert_repeat) shows an alarm hidden by «Подтвердить» again; an
+// acknowledged repeat is filtered on the tray side; problems come from
+// status.problems.
+func TestCHK_TRAY_36_AlertRepeatPush(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	base := &alertService{}
+	base.set(1, ptAlert("a", "Склад", "k1", model.LevelError))
+	svc := repeatService{base}
+	l := ipc.NewMemListener()
+	srv := ipc.NewServer(svc, nil)
+	go srv.Serve(l)
+	t.Cleanup(func() { srv.Close() })
+	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true, Beeper: &testBeeper{},
+		Session: trayipc.Options{Dial: func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() },
+			BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Exit)
+	pumpUntil(t, "alarm", func() bool { return app.AlertView().Visible && app.awin != nil })
+	if !app.Status().Has(model.CapAlertRepeat) {
+		t.Fatal("capability")
+	}
+	winapi.SendMessage(winapi.GetDlgItem(app.awin.hwnd, idAlertAck), winapi.BM_CLICK, 0, 0)
+	pumpUntil(t, "acked", func() bool { return !app.AlertView().Visible && len(base.ackCalls()) == 1 })
+	srv.AlertRepeat(model.AlertEvent{Kind: model.AlertKindRepeat, ProfileID: "a", PointKey: "k1", Level: model.LevelError, Acknowledged: true, CheckSeq: 5})
+	pumpFor(150 * time.Millisecond)
+	if app.AlertView().Visible {
+		t.Fatal("acknowledged repeat must be filtered")
+	}
+	srv.AlertRepeat(model.AlertEvent{Kind: model.AlertKindRepeat, ProfileID: "a", PointKey: "k1", Level: model.LevelError, CheckSeq: 6})
+	pumpUntil(t, "repeat reopens", func() bool { return app.AlertView().Visible })
+	// the panel follows status.problems[]
+	srv.PublishStatus(model.StatusSnapshot{Seq: 9, HasProblems: true,
+		Problems: []model.Problem{{Kind: model.ProblemWarning, ProfileID: "z", PointKey: "p"}}})
+	pumpUntil(t, "problems[]", func() bool { ps := app.Problems(); return len(ps) == 1 && ps[0].ProfileID == "z" })
+	if app.Blink() != trayalert.BlinkYellow {
+		t.Error("blink from problems[]")
+	}
+}

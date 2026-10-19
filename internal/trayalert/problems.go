@@ -49,6 +49,35 @@ func ParseStatusExt(raw []byte) StatusExt {
 	return x
 }
 
+// ExtOf takes the phase10-svc fields of a decoded status (capability
+// problems); an older service gives StatusExt{} (derived list).
+func ExtOf(st trayipc.Status) StatusExt {
+	if st.Snapshot == nil || !hasCap(st.Capabilities, model.CapProblems) {
+		return StatusExt{}
+	}
+	snap := st.Snapshot
+	h := snap.HasProblems
+	x := StatusExt{HasProblems: &h, ProblemsTruncated: snap.ProblemsTruncated}
+	for _, p := range snap.Problems {
+		q := Problem{Kind: p.Kind, ProfileID: p.ProfileID, PointKey: p.PointKey,
+			Acknowledged: p.Acknowledged, Repeat: int(p.Repeat)}
+		if p.Since != nil {
+			q.Since = *p.Since
+		}
+		x.Problems = append(x.Problems, q)
+	}
+	return x
+}
+
+// RepeatOf converts an alert_repeat push; ok = false for an acknowledged
+// alarm (filtered on the tray side) or an unusable event.
+func RepeatOf(a model.AlertEvent) (AlertRepeat, bool) {
+	if a.ProfileID == "" || a.Acknowledged {
+		return AlertRepeat{}, false
+	}
+	return AlertRepeat{ProfileID: a.ProfileID, Level: a.Level, CheckSeq: a.CheckSeq, At: a.At}, true
+}
+
 // AlertRepeat is the optional alert_repeat event (capability alert_repeat).
 type AlertRepeat struct {
 	ProfileID    string           `json:"profileId"`
@@ -93,20 +122,6 @@ func Problems(st trayipc.Status, ext StatusExt, lang string) []Problem {
 		names[p.ProfileID] = p.Name
 	}
 	var out []Problem
-	if ext.HasProblems == nil && hasCap(st.Capabilities, model.CapProblems) {
-		// phase10-svc: the panel is built from status.problems[]
-		h := snap.HasProblems
-		ext.HasProblems, ext.ProblemsTruncated = &h, snap.ProblemsTruncated
-		ext.Problems = nil
-		for _, p := range snap.Problems {
-			q := Problem{Kind: p.Kind, ProfileID: p.ProfileID, PointKey: p.PointKey,
-				Acknowledged: p.Acknowledged, Repeat: int(p.Repeat)}
-			if p.Since != nil {
-				q.Since = *p.Since
-			}
-			ext.Problems = append(ext.Problems, q)
-		}
-	}
 	if ext.HasProblems != nil {
 		if !*ext.HasProblems {
 			return nil

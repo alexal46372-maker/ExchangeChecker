@@ -164,6 +164,7 @@ func (m *Monitor) pollWorker(ctx context.Context, e *entry) {
 		snap := model.NewProfileSnapshot(e.profile, ps, cfg.Settings, now)
 		lat, q := ms, ms
 		snap.LatencyMs, snap.LastQueryMs = &lat, &q
+		snap.LastCheckSeq = startSeq
 		res[id] = snap
 		m.coverCheckLocked(id, startSeq)
 		m.settleChecksLocked()

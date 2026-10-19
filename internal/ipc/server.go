@@ -336,7 +336,7 @@ func (s *Server) Capabilities() []string {
 		caps = append(caps, model.CapEventsSince)
 	}
 	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
-		caps = append(caps, model.CapProblems) // phase 10 (CHK-MON-17)
+		caps = append(caps, model.CapProblems, model.CapAlertRepeat) // phase 10 (CHK-MON-17)
 	}
 	if wiz {
 		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
@@ -1170,6 +1170,12 @@ func (s *Server) PublishStatus(snap model.StatusSnapshot) {
 // Alert pushes an alert event to all clients (alert.Sink).
 func (s *Server) Alert(e model.AlertEvent) {
 	s.broadcast(model.IPCMessage{Type: model.MsgAlert, Alert: &e})
+}
+
+// AlertRepeat pushes an alert_repeat event to all clients (phase 10,
+// CHK-MON-17).
+func (s *Server) AlertRepeat(e model.AlertEvent) {
+	s.broadcast(model.IPCMessage{Type: model.MsgAlertRepeat, Alert: &e})
 }
 
 // Clients returns the number of connected clients.

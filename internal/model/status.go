@@ -54,6 +54,11 @@ type ProfileSnapshot struct {
 	WarnMinutes  int       `json:"warnMinutes"`
 	ErrorMinutes int       `json:"errorMinutes"`
 	CheckedAt    time.Time `json:"checkedAt"`
+	// LastCheckSeq (phase 10, CHK-MON-17): every check_now with checkSeq
+	// <= LastCheckSeq that covers this profile (its own or all profiles)
+	// is included in this profile's data; 0 = none / not polled. Always
+	// sent.
+	LastCheckSeq uint64 `json:"lastCheckSeq"`
 	// Polled is false until the first poll of the profile finished.
 	Polled bool `json:"polled"`
 	// Acknowledged: the profile-level alert (connection / query error)

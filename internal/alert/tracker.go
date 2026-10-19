@@ -167,6 +167,16 @@ func (t *Tracker) Repeat(key string, now time.Time) (model.AlertEvent, bool) {
 	return ev, true
 }
 
+// NewID returns a new event id from the same counter as the transitions
+// (alert_repeat events, CHK-MON-17): ids stay unique and increasing within
+// the run.
+func (t *Tracker) NewID() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.nextID++
+	return t.nextID
+}
+
 // activeLocked returns the active alert of st with Since / Repeat.
 func (t *Tracker) activeLocked(st *keyState) model.AlertEvent {
 	ev := st.active

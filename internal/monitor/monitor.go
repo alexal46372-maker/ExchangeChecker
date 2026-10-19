@@ -147,6 +147,10 @@ type Options struct {
 	// service sends it to the IPC clients only (not the Event Log, the
 	// log file, history or events_since).
 	OnRepeat func(model.AlertEvent)
+	// OnAlertRepeat receives the alert_repeat event of every repeat
+	// (kind alert_repeat, own id, also in events_since; CHK-MON-17): the
+	// service pushes it as MsgAlertRepeat.
+	OnAlertRepeat func(model.AlertEvent)
 }
 
 // entry is the per-profile runtime state.
@@ -1033,6 +1037,7 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 		}
 	}
 	settings := m.cfg.Settings
+	startSeq := m.checkCounter
 	m.takeChecksLocked(only) // phase 9: check_now requests covered by this poll
 	m.mu.Unlock()
 	interval := m.interval()
@@ -1080,6 +1085,7 @@ func (m *Monitor) pollSome(ctx context.Context, only map[string]bool) {
 			snap.LatencyMs = &ms // phase 9 (CHK-SVC-03)
 			qms := ms
 			snap.LastQueryMs = &qms
+			snap.LastCheckSeq = startSeq // phase 10 (CHK-MON-17)
 			res[e.profile.ID] = snap
 			polled[e.profile.ID] = true
 		}
@@ -1257,7 +1263,7 @@ func (m *Monitor) pollOne(ctx context.Context, e *entry, settings model.Settings
 // single-profile poll_now must not advance the debounce of the others).
 func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg Config, now time.Time) map[string]bool) {
 	now := m.opt.Now().In(model.DBZone)
-	var events, repeats []model.AlertEvent
+	var events, repeats, repEvents []model.AlertEvent
 	var polled map[string]bool
 	m.mu.Lock()
 	cfg := m.cfg
@@ -1298,8 +1304,21 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		m.classifyEventLocked(&events[i]) // phase 9 (CHK-SVC-05); adds it to the ring once
 	}
 	for i := range repeats { // phase 10 (CHK-MON-17)
-		m.markEventLocked(&repeats[i])
-		repeats[i].RunID, repeats[i].EventID, repeats[i].Kind = m.runID, repeats[i].ID, model.AlertKindAlert
+		r := &repeats[i]
+		m.markEventLocked(r)
+		r.RunID, r.EventID, r.Kind = m.runID, r.ID, model.AlertKindAlert
+		r.CheckSeq = m.results[r.ProfileID].LastCheckSeq
+		// the distinct alert_repeat event: own id (events_since cursor),
+		// RepeatOf the original alert
+		ev := *r
+		ev.ID = m.tracker.NewID()
+		ev.EventID, ev.Kind, ev.RepeatOf = ev.ID, model.AlertKindRepeat, r.ID
+		ev.Level, ev.PointKey, ev.From = r.To, r.Key, r.To
+		if r.LastCheckedAt != nil {
+			ev.At = *r.LastCheckedAt
+		}
+		m.ring.add(ev)
+		repEvents = append(repEvents, ev)
 	}
 	m.seq++
 	snap := model.StatusSnapshot{
@@ -1349,6 +1368,11 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	if m.opt.OnRepeat != nil {
 		for _, ev := range repeats {
 			m.opt.OnRepeat(ev)
+		}
+	}
+	if m.opt.OnAlertRepeat != nil {
+		for _, ev := range repEvents {
+			m.opt.OnAlertRepeat(ev)
 		}
 	}
 }

@@ -207,6 +207,8 @@ func runService(ctx context.Context, ac appConfig) error {
 		// repeat pushes of active alerts after every failing check, to
 		// the tray only (CHK-MON-17)
 		OnRepeat: func(e model.AlertEvent) { srv.Alert(e) },
+		// the distinct alert_repeat event (also in events_since)
+		OnAlertRepeat: func(e model.AlertEvent) { srv.AlertRepeat(e) },
 		OnSnapshot: func(s model.StatusSnapshot) {
 			srv.PublishStatus(s)
 			hist.RecordSnapshot(s) // profiles polled since the last snapshot

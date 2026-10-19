@@ -16,6 +16,20 @@ import (
 // pushes (stillFailing).
 const CapProblems = "problems"
 
+// Phase 10 (CHK-MON-17, contract with EC Tray): every repeat is ALSO a
+// distinct event of kind AlertKindRepeat with its own id / eventId (the
+// cursor of events_since), RepeatOf = eventId of the original alert,
+// Level, PointKey, CheckSeq, At (the check), Acknowledged. It is added to
+// the events_since ring and pushed as MsgAlertRepeat; never written to
+// the history or the Event Log.
+const (
+	CapAlertRepeat  = "alert_repeat"
+	AlertKindRepeat = "alert_repeat"
+	// MsgAlertRepeat is the push of one alert_repeat event
+	// (IPCMessage.Alert).
+	MsgAlertRepeat = "alert_repeat"
+)
+
 // Problem kinds.
 const (
 	ProblemNoConnection = "no_connection" // profile: connection / login / timeout / hung

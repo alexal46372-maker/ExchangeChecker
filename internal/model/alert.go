@@ -57,6 +57,15 @@ type AlertEvent struct {
 	Repeat        uint32     `json:"repeat,omitempty"`
 	StillFailing  bool       `json:"stillFailing,omitempty"`
 	LastCheckedAt *time.Time `json:"lastCheckedAt,omitempty"`
+	// alert_repeat events (Kind AlertKindRepeat, CHK-MON-17): Level of
+	// the alarm, PointKey (= Key), RepeatOf = eventId of the original
+	// alert, CheckSeq = check counter when the failing check started
+	// (every check_now with checkSeq <= CheckSeq covering this profile is
+	// included in it).
+	Level    AlertLevel `json:"level,omitempty"`
+	PointKey string     `json:"pointKey,omitempty"`
+	RepeatOf uint64     `json:"repeatOf,omitempty"`
+	CheckSeq uint64     `json:"checkSeq,omitempty"`
 }
 
 // Raised reports whether the event is an escalation (to a worse level).

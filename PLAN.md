@@ -789,6 +789,8 @@ Wizard Win32 (страницы):
 112. **Понятные ошибки (фаза 9b, `CHK-TRAY-31`):** код (`errorInfo.code` или категория проверки), заголовок и шаги из `sql_diagnose`; без диагноза (нет capability, окно только для чтения, ошибка запроса) — локальный текст по коду; `instance_not_found` и `browser_unreachable` называют SQL Server Browser и UDP 1434. Так же — проверка подключения в форме. `rate_limited` — «повторите через N с» по `retryAfterMs`, `busy` — «служба занята».
 113. **«Скопировать SQL-скрипт прав» (фаза 9b, `CHK-TRAY-32`):** `sql_grant_script` для выбранной базы (SQL-логин; для учётной записи компьютера — `NT AUTHORITY\SYSTEM`, если SQL Server на этом компьютере, иначе `ДОМЕН\КОМПЬЮТЕР$` из `COMPUTERNAME`/`USERDOMAIN`; при выбранном сопоставлении — `GRANT SELECT` только на его таблицы) → буфер обмена (`CF_UNICODETEXT`, `GlobalAlloc`), в окне — только заметки и заглушка пароля. Трей скрипт не выполняет и не пишет в лог. Новые WinAPI (5.0, в списке CHK-TRAY-10): `OpenClipboard`, `EmptyClipboard`, `SetClipboardData`, `CloseClipboard`, `GlobalAlloc`, `GlobalLock`, `GlobalUnlock`, `GlobalFree`.
 
+150. **Имя exe в zip поставки (фаза 10, `CHK-DELIV-01`):** внутри `ExchangeChecker-<V>.zip` ровно одна запись `ExchangeChecker-<V>.exe` (basename zip с `.exe` вместо `.zip`; суффикса `-windows-amd64` нет). Инсталлятор не зависит от имени своего файла (`os.Args` только для ключей; путь к себе — `os.Executable`). Установленный деинсталлятор сохраняет каноническое имя `ExchangeCheckerUninstall.exe` (UninstallString). Пункты 114–124 — трей, 125+ — служба (зарезервированы отдельно).
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.

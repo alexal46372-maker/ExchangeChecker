@@ -402,7 +402,7 @@ D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)
 - Правило CHECKS.md и `ci.yml` («No build artifacts are uploaded», CHK-CI-01) **запрещает только загрузку**. Сборка и проверка zip внутри job ему не противоречат, поэтому для проверки в CI **правило менять не нужно**.
 - Новые шаги CI:
   1. **windows и linux, «release-like build»**: `$V=0.0.0-ci.$GITHUB_RUN_NUMBER`, порядок из §1.1 в `$RUNNER_TEMP/out`.
-  2. **zip**: `go run ./tools/mkzip -o $RUNNER_TEMP/out/ExchangeChecker-$V.zip $RUNNER_TEMP/out/ExchangeCheckerSetup.exe`. `archive/zip`, фиксированные дата и атрибуты для воспроизводимости; утилиты `zip` в Git Bash на Windows может не быть. Тот же инструмент пойдёт в фазу 8.
+  2. **zip**: `go run ./tools/mkzip zip -o $RUNNER_TEMP/out/ExchangeChecker-$V.zip $RUNNER_TEMP/out/ExchangeCheckerSetup.exe`. `archive/zip`, фиксированные дата и атрибуты для воспроизводимости; утилиты `zip` в Git Bash на Windows может не быть. Тот же инструмент пойдёт в фазу 8.
   3. **Проверка**: `EC_BUILD_DIR=$RUNNER_TEMP/out go test ./checks -run 'CHK_DELIV_01|CHK_RES_01|CHK_VER_01' -count=1 -v`. Без переменной тесты пропускаются (как `EC_SQL_TEST_*`). Что проверяется:
      - в zip ровно одна запись `ExchangeChecker-<V>.exe` (имя = basename zip с `.exe`; входной setup может называться иначе), нет `go.mod`/`go.sum`, `.go`, `node_modules`, `package.json`, тестов;
      - запись — PE amd64 с подсистемой GUI;

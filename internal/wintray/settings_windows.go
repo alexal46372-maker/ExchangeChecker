@@ -401,8 +401,8 @@ func (w *settingsWindow) build() {
 	w.add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, 117, 376, 100, 26)
 	if w.cfg.mode == traysettings.Admin {
 		w.add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, 12, 408, 205, 26)
-		w.add("BUTTON", w.t(i18n.KeyXferExport), 0, winapi.WS_TABSTOP, idSetExport, 12, 440, 100, 26)
-		w.add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, 117, 440, 100, 26)
+		w.add("BUTTON", w.t(i18n.KeyXferExport), 0, winapi.WS_TABSTOP, idSetExport, 12, 536, 100, 26)
+		w.add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, 117, 536, 100, 26)
 	}
 	// profile page: four group boxes on the grid (phase 10 D3)
 	const gx, gw = lx - 8, 540

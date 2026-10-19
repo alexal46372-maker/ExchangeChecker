@@ -86,6 +86,8 @@ func (w *settingsWindow) hostProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uin
 			return 0, true
 		case lp != 0 && w.notifyBtn[lp] && code == winapi.BN_DBLCLK:
 			wp &^= 0xFFFF << 16 // BN_CLICKED
+		case lp != 0 && w.notifyBtn[lp] && code != winapi.BN_CLICKED:
+			return 0, true // BN_KILLFOCUS…: only BS_NOTIFY sends them, the handlers expect clicks
 		case lp != 0 && !w.notifyBtn[lp] && (code == winapi.EN_SETFOCUS || code == winapi.CBN_SETFOCUS || code == winapi.LBN_SETFOCUS):
 			w.scrollIntoView(lp)
 		}

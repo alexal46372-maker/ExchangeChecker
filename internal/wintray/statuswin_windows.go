@@ -136,14 +136,12 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	// share the width of the list
 	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
 		&ui.Ctl{H: cp.hwnd, Kind: ui.Box, W: w - 36, Hgt: cardPanelHeight(cardRows)},
-		&ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: 440 - 120, Grow: true}}}},
-		// phase 11 (CHK-TRAY-48): the info line left of the buttons, in
-		// the same row (no empty line above the buttons)
-		&ui.Pad{All: ui.P12, Child: &ui.Row{Grow: true, Items: []ui.Node{
-			&ui.Ctl{H: sw.info, Kind: ui.Box, W: 120, Hgt: 22, Grow: true},
-			&ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
-				uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}},
-		}}}, 0, false)
+		&ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: 440 - 120, Grow: true},
+		&ui.Ctl{H: sw.info, Kind: ui.Box, W: 320, Hgt: 18, Grow: true}}}},
+		// phase 11 (CHK-TRAY-48): the info line under the table, the bar
+		// is the buttons only (no empty line above them)
+		&ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
+			uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}}}, 0, false)
 	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, lang)
 	sw.tips.set(sw.list, i18n.T(i18n.KeyTipStList, lang))
 	sw.tips.set(cp.hwnd, i18n.T(i18n.KeyTipCards, lang))

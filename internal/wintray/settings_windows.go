@@ -1052,9 +1052,6 @@ func (w *settingsWindow) setPage(p int) {
 			winapi.ShowWindow(h, cmd)
 		}
 	}
-	// the navigation marks the current page (phase 11, CHK-TRAY-47)
-	winapi.EnableWindow(w.ctl[idSetNavProfiles], p != 0)
-	winapi.EnableWindow(w.ctl[idSetPage], p != 1)
 	if w.host != 0 {
 		w.layoutFit() // the bar without the hidden buttons of the page
 	}

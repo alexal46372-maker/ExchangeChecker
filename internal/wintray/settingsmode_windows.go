@@ -67,6 +67,9 @@ func (w *settingsWindow) applyUIMode() {
 	if w.tips != nil {
 		w.tips.set(w.ctl[idSetUIMode], w.t(i18n.KeyTipSetUIMode))
 	}
+	// the navigation marks the current page (phase 11, CHK-TRAY-47)
+	winapi.EnableWindow(w.ctl[idSetNavProfiles], w.page != 0)
+	winapi.EnableWindow(w.ctl[idSetPage], w.page != 1)
 	w.relayoutLeft() // no gap for the hidden navigation buttons
 }
 

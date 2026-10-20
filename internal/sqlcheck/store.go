@@ -104,6 +104,9 @@ type SingleStats struct {
 // RawPoint is one aggregated row read by a mapping or manual SQL: naive
 // database wall clocks, YearOffset not yet applied.
 type RawPoint struct {
+	// Key: the point table key (PointKeyColumn, e.g. _IDRRef) when the
+	// mapping has one, else nil (NodeKey).
+	Key  []byte
 	Name string
 	ID   string
 	Send *time.Time

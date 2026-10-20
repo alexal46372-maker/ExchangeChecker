@@ -118,3 +118,9 @@ func logSteps(t *testing.T, what string, r model.SQLServerCheckResult) {
 		t.Logf("%s: step %-8s ok=%v ms=%d code=%s detail=%q", what, s.ID, s.OK, s.Ms, s.Code, s.Detail)
 	}
 }
+
+// CHK-SQL-14: NodeKey of ListPoints equals SQLNodeState.Key on the real
+// fixture (compatibility level 100).
+func TestCHK_SQL_14_IntegrationNodeKeyMatch(t *testing.T) {
+	checkNodeKeysMatch(t, itStore(t, "ec_1c_node_off"))
+}

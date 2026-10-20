@@ -142,3 +142,29 @@ func TestCHK_TRAY_45_RowBaseline(t *testing.T) {
 		}
 	}
 }
+
+// TestCHK_TRAY_47_SharedColumns — grids of one page share the field
+// column; Shrink narrows the wide boxes.
+func TestCHK_TRAY_47_SharedColumns(t *testing.T) {
+	m := metrics(96)
+	a := &Grid{Rows: []GridRow{{Label: &Ctl{Kind: Label, Text: "ab", Lines: 1}, Field: &Ctl{Kind: Edit, W: 300}}}}
+	b := &Grid{Rows: []GridRow{{Label: &Ctl{Kind: Label, Text: "a much longer label", Lines: 1}, Field: &Ctl{Kind: Edit, W: 300}}}}
+	if a.FieldX(m) == b.FieldX(m) {
+		t.Fatal("own columns differ")
+	}
+	Share(a, b)
+	if a.FieldX(m) != b.FieldX(m) || a.FieldX(m) != 19*6+12 {
+		t.Errorf("shared column: %d / %d", a.FieldX(m), b.FieldX(m))
+	}
+	b.Rows[0].Label.Hidden, b.Rows[0].Field.(*Ctl).Hidden = true, true
+	if a.FieldX(m) != 2*6+12 {
+		t.Errorf("a hidden grid does not widen the column: %d", a.FieldX(m))
+	}
+	col := &Col{Items: []Node{a, b}}
+	if !Shrink(col, 150) || a.Rows[0].Field.(*Ctl).W != 150 || Shrink(&Ctl{Kind: Edit, W: 100}, 50) {
+		t.Errorf("shrink: %d", a.Rows[0].Field.(*Ctl).W)
+	}
+	if Shrink(col, 100); a.Rows[0].Field.(*Ctl).W != 150 {
+		t.Errorf("below 200 units nothing shrinks: %d", a.Rows[0].Field.(*Ctl).W)
+	}
+}

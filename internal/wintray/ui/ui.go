@@ -357,6 +357,22 @@ type GridRow struct {
 type Grid struct {
 	Gap, ColGap int32 // units, defaults P8 / P12
 	Rows        []GridRow
+	// Cols: grids sharing one field column (phase 11, CHK-TRAY-47:
+	// one field column for the whole page); nil = own column.
+	Cols *Columns
+}
+
+// Columns makes grids share the label column width (the widest visible
+// label of all of them).
+type Columns struct{ Grids []*Grid }
+
+// Share creates a Columns for the grids and attaches it to each.
+func Share(gs ...*Grid) *Columns {
+	c := &Columns{Grids: gs}
+	for _, g := range gs {
+		g.Cols = c
+	}
+	return c
 }
 
 func (g *Grid) visible() bool {
@@ -373,6 +389,19 @@ func rowVisible(r GridRow) bool {
 }
 
 func (g *Grid) labelW(m *Metrics) int32 {
+	if g.Cols == nil {
+		return g.ownLabelW(m)
+	}
+	var w int32
+	for _, o := range g.Cols.Grids {
+		if o != nil && o.visible() {
+			w = max32(w, o.ownLabelW(m))
+		}
+	}
+	return w
+}
+
+func (g *Grid) ownLabelW(m *Metrics) int32 {
 	var w int32
 	for _, r := range g.Rows {
 		if rowVisible(r) && !r.Span && r.Label.visible() {
@@ -504,7 +533,7 @@ type GroupBox struct {
 func (g *GroupBox) visible() bool { return g.Box.visible() && g.Child != nil && g.Child.visible() }
 
 func (g *GroupBox) inner(m *Metrics) (l, t, r, b int32) {
-	return m.Px(P12), m.LineH + m.Px(P8), m.Px(P12), m.Px(P12)
+	return m.Px(P12), m.LineH + m.Px(P8), m.Px(P12), m.Px(P8) // bottom P8: no gap above the grid step
 }
 
 func (g *GroupBox) measure(m *Metrics) (int32, int32, int32) {
@@ -605,4 +634,24 @@ func (f *Form) Show(on bool, cs ...*Ctl) {
 	if changed {
 		f.Relayout()
 	}
+}
+
+// Shrink narrows the wide boxes of a subtree (Edit / Combo / Box of at
+// least 200 units) by d units, not below 120: a window that is wider
+// than the work area (phase 11, CHK-TRAY-47). It reports whether
+// anything changed.
+func Shrink(n Node, d int32) bool {
+	changed := false
+	Walk(n, func(c *Ctl) {
+		if (c.Kind == Edit || c.Kind == Combo || c.Kind == Box) && c.W >= 200 {
+			w := c.W - d
+			if w < 120 {
+				w = 120
+			}
+			if w != c.W {
+				c.W, changed = w, true
+			}
+		}
+	})
+	return changed
 }

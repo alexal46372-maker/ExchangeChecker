@@ -62,7 +62,14 @@ func (aw *alertWindow) layout() {
 		&ui.Row{Grow: true, Items: []ui.Node{mute, &ui.Row{Right: true, Items: []ui.Node{
 			uiCtl(aw.ack, ui.Button, ""), uiCtl(aw.close, ui.Button, "")}}}},
 	}}}
+	again := aw.form != nil
 	aw.form = newForm(root, 0)
+	if again {
+		// language change: new size, same position (no jump to the centre)
+		ow, oh := outerSize(aw.form.W, aw.form.H, winapi.WindowStyle(aw.hwnd), winapi.WindowExStyle(aw.hwnd))
+		winapi.SetWindowPos(aw.hwnd, 0, 0, 0, ow, oh, winapi.SWP_NOMOVE|winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
+		return
+	}
 	fitToContent(aw.hwnd, aw.form.W, aw.form.H)
 }
 

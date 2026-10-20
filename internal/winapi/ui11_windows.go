@@ -12,6 +12,8 @@ import "unsafe"
 var (
 	procGetTextMetricsW        = modgdi32.NewProc("GetTextMetricsW")
 	procRedrawWindow           = moduser32.NewProc("RedrawWindow")
+	moddwmapi                  = newSystemDLL("dwmapi.dll")
+	procDwmGetWindowAttribute  = moddwmapi.NewProc("DwmGetWindowAttribute")
 	procCreateCompatibleDC     = modgdi32.NewProc("CreateCompatibleDC")
 	procCreateCompatibleBitmap = modgdi32.NewProc("CreateCompatibleBitmap")
 	procGetDIBits              = modgdi32.NewProc("GetDIBits")
@@ -142,4 +144,21 @@ const (
 // RedrawWindow repaints hwnd (and its children) at once.
 func RedrawWindow(hwnd uintptr, flags uint32) {
 	callProc(procRedrawWindow, hwnd, 0, 0, uintptr(flags))
+}
+
+// DWMWA_EXTENDED_FRAME_BOUNDS: the visible frame without the invisible
+// resize borders (Vista+).
+const DWMWA_EXTENDED_FRAME_BOUNDS = 9
+
+// VisibleFrame is the visible window rectangle in screen pixels:
+// DwmGetWindowAttribute(EXTENDED_FRAME_BOUNDS) on NT 6.0+ with DWM, else
+// (XP, DWM off, error) the window rectangle with ok == false.
+func VisibleFrame(hwnd uintptr) (r RECT, ok bool) {
+	if procDwmGetWindowAttribute.Find() == nil {
+		hr, _, _ := callProc(procDwmGetWindowAttribute, hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, uintptr(unsafe.Pointer(&r)), unsafe.Sizeof(r))
+		if hr == 0 && r.Right > r.Left && r.Bottom > r.Top {
+			return r, true
+		}
+	}
+	return GetWindowRect(hwnd), false
 }

@@ -77,9 +77,18 @@ func screenshot(hwnd uintptr, path string) error {
 	if !ok {
 		return fmt.Errorf("capture failed (%dx%d)", w, h)
 	}
-	img := image.NewNRGBA(image.Rect(0, 0, int(w), int(h)))
+	full := image.NewNRGBA(image.Rect(0, 0, int(w), int(h)))
 	for i := 0; i+3 < len(bgra); i += 4 {
-		img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = bgra[i+2], bgra[i+1], bgra[i], 255
+		full.Pix[i], full.Pix[i+1], full.Pix[i+2], full.Pix[i+3] = bgra[i+2], bgra[i+1], bgra[i], 255
+	}
+	// clip the invisible resize borders (DWM extended frame bounds)
+	var img image.Image = full
+	if vf, ok := winapi.VisibleFrame(hwnd); ok {
+		wr := winapi.GetWindowRect(hwnd)
+		crop := image.Rect(int(vf.Left-wr.Left), int(vf.Top-wr.Top), int(vf.Right-wr.Left), int(vf.Bottom-wr.Top)).Intersect(full.Bounds())
+		if !crop.Empty() {
+			img = full.SubImage(crop)
+		}
 	}
 	f, err := os.Create(path)
 	if err != nil {

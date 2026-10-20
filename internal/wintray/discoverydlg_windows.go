@@ -249,6 +249,7 @@ func (dd *discoveryDialog) build() {
 	// search by a known point and time (discover_by_value)
 	pointL := label(i18n.KeyDiscPoint)
 	point := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWN|winapi.CBS_AUTOHSCROLL, idDiscPoint, ui.Combo, 230, 0)
+	point.NoShrink = true // phase 11 (CHK-TRAY-49): not narrowed at 144 dpi
 	timeL := label(i18n.KeyDiscTime)
 	tm := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idDiscTime, ui.Edit, 100, 0)
 	tolL := label(i18n.KeyDiscTolerance)

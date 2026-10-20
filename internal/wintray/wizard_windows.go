@@ -92,6 +92,7 @@ type wizardDialog struct {
 	steps        [3]ui.Node
 	content, bar ui.Node
 	grantCtl     *ui.Ctl
+	resultCtl    *ui.Ctl // phase 11 (CHK-TRAY-49): hidden while empty
 	laidStep     int
 	cur          *[]uintptr
 	cancel       context.CancelFunc
@@ -219,6 +220,8 @@ func (wd *wizardDialog) build() {
 	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idWizResult, ui.Box, 736, 140)
 	res.Grow = true
+	res.Hidden = true
+	wd.resultCtl = res
 	// phase 11: two button rows, the buttons of a row equally wide;
 	// «Скопировать SQL-скрипт прав» not on step 1
 	row := func(ids []int32, keys []string) []*ui.Ctl {
@@ -398,6 +401,14 @@ func (wd *wizardDialog) show() {
 	winapi.EnableWindow(wd.ctl[idWizGrant], z.Database != "" && !running && sess.Supported(model.CmdSQLGrantScript))
 	if winapi.GetWindowText(wd.ctl[idWizResult]) != wd.result {
 		winapi.SetWindowText(wd.ctl[idWizResult], wd.result)
+	}
+	// phase 11 (CHK-TRAY-49): no empty result box (step 2 at 96 dpi)
+	if empty := wd.result == ""; wd.resultCtl != nil && wd.content != nil && wd.laidStep >= 0 && empty != wd.resultCtl.Hidden {
+		wd.resultCtl.Hidden = empty
+		if empty {
+			winapi.ShowWindow(wd.ctl[idWizResult], winapi.SW_HIDE)
+		}
+		fitForm(wd.hwnd, wd.content, wd.bar, 0, true)
 	}
 }
 

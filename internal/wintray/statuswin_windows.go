@@ -41,6 +41,8 @@ type statusWindow struct {
 	check, csv, html, close uintptr
 	history                 uintptr
 	cards                   *cardPanel // phase 11 database cards (CHK-TRAY-48)
+	content, bar            ui.Node    // phase 11: relayout when the info line shows / hides
+	infoCtl                 *ui.Ctl
 	canHistory              func() bool
 	onHistory               func(trayui.StatusRow)
 	tips                    *tooltips
@@ -131,14 +133,18 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	// phase 11 (CHK-TRAY-45/47): the list, then the pinned bar (info line
 	// above the buttons); never wider than the work area, the columns
 	// share the width of the list
-	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+	// phase 11 (CHK-TRAY-49): the list fits 1024×768 at 144 dpi without
+	// scrolling; the info line takes no room while empty
+	sw.infoCtl = &ui.Ctl{H: sw.info, Kind: ui.Box, W: 320, Hgt: 18, Grow: true, Hidden: true}
+	sw.content = &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
 		&ui.Ctl{H: cp.hwnd, Kind: ui.Box, W: w - 36, Hgt: cardPanelHeight(cardRows)},
-		&ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: 440 - 120, Grow: true},
-		&ui.Ctl{H: sw.info, Kind: ui.Box, W: 320, Hgt: 18, Grow: true}}}},
-		// phase 11 (CHK-TRAY-48): the info line under the table, the bar
-		// is the buttons only (no empty line above them)
-		&ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
-			uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}}}, 0, false)
+		&ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: 230, Grow: true},
+		sw.infoCtl}}}
+	// phase 11 (CHK-TRAY-48): the info line under the table, the bar is
+	// the buttons only (no empty line above them)
+	sw.bar = &ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
+		uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}}}
+	fitForm(hwnd, sw.content, sw.bar, 0, false)
 	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, lang)
 	sw.tips.set(sw.list, i18n.T(i18n.KeyTipStList, lang))
 	sw.tips.set(cp.hwnd, i18n.T(i18n.KeyTipCards, lang))
@@ -174,6 +180,11 @@ func (sw *statusWindow) update(st trayipc.Status, connected bool) {
 		}
 	}
 	sw.cards.set(trayui.Cards(sw.rows, sw.lang))
+	var cells [][]string
+	for _, r := range sw.rows {
+		cells = append(cells, r.Cells())
+	}
+	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, sw.lang, cells...)
 	sw.updateHistoryButton()
 	winapi.EnableWindow(sw.check, connected)
 	if sw.rows == nil {
@@ -181,9 +192,31 @@ func (sw *statusWindow) update(st trayipc.Status, connected bool) {
 	} else if sw.info != 0 && winapi.GetWindowText(sw.info) == i18n.T(i18n.KeyStNoData, sw.lang) {
 		winapi.SetWindowText(sw.info, "")
 	}
+	sw.fitInfo()
 }
 
-func (sw *statusWindow) setInfo(text string) { winapi.SetWindowText(sw.info, text) }
+func (sw *statusWindow) setInfo(text string) {
+	winapi.SetWindowText(sw.info, text)
+	sw.fitInfo()
+}
+
+// fitInfo hides an empty info line (no gap above the buttons) and lays
+// the window out again when that changed (phase 11, CHK-TRAY-49).
+func (sw *statusWindow) fitInfo() {
+	if sw.infoCtl == nil {
+		return
+	}
+	hidden := winapi.GetWindowText(sw.info) == ""
+	if hidden == sw.infoCtl.Hidden {
+		return
+	}
+	sw.infoCtl.Hidden = hidden
+	if hidden {
+		winapi.ShowWindow(sw.info, winapi.SW_HIDE)
+	}
+	fitForm(sw.hwnd, sw.content, sw.bar, 0, true)
+	sw.cards.place()
+}
 
 // onNotify colours rows: NM_CUSTOMDRAW of the list, pale background of
 // the row level.
@@ -275,11 +308,13 @@ func (sw *statusWindow) openHistory() {
 }
 
 // fitColumns spreads the column widths (96-dpi units) over the client
-// width of the list view: every column first gets its header text, the
-// rest of the width is shared in proportion to widths; when the headers
-// alone are wider than the list they are scaled down (no horizontal
-// scrolling, phase 11).
-func fitColumns(lv uintptr, widths []int32, keys []string, lang string) {
+// width of the list view. Phase 11 (CHK-TRAY-49): every column first
+// gets its header and its widest cell (cells: the rows), the rest of the
+// width is shared in proportion to widths; when that is still wider than
+// the list, the optional columns (send, receive, plan; dropped, in the
+// export and the history) go first, then everything is scaled down (no
+// horizontal scrolling).
+func fitColumns(lv uintptr, widths []int32, keys []string, lang string, cells ...[]string) {
 	r := winapi.GetClientRect(lv)
 	avail := r.Right - r.Left - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
 	if avail <= 0 || len(widths) == 0 {
@@ -288,11 +323,37 @@ func fitColumns(lv uintptr, widths []int32, keys []string, lang string) {
 	m := uiMetrics()
 	min := make([]int32, len(widths))
 	want := make([]int32, len(widths))
-	var sumMin, sumExtra int32
-	for i, w := range widths {
+	for i := range widths {
 		if i < len(keys) {
 			tw, _ := m.Text(i18n.T(keys[i], lang))
 			min[i] = tw + px(ui.P12)
+		}
+		for _, row := range cells {
+			if i < len(row) && row[i] != "" {
+				tw, _ := m.Text(row[i])
+				min[i] = max32(min[i], tw+px(ui.P12))
+			}
+		}
+	}
+	drop := map[int]bool{}
+	sum := func() (s int32) {
+		for i := range min {
+			if !drop[i] {
+				s += min[i]
+			}
+		}
+		return s
+	}
+	for _, i := range statusOptional {
+		if sum() <= avail || len(widths) != len(statusColWidths) {
+			break
+		}
+		drop[i] = true
+	}
+	var sumMin, sumExtra int32
+	for i, w := range widths {
+		if drop[i] {
+			continue
 		}
 		want[i] = max32(px(w), min[i])
 		sumMin += min[i]
@@ -302,13 +363,19 @@ func fitColumns(lv uintptr, widths []int32, keys []string, lang string) {
 	for i := range widths {
 		var cw int32
 		switch {
+		case drop[i]:
+			cw = 0
 		case free <= 0:
 			cw = min[i] * avail / max32(sumMin, 1)
 		case sumExtra <= free:
 			cw = want[i] + (free-sumExtra)*want[i]/max32(sumMin+sumExtra, 1)
 		default:
-			cw = min[i] + (want[i]-min[i])*free/sumExtra
+			cw = min[i] + (want[i]-min[i])*free/max32(sumExtra, 1)
 		}
 		winapi.ListViewSetColumnWidth(lv, i, cw)
 	}
 }
+
+// statusOptional: the columns dropped first on a narrow list (send,
+// receive, plan).
+var statusOptional = []int{6, 7, 2}

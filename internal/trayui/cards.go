@@ -18,6 +18,9 @@ type Card struct {
 	Info            string // «Точек: 3, с проблемами: 1» or the error
 	Tip             string // the tooltip: every point with its state
 	Points, Bad     int
+	// Disabled: polling is off; the card shows «Опрос выключен» only
+	// (phase 11, CHK-TRAY-49)
+	Disabled bool
 }
 
 // cardRank orders the colours: the card takes its worst one.
@@ -55,6 +58,9 @@ func Cards(rows []StatusRow, lang string) []Card {
 			c.Color, c.State = r.Color, r.State
 		}
 		if r.PointKey == "" && r.Point == "" {
+			if r.State == i18n.T(i18n.KeyStDisabled, lang) {
+				c.Disabled = true
+			}
 			if r.Note != "" {
 				c.Info = r.Note
 			}
@@ -88,6 +94,11 @@ func Cards(rows []StatusRow, lang string) []Card {
 			c.Fresh = fmt.Sprintf(i18n.T(i18n.KeyCardFresh, lang), c.Fresh)
 		default:
 			c.Fresh = fmt.Sprintf(i18n.T(i18n.KeyCardFresh, lang), i18n.T(i18n.KeyCardNoData, lang))
+		}
+		if c.Disabled {
+			c.State, c.Fresh, c.Info = i18n.T(i18n.KeyCardPollingOff, lang), "", ""
+			c.Tip = c.Name + " — " + c.State
+			continue
 		}
 		if c.Info == "" {
 			c.Info = fmt.Sprintf(i18n.T(i18n.KeyCardPoints, lang), c.Points, c.Bad)

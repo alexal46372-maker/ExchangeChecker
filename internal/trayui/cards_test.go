@@ -41,6 +41,13 @@ func TestCHK_TRAY_48_Cards(t *testing.T) {
 	if en[0].Fresh != "Freshness: 45 мин назад" || en[0].Info != "Points: 3, with problems: 1" || !strings.Contains(en[0].Tip, "Details") {
 		t.Errorf("EN %+v", en[0])
 	}
+	off := Cards([]StatusRow{{Database: "Архив", ProfileID: "p9", State: i18n.T(i18n.KeyStDisabled, i18n.RU), Color: ColorGrey, AgoMinutes: -1}}, i18n.RU)
+	if c := off[0]; !c.Disabled || c.State != "Опрос выключен" || c.Fresh != "" || c.Info != "" {
+		t.Errorf("disabled %+v", c)
+	}
+	if c := Cards([]StatusRow{{Database: "A", State: i18n.T(i18n.KeyStDisabled, i18n.EN), Color: ColorGrey}}, i18n.EN)[0]; c.State != "Polling disabled" {
+		t.Errorf("EN disabled %+v", c)
+	}
 	if Cards(nil, i18n.RU) != nil {
 		t.Error("no rows, no cards")
 	}

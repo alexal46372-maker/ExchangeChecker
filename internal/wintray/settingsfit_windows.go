@@ -394,5 +394,9 @@ func (w *settingsWindow) stackPairs() bool {
 		return false
 	}
 	w.checksG.Rows, w.stackedRows = w.stackedRows, nil
+	if w.tlsG != nil && w.tlsStacked != nil {
+		last := len(w.tlsG.Rows) - 1
+		w.tlsG.Rows[last].Field, w.tlsStacked = w.tlsStacked, nil
+	}
 	return true
 }

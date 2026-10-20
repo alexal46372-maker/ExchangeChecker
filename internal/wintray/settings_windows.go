@@ -199,6 +199,8 @@ type settingsWindow struct {
 	wrap              []*ui.Ctl // text boxes sized to their wrapped text (phase 11)
 	checksG           *ui.Grid  // the thresholds / timeouts (stacked when too narrow)
 	stackedRows       []ui.GridRow
+	tlsG              *ui.Grid
+	tlsStacked        ui.Node
 	scrollSet, inBar  bool
 	barLeft, barRight []barButton
 	// expertShown: the expert-only controls are shown (test hook)
@@ -501,8 +503,13 @@ func (w *settingsWindow) build() {
 		field(w.t(i18n.KeySetEncrypt), idSetEncrypt, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 		field(w.t(i18n.KeySetPreset), idSetPreset, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 	}
-	tlsRows = append(tlsRows, ui.GridRow{Span: true, Field: &ui.Col{Gap: ui.P4, Items: []ui.Node{check(idSetTLS10, i18n.KeySetTLS10), check(idSetTrust, i18n.KeySetTrust)}}})
+	// side by side (the page fits 1024×768 at 96 dpi); stacked by
+	// stackPairs when the window is too narrow
+	tls10, trust := check(idSetTLS10, i18n.KeySetTLS10), check(idSetTrust, i18n.KeySetTrust)
+	tlsRows = append(tlsRows, ui.GridRow{Span: true, Field: &ui.Row{Gap: ui.P16, Items: []ui.Node{tls10, trust}}})
+	w.tlsStacked = &ui.Col{Gap: ui.P4, Items: []ui.Node{tls10, trust}}
 	tlsG := &ui.Grid{Gap: ui.P4, Rows: tlsRows}
+	w.tlsG = tlsG
 	tls := group(i18n.KeySetGroupTLS, tlsG)
 	enabled := check(idSetEnabled, i18n.KeySetEnabled)
 	// two number boxes per row: own thresholds, then timeouts (phase 8)

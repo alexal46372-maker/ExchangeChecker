@@ -174,7 +174,8 @@ func (wd *wizardDialog) build() {
 		x.W, x.Hgt = w, h
 		return x
 	}
-	stepLine := c("STATIC", "", 0, winapi.SS_LEFT, idWizStep, ui.Box, 736, 18)
+	stepLine := c("STATIC", "", 0, winapi.SS_LEFT, idWizStep, ui.Box, 200, 18)
+	stepLine.Grow = true // the window width, never wider (phase 11)
 	stepLine.Grow = true
 	// step 1: server and login
 	wd.cur = &wd.stepCtl[traysettings.WizServer]

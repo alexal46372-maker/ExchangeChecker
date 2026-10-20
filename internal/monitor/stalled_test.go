@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -106,7 +107,7 @@ func TestCHK_MON_18_NodeStatePoints(t *testing.T) {
 	pts := NodeStatePoints("db1", []model.SQLNodeState{{Key: "k", Name: "Магазин", PlanTable: "_Node1", PlanNo: 1, SentNo: 5, ReceivedNo: 9,
 		LastSend: ls, LastRecv: ls, SendBaseline: true, RecvBaseline: true}}, model.DefaultSettings(), t0)
 	if len(pts) != 1 || pts[0].Source != model.PointSourceCounters || *pts[0].SentNo != 5 || *pts[0].ReceivedNo != 9 ||
-		!pts[0].SendBaseline || pts[0].PlanTable != "_Node1" || !pts[0].LastSend.Equal(ls) {
+		!pts[0].SendBaseline || pts[0].PlanTable != "_Node1" || pts[0].NodeKey != "k" || !pts[0].LastSend.Equal(ls) {
 		t.Fatalf("%+v", pts)
 	}
 	p := model.NewProfile("x")
@@ -124,15 +125,99 @@ func TestCHK_MON_18_NodeStatePoints(t *testing.T) {
 	}
 }
 
-// TestCHK_MON_18_AckEvent — a point with a lag alert and a stall alert:
-// ack_alert {eventId} acknowledges only that alert; the legacy
-// {profileId, pointKey} (tray 0.10) acknowledges both; unknown id.
+type stallReporter struct {
+	mu  sync.Mutex
+	ids []uint32
+	msg []string
+}
+
+func (r *stallReporter) Report(_ uint16, id uint32, m string) error {
+	r.mu.Lock()
+	r.ids, r.msg = append(r.ids, id), append(r.msg, m)
+	r.mu.Unlock()
+	return nil
+}
+
+// TestCHK_MON_18_NoDuplicateLag — architect review of b0bff8f: in counters
+// mode FreshAt is the last number change, so with lag thresholds (20/40)
+// below the stalled threshold (60) a stall is the same fact as the lag alarm. The point
+// is alarmed by lag only: no stalled problem, no stall alert event, the
+// Event Log gets one warning + one error entry and Viber one "warning" +
+// one "error" (no extra entries); on recovery there is no stall either.
+func TestCHK_MON_18_NoDuplicateLag(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	p := model.NewProfile("db1")
+	p.Name, p.Server, p.Database, p.AuthMode = "Склад", "srv", "db", model.AuthWindows
+	p.Mapping = model.Mapping{Mode: model.MappingCounters, Table: "_Node1", PointNameColumn: "_Description"}
+	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 60, 20, 40
+	var mu sync.Mutex
+	last := t0.Add(-5 * time.Minute)
+	var evMu sync.Mutex
+	var events []model.AlertEvent
+	rep := &stallReporter{}
+	opt := baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{p}}), clk)
+	opt.NewReader = func(model.Profile, string, sqlcheck.Options) (sqlcheck.ReadCloser, error) {
+		return stallReader{mu: &mu, last: &last}, nil
+	}
+	opt.Sink = alert.Multi{
+		alert.SinkFunc(func(e model.AlertEvent) { evMu.Lock(); events = append(events, e); evMu.Unlock() }),
+		&alert.EventLogSink{R: rep, Lang: model.LangEN},
+	}
+	m := New(opt)
+	m.reloadConfig(true)
+	for i := 0; i < 8; i++ { // 5 .. 75 min without a number change
+		m.pollAll(context.Background())
+		for _, pr := range m.Snapshot().Problems {
+			if pr.Kind == model.ProblemStalled {
+				t.Fatalf("stalled duplicates the lag alarm: %+v", m.Snapshot().Problems)
+			}
+		}
+		if ps := profileByID(m.Snapshot(), "db1"); ps.Stalled || ps.Points[0].Stalled {
+			t.Fatalf("stalled flag %+v", ps)
+		}
+		clk.Add(10 * time.Minute)
+	}
+	if s := m.Snapshot(); len(s.Problems) != 1 || s.Problems[0].Kind != model.ProblemError {
+		t.Fatalf("problems %+v", s.Problems)
+	}
+	mu.Lock()
+	last = clk.Now()
+	mu.Unlock()
+	for i := 0; i < 3; i++ {
+		m.pollAll(context.Background())
+		clk.Add(time.Minute)
+	}
+	evMu.Lock()
+	defer evMu.Unlock()
+	var viber []string
+	for _, e := range events {
+		if e.Stalled {
+			t.Errorf("stall event %+v", e)
+		}
+		if k := model.ViberEventOf(e); k != "" {
+			viber = append(viber, k)
+		}
+	}
+	rep.mu.Lock()
+	defer rep.mu.Unlock()
+	if want := []uint32{alert.EventIDWarning, alert.EventIDError, alert.EventIDRecover}; fmt.Sprint(rep.ids) != fmt.Sprint(want) {
+		t.Errorf("event log %v %q, want %v", rep.ids, rep.msg, want)
+	}
+	if fmt.Sprint(viber) != "[warning error recovered]" {
+		t.Errorf("viber %v", viber)
+	}
+}
+
+// TestCHK_MON_18_AckEvent — a stall alert (lag thresholds above the
+// stalled threshold; a point alarmed by lag is never also stalled):
+// ack_alert {eventId} acknowledges that alert; unknown id; the legacy
+// {profileId, pointKey} (tray 0.10) acknowledges every alert of the point.
 func TestCHK_MON_18_AckEvent(t *testing.T) {
 	clk := &fakeClock{t: t0}
 	p := model.NewProfile("db1")
 	p.Name, p.Server, p.Database, p.AuthMode = "Склад", "srv", "db", model.AuthWindows
 	p.Mapping = model.Mapping{Mode: model.MappingCounters, Table: "_Node1", PointNameColumn: "_Description"}
-	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 10, 20, 40
+	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 10, 600, 1200
 	var mu sync.Mutex
 	last := t0.Add(-5 * time.Hour)
 	opt := baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{p}}), clk)
@@ -142,42 +227,25 @@ func TestCHK_MON_18_AckEvent(t *testing.T) {
 	m := New(opt)
 	m.reloadConfig(true)
 	var s model.StatusSnapshot
-	for i := 0; i < 5 && len(s.Problems) < 2; i++ {
+	for i := 0; i < 5 && len(s.Problems) < 1; i++ {
 		m.pollAll(context.Background())
 		s = m.Snapshot()
 		clk.Add(time.Minute)
 	}
-	if len(s.Problems) != 2 {
+	if len(s.Problems) != 1 || s.Problems[0].Kind != model.ProblemStalled || s.Problems[0].EventID == 0 {
 		t.Fatalf("problems %+v", s.Problems)
 	}
-	byKind := map[string]model.Problem{}
-	for _, pr := range s.Problems {
-		byKind[pr.Kind] = pr
-	}
-	st, lag := byKind[model.ProblemStalled], byKind[model.ProblemError]
-	if st.EventID == 0 || lag.EventID == 0 || st.EventID == lag.EventID || st.PointKey != lag.PointKey {
-		t.Fatalf("problems %+v", s.Problems)
-	}
+	st := s.Problems[0]
 	if _, err := m.AckEvent(999999); err != ErrNoActiveAlert {
 		t.Errorf("unknown id %v", err)
 	}
 	if n, err := m.AckEvent(st.EventID); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
-	acked := func() map[string]bool {
-		out := map[string]bool{}
-		for _, pr := range m.Snapshot().Problems {
-			out[pr.Kind] = pr.Acknowledged
-		}
-		return out
+	if pr := m.Snapshot().Problems; len(pr) != 1 || !pr[0].Acknowledged {
+		t.Fatalf("after ack by event %+v", pr)
 	}
-	if a := acked(); !a[model.ProblemStalled] || a[model.ProblemError] {
-		t.Fatalf("after ack by event %v", a)
-	}
-	if n, err := m.AckAlert("db1", st.PointKey); n != 2 || err != nil {
-		t.Fatal(n, err)
-	}
-	if a := acked(); !a[model.ProblemStalled] || !a[model.ProblemError] {
-		t.Fatalf("after legacy ack %v", a)
+	if n, err := m.AckAlert("db1", st.PointKey); n != 1 || err != nil {
+		t.Errorf("legacy ack: %d %v", n, err)
 	}
 }

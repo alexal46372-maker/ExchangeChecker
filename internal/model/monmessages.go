@@ -121,13 +121,13 @@ const (
 )
 
 var monitorMessages = map[string][2]string{ // key -> {ru, en}
-	MsgMonitorPollError:        {"Ошибка опроса базы.", "Database poll failed."},
-	MsgMonitorConnError:        {"Нет соединения с SQL Server (сеть, имя сервера, логин или пароль).", "Cannot connect to SQL Server (network, server name, login or password)."},
-	MsgMonitorTimeout:          {"Опрос базы не уложился в отведённое время.", "The database poll timed out."},
-	MsgMonitorQueryError:       {"Ошибка запроса к базе.", "A database query failed."},
-	MsgMonitorMapping:          {"Для базы не настроены таблицы обмена (выполните «Найти таблицы»).", "The exchange tables are not configured (run \"Find tables\")."},
-	MsgMonitorConfig:           {"Ошибка настроек профиля или пароля.", "Profile settings or password error."},
-	MsgMonitorPanic:            {"Внутренняя ошибка при опросе базы.", "Internal error while polling the database."},
+	MsgMonitorPollError:  {"Ошибка опроса базы.", "Database poll failed."},
+	MsgMonitorConnError:  {"Нет соединения с SQL Server (сеть, имя сервера, логин или пароль).", "Cannot connect to SQL Server (network, server name, login or password)."},
+	MsgMonitorTimeout:    {"Опрос базы не уложился в отведённое время.", "The database poll timed out."},
+	MsgMonitorQueryError: {"Ошибка запроса к базе.", "A database query failed."},
+	MsgMonitorMapping:    {"Для базы не настроены таблицы обмена (выполните «Найти таблицы»).", "The exchange tables are not configured (run \"Find tables\")."},
+	MsgMonitorConfig:     {"Ошибка настроек профиля или пароля.", "Profile settings or password error."},
+	MsgMonitorPanic:      {"Внутренняя ошибка при опросе базы.", "Internal error while polling the database."},
 	MsgTestStepsServerMismatch: {"Сервер не совпадает с сервером профиля: сохранённый пароль профиля используется только для его сервера (имя, экземпляр, порт). Проверьте сервер или выполните проверку без профиля.",
 		"The server does not match the profile's server: the profile's saved password is used only for its own server (host, instance, port). Check the server or run the check without the profile."},
 	MsgMonitorStalled:          {"Обмен идёт, но номера сообщений узла не меняются дольше порога «застоя».", "The exchange runs but the node's message numbers have not changed for longer than the stalled threshold."},

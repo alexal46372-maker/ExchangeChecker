@@ -36,6 +36,11 @@ type ExchangePoint struct {
 	// (sqlcheck.ReadNodeStates, phase 11, CHK-MON-18).
 	SentNo     *int64 `json:"sentNo,omitempty"`
 	ReceivedNo *int64 `json:"receivedNo,omitempty"`
+	// NodeKey: the 1C exchange node key / code the point belongs to
+	// (counters points: SQLNodeState.Key). Internal, matches a stalled
+	// counters point to its time-based peer (CHK-MON-18); empty when the
+	// source does not report it.
+	NodeKey string `json:"-"`
 }
 
 // FreshAt returns the later of LastSend / LastRecv in DBZone; NULLs are ignored.

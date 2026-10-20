@@ -9,9 +9,13 @@ import (
 // counters-mode point (1C _NodeNNN, message numbers _SentNo / _ReceivedNo
 // read by sqlcheck.ReadNodeStates) is stalled when neither number changed
 // for more than the stalled threshold while the exchange is otherwise
-// alive: the poll succeeds and, when the profile has a time-based point
-// of the same name (another mapping), that point's exchange time is
-// newer than the last number change. Since = the last number change (its
+// alive: the poll succeeds, the point itself is not already warning /
+// error by lag (in counters mode FreshAt is the last number change, so a
+// stall is then the same fact as the lag alarm — no duplicate alert), and,
+// when the profile has a time-based point of the same node (NodeKey, the
+// 1C node key / code; never the display name), that point's exchange
+// time is newer than the last number change. Consequence: a stall alert
+// appears only when the lag thresholds exceed the stalled threshold. Since = the last number change (its
 // FreshAt); a baseline (first observation) counts from the observation,
 // so nothing is flagged before the threshold passed since the service
 // first saw the numbers. The point / profile level is not changed; the
@@ -65,11 +69,11 @@ func MarkStalled(ps *ProfileSnapshot, after time.Duration, now time.Time) {
 	if after <= 0 || ps.Error != "" {
 		return
 	}
-	peers := map[string]time.Time{} // time-based points by name
+	peers := map[string]time.Time{} // time-based points by node key
 	for _, pt := range ps.Points {
-		if pt.Source != PointSourceCounters && pt.FreshAt != nil {
-			if t, ok := peers[pt.Name]; !ok || pt.FreshAt.After(t) {
-				peers[pt.Name] = *pt.FreshAt
+		if pt.Source != PointSourceCounters && pt.FreshAt != nil && pt.NodeKey != "" {
+			if t, ok := peers[pt.NodeKey]; !ok || pt.FreshAt.After(t) {
+				peers[pt.NodeKey] = *pt.FreshAt
 			}
 		}
 	}
@@ -78,7 +82,10 @@ func MarkStalled(ps *ProfileSnapshot, after time.Duration, now time.Time) {
 		if pt.Source != PointSourceCounters || pt.FreshAt == nil || now.Sub(*pt.FreshAt) <= after {
 			continue
 		}
-		if t, ok := peers[pt.Name]; ok && !t.After(*pt.FreshAt) {
+		if pt.Level != LevelOK {
+			continue // already alarmed by lag: the stall would duplicate it
+		}
+		if t, ok := peers[pt.NodeKey]; pt.NodeKey != "" && ok && !t.After(*pt.FreshAt) {
 			continue // the exchange time stopped too: a lag alarm, not a stall
 		}
 		since := pt.FreshAt.In(DBZone)

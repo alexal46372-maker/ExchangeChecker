@@ -8,19 +8,31 @@ import (
 // TestCHK_MON_18_MarkStalled — counters points whose numbers have not
 // changed for more than the threshold are stalled (since = last change;
 // a baseline counts from the observation); not when a time-based point of
-// the same name stopped too; never on a profile error or when off.
+// the same node key stopped too (matched by key, never by name); not when
+// the point is already warning / error by lag; never on a profile error
+// or when off.
 func TestCHK_MON_18_MarkStalled(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, DBZone)
 	ago := func(m int) *time.Time { x := now.Add(-time.Duration(m) * time.Minute); return &x }
-	cp := func(name string, m int) PointStatus {
-		return PointStatus{ExchangePoint: ExchangePoint{Name: name, Source: PointSourceCounters}, FreshAt: ago(m)}
+	cp := func(name, key string, m int) PointStatus {
+		return PointStatus{ExchangePoint: ExchangePoint{Name: name, NodeKey: key, Source: PointSourceCounters}, FreshAt: ago(m)}
 	}
-	tp := func(name string, m int) PointStatus {
-		return PointStatus{ExchangePoint: ExchangePoint{Name: name}, FreshAt: ago(m)}
+	tp := func(name, key string, m int) PointStatus {
+		return PointStatus{ExchangePoint: ExchangePoint{Name: name, NodeKey: key}, FreshAt: ago(m)}
 	}
-	ps := ProfileSnapshot{Points: []PointStatus{cp("a", 130), cp("b", 60), cp("c", 200), tp("c", 5), cp("d", 200), tp("d", 300), tp("e", 500)}}
+	warn := cp("w", "W", 200)
+	warn.Level = LevelWarning
+	errp := cp("x", "X", 200)
+	errp.Level = LevelError
+	ps := ProfileSnapshot{Points: []PointStatus{
+		cp("a", "A", 130), cp("b", "B", 60),
+		cp("c", "C", 200), tp("other name", "C", 5), // peer by key alive: stalled
+		cp("d", "D", 200), tp("d renamed", "D", 300), // peer by key stopped: lag, no stall
+		cp("f", "F", 200), tp("f", "F2", 300), // same name, other node: no peer
+		cp("g", "G", 200), tp("g", "", 300), // peer without a key: never matched
+		warn, errp, tp("e", "E", 500)}}
 	MarkStalled(&ps, 120*time.Minute, now)
-	want := map[int]bool{0: true, 1: false, 2: true, 3: false, 4: false, 5: false, 6: false}
+	want := map[int]bool{0: true, 1: false, 2: true, 3: false, 4: false, 5: false, 6: true, 7: false, 8: true, 9: false, 10: false, 11: false, 12: false}
 	for i, w := range want {
 		if ps.Points[i].Stalled != w {
 			t.Errorf("point %d (%s) stalled %v", i, ps.Points[i].Name, ps.Points[i].Stalled)

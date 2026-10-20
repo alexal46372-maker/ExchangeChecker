@@ -93,7 +93,11 @@ func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
 	w := openAdmin(t, app)
 	for _, id := range []int32{idSetNavProfiles, idSetPage, idSetUIMode} {
 		if winapi.SendMessage(w.ctl[id], winapi.BM_GETIMAGE, winapi.IMAGE_ICON, 0) == 0 {
-			t.Errorf("nav %d without icon", id)
+			h := uiIcons.ico(trayui.IcoNavMode, px(icoSmall))
+			prev := winapi.SendMessage(w.ctl[id], winapi.BM_SETIMAGE, winapi.IMAGE_ICON, h)
+			t.Errorf("nav %d without icon (class %q style %#x visible %v; set again: prev %#x, now %#x, icon %#x)", id,
+				winapi.GetClassName(w.ctl[id]), winapi.WindowStyle(w.ctl[id]), visible(w.ctl[id]), prev,
+				winapi.SendMessage(w.ctl[id], winapi.BM_GETIMAGE, winapi.IMAGE_ICON, 0), h)
 		}
 	}
 	if winapi.SendMessage(w.hwnd, winapi.WM_GETICON, winapi.ICON_SMALL, 0) == 0 {

@@ -270,7 +270,9 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 // alert, status) in lang and visits it (layout test, CI screenshots).
 func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
 	t.Helper()
-	if !useComCtl6() {
+	done, ok := useComCtl6()
+	defer done()
+	if !ok {
 		t.Log("Common Controls 6 activation context not available: cues are not drawn")
 	}
 	func() { // import dialog after a dry run (phase 11)

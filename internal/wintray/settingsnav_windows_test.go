@@ -49,8 +49,13 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 				t.Errorf("%s: nav button %d not right below the previous one: %+v %+v", lang, id, r(prev), r(id))
 			}
 		}
-		if winapi.IsWindowEnabled(w.ctl[idSetNavProfiles]) || !winapi.IsWindowEnabled(w.ctl[idSetPage]) {
+		if !navChecked(w.ctl[idSetNavProfiles]) || navChecked(w.ctl[idSetPage]) {
 			t.Errorf("%s: databases page not marked", lang)
+		}
+		for _, id := range []int32{idSetNavProfiles, idSetPage, idSetViber} {
+			if !winapi.IsWindowEnabled(w.ctl[id]) {
+				t.Errorf("%s: nav %d disabled (the current page is pressed, not greyed)", lang, id)
+			}
 		}
 		barLeft := func() int32 { return winapi.GetWindowRect(w.ctl[idSetStatus]).Left }
 		for _, p := range []struct {
@@ -58,7 +63,7 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 			page int
 		}{{idSetPage, 1}, {idSetViber, pageViber}} {
 			w.click(t, p.id)
-			if w.page != p.page || winapi.IsWindowEnabled(w.ctl[p.id]) || !winapi.IsWindowEnabled(w.ctl[idSetNavProfiles]) {
+			if w.page != p.page || !navChecked(w.ctl[p.id]) || navChecked(w.ctl[idSetNavProfiles]) {
 				t.Errorf("%s: page %d after nav %d", lang, w.page, p.id)
 			}
 			// the first visible bar button starts at the margin

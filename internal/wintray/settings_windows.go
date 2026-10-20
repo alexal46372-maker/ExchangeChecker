@@ -455,13 +455,13 @@ func (w *settingsWindow) build() {
 	}
 	const cw = 390 // edit / combo boxes
 	// left navigation (phase 11, CHK-TRAY-47): one button per page, the
-	// current one disabled; then the mode switch; then the profile list
+	// current one pressed (push-like check box, not disabled: Кончита); then the mode switch; then the profile list
 	// column of the databases page
 	w.cur = nil
 	nav := &ui.Col{Gap: ui.P4, Items: []ui.Node{
-		add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP, idSetNavProfiles, ui.Button, 205, 0),
-		add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP, idSetPage, ui.Button, 205, 0),
-		add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP, idSetViber, ui.Button, 205, 0),
+		add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP|navStyle, idSetNavProfiles, ui.Button, 205, 0),
+		add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP|navStyle, idSetPage, ui.Button, 205, 0),
+		add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP|navStyle, idSetViber, ui.Button, 205, 0),
 		add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0),
 	}}
 	winapi.SetWindowText(w.ctl[idSetUIMode], "")         // applyUIMode names it

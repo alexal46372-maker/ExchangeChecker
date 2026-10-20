@@ -832,7 +832,7 @@ func TestCHK_TRAY_09_SettingsGeneralPage(t *testing.T) {
 		t.Fatal("initial page")
 	}
 	w.click(t, idSetPage)
-	if w.page != 1 || winapi.IsWindowEnabled(w.ctl[idSetPage]) || !winapi.IsWindowEnabled(w.ctl[idSetNavProfiles]) {
+	if w.page != 1 || !navChecked(w.ctl[idSetPage]) || navChecked(w.ctl[idSetNavProfiles]) {
 		t.Fatalf("page %d: the navigation must mark «Общие настройки»", w.page)
 	}
 	if w.text(idGenPoll) != "60" || !w.check(idGenBeep) || !w.check(idGenAutostart) || !winapi.IsWindowEnabled(w.ctl[idGenBeep]) {

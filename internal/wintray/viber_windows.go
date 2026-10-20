@@ -262,7 +262,8 @@ func (w *settingsWindow) updateViber() {
 		w.show(b, cmd == winapi.SW_SHOW)
 		w.relayoutAll()
 	}
-	winapi.EnableWindow(w.ctl[idSetViber], avail && w.page != pageViber)
+	winapi.EnableWindow(w.ctl[idSetViber], avail)
+	w.markNav()
 	can := w.ed.CanEditViber()
 	for _, id := range []int32{idVbToken, idVbRecipients, idVbFrom, idVbTo, idVbReminder} {
 		winapi.SendMessage(w.ctl[id], winapi.EM_SETREADONLY, boolPtr(!can), 0)

@@ -4,6 +4,7 @@ package winapi
 
 import (
 	"fmt"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -179,8 +180,9 @@ func clsidFromProgID(prog string) (GUID, error) {
 
 func coCreate(clsid, iid *GUID, what string) (*comObject, error) {
 	var p *comObject
+	// CLSCTX_INPROC_SERVER matches the Win7 sample (Add_LAN_Rule.cpp).
 	hr, _, _ := callProc(procCoCreateInstance,
-		uintptr(unsafe.Pointer(clsid)), 0, clsctxAll,
+		uintptr(unsafe.Pointer(clsid)), 0, clsctxInprocServer,
 		uintptr(unsafe.Pointer(iid)), uintptr(unsafe.Pointer(&p)))
 	if err := hrErr("CoCreateInstance("+what+")", hr); err != nil {
 		return nil, err
@@ -209,16 +211,8 @@ func newFwRule() (*comObject, error) {
 }
 
 func fwRules(policy *comObject) (*comObject, error) {
-	var raw *comObject
-	if err := hrErr("INetFwPolicy2.get_Rules", comCall(policy, FwPolicy2GetRules, uintptr(unsafe.Pointer(&raw)))); err != nil {
-		return nil, err
-	}
-	// get_Rules returns INetFwRules*; QI to the documented IID to catch a
-	// wrong interface pointer early (same pattern as IPersistFile).
 	var rules *comObject
-	hr := comCall(raw, vtQueryInterface, uintptr(unsafe.Pointer(&IID_INetFwRules)), uintptr(unsafe.Pointer(&rules)))
-	comCall(raw, vtRelease)
-	if err := hrErr("QueryInterface(INetFwRules)", hr); err != nil {
+	if err := hrErr("INetFwPolicy2.get_Rules", comCall(policy, FwPolicy2GetRules, uintptr(unsafe.Pointer(&rules)))); err != nil {
 		return nil, err
 	}
 	return rules, nil
@@ -245,7 +239,7 @@ func fwRemoveOurs(rules *comObject) error {
 	seen := map[string]bool{}
 	var names []string
 	for _, info := range list {
-		if info.Name == FirewallRuleName || info.Grouping == FirewallGrouping {
+		if strings.EqualFold(info.Name, FirewallRuleName) || info.Grouping == FirewallGrouping {
 			if !seen[info.Name] && info.Name != "" {
 				seen[info.Name] = true
 				names = append(names, info.Name)
@@ -330,7 +324,18 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	if err := hrErr("put_Enabled", comCall(rule, FwRulePutEnabled, uintptr(variantTrue))); err != nil {
 		return err
 	}
-	return hrErr("INetFwRules.Add", comCall(rules, FwRulesAdd, uintptr(unsafe.Pointer(rule))))
+	if err := hrErr("INetFwRules.Add", comCall(rules, FwRulesAdd, uintptr(unsafe.Pointer(rule)))); err != nil {
+		return err
+	}
+	// Confirm the rule is in the store (Item by name); catches silent no-ops.
+	if _, ok, err := itemByName(rules, FirewallRuleName); err != nil {
+		return err
+	} else if !ok {
+		var count int32
+		_ = hrErr("get_Count", comCall(rules, FwRulesGetCount, uintptr(unsafe.Pointer(&count))))
+		return fmt.Errorf("INetFwRules.Add returned S_OK but Item(%q) missing (count=%d)", FirewallRuleName, count)
+	}
+	return nil
 }
 
 // RemoveSQLBrowserFirewallRule deletes every firewall rule with our Name
@@ -347,6 +352,46 @@ func RemoveSQLBrowserFirewallRule() error {
 	}
 	defer comCall(rules, vtRelease)
 	return fwRemoveOurs(rules)
+}
+
+
+// LookupFirewallRule returns one rule by Name via INetFwRules::Item.
+// ok is false when no such rule exists. Call inside WithCOM… actually opens its own policy; use from tests via WithCOM wrapper or standalone.
+func LookupFirewallRule(name string) (info FirewallRuleInfo, ok bool, err error) {
+	policy, err := newFwPolicy2()
+	if err != nil {
+		return info, false, err
+	}
+	defer comCall(policy, vtRelease)
+	rules, err := fwRules(policy)
+	if err != nil {
+		return info, false, err
+	}
+	defer comCall(rules, vtRelease)
+	return itemByName(rules, name)
+}
+
+func itemByName(rules *comObject, name string) (FirewallRuleInfo, bool, error) {
+	var info FirewallRuleInfo
+	b, err := allocBSTR(name)
+	if err != nil {
+		return info, false, err
+	}
+	defer freeBSTR(b)
+	var v variant
+	v.VT = 8 // VT_BSTR
+	*(*uintptr)(unsafe.Pointer(&v.Val[0])) = uintptr(unsafe.Pointer(b))
+	var rule *comObject
+	hr := comCall(rules, FwRulesItem, uintptr(unsafe.Pointer(&v)), uintptr(unsafe.Pointer(&rule)))
+	if int32(hr) < 0 || rule == nil {
+		return info, false, nil
+	}
+	info, err = readFwRule(rule)
+	comCall(rule, vtRelease)
+	if err != nil {
+		return info, false, err
+	}
+	return info, true, nil
 }
 
 // FirewallRuleInfo is a read-back of one INetFwRule (CHK-SETUP-13 e2e).
@@ -402,7 +447,7 @@ func ListFirewallRulesNamed(name string) ([]FirewallRuleInfo, error) {
 	}
 	var out []FirewallRuleInfo
 	for _, info := range all {
-		if info.Name == name {
+		if strings.EqualFold(info.Name, name) {
 			out = append(out, info)
 		}
 	}

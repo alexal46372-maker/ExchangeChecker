@@ -18,6 +18,12 @@ const (
 	MsgSQLBrowseProgress    = "sql_browse_progress"
 	MsgSQLTestStepsProgress = "sql_test_steps_progress"
 
+	// MsgTestStepsServerMismatch: sql_test_steps with profileId for a
+	// server other than the profile's (host, instance, port after
+	// normalization, model.TargetChanged): the saved password is never
+	// sent to another server (architect review, CHK-IPC-13).
+	MsgTestStepsServerMismatch = "monitor.test_steps_server_mismatch"
+
 	// Capabilities (EC Tray names).
 	CapBrowseSubnet = "browse_subnet" // sql_browse mode subnet (+ host / broadcast v2 fields, progress)
 	CapBrowseLocal  = "browse_local"  // sql_browse mode local

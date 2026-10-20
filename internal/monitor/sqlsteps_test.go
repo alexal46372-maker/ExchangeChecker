@@ -147,11 +147,21 @@ func TestCHK_IPC_13_SQLTestSteps(t *testing.T) {
 	if _, err = m.SQLTestSteps(ctx, model.IPCRequest{Server: "srv", ProfileID: "nope"}, step); !errors.Is(err, ErrUnknownProfile) {
 		t.Errorf("unknown profile %v", err)
 	}
-	res, err := m.SQLTestSteps(ctx, model.IPCRequest{Server: `srv\SQL2008,1444`, ProfileID: "db1"}, step)
+	// another server than the profile's: refused, the password never leaves
+	for _, srv := range []string{`srv\SQL2008`, "srv,1444", "other", `srv\SQL2008,1433`} {
+		gotServer = ""
+		_, err := m.SQLTestSteps(ctx, model.IPCRequest{Server: srv, ProfileID: "db1"}, step)
+		var ie *model.IPCError
+		if !errors.As(err, &ie) || ie.Code != model.ErrCodeInvalidRequest || ie.Key != model.MsgTestStepsServerMismatch || gotServer != "" {
+			t.Errorf("%s: %v (checked %q)", srv, err, gotServer)
+		}
+	}
+	// the same server after normalization (case, explicit default port)
+	res, err := m.SQLTestSteps(ctx, model.IPCRequest{Server: "SRV,1433", ProfileID: "db1"}, step)
 	if err != nil || len(res.Steps) != 2 || len(steps) != 2 || steps[1].Code != "login_failed" {
 		t.Fatalf("%+v %v %+v", res, err, steps)
 	}
-	if gotServer != `srv\SQL2008,1444` || gotOpt.Profile == nil || gotOpt.Profile.ID != "db1" || gotOpt.Password != "S3cret!pw" {
+	if gotServer != "SRV,1433" || gotOpt.Profile == nil || gotOpt.Profile.ID != "db1" || gotOpt.Password != "S3cret!pw" {
 		t.Errorf("opt %q %+v", gotServer, gotOpt.Profile)
 	}
 	if _, err = m.SQLTestSteps(ctx, model.IPCRequest{Server: "srv"}, nil2(step)); err != nil || gotOpt.Profile != nil || gotOpt.Password != "" {

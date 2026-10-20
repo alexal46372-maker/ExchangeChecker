@@ -261,19 +261,43 @@ func (m *Monitor) SQLTestSteps(ctx context.Context, req model.IPCRequest, step f
 		return model.SQLServerCheckResult{}, fieldRequestError(err, "server")
 	}
 	opt := sqlcheck.ServerCheckOptions{Step: step}
+	// pw: the saved password as bytes, zeroed when the call ends; the
+	// string handed to sqlcheck (its API) is the only other copy and is
+	// not kept after the call (opt.Password cleared).
+	var pw []byte
+	defer func() {
+		for i := range pw {
+			pw[i] = 0
+		}
+	}()
 	if req.ProfileID != "" {
 		m.mu.Lock()
 		e := m.entries[req.ProfileID]
 		var p model.Profile
-		var pw string
 		if e != nil {
-			p, pw = e.profile, e.password
+			p = e.profile
+			pw = append(pw, e.password...)
 		}
 		m.mu.Unlock()
 		if e == nil {
 			return model.SQLServerCheckResult{}, ErrUnknownProfile
 		}
-		opt.Profile, opt.Password = &p, pw
+		// the saved password only for the profile's own server
+		host, inst, port, err := sqlcheck.ParseSQLServerTarget(server)
+		if err != nil {
+			return model.SQLServerCheckResult{}, fieldRequestError(err, "server")
+		}
+		target := p
+		target.Server, target.Port = host, port
+		if inst != "" {
+			target.Server = host + `\` + inst
+		}
+		if model.TargetChanged(target, p) {
+			m.opt.Log.Printf("sql_test_steps %q profile %q: server does not match the profile, refused", server, req.ProfileID)
+			return model.SQLServerCheckResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgTestStepsServerMismatch,
+				Message: "sql_test_steps: server does not match the profile's server", Args: []string{"server"}}
+		}
+		opt.Profile = &p
 	}
 	x := m.explorer
 	now := m.opt.Now()
@@ -299,12 +323,15 @@ func (m *Monitor) SQLTestSteps(ctx context.Context, req model.IPCRequest, step f
 	cctx, cancel := context.WithTimeout(ctx, model.IPCSQLTestStepsTimeout)
 	defer cancel()
 	start := time.Now()
+	opt.Password = string(pw)
 	res, err := check(cctx, server, opt)
+	scrub := opt.Password
+	opt.Password = ""
 	if err != nil {
 		if ctx.Err() != nil {
 			return model.SQLServerCheckResult{}, ctx.Err()
 		}
-		err = interactiveError(err, opt.Password)
+		err = interactiveError(err, scrub)
 		m.opt.Log.Printf("sql_test_steps %q profile %q: %v in %d ms", server, req.ProfileID, err, time.Since(start).Milliseconds())
 		return model.SQLServerCheckResult{}, err
 	}

@@ -6,14 +6,18 @@ import "time"
 // EC Tray. Admin only, capability alarm_test.
 //
 // Request {"cmd":"alarm_test","level":"warning"|"error","viber":bool}.
-// The service pushes {"type":"alert","alert":{…,"test":true}} to every
-// connected tray (id / eventId 0: never acknowledged; not in
-// events_since, the history, the Event Log, status.alerts / problems,
-// Viber summaries; only the service log file records who sent it);
-// viber:true also sends "Тест" / "Test" to every saved Viber recipient
-// ignoring enabled and the schedule. Reply MsgAlarmTest with AlarmTest.
-// One alarm_test per service per AlarmTestInterval (rate_limited +
-// retryAfterMs).
+// The service pushes {"type":"alert","alert":{…,"profileId":"alarm-test",
+// "test":true}} only to the connections that declared "alarm_test" in
+// client_hello (others, e.g. tray 0.10, get nothing). The test alert has
+// id / eventId 0 (it cannot be acknowledged) and is not passed to the
+// alert sinks: not in events_since, the history, the Event Log,
+// status.alerts / problems or the Viber notifications; the service log
+// records the level, the account and the viber flag. viber:true sends
+// "ExchangeChecker: Тест" / "Test" directly to every saved Viber
+// recipient, ignoring enabled and the schedule. Reply MsgAlarmTest with
+// AlarmTest (viber.results per recipient, viber.errorKey when nothing
+// could be sent). One alarm_test per service per AlarmTestInterval
+// (rate_limited + retryAfterMs); non-admin: access_denied.
 const (
 	CmdAlarmTest      = "alarm_test"
 	CapAlarmTest      = "alarm_test"

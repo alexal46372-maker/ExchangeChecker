@@ -10,6 +10,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // Phase 10 A windows: «Звук тревог» (profiles, CHK-TRAY-33/34) and the
@@ -295,10 +296,10 @@ func (a *App) OpenVolume() *volumeWindow {
 		return w
 	}
 	winapi.InitTooltips() // ICC_WIN95_CLASSES: msctls_trackbar32
-	const W, H = 260, 74
+	const W = 260
 	v := &volumeWindow{}
 	hwnd, err := createWindow(volumeClass, i18n.T(i18n.KeyVolumeTitle, a.opt.Lang), winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW,
-		winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, 0, 0, W, H, a.hwnd,
+		winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, 0, 0, W, 74, a.hwnd,
 		func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 			switch msg {
 			case winapi.WM_HSCROLL:
@@ -321,8 +322,13 @@ func (a *App) OpenVolume() *volumeWindow {
 		return nil
 	}
 	v.hwnd = hwnd
-	v.bar = child(hwnd, "msctls_trackbar32", "", winapi.WS_TABSTOP|winapi.TBS_AUTOTICKS, idVolBar, 8, 6, W-70, 30)
-	v.label = child(hwnd, "STATIC", "", winapi.SS_LEFT, -1, W-58, 12, 48, 20)
+	v.bar = child(hwnd, "msctls_trackbar32", "", winapi.WS_TABSTOP|winapi.TBS_AUTOTICKS, idVolBar, 0, 0, 0, 0)
+	v.label = child(hwnd, "STATIC", "", winapi.SS_LEFT, -1, 0, 0, 0, 0)
+	// phase 11 (CHK-TRAY-45): trackbar | «100 %», laid out by the framework
+	f := newForm(&ui.Pad{All: ui.P8, Child: &ui.Row{Align: ui.Center, Gap: ui.P8, Items: []ui.Node{
+		&ui.Ctl{H: v.bar, Kind: ui.Box, W: W - 70, Hgt: 30},
+		uiCtl(v.label, ui.Label, "100 %"),
+	}}}, 0)
 	winapi.SendMessage(v.bar, winapi.TBM_SETRANGE, 1, 100<<16)
 	winapi.SendMessage(v.bar, winapi.TBM_SETTICFREQ, 10, 0)
 	winapi.SendMessage(v.bar, winapi.TBM_SETPAGESIZE, 0, 10)
@@ -331,7 +337,7 @@ func (a *App) OpenVolume() *volumeWindow {
 	v.tips = newTooltips(hwnd)
 	v.tips.set(v.bar, i18n.T(i18n.KeyTipVolume, a.opt.Lang))
 	a.volWin = v
-	ow, oh := outerSize(px(W), px(H), winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW)
+	ow, oh := outerSize(f.W, f.H, winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW)
 	x, y := a.panelPos(ow, oh)
 	winapi.SetWindowPos(hwnd, winapi.HWND_TOPMOST, x, y, ow, oh, 0)
 	if !a.opt.HiddenPanel {

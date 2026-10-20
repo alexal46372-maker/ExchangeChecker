@@ -324,18 +324,36 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	if err := hrErr("put_Enabled", comCall(rule, FwRulePutEnabled, uintptr(variantTrue))); err != nil {
 		return err
 	}
-	if err := hrErr("INetFwRules.Add", comCall(rules, FwRulesAdd, uintptr(unsafe.Pointer(rule)))); err != nil {
+	// Read Name back before Add (proves put_Name stuck).
+	gotName, err := getBSTR(rule, FwRuleGetName, "get_Name")
+	if err != nil {
 		return err
 	}
-	// Confirm the rule is in the store (Item by name); catches silent no-ops.
+	if gotName != FirewallRuleName {
+		return fmt.Errorf("put_Name did not stick: got %q", gotName)
+	}
+	hrAdd := comCall(rules, FwRulesAdd, uintptr(unsafe.Pointer(rule)))
+	if err := hrErr("INetFwRules.Add", hrAdd); err != nil {
+		return fmt.Errorf("%w (hr=0x%08X)", err, uint32(hrAdd))
+	}
+	// Prefer Item(name); if that fails, scan by Grouping (diagnoses put_Name vs Add).
 	if _, ok, err := itemByName(rules, FirewallRuleName); err != nil {
 		return err
-	} else if !ok {
-		var count int32
-		_ = hrErr("get_Count", comCall(rules, FwRulesGetCount, uintptr(unsafe.Pointer(&count))))
-		return fmt.Errorf("INetFwRules.Add returned S_OK but Item(%q) missing (count=%d)", FirewallRuleName, count)
+	} else if ok {
+		return nil
 	}
-	return nil
+	all, err := listFwRules(rules)
+	if err != nil {
+		return err
+	}
+	var byGroup []string
+	for _, info := range all {
+		if info.Grouping == FirewallGrouping {
+			byGroup = append(byGroup, fmt.Sprintf("%q app=%q", info.Name, info.Application))
+		}
+	}
+	return fmt.Errorf("INetFwRules.Add S_OK but rule %q not found (count=%d, grouping matches=%v, pre-Add name=%q, hr=0x%08X)",
+		FirewallRuleName, len(all), byGroup, gotName, uint32(hrAdd))
 }
 
 // RemoveSQLBrowserFirewallRule deletes every firewall rule with our Name

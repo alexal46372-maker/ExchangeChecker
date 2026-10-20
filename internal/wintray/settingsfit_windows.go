@@ -327,7 +327,15 @@ func (w *settingsWindow) relayoutAll() {
 	if w.root == nil {
 		return
 	}
-	w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+	// another page may be wider: shrink it to the window (no horizontal
+	// scrolling, phase 11)
+	avail := winapi.GetClientRect(w.hwnd).Right - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
+	for i := 0; i < 8; i++ {
+		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+		if over := w.pageW - avail; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) {
+			break
+		}
+	}
 	ui.Walk(w.root, w.placeCtl)
 	w.layoutFit()
 }

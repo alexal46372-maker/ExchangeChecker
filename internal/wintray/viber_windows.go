@@ -108,7 +108,7 @@ func (w *settingsWindow) buildViber() (page ui.Node) {
 	enabled := check(i18n.KeyVbEnabled, idVbEnabled)
 	tokenL := label(i18n.KeyVbToken, idVbToken)
 	token := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idVbToken, ui.Edit, 390, 0)
-	tokenState := add("STATIC", "", 0, winapi.SS_LEFT, idVbTokenState, ui.Box, 390, 18)
+	tokenState := add("STATIC", "", 0, winapi.SS_LEFT, idVbTokenState, ui.Box, 240, 18)
 	clear := check(i18n.KeyVbClearToken, idVbClearToken)
 	recL := label(i18n.KeyVbRecipients, idVbRecipients)
 	rec := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL|winapi.ES_WANTRETURN,
@@ -134,8 +134,8 @@ func (w *settingsWindow) buildViber() (page ui.Node) {
 	testL := label(i18n.KeyVbTestTo, idVbTestTo)
 	testTo := add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idVbTestTo, ui.Combo, 270, 0)
 	test := add("BUTTON", w.t(i18n.KeyVbTest), 0, winapi.WS_TABSTOP, idVbTest, ui.Button, 110, 0)
-	result := add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, ui.Box, 525, 64)
-	status := add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, ui.Box, 525, 54)
+	result := add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, ui.Box, 360, 64)
+	status := add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, ui.Box, 360, 54)
 	result.Grow, status.Grow = true, true
 	w.cur = nil
 	page = &ui.GroupBox{Box: box, Child: &ui.Col{Items: []ui.Node{

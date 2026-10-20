@@ -498,7 +498,7 @@ func (w *settingsWindow) build() {
 		field(w.t(i18n.KeySetEncrypt), idSetEncrypt, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 		field(w.t(i18n.KeySetPreset), idSetPreset, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 	}
-	tlsRows = append(tlsRows, ui.GridRow{Span: true, Field: &ui.Row{Gap: ui.P16, Items: []ui.Node{check(idSetTLS10, i18n.KeySetTLS10), check(idSetTrust, i18n.KeySetTrust)}}})
+	tlsRows = append(tlsRows, ui.GridRow{Span: true, Field: &ui.Col{Gap: ui.P4, Items: []ui.Node{check(idSetTLS10, i18n.KeySetTLS10), check(idSetTrust, i18n.KeySetTrust)}}})
 	tlsG := &ui.Grid{Gap: ui.P4, Rows: tlsRows}
 	tls := group(i18n.KeySetGroupTLS, tlsG)
 	enabled := check(idSetEnabled, i18n.KeySetEnabled)
@@ -516,8 +516,8 @@ func (w *settingsWindow) build() {
 	}}
 	checks := group(i18n.KeySetGroupChecks, checksG)
 	ui.Share(connG, loginG, tlsG, checksG)
-	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 300, 30)
-	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 260, 16)
+	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 120, 30)
+	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 120, 16)
 	hints.Grow, info.Grow = true, true
 	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
 
@@ -534,8 +534,8 @@ func (w *settingsWindow) build() {
 	}
 	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Check, 0, 34)
-	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 525, 32)
-	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 525, 100)
+	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 360, 32)
+	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 360, 100)
 	autoErr.Grow, note.Grow = true, true
 	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
 	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}

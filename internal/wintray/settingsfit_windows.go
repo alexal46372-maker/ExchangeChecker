@@ -2,7 +2,10 @@
 
 package wintray
 
-import "github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+import (
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
+)
 
 // Phase 10 E (CHK-TRAY-42, PLAN §12 p.122): the settings window never
 // exceeds the work area of the monitor. The pages live in a scrolled
@@ -43,7 +46,12 @@ var hostExtent = map[uintptr][2]int32{}
 // grid if it fits, else clamped to the work area (with room for the
 // vertical scroll bar when the height is clamped).
 func settingsRect(style uint32) (x, y, w, h int32) {
-	cw, ch := px(setContentW), px(setContentH+setBarH)
+	return settingsRectPx(style, px(setContentW), px(setContentH+setBarH))
+}
+
+// settingsRectPx is settingsRect for a client of cw×ch pixels (the laid
+// out pages plus the bar, phase 11).
+func settingsRectPx(style uint32, cw, ch int32) (x, y, w, h int32) {
 	work := workArea()
 	outer := func(cw, ch int32) (int32, int32) {
 		r := winapi.RECT{Right: cw, Bottom: ch}
@@ -236,6 +244,9 @@ func (w *settingsWindow) layoutFit() {
 	}
 	winapi.MoveWindow(w.host, 0, 0, cw, top)
 	w.contentW, w.contentH = px(setContentW), px(setContentH)
+	if w.pageW > 0 { // laid out by the framework (phase 11)
+		w.contentW, w.contentH = w.pageW, w.pageH
+	}
 	// the client of the host without its scroll bars
 	w.viewW, w.viewH = cw, top
 	if w.contentH > w.viewH {
@@ -256,4 +267,44 @@ func (w *settingsWindow) layoutFit() {
 type barButton struct {
 	id    int32
 	width int32
+}
+
+// layoutPages lays out the page host (phase 11, CHK-TRAY-45): the profile
+// list column on the left and the pages, all in one area as large as the
+// largest page, on the right. Visibility stays with setPage /
+// applyUIMode; this only places (host coordinates, hostRect for the
+// scrolling) and sizes the window to the content.
+func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Node) {
+	var pw, ph int32
+	for _, n := range pages {
+		x, y := ui.Layout(n, m, 0, 0, 0)
+		pw, ph = max32(pw, x), max32(ph, y)
+	}
+	area := &ui.Ctl{Kind: ui.Box, W: unpx(pw), Hgt: unpx(ph)}
+	root := &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P16, Bottom: ui.P8,
+		Child: &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, area}}}
+	w.pageW, w.pageH = ui.Layout(root, m, 0, 0, 0)
+	ui.Walk(root, w.placeCtl)
+	for _, n := range pages {
+		ui.Layout(n, m, area.Rect.X, area.Rect.Y, area.Rect.W)
+		ui.Walk(n, w.placeCtl)
+	}
+	style := winapi.WindowStyle(w.hwnd)
+	x, y, ww, wh := settingsRectPx(style&^(winapi.WS_VSCROLL|winapi.WS_HSCROLL), w.pageW, w.pageH+px(setBarH))
+	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
+}
+
+// placeCtl moves a laid out page control (host coordinates; combo boxes
+// keep their drop-down height) and records it for the scrolling.
+func (w *settingsWindow) placeCtl(c *ui.Ctl) {
+	if c.H == 0 || !c.Placed {
+		return
+	}
+	r := c.Rect
+	h := r.H
+	if c.Kind == ui.Combo {
+		h += px(comboDrop)
+	}
+	w.hostRect[c.H] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + h}
+	winapi.MoveWindow(c.H, r.X, r.Y, r.W, h)
 }

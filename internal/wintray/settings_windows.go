@@ -16,6 +16,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // SettingsClass is the window class of the administrator settings window
@@ -189,6 +190,7 @@ type settingsWindow struct {
 	hostRect                       map[uintptr]winapi.RECT
 	scrollX, scrollY, viewW, viewH int32
 	contentW, contentH             int32
+	pageW, pageH                   int32 // laid out page content (px, phase 11)
 	scrollSet, inBar               bool
 	barLeft, barRight              []barButton
 	// expertShown: the expert-only controls are shown (test hook)
@@ -402,123 +404,129 @@ func genText(g *traysettings.GeneralForm, id int32) *string {
 }
 
 func (w *settingsWindow) build() {
-	const (
-		lx, lw = 230, 130 // labels
-		cx, cw = 365, 390 // controls
-		rh     = 27
-	)
+	// phase 11 (CHK-TRAY-45): the controls are created in the old order
+	// (tab order) at 0,0; the framework lays the pages out (labels
+	// measured, group boxes as wide as their content, the three pages
+	// sharing one area right of the profile list) and layoutFit pins the
+	// bar to the bottom.
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
-	w.cur = &w.pageCtl[0]
-	w.add("STATIC", w.t(i18n.KeySetProfiles), 0, winapi.SS_LEFT, 0, 12, 10, 200, 18)
-	w.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, 12, 30, 205, 340)
-	w.add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, 12, 376, 100, 26)
-	w.add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, 117, 376, 100, 26)
-	if w.cfg.mode == traysettings.Admin {
-		w.add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, 12, 408, 205, 26)
-		w.add("BUTTON", w.t(i18n.KeyXferExport), 0, winapi.WS_TABSTOP, idSetExport, 12, 536, 100, 26)
-		w.add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, 117, 536, 100, 26)
+	add := func(class, text string, ex, style uint32, id int32, kind ui.Kind, wd, hg int32) *ui.Ctl {
+		c := uiCtl(w.add(class, text, ex, style, id, 0, 0, 0, 0), kind, text)
+		c.W, c.Hgt = wd, hg
+		return c
 	}
-	// profile page: four group boxes on the grid (phase 10 D3)
-	const gx, gw = lx - 8, 540
-	var row int32
-	group := func(key string, y, h int32) uintptr {
-		g := w.add("BUTTON", w.t(key), 0, winapi.BS_GROUPBOX, 0, gx, y, gw, h)
-		w.groups[key] = g
-		row = y + gridGroupTop
-		return g
+	label := func(text string, id int32) *ui.Ctl {
+		h := w.add("STATIC", text, 0, winapi.SS_LEFT, 0, 0, 0, 0, 0)
+		if id != 0 {
+			w.labels[id] = h
+			w.labelText[id] = text
+		}
+		measured := text
+		if _, req := reqFields[id]; req {
+			measured += " *" // updateRequired adds the asterisk
+		}
+		return &ui.Ctl{H: h, Kind: ui.Label, Text: measured, Lines: 1}
 	}
-	line := func(label string, id int32, class string, style uint32, width int32) {
-		w.labels[id] = w.add("STATIC", label, 0, winapi.SS_LEFT, 0, lx, row+3, lw, gridLabelH)
-		w.labelText[id] = label
-		ex := uint32(0)
+	field := func(text string, id int32, class string, style uint32, width int32) ui.GridRow {
+		l := label(text, id)
+		ex, kind := uint32(0), ui.Combo
 		if class == "EDIT" {
-			ex = winapi.WS_EX_CLIENTEDGE
+			ex, kind = winapi.WS_EX_CLIENTEDGE, ui.Edit
 		}
-		hgt := int32(gridEditH)
-		if class == "COMBOBOX" {
-			hgt = 200
-		}
-		w.add(class, "", ex, style, id, cx, row, width, hgt)
-		row += rh
+		return ui.GridRow{Label: l, Field: add(class, "", ex, style, id, kind, width, 0)}
 	}
-	check := func(id int32, key string) {
-		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, id, cx, row, cw, gridCheckH)
-		row += gridCheckH + 2
+	check := func(id int32, key string) *ui.Ctl {
+		return add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, id, ui.Check, 0, 0)
 	}
-	group(i18n.KeySetGroupConn, 4, 151)
-	line(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw)
-	line(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw)
-	line(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200)
-	line(w.t(i18n.KeySetPort), idSetPort, "EDIT", edit, 80)
-	line(w.t(i18n.KeySetDatabase), idSetDatabase, "EDIT", edit, cw)
-	group(i18n.KeySetGroupLogin, 161, 151)
-	line(w.t(i18n.KeySetAuth), idSetAuth, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw)
-	line(w.t(i18n.KeySetLogin), idSetLogin, "EDIT", edit, cw)
-	line(w.t(i18n.KeySetPassword), idSetPassword, "EDIT", edit|winapi.ES_PASSWORD, cw)
-	w.add("STATIC", "", 0, winapi.SS_LEFT, idSetPwHint, cx, row, cw, 26)
-	row += 28
-	check(idSetClearPw, i18n.KeySetClearPassword)
-	group(i18n.KeySetGroupTLS, 318, 122)
-	line(w.t(i18n.KeySetEncrypt), idSetEncrypt, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw)
-	line(w.t(i18n.KeySetPreset), idSetPreset, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw)
-	check(idSetTLS10, i18n.KeySetTLS10)
-	check(idSetTrust, i18n.KeySetTrust)
-	group(i18n.KeySetGroupChecks, 446, 100)
-	check(idSetEnabled, i18n.KeySetEnabled)
+	group := func(key string, child ui.Node) *ui.GroupBox {
+		g := add("BUTTON", w.t(key), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
+		w.groups[key] = g.H
+		return &ui.GroupBox{Box: g, Child: child}
+	}
+	const cw = 390 // edit / combo boxes
+	w.cur = &w.pageCtl[0]
+	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0),
+		add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, ui.Box, 205, 340),
+		&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
+			add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}}}
+	var xfer ui.Node
+	if w.cfg.mode == traysettings.Admin {
+		left = append(left, add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, ui.Button, 205, 0))
+		xfer = &ui.Row{Items: []ui.Node{add("BUTTON", w.t(i18n.KeyXferExport), 0, winapi.WS_TABSTOP, idSetExport, ui.Button, 100, 0),
+			add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, ui.Button, 100, 0)}}
+	}
+	// profile page: four group boxes (phase 10 D3)
+	conn := group(i18n.KeySetGroupConn, &ui.Grid{Rows: []ui.GridRow{
+		field(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw),
+		field(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw),
+		field(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200),
+		field(w.t(i18n.KeySetPort), idSetPort, "EDIT", edit, 80),
+		field(w.t(i18n.KeySetDatabase), idSetDatabase, "EDIT", edit, cw),
+	}})
+	loginRows := []ui.GridRow{
+		field(w.t(i18n.KeySetAuth), idSetAuth, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
+		field(w.t(i18n.KeySetLogin), idSetLogin, "EDIT", edit, cw),
+		field(w.t(i18n.KeySetPassword), idSetPassword, "EDIT", edit|winapi.ES_PASSWORD, cw),
+	}
+	loginRows = append(loginRows, ui.GridRow{Field: add("STATIC", "", 0, winapi.SS_LEFT, idSetPwHint, ui.Box, cw, 26)},
+		ui.GridRow{Field: check(idSetClearPw, i18n.KeySetClearPassword)})
+	login := group(i18n.KeySetGroupLogin, &ui.Grid{Rows: loginRows})
+	tlsRows := []ui.GridRow{
+		field(w.t(i18n.KeySetEncrypt), idSetEncrypt, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
+		field(w.t(i18n.KeySetPreset), idSetPreset, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
+	}
+	tlsRows = append(tlsRows, ui.GridRow{Field: check(idSetTLS10, i18n.KeySetTLS10)}, ui.GridRow{Field: check(idSetTrust, i18n.KeySetTrust)})
+	tls := group(i18n.KeySetGroupTLS, &ui.Grid{Rows: tlsRows})
+	enabled := check(idSetEnabled, i18n.KeySetEnabled)
 	// two number boxes per row: own thresholds, then timeouts (phase 8)
-	pair := func(k1 string, id1 int32, k2 string, id2 int32) {
-		w.labels[id1] = w.add("STATIC", w.t(k1), 0, winapi.SS_LEFT, 0, lx, row+3, 170, gridLabelH)
-		w.labelText[id1] = w.t(k1)
-		w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id1, 405, row, 55, gridEditH)
-		w.labels[id2] = w.add("STATIC", w.t(k2), 0, winapi.SS_LEFT, 0, 470, row+3, 220, gridLabelH)
-		w.labelText[id2] = w.t(k2)
-		w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id2, 695, row, 55, gridEditH)
-		row += rh
+	pair := func(k1 string, id1 int32, k2 string, id2 int32) ui.GridRow {
+		l1 := label(w.t(k1), id1)
+		e1 := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id1, ui.Edit, 55, 0)
+		l2 := label(w.t(k2), id2)
+		e2 := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id2, ui.Edit, 55, 0)
+		return ui.GridRow{Label: l1, Field: &ui.Row{Items: []ui.Node{e1, &ui.Space{W: ui.P8}, l2, e2}}}
 	}
-	pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError)
-	pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO)
-	w.add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, lx, 550, cx+cw-lx, 40)
-	w.add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, lx, 592, cx+cw-lx, 30)
+	checks := group(i18n.KeySetGroupChecks, &ui.Col{Items: []ui.Node{enabled, &ui.Grid{Rows: []ui.GridRow{
+		pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError),
+		pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO),
+	}}}})
+	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 525, 40)
+	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 525, 30)
+	hints.Grow, info.Grow = true, true
+	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, hints, info}}
 
 	// general settings page (hidden until «Общие настройки…»)
 	w.cur = &w.pageCtl[1]
-	group(i18n.KeySetGroupGeneral, 4, 540)
-	gline := func(label string, id int32, class string, style uint32, width int32) {
-		w.labels[id] = w.add("STATIC", label, 0, winapi.SS_LEFT, 0, lx, row+3, 250, gridLabelH)
-		w.labelText[id] = label
-		ex, hgt := uint32(0), int32(gridEditH)
-		if class == "EDIT" {
-			ex = winapi.WS_EX_CLIENTEDGE
-		} else {
-			hgt = 200
-		}
-		w.add(class, "", ex, style, id, 490, row, width, hgt)
-		row += rh
-	}
+	gBox := add("BUTTON", w.t(i18n.KeySetGroupGeneral), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
+	w.groups[i18n.KeySetGroupGeneral] = gBox.H
+	var gRows []ui.GridRow
 	for i, g := range genEdits {
 		if i == 3 {
-			w.add("BUTTON", w.t(i18n.KeyGenBeepEnabled), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idGenBeep, lx, row+2, cx+cw-lx, gridCheckH)
-			row += rh
+			gRows = append(gRows, ui.GridRow{Span: true, Field: check(idGenBeep, i18n.KeyGenBeepEnabled)})
 		}
-		gline(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, 100)
+		gRows = append(gRows, field(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, 100))
 	}
-	row += 6
-	gline(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260)
-	w.add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, lx, row+4, cx+cw-lx, 34)
-	row += 42
-	w.add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, lx, row, cx+cw-lx, 32)
-	row += 38
-	w.add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, lx, row, cx+cw-lx, 100)
+	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
+	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Check, 0, 34)
+	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 525, 32)
+	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 525, 100)
+	autoErr.Grow, note.Grow = true, true
+	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
+	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Rows: gRows}}
 	w.cur = nil
 
-	w.add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, 12, 440, 205, 26)
-	w.add("BUTTON", "", 0, winapi.WS_TABSTOP, idSetUIMode, 12, 472, 205, 26)
+	left = append(left, add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, ui.Button, 205, 0),
+		add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0))
+	winapi.SetWindowText(w.ctl[idSetUIMode], "") // applyUIMode names it
 	// the bar: children of the window, pinned to the bottom (layoutFit)
 	w.inBar = true
 	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idSetStatus, 12, 628, 743, 40)
+	m := uiMetrics()
 	button := func(id int32, key string, width int32, right bool) {
 		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, 12, 674, width, gridButtonH)
+		bw, _ := ui.Layout(&ui.Ctl{Kind: ui.Button, Text: w.t(key), W: width}, m, 0, 0, 0)
+		width = max32(width, unpx(bw)) // at least its text in this language
 		if right {
 			w.barRight = append(w.barRight, barButton{id, width})
 		} else {
@@ -539,7 +547,12 @@ func (w *settingsWindow) build() {
 	}
 	button(idSetClose, i18n.KeySetClose, 90, true)
 	w.inBar = false
-	w.buildViber()
+	vbButton, viberPage := w.buildViber()
+	left = append(left, vbButton)
+	if xfer != nil {
+		left = append(left, xfer)
+	}
+	w.layoutPages(m, &ui.Col{Gap: ui.P8 - 2, Items: left}, []ui.Node{profilePage, generalPage, viberPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}

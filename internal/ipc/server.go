@@ -213,7 +213,10 @@ type Server struct {
 	Viber ViberTester
 	// AlarmTest (phase 11, CHK-IPC-11): alarm_test and capability
 	// alarm_test; nil = not offered.
-	AlarmTest   AlarmTester
+	AlarmTest AlarmTester
+	// Summary (phase 11, CHK-SVC-07): summary and capability summary;
+	// nil = not offered.
+	Summary     SummarySource
 	alarmTestAt time.Time // last accepted alarm_test (s.mu)
 
 	histN int // running history requests (s.mu)
@@ -366,6 +369,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if s.AlarmTest != nil {
 		caps = append(caps, model.CapAlarmTest) // phase 11 (CHK-IPC-11)
+	}
+	if s.Summary != nil {
+		caps = append(caps, model.CapSummary) // phase 11 (CHK-SVC-07)
 	}
 	return caps
 }
@@ -714,6 +720,12 @@ func (s *Server) readLoop(c *conn) {
 			reply = s.checkNow(c, req)
 		case req.Cmd == model.CmdEventsSince:
 			reply = s.eventsSince(req)
+		case s.Summary != nil && req.Cmd == model.CmdSummary:
+			if !s.startSummary(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
 		case s.AlarmTest != nil && req.Cmd == model.CmdAlarmTest:
 			if !s.startAlarmTest(c, req) {
 				s.Log.Printf("ipc: client too slow, disconnected")

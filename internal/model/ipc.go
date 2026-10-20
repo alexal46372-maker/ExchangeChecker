@@ -192,6 +192,9 @@ type IPCRequest struct {
 	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
 	Level string `json:"level,omitempty"`
 	Viber bool   `json:"viber,omitempty"`
+	// Hours / Buckets: summary (phase 11, CHK-SVC-07).
+	Hours   int `json:"hours,omitempty"`
+	Buckets int `json:"buckets,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
 	// Query of discover_by_value (phase 6, G2).
@@ -331,6 +334,8 @@ type IPCMessage struct {
 	ViberTest *ViberTestResult `json:"viberTest,omitempty"`
 	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
 	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
+	// Summary: summary reply (phase 11, CHK-SVC-07).
+	Summary *Summary `json:"summary,omitempty"`
 
 	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
 	// node_points, check_mapping; CHK-IPC-08/09):

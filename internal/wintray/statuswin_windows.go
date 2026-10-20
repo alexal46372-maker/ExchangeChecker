@@ -260,23 +260,39 @@ func (sw *statusWindow) openHistory() {
 }
 
 // fitColumns spreads the column widths (96-dpi units) over the client
-// width of the list view, each at least as wide as its header text.
+// width of the list view: every column first gets its header text, the
+// rest of the width is shared in proportion to widths; when the headers
+// alone are wider than the list they are scaled down (no horizontal
+// scrolling, phase 11).
 func fitColumns(lv uintptr, widths []int32, keys []string, lang string) {
 	r := winapi.GetClientRect(lv)
 	avail := r.Right - r.Left - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
-	m := uiMetrics()
-	var total int32
-	for _, w := range widths {
-		total += px(w)
-	}
-	if avail <= 0 || total <= 0 {
+	if avail <= 0 || len(widths) == 0 {
 		return
 	}
+	m := uiMetrics()
+	min := make([]int32, len(widths))
+	want := make([]int32, len(widths))
+	var sumMin, sumExtra int32
 	for i, w := range widths {
-		cw := px(w) * avail / total
 		if i < len(keys) {
 			tw, _ := m.Text(i18n.T(keys[i], lang))
-			cw = max32(cw, tw+px(ui.P12))
+			min[i] = tw + px(ui.P12)
+		}
+		want[i] = max32(px(w), min[i])
+		sumMin += min[i]
+		sumExtra += want[i] - min[i]
+	}
+	free := avail - sumMin
+	for i := range widths {
+		var cw int32
+		switch {
+		case free <= 0:
+			cw = min[i] * avail / max32(sumMin, 1)
+		case sumExtra <= free:
+			cw = want[i] + (free-sumExtra)*want[i]/max32(sumMin+sumExtra, 1)
+		default:
+			cw = min[i] + (want[i]-min[i])*free/sumExtra
 		}
 		winapi.ListViewSetColumnWidth(lv, i, cw)
 	}

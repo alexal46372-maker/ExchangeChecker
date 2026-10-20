@@ -516,8 +516,8 @@ func (w *settingsWindow) build() {
 	}}
 	checks := group(i18n.KeySetGroupChecks, checksG)
 	ui.Share(connG, loginG, tlsG, checksG)
-	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 300, 42)
-	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 260, 28)
+	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 300, 30)
+	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 260, 16)
 	hints.Grow, info.Grow = true, true
 	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
 

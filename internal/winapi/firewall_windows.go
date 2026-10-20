@@ -19,7 +19,11 @@ var (
 	procSysAllocString  = modoleaut32.NewProc("SysAllocString")
 	procSysFreeString   = modoleaut32.NewProc("SysFreeString")
 	procVariantClear    = modoleaut32.NewProc("VariantClear")
+	procCLSIDFromProgID = modole32.NewProc("CLSIDFromProgID") // ole32, same as com_windows.go
 )
+
+const clsctxAll = 0x17 // INPROC_SERVER|INPROC_HANDLER|LOCAL_SERVER|REMOTE_SERVER
+
 
 // Firewall rule constants (one place for port/protocol tuning; matches
 // internal/sqlcheck.SQLBrowserPort = 1434 and UDP SSRP replies).
@@ -145,26 +149,44 @@ func getBSTR(obj *comObject, idx int, what string) (string, error) {
 	return syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(b))[:]), nil
 }
 
-func newFwPolicy2() (*comObject, error) {
+func clsidFromProgID(prog string) (GUID, error) {
+	var g GUID
+	hr, _, _ := callProc(procCLSIDFromProgID, uintptr(unsafe.Pointer(UTF16Ptr(prog))), uintptr(unsafe.Pointer(&g)))
+	if err := hrErr("CLSIDFromProgID("+prog+")", hr); err != nil {
+		return g, err
+	}
+	return g, nil
+}
+
+func coCreate(clsid, iid *GUID, what string) (*comObject, error) {
 	var p *comObject
 	hr, _, _ := callProc(procCoCreateInstance,
-		uintptr(unsafe.Pointer(&CLSID_NetFwPolicy2)), 0, clsctxInprocServer,
-		uintptr(unsafe.Pointer(&IID_INetFwPolicy2)), uintptr(unsafe.Pointer(&p)))
-	if err := hrErr("CoCreateInstance(NetFwPolicy2)", hr); err != nil {
+		uintptr(unsafe.Pointer(clsid)), 0, clsctxAll,
+		uintptr(unsafe.Pointer(iid)), uintptr(unsafe.Pointer(&p)))
+	if err := hrErr("CoCreateInstance("+what+")", hr); err != nil {
 		return nil, err
 	}
 	return p, nil
 }
 
-func newFwRule() (*comObject, error) {
-	var r *comObject
-	hr, _, _ := callProc(procCoCreateInstance,
-		uintptr(unsafe.Pointer(&CLSID_NetFwRule)), 0, clsctxInprocServer,
-		uintptr(unsafe.Pointer(&IID_INetFwRule)), uintptr(unsafe.Pointer(&r)))
-	if err := hrErr("CoCreateInstance(NetFwRule)", hr); err != nil {
-		return nil, err
+func newFwPolicy2() (*comObject, error) {
+	// Prefer ProgID so a mismatched static CLSID cannot yield E_NOINTERFACE;
+	// fall back to the documented CLSID_NetFwPolicy2.
+	if clsid, err := clsidFromProgID("HNetCfg.FwPolicy2"); err == nil {
+		if p, err := coCreate(&clsid, &IID_INetFwPolicy2, "HNetCfg.FwPolicy2"); err == nil {
+			return p, nil
+		}
 	}
-	return r, nil
+	return coCreate(&CLSID_NetFwPolicy2, &IID_INetFwPolicy2, "NetFwPolicy2")
+}
+
+func newFwRule() (*comObject, error) {
+	if clsid, err := clsidFromProgID("HNetCfg.FwRule"); err == nil {
+		if r, err := coCreate(&clsid, &IID_INetFwRule, "HNetCfg.FwRule"); err == nil {
+			return r, nil
+		}
+	}
+	return coCreate(&CLSID_NetFwRule, &IID_INetFwRule, "NetFwRule")
 }
 
 func fwRules(policy *comObject) (*comObject, error) {

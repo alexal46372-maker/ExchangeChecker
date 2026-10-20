@@ -189,6 +189,7 @@ var winAPIMinVersion = map[string]float64{
 	"GlobalAlloc": 5.0, "GlobalLock": 5.0, "GlobalUnlock": 5.0, "GlobalFree": 5.0,
 	// phase 11: Windows Firewall COM for SQL Browser SSRP replies (CHK-SETUP-13)
 	"SysAllocString": 5.0, "SysFreeString": 5.0, "VariantClear": 5.0,
+	"CLSIDFromProgID": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

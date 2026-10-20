@@ -11,6 +11,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // «Состояние» window control IDs (phase 9a, CHK-TRAY-19/20/21).
@@ -105,18 +106,27 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	sw.hwnd = hwnd
 	sw.tips = newTooltips(hwnd)
 	sw.list = child(hwnd, winapi.WC_LISTVIEW, "", winapi.LVS_REPORT|winapi.LVS_SINGLESEL|winapi.LVS_SHOWSELALWAYS|
-		winapi.WS_BORDER|winapi.WS_TABSTOP, idStList, 10, 10, w-36, h-110)
+		winapi.WS_BORDER|winapi.WS_TABSTOP, idStList, 0, 0, 0, 0)
 	winapi.SendMessage(sw.list, winapi.LVM_SETEXTENDEDLISTVIEWSTYLE, 0, winapi.LVS_EX_FULLROWSELECT|winapi.LVS_EX_GRIDLINES)
 	for i, k := range trayui.StatusColumns {
 		winapi.ListViewInsertColumn(sw.list, i, i18n.T(k, lang), px(statusColWidths[i]))
 	}
-	by := int32(h - 90)
-	sw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idStInfo, 10, by+5, 320, 22)
-	sw.history = child(hwnd, "BUTTON", i18n.T(i18n.KeyStHistory, lang), winapi.WS_TABSTOP, idStHistory, w-726, by, 120, 28)
-	sw.check = child(hwnd, "BUTTON", i18n.T(i18n.KeyMenuCheckNow, lang), winapi.WS_TABSTOP, idStCheckNow, w-596, by, 140, 28)
-	sw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV, lang), winapi.WS_TABSTOP, idStExportCSV, w-446, by, 130, 28)
-	sw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, lang), winapi.WS_TABSTOP, idStExportHTML, w-306, by, 130, 28)
-	sw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose, lang), winapi.WS_TABSTOP, idStClose, w-166, by, 130, 28)
+	sw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idStInfo, 0, 0, 0, 0)
+	sw.history = child(hwnd, "BUTTON", i18n.T(i18n.KeyStHistory, lang), winapi.WS_TABSTOP, idStHistory, 0, 0, 0, 0)
+	sw.check = child(hwnd, "BUTTON", i18n.T(i18n.KeyMenuCheckNow, lang), winapi.WS_TABSTOP, idStCheckNow, 0, 0, 0, 0)
+	sw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV, lang), winapi.WS_TABSTOP, idStExportCSV, 0, 0, 0, 0)
+	sw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, lang), winapi.WS_TABSTOP, idStExportHTML, 0, 0, 0, 0)
+	sw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose, lang), winapi.WS_TABSTOP, idStClose, 0, 0, 0, 0)
+	// phase 11 (CHK-TRAY-45): the list, info | buttons on the right
+	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		&ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: h - 110, Grow: true},
+		&ui.Row{Grow: true, Items: []ui.Node{
+			&ui.Ctl{H: sw.info, Kind: ui.Box, W: 320, Hgt: 22},
+			&ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
+				uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}},
+		}},
+	}}}, 0)
+	fitToContent(hwnd, f.W, f.H)
 	sw.tips.set(sw.list, i18n.T(i18n.KeyTipStList, lang))
 	sw.tips.set(sw.check, i18n.T(i18n.KeyTipCheckNow, lang))
 	sw.tips.set(sw.csv, i18n.T(i18n.KeyTipExportCSV, lang))

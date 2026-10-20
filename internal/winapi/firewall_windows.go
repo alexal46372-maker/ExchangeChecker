@@ -50,7 +50,6 @@ const (
 	netFwRuleDirIn   = 1
 	variantTrue      = 0xFFFF // VARIANT_TRUE
 	variantFalse     = 0
-	vtI4             = 3
 )
 
 var (
@@ -65,6 +64,8 @@ var (
 	IID_INetFwRule = GUID{0xAF230D27, 0xBABA, 0x4E42, [8]byte{0xAC, 0xED, 0xF5, 0x24, 0xF2, 0x2C, 0xFC, 0xE2}}
 	// IID_INetFwRules {9C4C6277-5027-441E-AFAE-CA1F542DA009}
 	IID_INetFwRules = GUID{0x9C4C6277, 0x5027, 0x441E, [8]byte{0xAF, 0xAE, 0xCA, 0x1F, 0x54, 0x2D, 0xA0, 0x09}}
+	// IID_IEnumVARIANT {00020404-0000-0000-C000-000000000046}
+	IID_IEnumVARIANT = GUID{0x00020404, 0, 0, [8]byte{0xC0, 0, 0, 0, 0, 0, 0, 0x46}}
 )
 
 // INetFwPolicy2 / INetFwRules / INetFwRule vtable slots (IDispatch-based;
@@ -74,10 +75,14 @@ var (
 const (
 	FwPolicy2GetRules = 18 // after CurrentProfileTypes…UnicastResponses put
 
-	FwRulesGetCount = 7
-	FwRulesAdd      = 8
-	FwRulesRemove   = 9
-	FwRulesItem     = 10
+	FwRulesGetCount  = 7
+	FwRulesAdd       = 8
+	FwRulesRemove    = 9
+	FwRulesItem      = 10 // Item([in] BSTR name, …) — NOT VARIANT
+	FwRulesGetNewEnum = 11
+
+	// IEnumVARIANT (after IUnknown): Next=3
+	enumVariantNext = 3
 
 	FwRuleGetName            = 7
 	FwRulePutName            = 8
@@ -324,7 +329,6 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	if err := hrErr("put_Enabled", comCall(rule, FwRulePutEnabled, uintptr(variantTrue))); err != nil {
 		return err
 	}
-	// Read Name back before Add (proves put_Name stuck).
 	gotName, err := getBSTR(rule, FwRuleGetName, "get_Name")
 	if err != nil {
 		return err
@@ -332,28 +336,28 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	if gotName != FirewallRuleName {
 		return fmt.Errorf("put_Name did not stick: got %q", gotName)
 	}
+	var before, after int32
+	if err := hrErr("get_Count", comCall(rules, FwRulesGetCount, uintptr(unsafe.Pointer(&before)))); err != nil {
+		return err
+	}
 	hrAdd := comCall(rules, FwRulesAdd, uintptr(unsafe.Pointer(rule)))
 	if err := hrErr("INetFwRules.Add", hrAdd); err != nil {
 		return fmt.Errorf("%w (hr=0x%08X)", err, uint32(hrAdd))
 	}
-	// Prefer Item(name); if that fails, scan by Grouping (diagnoses put_Name vs Add).
+	if err := hrErr("get_Count", comCall(rules, FwRulesGetCount, uintptr(unsafe.Pointer(&after)))); err != nil {
+		return err
+	}
+	if after <= before {
+		// Slot guess: maybe "Add" is not at 8 — try to surface that clearly.
+		return fmt.Errorf("INetFwRules.Add hr=0x%08X but count %d→%d (name=%q); vtable Add slot may be wrong",
+			uint32(hrAdd), before, after, gotName)
+	}
 	if _, ok, err := itemByName(rules, FirewallRuleName); err != nil {
 		return err
-	} else if ok {
-		return nil
+	} else if !ok {
+		return fmt.Errorf("count %d→%d but Item(%q) missing", before, after, FirewallRuleName)
 	}
-	all, err := listFwRules(rules)
-	if err != nil {
-		return err
-	}
-	var byGroup []string
-	for _, info := range all {
-		if info.Grouping == FirewallGrouping {
-			byGroup = append(byGroup, fmt.Sprintf("%q app=%q", info.Name, info.Application))
-		}
-	}
-	return fmt.Errorf("INetFwRules.Add S_OK but rule %q not found (count=%d, grouping matches=%v, pre-Add name=%q, hr=0x%08X)",
-		FirewallRuleName, len(all), byGroup, gotName, uint32(hrAdd))
+	return nil
 }
 
 // RemoveSQLBrowserFirewallRule deletes every firewall rule with our Name
@@ -396,11 +400,9 @@ func itemByName(rules *comObject, name string) (FirewallRuleInfo, bool, error) {
 		return info, false, err
 	}
 	defer freeBSTR(b)
-	var v variant
-	v.VT = 8 // VT_BSTR
-	*(*uintptr)(unsafe.Pointer(&v.Val[0])) = uintptr(unsafe.Pointer(b))
+	// INetFwRules::Item([in] BSTR name, [out,retval] INetFwRule**) — BSTR, not VARIANT.
 	var rule *comObject
-	hr := comCall(rules, FwRulesItem, uintptr(unsafe.Pointer(&v)), uintptr(unsafe.Pointer(&rule)))
+	hr := comCall(rules, FwRulesItem, uintptr(unsafe.Pointer(b)), uintptr(unsafe.Pointer(&rule)))
 	if int32(hr) < 0 || rule == nil {
 		return info, false, nil
 	}
@@ -421,30 +423,47 @@ type FirewallRuleInfo struct {
 }
 
 func listFwRules(rules *comObject) ([]FirewallRuleInfo, error) {
-	var count int32
-	if err := hrErr("get_Count", comCall(rules, FwRulesGetCount, uintptr(unsafe.Pointer(&count)))); err != nil {
+	var unk *comObject
+	if err := hrErr("get__NewEnum", comCall(rules, FwRulesGetNewEnum, uintptr(unsafe.Pointer(&unk)))); err != nil {
 		return nil, err
 	}
+	defer comCall(unk, vtRelease)
+	var enumer *comObject
+	hr := comCall(unk, vtQueryInterface, uintptr(unsafe.Pointer(&IID_IEnumVARIANT)), uintptr(unsafe.Pointer(&enumer)))
+	if err := hrErr("QueryInterface(IEnumVARIANT)", hr); err != nil {
+		return nil, err
+	}
+	defer comCall(enumer, vtRelease)
+
 	var out []FirewallRuleInfo
-	for i := int32(1); i <= count; i++ {
+	for {
 		var v variant
-		v.VT = vtI4
-		*(*int32)(unsafe.Pointer(&v.Val[0])) = i
-		var rule *comObject
-		hr := comCall(rules, FwRulesItem, uintptr(unsafe.Pointer(&v)), uintptr(unsafe.Pointer(&rule)))
+		var fetched uint32
+		hr := comCall(enumer, enumVariantNext, 1, uintptr(unsafe.Pointer(&v)), uintptr(unsafe.Pointer(&fetched)))
+		if fetched == 0 {
+			break
+		}
+		if v.VT == 9 { // VT_DISPATCH
+			disp := *(**comObject)(unsafe.Pointer(&v.Val[0]))
+			if disp != nil {
+				var rule *comObject
+				hrQI := comCall(disp, vtQueryInterface, uintptr(unsafe.Pointer(&IID_INetFwRule)), uintptr(unsafe.Pointer(&rule)))
+				if int32(hrQI) >= 0 && rule != nil {
+					if info, err := readFwRule(rule); err == nil {
+						out = append(out, info)
+					}
+					comCall(rule, vtRelease)
+				}
+			}
+		}
 		callProc(procVariantClear, uintptr(unsafe.Pointer(&v)))
-		if err := hrErr("Item", hr); err != nil {
-			continue
+		if hr != 0 { // S_FALSE (1) or error — stop after processing this element
+			break
 		}
-		info, err := readFwRule(rule)
-		comCall(rule, vtRelease)
-		if err != nil {
-			continue
-		}
-		out = append(out, info)
 	}
 	return out, nil
 }
+
 
 // ListFirewallRulesNamed returns every rule whose Name equals name
 // (case-sensitive, as stored). Call inside WithCOM.

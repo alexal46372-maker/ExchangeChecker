@@ -30,12 +30,21 @@ const (
 	FirewallProtocolUDP = 17
 	// FirewallRemotePorts is the SQL Browser source port of SSRP replies.
 	FirewallRemotePorts = "1434"
+	// FirewallLocalPorts is "*" (any / ephemeral ListenPacket :0).
+	FirewallLocalPorts = "*"
+	// FirewallRemoteAddresses is "*" (any IPv4 peer, including broadcast replies).
+	FirewallRemoteAddresses = "*"
+	// FirewallGrouping tags the rule for Remove-by-group on upgrade/uninstall.
+	FirewallGrouping = "Exchange Checker"
+	// FirewallProfiles is NET_FW_PROFILE2_DOMAIN|PRIVATE (Public excluded —
+	// EC Service advice: discovery is for LAN/domain, not public networks).
+	FirewallProfiles = 0x3
 
-	netFwActionAllow    = 1
-	netFwRuleDirIn      = 1
-	netFwProfile2All    = 0x7FFFFFFF
-	variantTrue          = 0xFFFF // VARIANT_TRUE
-	vtI4                = 3
+	netFwActionAllow = 1
+	netFwRuleDirIn   = 1
+	variantTrue      = 0xFFFF // VARIANT_TRUE
+	variantFalse     = 0
+	vtI4             = 3
 )
 
 var (
@@ -68,17 +77,23 @@ const (
 	FwRulePutProtocol        = 16
 	FwRuleGetLocalPorts      = 17
 	FwRulePutLocalPorts      = 18
-	FwRuleGetRemotePorts     = 19
-	FwRulePutRemotePorts     = 20
-	FwRuleGetDirection       = 27
-	FwRulePutDirection       = 28
-	FwRulePutInterfaceTypes  = 32
-	FwRuleGetEnabled         = 33
-	FwRulePutEnabled         = 34
-	FwRuleGetProfiles        = 37
-	FwRulePutProfiles        = 38
-	FwRuleGetAction          = 41
-	FwRulePutAction          = 42
+	FwRuleGetRemotePorts      = 19
+	FwRulePutRemotePorts      = 20
+	FwRuleGetRemoteAddresses  = 23
+	FwRulePutRemoteAddresses  = 24
+	FwRuleGetDirection        = 27
+	FwRulePutDirection        = 28
+	FwRulePutInterfaceTypes   = 32
+	FwRuleGetEnabled          = 33
+	FwRulePutEnabled          = 34
+	FwRuleGetGrouping         = 35
+	FwRulePutGrouping         = 36
+	FwRuleGetProfiles         = 37
+	FwRulePutProfiles         = 38
+	FwRuleGetEdgeTraversal    = 39
+	FwRulePutEdgeTraversal    = 40
+	FwRuleGetAction           = 41
+	FwRulePutAction           = 42
 )
 
 // variant is the Win32 VARIANT (24 bytes on amd64).
@@ -90,20 +105,22 @@ type variant struct {
 	Val        [16]byte
 }
 
-func allocBSTR(s string) (uintptr, error) {
+func allocBSTR(s string) (*uint16, error) {
 	r, _, e := callProc(procSysAllocString, uintptr(unsafe.Pointer(UTF16Ptr(s))))
 	if r == 0 {
 		if e != nil {
-			return 0, fmt.Errorf("SysAllocString: %v", e)
+			return nil, fmt.Errorf("SysAllocString: %v", e)
 		}
-		return 0, fmt.Errorf("SysAllocString: out of memory")
+		return nil, fmt.Errorf("SysAllocString: out of memory")
 	}
-	return r, nil
+	// Reinterpret the syscall uintptr as a pointer (vet-safe; same pattern
+	// as converting a SysAllocString / CoTaskMemAlloc result).
+	return *(**uint16)(unsafe.Pointer(&r)), nil
 }
 
-func freeBSTR(b uintptr) {
-	if b != 0 {
-		callProc(procSysFreeString, b)
+func freeBSTR(b *uint16) {
+	if b != nil {
+		callProc(procSysFreeString, uintptr(unsafe.Pointer(b)))
 	}
 }
 
@@ -113,31 +130,19 @@ func putBSTR(obj *comObject, idx int, what, s string) error {
 		return err
 	}
 	defer freeBSTR(b)
-	return hrErr(what, comCall(obj, idx, b))
+	return hrErr(what, comCall(obj, idx, uintptr(unsafe.Pointer(b))))
 }
 
 func getBSTR(obj *comObject, idx int, what string) (string, error) {
-	var b uintptr
+	var b *uint16
 	if err := hrErr(what, comCall(obj, idx, uintptr(unsafe.Pointer(&b)))); err != nil {
 		return "", err
 	}
 	defer freeBSTR(b)
-	if b == 0 {
+	if b == nil {
 		return "", nil
 	}
-	return bstrToString(b), nil
-}
-
-func bstrToString(b uintptr) string {
-	if b == 0 {
-		return ""
-	}
-	// BSTR: byte length prefix immediately before the wchar data.
-	n := int(*(*uint32)(unsafe.Pointer(b - 4))) / 2
-	if n <= 0 {
-		return ""
-	}
-	return syscall.UTF16ToString(unsafe.Slice((*uint16)(unsafe.Pointer(b)), n))
+	return syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(b))[:]), nil
 }
 
 func newFwPolicy2() (*comObject, error) {
@@ -170,20 +175,47 @@ func fwRules(policy *comObject) (*comObject, error) {
 	return rules, nil
 }
 
-func fwRemoveAllNamed(rules *comObject, name string) error {
+func fwRemoveByName(rules *comObject, name string) error {
 	b, err := allocBSTR(name)
 	if err != nil {
 		return err
 	}
 	defer freeBSTR(b)
 	// Remove deletes every rule with that name; missing = S_OK.
-	return hrErr("INetFwRules.Remove", comCall(rules, FwRulesRemove, b))
+	return hrErr("INetFwRules.Remove", comCall(rules, FwRulesRemove, uintptr(unsafe.Pointer(b))))
+}
+
+// fwRemoveOurs deletes every rule whose Name is FirewallRuleName or whose
+// Grouping is FirewallGrouping (only those). Collect names first so indices
+// stay stable while enumerating.
+func fwRemoveOurs(rules *comObject) error {
+	list, err := listFwRules(rules)
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, info := range list {
+		if info.Name == FirewallRuleName || info.Grouping == FirewallGrouping {
+			if !seen[info.Name] && info.Name != "" {
+				seen[info.Name] = true
+				names = append(names, info.Name)
+			}
+		}
+	}
+	for _, n := range names {
+		if err := fwRemoveByName(rules, n); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AddSQLBrowserFirewallRule installs (or replaces) the inbound UDP rule
 // that lets ExchangeCheckerSvc.exe receive SQL Browser (SSRP) replies.
-// Call inside WithCOM. Idempotent: Removes every rule with FirewallRuleName
-// first, then adds one. appExe is the full path of the service exe.
+// Call inside WithCOM. Idempotent: removes every rule with our Name or
+// Grouping, then adds one. appExe is the full path of the service exe
+// (same path as the SCM ImagePath). ServiceName is not set (SID type NONE).
 func AddSQLBrowserFirewallRule(appExe string) error {
 	policy, err := newFwPolicy2()
 	if err != nil {
@@ -195,7 +227,7 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 		return err
 	}
 	defer comCall(rules, vtRelease)
-	if err := fwRemoveAllNamed(rules, FirewallRuleName); err != nil {
+	if err := fwRemoveOurs(rules); err != nil {
 		return err
 	}
 	rule, err := newFwRule()
@@ -203,17 +235,25 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 		return err
 	}
 	defer comCall(rule, vtRelease)
-	if err := putBSTR(rule, FwRulePutName, "put_Name", FirewallRuleName); err != nil {
-		return err
+	set := []struct {
+		idx  int
+		what string
+		val  string
+	}{
+		{FwRulePutName, "put_Name", FirewallRuleName},
+		{FwRulePutApplicationName, "put_ApplicationName", appExe},
+		{FwRulePutLocalPorts, "put_LocalPorts", FirewallLocalPorts},
+		{FwRulePutRemotePorts, "put_RemotePorts", FirewallRemotePorts},
+		{FwRulePutRemoteAddresses, "put_RemoteAddresses", FirewallRemoteAddresses},
+		{FwRulePutGrouping, "put_Grouping", FirewallGrouping},
+		{FwRulePutInterfaceTypes, "put_InterfaceTypes", "All"},
 	}
-	if err := putBSTR(rule, FwRulePutApplicationName, "put_ApplicationName", appExe); err != nil {
-		return err
+	for _, s := range set {
+		if err := putBSTR(rule, s.idx, s.what, s.val); err != nil {
+			return err
+		}
 	}
 	if err := hrErr("put_Protocol", comCall(rule, FwRulePutProtocol, uintptr(FirewallProtocolUDP))); err != nil {
-		return err
-	}
-	// LocalPorts left unset = any (ephemeral ListenPacket ":0" in sqlcheck.Browse).
-	if err := putBSTR(rule, FwRulePutRemotePorts, "put_RemotePorts", FirewallRemotePorts); err != nil {
 		return err
 	}
 	if err := hrErr("put_Direction", comCall(rule, FwRulePutDirection, uintptr(netFwRuleDirIn))); err != nil {
@@ -222,10 +262,10 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	if err := hrErr("put_Action", comCall(rule, FwRulePutAction, uintptr(netFwActionAllow))); err != nil {
 		return err
 	}
-	if err := hrErr("put_Profiles", comCall(rule, FwRulePutProfiles, uintptr(netFwProfile2All))); err != nil {
+	if err := hrErr("put_Profiles", comCall(rule, FwRulePutProfiles, uintptr(FirewallProfiles))); err != nil {
 		return err
 	}
-	if err := putBSTR(rule, FwRulePutInterfaceTypes, "put_InterfaceTypes", "All"); err != nil {
+	if err := hrErr("put_EdgeTraversal", comCall(rule, FwRulePutEdgeTraversal, uintptr(variantFalse))); err != nil {
 		return err
 	}
 	if err := hrErr("put_Enabled", comCall(rule, FwRulePutEnabled, uintptr(variantTrue))); err != nil {
@@ -234,8 +274,8 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	return hrErr("INetFwRules.Add", comCall(rules, FwRulesAdd, uintptr(unsafe.Pointer(rule))))
 }
 
-// RemoveSQLBrowserFirewallRule deletes every firewall rule named
-// FirewallRuleName (missing = success). Call inside WithCOM.
+// RemoveSQLBrowserFirewallRule deletes every firewall rule with our Name
+// or Grouping (missing = success). Call inside WithCOM.
 func RemoveSQLBrowserFirewallRule() error {
 	policy, err := newFwPolicy2()
 	if err != nil {
@@ -247,29 +287,18 @@ func RemoveSQLBrowserFirewallRule() error {
 		return err
 	}
 	defer comCall(rules, vtRelease)
-	return fwRemoveAllNamed(rules, FirewallRuleName)
+	return fwRemoveOurs(rules)
 }
 
 // FirewallRuleInfo is a read-back of one INetFwRule (CHK-SETUP-13 e2e).
 type FirewallRuleInfo struct {
 	Name, Application, LocalPorts, RemotePorts string
+	RemoteAddresses, Grouping                  string
 	Protocol, Direction, Action, Profiles      int32
-	Enabled                                    bool
+	Enabled, EdgeTraversal                     bool
 }
 
-// ListFirewallRulesNamed returns every rule whose Name equals name
-// (case-sensitive, as stored). Call inside WithCOM.
-func ListFirewallRulesNamed(name string) ([]FirewallRuleInfo, error) {
-	policy, err := newFwPolicy2()
-	if err != nil {
-		return nil, err
-	}
-	defer comCall(policy, vtRelease)
-	rules, err := fwRules(policy)
-	if err != nil {
-		return nil, err
-	}
-	defer comCall(rules, vtRelease)
+func listFwRules(rules *comObject) ([]FirewallRuleInfo, error) {
 	var count int32
 	if err := hrErr("get_Count", comCall(rules, FwRulesGetCount, uintptr(unsafe.Pointer(&count)))); err != nil {
 		return nil, err
@@ -290,6 +319,30 @@ func ListFirewallRulesNamed(name string) ([]FirewallRuleInfo, error) {
 		if err != nil {
 			continue
 		}
+		out = append(out, info)
+	}
+	return out, nil
+}
+
+// ListFirewallRulesNamed returns every rule whose Name equals name
+// (case-sensitive, as stored). Call inside WithCOM.
+func ListFirewallRulesNamed(name string) ([]FirewallRuleInfo, error) {
+	policy, err := newFwPolicy2()
+	if err != nil {
+		return nil, err
+	}
+	defer comCall(policy, vtRelease)
+	rules, err := fwRules(policy)
+	if err != nil {
+		return nil, err
+	}
+	defer comCall(rules, vtRelease)
+	all, err := listFwRules(rules)
+	if err != nil {
+		return nil, err
+	}
+	var out []FirewallRuleInfo
+	for _, info := range all {
 		if info.Name == name {
 			out = append(out, info)
 		}
@@ -312,6 +365,12 @@ func readFwRule(rule *comObject) (FirewallRuleInfo, error) {
 	if info.RemotePorts, err = getBSTR(rule, FwRuleGetRemotePorts, "get_RemotePorts"); err != nil {
 		return info, err
 	}
+	if info.RemoteAddresses, err = getBSTR(rule, FwRuleGetRemoteAddresses, "get_RemoteAddresses"); err != nil {
+		return info, err
+	}
+	if info.Grouping, err = getBSTR(rule, FwRuleGetGrouping, "get_Grouping"); err != nil {
+		return info, err
+	}
 	if err := hrErr("get_Protocol", comCall(rule, FwRuleGetProtocol, uintptr(unsafe.Pointer(&info.Protocol)))); err != nil {
 		return info, err
 	}
@@ -324,10 +383,14 @@ func readFwRule(rule *comObject) (FirewallRuleInfo, error) {
 	if err := hrErr("get_Profiles", comCall(rule, FwRuleGetProfiles, uintptr(unsafe.Pointer(&info.Profiles)))); err != nil {
 		return info, err
 	}
-	var en int16
+	var en, edge int16
 	if err := hrErr("get_Enabled", comCall(rule, FwRuleGetEnabled, uintptr(unsafe.Pointer(&en)))); err != nil {
 		return info, err
 	}
 	info.Enabled = en != 0
+	if err := hrErr("get_EdgeTraversal", comCall(rule, FwRuleGetEdgeTraversal, uintptr(unsafe.Pointer(&edge)))); err != nil {
+		return info, err
+	}
+	info.EdgeTraversal = edge != 0
 	return info, nil
 }

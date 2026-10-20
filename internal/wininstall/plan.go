@@ -287,8 +287,9 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		}
 	}
 	// 7c. Windows Firewall inbound UDP for SQL Browser (SSRP) replies
-	// (CHK-SETUP-13). Application = service exe; RemotePorts 1434; any
-	// local port. Remove-then-add for idempotent upgrade. Not fatal:
+	// (CHK-SETUP-13). Application = service exe (ImagePath); RemotePorts
+	// 1434; LocalPorts *; Domain|Private (no Public); Grouping
+	// "Exchange Checker". Remove-by-name-or-group then Add. Not fatal:
 	// firewall service off / COM failure → WARNING and continue.
 	if err := sys.AddSQLBrowserFirewallRule(svcExe); err != nil {
 		warn("firewall rule (SQL Browser): %v", err)

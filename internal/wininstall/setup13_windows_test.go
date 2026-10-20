@@ -48,6 +48,16 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		if r.RemotePorts != winapi.FirewallRemotePorts {
 			return fmt.Errorf("remotePorts %q", r.RemotePorts)
 		}
+		if r.LocalPorts != winapi.FirewallLocalPorts && r.LocalPorts != "" {
+			// "*" or empty both mean any; prefer "*"
+			return fmt.Errorf("localPorts %q", r.LocalPorts)
+		}
+		if r.RemoteAddresses != winapi.FirewallRemoteAddresses && r.RemoteAddresses != "*" {
+			return fmt.Errorf("remoteAddresses %q", r.RemoteAddresses)
+		}
+		if r.Grouping != winapi.FirewallGrouping {
+			return fmt.Errorf("grouping %q", r.Grouping)
+		}
 		if r.Direction != 1 {
 			return fmt.Errorf("direction %d", r.Direction)
 		}
@@ -57,8 +67,11 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		if !r.Enabled {
 			return fmt.Errorf("enabled=false")
 		}
-		if r.Profiles&0x7 == 0 && uint32(r.Profiles) != 0x7FFFFFFF {
-			return fmt.Errorf("profiles %#x (want all)", uint32(r.Profiles))
+		if r.EdgeTraversal {
+			return fmt.Errorf("edgeTraversal=true")
+		}
+		if r.Profiles != int32(winapi.FirewallProfiles) {
+			return fmt.Errorf("profiles %#x want Domain|Private (%#x), Public excluded", uint32(r.Profiles), winapi.FirewallProfiles)
 		}
 		if err := winapi.AddSQLBrowserFirewallRule(app); err != nil {
 			return err
@@ -98,6 +111,8 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		t.Fatal("GUIDs changed")
 	}
 	if winapi.FirewallProtocolUDP != 17 || winapi.FirewallRemotePorts != "1434" ||
+		winapi.FirewallLocalPorts != "*" || winapi.FirewallRemoteAddresses != "*" ||
+		winapi.FirewallGrouping != "Exchange Checker" || winapi.FirewallProfiles != 0x3 ||
 		winapi.FirewallRuleName != "Exchange Checker (SQL Browser)" {
 		t.Fatal("firewall constants changed")
 	}

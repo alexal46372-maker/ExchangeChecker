@@ -116,8 +116,17 @@ func checkSQLBrowserFirewall(t *testing.T, wantApp string, wantCount int) {
 	if r.Protocol != winapi.FirewallProtocolUDP || r.RemotePorts != winapi.FirewallRemotePorts {
 		t.Fatalf("firewall proto/ports %d/%q", r.Protocol, r.RemotePorts)
 	}
-	if r.Direction != 1 || r.Action != 1 || !r.Enabled {
-		t.Fatalf("firewall dir/action/enabled %d/%d/%v", r.Direction, r.Action, r.Enabled)
+	if r.LocalPorts != winapi.FirewallLocalPorts && r.LocalPorts != "" {
+		t.Fatalf("firewall localPorts %q", r.LocalPorts)
+	}
+	if r.Grouping != winapi.FirewallGrouping {
+		t.Fatalf("firewall grouping %q", r.Grouping)
+	}
+	if r.Profiles != int32(winapi.FirewallProfiles) {
+		t.Fatalf("firewall profiles %#x want Domain|Private", uint32(r.Profiles))
+	}
+	if r.Direction != 1 || r.Action != 1 || !r.Enabled || r.EdgeTraversal {
+		t.Fatalf("firewall dir/action/enabled/edge %d/%d/%v/%v", r.Direction, r.Action, r.Enabled, r.EdgeTraversal)
 	}
 	t.Logf("firewall ok: %s -> %s UDP remote %s", r.Name, r.Application, r.RemotePorts)
 }

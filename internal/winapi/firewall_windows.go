@@ -35,7 +35,7 @@ const (
 	// FirewallRemotePorts is the SQL Browser source port of SSRP replies.
 	FirewallRemotePorts = "1434"
 	// FirewallLocalPorts empty = any (INetFwRule; "*" is rejected with
-	// E_INVALIDARG). Same meaning as netsh/PowerShell LocalPort Any / "*".
+	// E_INVALIDARG). Same meaning as "Any" / all local ports.
 	FirewallLocalPorts = ""
 	// FirewallRemoteAddresses is "*" (any IPv4 peer, including broadcast replies).
 	FirewallRemoteAddresses = "*"
@@ -284,31 +284,35 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 		return err
 	}
 	defer comCall(rule, vtRelease)
-	set := []struct {
+	// Name / application / grouping first (no Protocol dependency).
+	for _, s := range []struct {
 		idx  int
 		what string
 		val  string
 	}{
 		{FwRulePutName, "put_Name", FirewallRuleName},
 		{FwRulePutApplicationName, "put_ApplicationName", appExe},
-		{FwRulePutRemotePorts, "put_RemotePorts", FirewallRemotePorts},
-		{FwRulePutRemoteAddresses, "put_RemoteAddresses", FirewallRemoteAddresses},
 		{FwRulePutGrouping, "put_Grouping", FirewallGrouping},
 		{FwRulePutInterfaceTypes, "put_InterfaceTypes", "All"},
-	}
-	for _, s := range set {
+	} {
 		if err := putBSTR(rule, s.idx, s.what, s.val); err != nil {
 			return err
 		}
 	}
-	// LocalPorts: leave unset when FirewallLocalPorts is empty (= any).
-	// put_LocalPorts("*") returns E_INVALIDARG on INetFwRule.
+	// Protocol MUST precede LocalPorts / RemotePorts (netfw.h / MSDN).
+	if err := hrErr("put_Protocol", comCall(rule, FwRulePutProtocol, uintptr(FirewallProtocolUDP))); err != nil {
+		return err
+	}
+	if err := putBSTR(rule, FwRulePutRemotePorts, "put_RemotePorts", FirewallRemotePorts); err != nil {
+		return err
+	}
+	// LocalPorts: leave unset when empty (= any). "*" → E_INVALIDARG.
 	if FirewallLocalPorts != "" {
 		if err := putBSTR(rule, FwRulePutLocalPorts, "put_LocalPorts", FirewallLocalPorts); err != nil {
 			return err
 		}
 	}
-	if err := hrErr("put_Protocol", comCall(rule, FwRulePutProtocol, uintptr(FirewallProtocolUDP))); err != nil {
+	if err := putBSTR(rule, FwRulePutRemoteAddresses, "put_RemoteAddresses", FirewallRemoteAddresses); err != nil {
 		return err
 	}
 	if err := hrErr("put_Direction", comCall(rule, FwRulePutDirection, uintptr(netFwRuleDirIn))); err != nil {

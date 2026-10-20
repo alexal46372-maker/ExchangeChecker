@@ -296,6 +296,21 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 	work := workArea()
 	fw, _ := outerSize(0, 0, style, 0)
 	maxW := work.Right - work.Left - fw - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
+	// the window is as wide as the widest page (each shrunk to the work
+	// area), so that no other page scrolls horizontally: lay everything
+	// out visible once
+	hidden := map[*ui.Ctl]bool{}
+	ui.Walk(w.root, func(c *ui.Ctl) { hidden[c], c.Hidden = c.Hidden, false })
+	var allW int32
+	for i := 0; i < 8; i++ {
+		allW, _ = ui.Layout(w.root, m, 0, 0, 0)
+		if over := allW - maxW; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
+			break
+		}
+	}
+	for c, h := range hidden {
+		c.Hidden = h
+	}
 	for i := 0; i < 8; i++ {
 		w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, 0)
 		if over := w.pageW - maxW; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
@@ -304,7 +319,7 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 	}
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
-	x, y, ww, wh := settingsRectPx(style, w.pageW, w.pageH+px(setBarH))
+	x, y, ww, wh := settingsRectPx(style, min32(max32(w.pageW, allW), maxW), w.pageH+px(setBarH))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 }
 

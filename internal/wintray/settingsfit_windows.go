@@ -298,7 +298,7 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 	maxW := work.Right - work.Left - fw - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
 	for i := 0; i < 8; i++ {
 		w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, 0)
-		if over := w.pageW - maxW; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) {
+		if over := w.pageW - maxW; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
 			break
 		}
 	}
@@ -333,7 +333,7 @@ func (w *settingsWindow) relayoutAll() {
 	avail := winapi.GetClientRect(w.hwnd).Right - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
 	for i := 0; i < 8; i++ {
 		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
-		if over := w.pageW - avail; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) {
+		if over := w.pageW - avail; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
 			break
 		}
 	}
@@ -384,4 +384,15 @@ func (w *settingsWindow) fitWrap() {
 	if changed {
 		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
 	}
+}
+
+// stackPairs puts the two number boxes of a thresholds / timeouts row on
+// rows of their own (a window still too wide after Shrink); it reports
+// whether anything changed.
+func (w *settingsWindow) stackPairs() bool {
+	if w.checksG == nil || w.stackedRows == nil {
+		return false
+	}
+	w.checksG.Rows, w.stackedRows = w.stackedRows, nil
+	return true
 }

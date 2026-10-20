@@ -108,7 +108,7 @@ func (w *settingsWindow) buildViber() (page ui.Node) {
 	enabled := check(i18n.KeyVbEnabled, idVbEnabled)
 	tokenL := label(i18n.KeyVbToken, idVbToken)
 	token := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idVbToken, ui.Edit, 390, 0)
-	tokenState := add("STATIC", "", 0, winapi.SS_LEFT, idVbTokenState, ui.Box, 240, 18)
+	tokenState := add("STATIC", "", 0, winapi.SS_LEFT, idVbTokenState, ui.Box, 200, 18)
 	clear := check(i18n.KeyVbClearToken, idVbClearToken)
 	recL := label(i18n.KeyVbRecipients, idVbRecipients)
 	rec := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL|winapi.ES_WANTRETURN,

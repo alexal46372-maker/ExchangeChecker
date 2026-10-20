@@ -197,6 +197,8 @@ type settingsWindow struct {
 	rootM             *ui.Metrics
 	ctlOf             map[uintptr]*ui.Ctl
 	wrap              []*ui.Ctl // text boxes sized to their wrapped text (phase 11)
+	checksG           *ui.Grid  // the thresholds / timeouts (stacked when too narrow)
+	stackedRows       []ui.GridRow
 	scrollSet, inBar  bool
 	barLeft, barRight []barButton
 	// expertShown: the expert-only controls are shown (test hook)
@@ -504,17 +506,21 @@ func (w *settingsWindow) build() {
 	tls := group(i18n.KeySetGroupTLS, tlsG)
 	enabled := check(idSetEnabled, i18n.KeySetEnabled)
 	// two number boxes per row: own thresholds, then timeouts (phase 8)
+	// (phase 11: one per row when the window is too narrow, stackPairs)
+	var stacked []ui.GridRow
 	pair := func(k1 string, id1 int32, k2 string, id2 int32) ui.GridRow {
 		l1 := label(w.t(k1), id1)
 		e1 := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id1, ui.Edit, 55, 0)
 		l2 := label(w.t(k2), id2)
 		e2 := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id2, ui.Edit, 55, 0)
+		stacked = append(stacked, ui.GridRow{Label: l1, Field: e1}, ui.GridRow{Label: l2, Field: e2})
 		return ui.GridRow{Label: l1, Field: &ui.Row{Items: []ui.Node{e1, &ui.Space{W: ui.P8}, l2, e2}}}
 	}
 	checksG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Span: true, Field: enabled},
 		pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError),
 		pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO),
 	}}
+	w.checksG, w.stackedRows = checksG, append([]ui.GridRow{checksG.Rows[0]}, stacked...)
 	checks := group(i18n.KeySetGroupChecks, checksG)
 	ui.Share(connG, loginG, tlsG, checksG)
 	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 120, 30)
@@ -523,7 +529,7 @@ func (w *settingsWindow) build() {
 	pwHint := loginRows[len(loginRows)-2].Field.(*ui.Ctl)
 	pwHint.Grow = true
 	// phase 11: the wrapped text boxes are as high as their text
-	w.wrap = []*ui.Ctl{hints, info}
+	w.wrap = []*ui.Ctl{hints, info, pwHint}
 	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
 
 	// general settings page (hidden until «Общие настройки…»)
@@ -539,8 +545,8 @@ func (w *settingsWindow) build() {
 	}
 	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Check, 0, 34)
-	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 360, 32)
-	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 360, 100)
+	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 300, 32)
+	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 300, 100)
 	autoErr.Grow, note.Grow = true, true
 	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
 	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}

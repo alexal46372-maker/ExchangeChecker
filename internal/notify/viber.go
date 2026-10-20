@@ -587,3 +587,36 @@ func (n *Notifier) ViberTest(ctx context.Context, recipientID, token string) (mo
 	}
 	return res, nil
 }
+
+// TestMessage sends text to every saved recipient with the saved token,
+// ignoring enabled and the schedule (alarm_test, phase 11, CHK-IPC-11;
+// rate-limited by the caller). errorKey: notify.viber_no_token /
+// notify.viber_no_recipients when nothing could be sent.
+func (n *Notifier) TestMessage(ctx context.Context, text string) (res *model.ViberTestResult, errorKey string) {
+	n.mu.Lock()
+	token := n.token
+	var recv []string
+	for _, r := range n.settings.Recipients {
+		recv = append(recv, r.ID)
+	}
+	n.mu.Unlock()
+	if token == "" {
+		return &model.ViberTestResult{Results: []model.ViberTestItem{}}, model.MsgViberNoToken
+	}
+	if len(recv) == 0 {
+		return &model.ViberTestResult{Results: []model.ViberTestItem{}}, model.MsgViberNoRecipients
+	}
+	out := &model.ViberTestResult{OK: true, Results: []model.ViberTestItem{}}
+	for _, r := range recv {
+		if ctx.Err() != nil {
+			break
+		}
+		key, _, _ := n.send(ctx, token, model.ViberSenderName, r, text)
+		out.Results = append(out.Results, model.ViberTestItem{ID: r, OK: key == "", ErrorKey: key})
+		out.OK = out.OK && key == ""
+	}
+	if len(out.Results) < len(recv) {
+		out.OK = false
+	}
+	return out, ""
+}

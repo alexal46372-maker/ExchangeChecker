@@ -44,7 +44,9 @@ type AlertEvent struct {
 	// Kind: AlertKindRecovered for a transition back to ok, else
 	// AlertKindAlert; DurationMin: recovered events, minutes since the
 	// point / profile left ok in this run (phase 9, CHK-SVC-05).
-	Kind        string `json:"kind,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	// Test marks the test alarm of alarm_test (phase 11, CHK-IPC-11).
+	Test        bool   `json:"test,omitempty"`
 	DurationMin *int64 `json:"durationMin,omitempty"`
 	// Phase 10 (CHK-MON-17): the alarm persists until the error is
 	// resolved. Since: when the point / profile left ok (active alerts and

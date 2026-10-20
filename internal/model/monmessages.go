@@ -172,6 +172,7 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgViberNetwork:            {"Нет связи с сервером Viber (сеть, прокси).", "Cannot reach the Viber server (network, proxy)."},
 	MsgViberTLS:                {"Ошибка TLS при подключении к Viber: обновите корневые сертификаты Windows.", "TLS error connecting to Viber: update the Windows root certificates."},
 	MsgViberFailed:             {"Viber не принял сообщение.", "Viber did not accept the message."},
+	MsgAlarmTestLevel:          {"Уровень тестовой тревоги: warning или error.", "Test alarm level must be warning or error."},
 	MsgViberNotChecked:         {"ещё не проверена", "not checked yet"},
 	MsgViberErrorUnknown:       {"ошибка подключения или запроса", "connection or query error"},
 	MsgViberInvalid:            {"Неверные настройки Viber.", "Invalid Viber settings."},
@@ -239,5 +240,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel}
 }

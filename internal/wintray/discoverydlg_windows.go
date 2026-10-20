@@ -303,14 +303,7 @@ func (dd *discoveryDialog) build() {
 	content := &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: 6, Items: []ui.Node{
 		top, byValue, lists, modeRow, maps, checks, sqlHead, sql, &ui.Col{Gap: 2, Items: []ui.Node{resL, res}},
 	}}}
-	fitForm(dd.hwnd, content, &ui.Pad{All: ui.P12, Child: buttons}, 0, false)
-	for _, k := range []string{i18n.KeyDiscModeAuto, i18n.KeyDiscModeManual, i18n.KeyDiscModeCounters} {
-		winapi.SendMessageString(dd.ctl[idDiscMode], winapi.CB_ADDSTRING, 0, dd.t(k))
-	}
-	for _, s := range traysettings.TemplateTitles(dd.w.cfg.lang) {
-		winapi.SendMessageString(dd.ctl[idDiscTemplate], winapi.CB_ADDSTRING, 0, s)
-	}
-	// cues of the edit boxes (phase 11, PLAN §12 p.50)
+	// cues of the edit boxes (phase 11, PLAN §12 p.50), before the layout: the boxes are as wide as their cues (CHK-TRAY-48)
 	winapi.SetCueBanner(dd.ctl[idDiscTime], dd.t(i18n.KeyCueDiscTime))
 	winapi.SetCueBanner(dd.ctl[idDiscTol], fmt.Sprintf(dd.t(i18n.KeySetTimeoutCue), 1440))
 	for _, e := range discMapEdits {
@@ -319,6 +312,13 @@ func (dd *discoveryDialog) build() {
 			cue = i18n.KeyCueDiscSchema
 		}
 		winapi.SetCueBanner(dd.ctl[e.id], dd.t(cue))
+	}
+	fitForm(dd.hwnd, content, &ui.Pad{All: ui.P12, Child: buttons}, 0, false)
+	for _, k := range []string{i18n.KeyDiscModeAuto, i18n.KeyDiscModeManual, i18n.KeyDiscModeCounters} {
+		winapi.SendMessageString(dd.ctl[idDiscMode], winapi.CB_ADDSTRING, 0, dd.t(k))
+	}
+	for _, s := range traysettings.TemplateTitles(dd.w.cfg.lang) {
+		winapi.SendMessageString(dd.ctl[idDiscTemplate], winapi.CB_ADDSTRING, 0, s)
 	}
 	dd.tips = newTooltips(dd.hwnd)
 	for id, h := range dd.ctl {

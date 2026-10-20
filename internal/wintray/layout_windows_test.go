@@ -111,6 +111,21 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 			t.Errorf("%s: %v overlaps %v", what, a, b)
 		}
 	}
+	// phase 11 (CHK-TRAY-48): every edit box is at least as wide as its
+	// cue (the whole hint is visible)
+	for _, c := range cs {
+		if c.class != "Edit" {
+			continue
+		}
+		cue := winapi.CueBanner(c.h)
+		if cue == "" {
+			continue
+		}
+		tw, _ := winapi.TextSize(winapi.SendMessage(c.h, wmGetFont, 0, 0), cue, 0)
+		if w := c.r.Right - c.r.Left; tw+px(10) > w {
+			t.Errorf("%s: cue %q (%d px) does not fit the edit box %d px", what, cue, tw, w)
+		}
+	}
 	for _, c := range cs {
 		if c.text == "" {
 			continue
@@ -364,17 +379,49 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		if w.wiz == nil {
 			t.Fatal("wizard not opened")
 		}
+		// phase 11 (CHK-TRAY-48): demo data in the lists for the screenshots
+		wd := w.wiz
+		fill := func(id int32, lines []string) {
+			lb := wd.ctl[id]
+			winapi.SendMessage(lb, winapi.LB_RESETCONTENT, 0, 0)
+			for _, l := range lines {
+				winapi.SendMessageString(lb, winapi.LB_ADDSTRING, 0, l)
+			}
+		}
+		wd.z.Instances = []model.SQLServerInstance{{Host: "SRV-1C", Address: "10.0.0.5", Instance: "MSSQLSERVER", Version: "15.0.2000.5", TCPPort: 1433},
+			{Host: "SRV-1C", Address: "10.0.0.5", Instance: "SQL2019", Version: "15.0.2000.5", TCPPort: 49712}}
+		var inst []string
+		for _, in := range wd.z.Instances {
+			inst = append(inst, traysettings.InstanceLine(in))
+		}
+		fill(idWizInstances, inst)
 		visit("wizard", w.wiz.hwnd)
 		// phase 11: steps 2 and 3 too
-		wd := w.wiz
 		wd.z.Server, wd.z.Login = "srv", "mon"
-		wd.z.Databases = []model.SQLDatabaseInfo{{Name: "ut"}, {Name: "retail"}}
+		wd.z.Databases = []model.SQLDatabaseInfo{{Name: "ut", Is1C: true, HasNodeTables: true, Probed: true, SizeMB: 48210},
+			{Name: "retail", Is1C: true, HasNodeTables: true, Probed: true, SizeMB: 12544},
+			{Name: "zup", Is1C: true, Probed: true, SizeMB: 6120}, {Name: "reports", Probed: true, SizeMB: 830}}
 		wd.z.PickDatabase(0)
 		wd.z.Step = traysettings.WizDatabase
 		wd.show()
+		var dbs []string
+		for _, d := range wd.z.Databases {
+			dbs = append(dbs, wd.z.DatabaseLine(d))
+		}
+		fill(idWizDBs, dbs)
 		visit("wizard step2", wd.hwnd)
 		wd.z.Step = traysettings.WizFinish
 		wd.show()
+		wd.z.Candidates = []model.DiscoveryCandidate{
+			{Mode: model.CandidateSingle, Schema: "dbo", Table: "_Node123", PointCol: "_Description", SendCol: "_Fld456", RecvCol: "_Fld457"},
+			{Mode: model.CandidateLinked, Schema: "dbo", Table: "_Node124", PointCol: "_Description", PointKeyCol: "_IDRRef",
+				TimesSchema: "dbo", TimesTable: "_InfoRg789", LinkCol: "_Fld790RRef", SendCol: "_Fld791", RecvCol: "_Fld792"},
+		}
+		var cands []string
+		for i := range wd.z.Candidates {
+			cands = append(cands, wd.z.CandidateLine(i))
+		}
+		fill(idWizCands, cands)
 		visit("wizard step3", wd.hwnd)
 	}()
 	func() { // phase 11: the Viber page

@@ -343,6 +343,7 @@ func (w *settingsWindow) relayoutAll() {
 	if w.root == nil {
 		return
 	}
+	syncCues(w.root)
 	// another page may be wider: shrink it to the window (no horizontal
 	// scrolling, phase 11)
 	avail := winapi.GetClientRect(w.hwnd).Right - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)

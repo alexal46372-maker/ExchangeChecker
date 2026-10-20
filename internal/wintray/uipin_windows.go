@@ -22,6 +22,7 @@ var pinnedHosts = map[uintptr]uintptr{}
 // (centred; keep: keep the position, e.g. a relayout after a language
 // change). It returns the client size.
 func fitForm(hwnd uintptr, content, bar ui.Node, minW int32, keep bool) (int32, int32) {
+	syncCues(content)
 	m := uiMetrics()
 	style := winapi.WindowStyle(hwnd) &^ (winapi.WS_VSCROLL | winapi.WS_HSCROLL)
 	ex := winapi.WindowExStyle(hwnd)
@@ -142,4 +143,15 @@ func min32(a, b int32) int32 {
 		return a
 	}
 	return b
+}
+
+// syncCues copies the cue banner of every edit box into its ui.Ctl, so
+// that the layout keeps the box at least as wide as the cue (phase 11,
+// CHK-TRAY-48).
+func syncCues(n ui.Node) {
+	ui.Walk(n, func(c *ui.Ctl) {
+		if c.H != 0 && (c.Kind == ui.Edit || c.Kind == ui.Box) && winapi.GetClassName(c.H) == "Edit" {
+			c.Cue = winapi.CueBanner(c.H)
+		}
+	})
 }

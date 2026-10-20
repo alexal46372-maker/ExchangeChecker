@@ -137,6 +137,8 @@ func (w *settingsWindow) buildViber() (page ui.Node) {
 	result := add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, ui.Box, 300, 64)
 	status := add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, ui.Box, 300, 54)
 	result.Grow, status.Grow = true, true
+	// phase 11 (CHK-TRAY-48): as high as their text (no gap after «Тест»)
+	w.wrap = append(w.wrap, result, status)
 	w.cur = nil
 	page = &ui.GroupBox{Box: box, Child: &ui.Col{Items: []ui.Node{
 		enabled,
@@ -285,6 +287,7 @@ func (w *settingsWindow) updateViber() {
 	}
 	if t := w.viberStatusText(); w.text(idVbStatus) != t {
 		winapi.SetWindowText(w.ctl[idVbStatus], t)
+		w.relayoutAll()
 	}
 }
 
@@ -342,6 +345,7 @@ func (w *settingsWindow) testViber() {
 	}
 	w.vbTesting = &req
 	winapi.SetWindowText(w.ctl[idVbResult], w.t(i18n.KeyVbTesting))
+	w.relayoutAll()
 	w.call(req, func(m model.IPCMessage, err error) {
 		w.vbTesting = nil
 		var t string
@@ -358,6 +362,7 @@ func (w *settingsWindow) testViber() {
 			t = w.ed.ViberTestText(m.ViberTest)
 		}
 		winapi.SetWindowText(w.ctl[idVbResult], strings.TrimSpace(t))
+		w.relayoutAll()
 		w.update()
 	})
 }

@@ -80,6 +80,9 @@ type Ctl struct {
 	// NoShrink: Shrink keeps the width (a text box: a static with
 	// wrapped text must stay wide enough for it).
 	NoShrink bool
+	// Cue: the cue banner of an edit box; the box is never narrower than
+	// it (phase 11, CHK-TRAY-48: the whole hint is visible).
+	Cue string
 	// Rect is the result of the last layout (pixels); Placed: the control
 	// got a rectangle in the last layout (false = hide it).
 	Rect   Rect
@@ -139,6 +142,10 @@ func (c *Ctl) measure(m *Metrics) (w, h, base int32) {
 		if c.Kind == Box || c.Kind == Edit || c.Kind == Combo {
 			w = px(c.W)
 		}
+	}
+	if c.Cue != "" && (c.Kind == Edit || c.Kind == Box || c.Kind == Combo) {
+		cue := Ctl{Kind: Label, Text: c.Cue}
+		w = max32(w, cue.textW(m)+px(P12))
 	}
 	if c.Hgt > 0 {
 		h = max32(h, px(c.Hgt))

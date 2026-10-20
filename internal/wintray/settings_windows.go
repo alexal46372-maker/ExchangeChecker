@@ -443,7 +443,11 @@ func (w *settingsWindow) build() {
 		if class == "EDIT" {
 			ex, kind = winapi.WS_EX_CLIENTEDGE, ui.Edit
 		}
-		return ui.GridRow{Label: l, Field: add(class, "", ex, style, id, kind, width, 0)}
+		f := add(class, "", ex, style, id, kind, width, 0)
+		// phase 11 (CHK-TRAY-48): the full-width fields take the width of
+		// their group (no empty strip on the right at 144 dpi)
+		f.Grow = width == 390 // cw
+		return ui.GridRow{Label: l, Field: f}
 	}
 	check := func(id int32, key string) *ui.Ctl {
 		return add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, id, ui.Check, 0, 0)
@@ -467,8 +471,10 @@ func (w *settingsWindow) build() {
 	winapi.SetWindowText(w.ctl[idSetUIMode], "")         // applyUIMode names it
 	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it
 	w.cur = &w.pageCtl[0]
-	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0),
-		add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idSetList, ui.Box, 205, 250),
+	list := add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idSetList, ui.Box, 205, 250)
+	// phase 11 (CHK-TRAY-48): the list as wide as the navigation column
+	list.Grow, list.NoShrink = true, true
+	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0), list,
 		&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
 			add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}}}
 	var xfer ui.Node
@@ -559,6 +565,9 @@ func (w *settingsWindow) build() {
 	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 300, 32)
 	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 300, 100)
 	autoErr.Grow, note.Grow = true, true
+	// phase 11 (CHK-TRAY-48): as high as their text, an empty error box
+	// takes no room (no gap under the autostart check box)
+	w.wrap = append(w.wrap, autoErr, note)
 	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
 	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
 	w.cur = nil
@@ -946,6 +955,7 @@ func (w *settingsWindow) update() {
 	}
 	if t := w.autostartError(); w.text(idGenAutostartErr) != t {
 		winapi.SetWindowText(w.ctl[idGenAutostartErr], t)
+		w.relayoutAll()
 	}
 	gen := ed.CanEditSettings()
 	for _, e := range genEdits {

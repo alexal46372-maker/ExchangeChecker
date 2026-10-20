@@ -13,6 +13,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // WizardClass is the window class of the «Добавить базу» wizard (phase 9b
@@ -157,54 +158,80 @@ func (wd *wizardDialog) build() {
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
 	list := uint32(winapi.WS_TABSTOP | winapi.WS_VSCROLL | winapi.LBS_NOTIFY)
 	combo := uint32(winapi.WS_TABSTOP | winapi.CBS_DROPDOWNLIST)
-	label := func(key string, x, y, cw int32) { wd.add("STATIC", wd.t(key), 0, winapi.SS_LEFT, 0, x, y+3, cw, 18) }
-	wd.add("STATIC", "", 0, winapi.SS_LEFT, idWizStep, 12, 10, 736, 18)
+	// phase 11 (CHK-TRAY-45): controls created at 0,0 and laid out by
+	// the framework; the three steps share one area below the step line
+	label := func(key string) *ui.Ctl {
+		return uiCtl(wd.add("STATIC", wd.t(key), 0, winapi.SS_LEFT, 0, 0, 0, 0, 0), ui.Label, wd.t(key))
+	}
+	c := func(class, text string, ex, style uint32, id int32, kind ui.Kind, w, h int32) *ui.Ctl {
+		x := uiCtl(wd.add(class, text, ex, style, id, 0, 0, 0, 0), kind, text)
+		x.W, x.Hgt = w, h
+		return x
+	}
+	stepLine := c("STATIC", "", 0, winapi.SS_LEFT, idWizStep, ui.Box, 736, 18)
+	stepLine.Grow = true
 	// step 1: server and login
 	wd.cur = &wd.stepCtl[traysettings.WizServer]
-	row := int32(40)
-	label(i18n.KeyWizServer, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizServer, 140, row, 450, 23)
-	wd.add("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, 598, row-1, 150, 26)
-	row += 30
-	wd.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, 140, row, 608, 120)
-	row += 126
-	label(i18n.KeyWizPort, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idWizPort, 140, row, 80, 23)
-	row += 28
-	label(i18n.KeyWizAuth, 12, row, 120)
-	wd.add("COMBOBOX", "", 0, combo, idWizAuth, 140, row, 450, 120)
-	row += 28
-	label(i18n.KeyWizLogin, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizLogin, 140, row, 450, 23)
-	row += 28
-	label(i18n.KeyWizPassword, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idWizPassword, 140, row, 450, 23)
-	row += 28
-	label(i18n.KeyWizEncrypt, 12, row, 120)
-	wd.add("COMBOBOX", "", 0, combo, idWizEncrypt, 140, row, 450, 160)
+	srvL := label(i18n.KeyWizServer)
+	srv := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizServer, ui.Edit, 450, 0)
+	find := c("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, ui.Button, 0, 0)
+	inst := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, ui.Box, 590, 120)
+	inst.Grow = true
+	portL := label(i18n.KeyWizPort)
+	port := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idWizPort, ui.Edit, 80, 0)
+	authL := label(i18n.KeyWizAuth)
+	auth := c("COMBOBOX", "", 0, combo, idWizAuth, ui.Combo, 450, 0)
+	loginL := label(i18n.KeyWizLogin)
+	login := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizLogin, ui.Edit, 450, 0)
+	pwL := label(i18n.KeyWizPassword)
+	pw := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idWizPassword, ui.Edit, 450, 0)
+	encL := label(i18n.KeyWizEncrypt)
+	enc := c("COMBOBOX", "", 0, combo, idWizEncrypt, ui.Combo, 450, 0)
+	step1 := &ui.Grid{Rows: []ui.GridRow{
+		{Label: srvL, Field: &ui.Row{Grow: true, Items: []ui.Node{srv, &ui.Row{Right: true, Items: []ui.Node{find}}}}},
+		{Field: inst}, {Label: portL, Field: port}, {Label: authL, Field: auth},
+		{Label: loginL, Field: login}, {Label: pwL, Field: pw}, {Label: encL, Field: enc},
+	}}
 	// step 2: database
 	wd.cur = &wd.stepCtl[traysettings.WizDatabase]
-	label(i18n.KeyWizDBs, 12, 40, 400)
-	wd.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizDBs, 12, 64, 736, 270)
-	wd.add("BUTTON", wd.t(i18n.KeyWizRefresh), 0, winapi.WS_TABSTOP, idWizRefresh, 12, 338, 180, 26)
+	dbs := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizDBs, ui.Box, 736, 270)
+	dbs.Grow = true
+	step2 := &ui.Col{Items: []ui.Node{label(i18n.KeyWizDBs), dbs,
+		c("BUTTON", wd.t(i18n.KeyWizRefresh), 0, winapi.WS_TABSTOP, idWizRefresh, ui.Button, 0, 0)}}
 	// step 3: test, exchange tables, save
 	wd.cur = &wd.stepCtl[traysettings.WizFinish]
-	label(i18n.KeyWizCands, 12, 40, 400)
-	wd.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, 12, 64, 736, 300)
+	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 300)
+	cands.Grow = true
+	step3 := &ui.Col{Items: []ui.Node{label(i18n.KeyWizCands), cands}}
 	wd.cur = nil
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
-		idWizResult, 12, 372, 736, 140)
-	bx := int32(12)
-	button := func(id int32, key string, width int32) {
-		wd.add("BUTTON", wd.t(key), 0, winapi.WS_TABSTOP, id, bx, 522, width, 28)
-		bx += width + 6
+	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
+		idWizResult, ui.Box, 736, 140)
+	res.Grow = true
+	var btns []ui.Node
+	for _, b := range []struct {
+		id  int32
+		key string
+	}{{idWizBack, i18n.KeyWizBack}, {idWizNext, i18n.KeyWizNext}, {idWizSave, i18n.KeyWizSave},
+		{idWizGrant, i18n.KeyWizGrant}, {idWizAdvanced, i18n.KeyWizAdvanced}} {
+		btns = append(btns, c("BUTTON", wd.t(b.key), 0, winapi.WS_TABSTOP, b.id, ui.Button, 0, 0))
 	}
-	button(idWizBack, i18n.KeyWizBack, 85)
-	button(idWizNext, i18n.KeyWizNext, 85)
-	button(idWizSave, i18n.KeyWizSave, 100)
-	button(idWizGrant, i18n.KeyWizGrant, 210)
-	button(idWizAdvanced, i18n.KeyWizAdvanced, 160)
-	wd.add("BUTTON", wd.t(i18n.KeyWizCancel), 0, winapi.WS_TABSTOP, idWizCancel, 680, 522, 68, 28)
+	btns = append(btns, &ui.Row{Right: true, Items: []ui.Node{c("BUTTON", wd.t(i18n.KeyWizCancel), 0, winapi.WS_TABSTOP, idWizCancel, ui.Button, 0, 0)}})
+	// the step area: as large as the largest step
+	m := uiMetrics()
+	var sw, sh int32
+	for _, n := range []ui.Node{step1, step2, step3} {
+		w, h := ui.Layout(n, m, 0, 0, 0)
+		sw, sh = max32(sw, w), max32(sh, h)
+	}
+	area := &ui.Ctl{Kind: ui.Box, W: unpx(sw), Hgt: unpx(sh), Grow: true}
+	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		stepLine, area, res, &ui.Row{Gap: ui.P4 + 2, Grow: true, Items: btns},
+	}}}, 0)
+	for _, n := range []ui.Node{step1, step2, step3} {
+		ui.Layout(n, m, area.Rect.X, area.Rect.Y, area.Rect.W)
+		ui.Walk(n, applyCtl)
+	}
+	fitToContent(wd.hwnd, f.W, f.H)
 	for _, k := range []string{i18n.KeyWizAuthSQL, i18n.KeyWizAuthWindows} {
 		winapi.SendMessageString(wd.ctl[idWizAuth], winapi.CB_ADDSTRING, 0, wd.t(k))
 	}

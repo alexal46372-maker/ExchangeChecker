@@ -124,3 +124,17 @@ const (
 func groupBox(parent uintptr, text string, x, y, w, h int32) uintptr {
 	return child(parent, "BUTTON", text, winapi.BS_GROUPBOX, -1, x, y, w, h)
 }
+
+// unpx converts pixels back to 96-dpi units, rounding up (a box of
+// unpx(p) units is at least p pixels).
+func unpx(p int32) int32 {
+	d := int64(uiDPI())
+	return int32((int64(p)*96 + d - 1) / d)
+}
+
+func max32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
+}

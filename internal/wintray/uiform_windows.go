@@ -40,6 +40,8 @@ func uiCtl(h uintptr, kind ui.Kind, text string) *ui.Ctl {
 		text = winapi.GetWindowText(h)
 	}
 	c := &ui.Ctl{H: h, Kind: kind, Text: text}
+	// a static text box keeps its width when a window shrinks (phase 11)
+	c.NoShrink = kind == ui.Box && h != 0 && strings.EqualFold(winapi.GetClassName(h), "Static")
 	if kind == ui.Label {
 		c.Lines = strings.Count(text, "\n") + 1
 	}

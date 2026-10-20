@@ -242,9 +242,10 @@ func (dd *discoveryDialog) build() {
 	btn := func(key string, id int32) *ui.Ctl {
 		return c("BUTTON", dd.t(key), 0, winapi.WS_TABSTOP, id, ui.Button, 0, 0)
 	}
+	grow := func(x *ui.Ctl) *ui.Ctl { x.Grow = true; return x }
 	// search buttons and the short state line (count / «Поиск… N с»)
 	top := &ui.Row{Grow: true, Items: []ui.Node{btn(i18n.KeyDiscFind, idDiscFind), btn(i18n.KeyDiscListPoints, idDiscPoints),
-		btn(i18n.KeyDiscCancel, idDiscCancel), c("STATIC", "", 0, winapi.SS_LEFT, idDiscState, ui.Box, 380, 18)}}
+		btn(i18n.KeyDiscCancel, idDiscCancel), grow(c("STATIC", "", 0, winapi.SS_LEFT, idDiscState, ui.Box, 200, 18))}}
 	// search by a known point and time (discover_by_value)
 	pointL := label(i18n.KeyDiscPoint)
 	point := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWN|winapi.CBS_AUTOHSCROLL, idDiscPoint, ui.Combo, 230, 0)
@@ -270,7 +271,7 @@ func (dd *discoveryDialog) build() {
 	// mapping editor: the kind, its source label, two columns of boxes
 	modeL := label(i18n.KeyDiscMode)
 	mode := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, idDiscMode, ui.Combo, 290, 0)
-	modeRow := &ui.Row{Grow: true, Items: []ui.Node{modeL, mode, &ui.Space{W: ui.P8}, c("STATIC", "", 0, winapi.SS_LEFT, idDiscSource, ui.Box, 400, 18)}}
+	modeRow := &ui.Row{Grow: true, Items: []ui.Node{modeL, mode, &ui.Space{W: ui.P8}, grow(c("STATIC", "", 0, winapi.SS_LEFT, idDiscSource, ui.Box, 240, 18))}}
 	g1, g2 := ui.Grid{Gap: ui.P4}, ui.Grid{Gap: ui.P4}
 	for i, e := range discMapEdits {
 		l := label(e.key)
@@ -282,8 +283,9 @@ func (dd *discoveryDialog) build() {
 	}
 	maps := &ui.Row{Align: ui.Top, Gap: ui.P16, Items: []ui.Node{&g1, &g2}}
 	cb := uint32(winapi.WS_TABSTOP | winapi.BS_AUTOCHECKBOX)
-	checks := &ui.Row{Gap: ui.P16, Items: []ui.Node{c("BUTTON", dd.t(i18n.KeyDiscYearOffset), 0, cb, idDiscYear, ui.Check, 0, 0),
-		c("BUTTON", dd.t(i18n.KeyDiscKeepUnlinked), 0, cb, idDiscKeep, ui.Check, 0, 0),
+	// two rows: the window fits 1024 px at 144 dpi (phase 11)
+	checks := &ui.Col{Gap: ui.P4, Items: []ui.Node{&ui.Row{Gap: ui.P16, Items: []ui.Node{c("BUTTON", dd.t(i18n.KeyDiscYearOffset), 0, cb, idDiscYear, ui.Check, 0, 0),
+		c("BUTTON", dd.t(i18n.KeyDiscKeepUnlinked), 0, cb, idDiscKeep, ui.Check, 0, 0)}},
 		c("BUTTON", dd.t(i18n.KeyDiscAllPlans), 0, cb, idDiscAllPlans, ui.Check, 0, 0)}}
 	sqlHead := &ui.Row{Grow: true, Items: []ui.Node{label(i18n.KeyDiscManualSQL), &ui.Row{Right: true, Items: []ui.Node{label(i18n.KeyDiscTemplate),
 		c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idDiscTemplate, ui.Combo, 300, 0)}}}}

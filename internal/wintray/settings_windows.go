@@ -475,7 +475,7 @@ func (w *settingsWindow) build() {
 	// profile page: four group boxes (phase 10 D3)
 	// phase 11 (CHK-TRAY-47): one field column for the whole page
 	// (ui.Share), «Порт» beside «Экземпляр», the TLS boxes in one row,
-	// hints | info side by side: the page fits 1024×768 at 96 dpi
+	// hints and info under the groups, full width (the text wraps)
 	nameRow := field(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw)
 	hostRow := field(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw)
 	instRow := field(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200)
@@ -516,10 +516,10 @@ func (w *settingsWindow) build() {
 	}}
 	checks := group(i18n.KeySetGroupChecks, checksG)
 	ui.Share(connG, loginG, tlsG, checksG)
-	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 300, 40)
-	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 260, 40)
-	hints.Grow = true
-	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Row{Align: ui.Top, Grow: true, Items: []ui.Node{hints, info}}}}
+	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 300, 42)
+	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 260, 28)
+	hints.Grow, info.Grow = true, true
+	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
 
 	// general settings page (hidden until «Общие настройки…»)
 	w.cur = &w.pageCtl[1]

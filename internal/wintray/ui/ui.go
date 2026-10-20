@@ -77,6 +77,9 @@ type Ctl struct {
 	Grow bool
 	// Hidden: takes no space (Form.Show changes it and relayouts).
 	Hidden bool
+	// NoShrink: Shrink keeps the width (a text box: a static with
+	// wrapped text must stay wide enough for it).
+	NoShrink bool
 	// Rect is the result of the last layout (pixels); Placed: the control
 	// got a rectangle in the last layout (false = hide it).
 	Rect   Rect
@@ -643,7 +646,7 @@ func (f *Form) Show(on bool, cs ...*Ctl) {
 func Shrink(n Node, d int32) bool {
 	changed := false
 	Walk(n, func(c *Ctl) {
-		if (c.Kind == Edit || c.Kind == Combo || c.Kind == Box) && c.W >= 200 {
+		if (c.Kind == Edit || c.Kind == Combo || c.Kind == Box) && !c.NoShrink && c.W >= 200 {
 			w := c.W - d
 			if w < 120 {
 				w = 120

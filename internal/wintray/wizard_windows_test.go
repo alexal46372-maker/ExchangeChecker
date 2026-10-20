@@ -272,7 +272,7 @@ func TestCHK_TRAY_32_WizardGrant(t *testing.T) {
 	// phase 11: the grant button is hidden on the server step (step 1)
 	wd.z.Step = traysettings.WizDatabase
 	wd.show()
-	if !winapi.IsWindowVisible(wd.ctl[idWizGrant]) {
+	if winapi.WindowStyle(wd.ctl[idWizGrant])&winapi.WS_VISIBLE == 0 {
 		t.Error("grant hidden on the database step")
 	}
 	wd.click(t, idWizGrant)

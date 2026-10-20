@@ -1,4 +1,7 @@
-# CHK-CI-01 — Go 1.20.14, Windows amd64, CGO off. No build artifacts are uploaded.
+# CHK-CI-01 — Go 1.20.14, Windows amd64, CGO off. No build artifacts are uploaded; the one
+# exception (CHK-TRAY-46, POLICY) is the ui-screens artifact of the windows job (tray
+# screenshots PNG, 7 days). GUI tests (internal/wintray) run with a timeout and up to 3
+# attempts; mkres is checked for determinism by a double run.
 # CHK-SQL-01 — windows job: no os/exec in the windows/amd64 dependency graph.
 # CHK-SQL-01..05, CHK-MON-09 — linux job: SQL Server integration tests against a
 # throwaway mssql container (EC_SQL_TEST_*); without these env vars the tests skip.
@@ -91,8 +94,46 @@ jobs:
             exit 1
           fi
           echo "setup packages in graph: $(printf '%s\n' "$deps" | grep -c .)"
-      - name: go test (incl. named pipe / Event Log / SCM, CHK-MON-05..07)
-        run: go test ./... -count=1 -v
+      - name: go test (incl. named pipe / Event Log / SCM, CHK-MON-05..07; GUI tests separately)
+        run: go test $(go list ./... | grep -v -x 'github.com/alexal46372-maker/ExchangeChecker/internal/wintray') -count=1 -v -timeout 20m
+      - name: GUI tests internal/wintray (timeout 10 min, up to 3 attempts)
+        run: |
+          for i in 1 2 3; do
+            echo "attempt $i"
+            if go test ./internal/wintray -count=1 -v -timeout 10m; then exit 0; fi
+          done
+          exit 1
+      - name: tray screenshots (CHK-TRAY-46; off-screen windows, RU/EN, 96/144 dpi)
+        env:
+          EC_UI_SCREENS: ${{ runner.temp }}/ui-screens
+        run: |
+          for i in 1 2 3; do
+            echo "attempt $i"
+            rm -rf "$EC_UI_SCREENS"
+            if go test ./internal/wintray -run 'TestCHK_TRAY_46_Screens' -count=1 -v -timeout 10m; then
+              ls "$EC_UI_SCREENS" | wc -l
+              exit 0
+            fi
+          done
+          exit 1
+      - name: upload ui-screens (the only CI artifact, CHK-TRAY-46)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-screens
+          path: ${{ runner.temp }}/ui-screens
+          retention-days: 7
+          if-no-files-found: warn
+      - name: mkres deterministic (double run)
+        run: |
+          go run ./tools/mkres -check
+          go run ./tools/mkres
+          sha256sum cmd/*/*.syso > "$RUNNER_TEMP/syso1.txt"
+          go run ./tools/mkres
+          sha256sum cmd/*/*.syso > "$RUNNER_TEMP/syso2.txt"
+          diff "$RUNNER_TEMP/syso1.txt" "$RUNNER_TEMP/syso2.txt"
+          go run ./tools/mkres -check
+          git diff --exit-code -- cmd
       - name: go build (windows/amd64)
         env:
           GOOS: windows

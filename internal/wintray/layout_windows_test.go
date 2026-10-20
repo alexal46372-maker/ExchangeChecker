@@ -166,96 +166,7 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 				defer func() { testWorkArea = nil }()
 				checkSettingsFit(t, "small "+tag, lang, small)
 			}()
-			func() {
-				ds := newDiscService()
-				app := startCfgApp(t, ds.cfgService, true, nil)
-				defer app.Exit()
-				w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
-					uiMode: traysettings.UIExpert})
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer w.close()
-				w.Reload()
-				pumpUntil(t, "loaded", func() bool { return !w.busy && w.ed.HasProfile() })
-				checkLayout(t, "settings expert "+tag, w.hwnd)
-				dd := openDisc(t, w)
-				checkLayout(t, "discovery "+tag, dd.hwnd)
-				dd.close()
-				w.setPage(1)
-				checkLayout(t, "settings general "+tag, w.hwnd)
-				w.setPage(0)
-				w.toggleUIMode()
-				checkLayout(t, "settings simple "+tag, w.hwnd)
-
-				ro, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.ReadOnly, session: app.session, hidden: true,
-					uiMode: traysettings.UIExpert, elevator: &fakeElevator{}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				checkLayout(t, "settings read-only "+tag, ro.hwnd)
-				ro.close()
-
-				app.opt.Lang = lang
-				sw, err := newSoundWindow(app)
-				if err != nil {
-					t.Fatal(err)
-				}
-				checkLayout(t, "sound "+tag, sw.hwnd)
-				winapi.DestroyWindow(sw.hwnd)
-				hw, err := newHistWindow(app, trayui.StatusRow{Database: "db1", Point: "ЦБ"}, false)
-				if err != nil {
-					t.Fatal(err)
-				}
-				checkLayout(t, "history "+tag, hw.hwnd)
-				winapi.DestroyWindow(hw.hwnd)
-				app.opt.HiddenPanel = true
-				if v := app.OpenVolume(); v != nil {
-					checkLayout(t, "volume "+tag, v.hwnd)
-					winapi.DestroyWindow(v.hwnd)
-				} else {
-					t.Error("volume window")
-				}
-				app.problems = []trayalert.Problem{{Kind: trayalert.ProblemError, Text: "Склад / Exchange — ЦБ: 45 мин без обмена"},
-					{Kind: trayalert.ProblemNoConnection, Text: "Магазин 12: нет подключения к SQL Server"},
-					{Kind: trayalert.ProblemWarning, Text: "Офис — Розница: 25 мин без обмена"}}
-				app.updatePanel()
-				if p := app.Panel(); p != nil {
-					checkLayout(t, "panel "+tag, p.hwnd)
-				} else {
-					t.Error("panel")
-				}
-				ab, err := newAboutWindow(0, trayui.AboutTitle(lang), trayui.AboutText(app.session.Status(), lang),
-					i18n.T(i18n.KeyAboutOK, lang), "", false, nil)
-				if err == nil {
-					checkLayout(t, "about "+tag, ab)
-					winapi.DestroyWindow(ab)
-				}
-			}()
-			func() {
-				ws := newWizService()
-				app := startCfgApp(t, ws.cfgService, true, nil)
-				defer app.Exit()
-				app.opt.Lang = lang
-				w := openAdmin(t, app)
-				w.click(t, idSetAdd)
-				if w.wiz == nil {
-					t.Fatal("wizard not opened")
-				}
-				checkLayout(t, "wizard "+tag, w.wiz.hwnd)
-			}()
-			aw, err := newAlertWindow(0, lang, nil, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			checkLayout(t, "alert "+tag, aw.hwnd)
-			winapi.DestroyWindow(aw.hwnd)
-			st, err := newStatusWindow(lang, false, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			checkLayout(t, "status "+tag, st.hwnd)
-			winapi.DestroyWindow(st.hwnd)
+			uiScenes(t, lang, func(name string, hwnd uintptr) { checkLayout(t, name+" "+tag, hwnd) })
 		}
 	}
 }
@@ -307,4 +218,101 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 		}
 		w.close()
 	}
+}
+
+// uiScenes opens every tray window (settings expert / general / simple /
+// read-only, discovery, sound, history, volume, panel, about, wizard,
+// alert, status) in lang and visits it (layout test, CI screenshots).
+func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
+	t.Helper()
+	func() {
+		ds := newDiscService()
+		app := startCfgApp(t, ds.cfgService, true, nil)
+		defer app.Exit()
+		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.close()
+		w.Reload()
+		pumpUntil(t, "loaded", func() bool { return !w.busy && w.ed.HasProfile() })
+		visit("settings expert", w.hwnd)
+		dd := openDisc(t, w)
+		visit("discovery", dd.hwnd)
+		dd.close()
+		w.setPage(1)
+		visit("settings general", w.hwnd)
+		w.setPage(0)
+		w.toggleUIMode()
+		visit("settings simple", w.hwnd)
+
+		ro, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.ReadOnly, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert, elevator: &fakeElevator{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		visit("settings read-only", ro.hwnd)
+		ro.close()
+
+		app.opt.Lang = lang
+		sw, err := newSoundWindow(app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		visit("sound", sw.hwnd)
+		winapi.DestroyWindow(sw.hwnd)
+		hw, err := newHistWindow(app, trayui.StatusRow{Database: "db1", Point: "ЦБ"}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		visit("history", hw.hwnd)
+		winapi.DestroyWindow(hw.hwnd)
+		app.opt.HiddenPanel = true
+		if v := app.OpenVolume(); v != nil {
+			visit("volume", v.hwnd)
+			winapi.DestroyWindow(v.hwnd)
+		} else {
+			t.Error("volume window")
+		}
+		app.problems = []trayalert.Problem{{Kind: trayalert.ProblemError, Text: "Склад / Exchange — ЦБ: 45 мин без обмена"},
+			{Kind: trayalert.ProblemNoConnection, Text: "Магазин 12: нет подключения к SQL Server"},
+			{Kind: trayalert.ProblemWarning, Text: "Офис — Розница: 25 мин без обмена"}}
+		app.updatePanel()
+		if p := app.Panel(); p != nil {
+			visit("panel", p.hwnd)
+		} else {
+			t.Error("panel")
+		}
+		ab, err := newAboutWindow(0, trayui.AboutTitle(lang), trayui.AboutText(app.session.Status(), lang),
+			i18n.T(i18n.KeyAboutOK, lang), "", false, nil)
+		if err == nil {
+			visit("about", ab)
+			winapi.DestroyWindow(ab)
+		}
+	}()
+	func() {
+		ws := newWizService()
+		app := startCfgApp(t, ws.cfgService, true, nil)
+		defer app.Exit()
+		app.opt.Lang = lang
+		w := openAdmin(t, app)
+		w.click(t, idSetAdd)
+		if w.wiz == nil {
+			t.Fatal("wizard not opened")
+		}
+		visit("wizard", w.wiz.hwnd)
+	}()
+	aw, err := newAlertWindow(0, lang, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visit("alert", aw.hwnd)
+	winapi.DestroyWindow(aw.hwnd)
+	st, err := newStatusWindow(lang, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	visit("status", st.hwnd)
+	winapi.DestroyWindow(st.hwnd)
 }

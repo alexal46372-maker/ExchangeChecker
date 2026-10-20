@@ -25,8 +25,10 @@ func workflowCode(b []byte) string {
 // artifacts; the only exception (POLICY.md) is .github/workflows/release.yml:
 // exactly one actions/upload-artifact step (the delivery zip),
 // retention-days: 7, permissions contents: read, triggers only
-// workflow_dispatch and push tags v*. No other workflow (ci.yml included)
-// uploads anything.
+// workflow_dispatch and push tags v*. Second exception (phase 11,
+// CHK-TRAY-46, approved by Кончита): ci.yml uploads exactly one artifact,
+// ui-screens (the tray screenshots), from the windows job only, kept 7
+// days. No other workflow uploads anything.
 func TestCHK_CI_01_ArtifactsOnlyRelease(t *testing.T) {
 	dir := filepath.Join("..", ".github", "workflows")
 	ents, err := os.ReadDir(dir)
@@ -47,6 +49,10 @@ func TestCHK_CI_01_ArtifactsOnlyRelease(t *testing.T) {
 		}
 		body := workflowCode(b)
 		seen[n] = true
+		if n == "ci.yml" {
+			checkScreensArtifact(t, body, uploadStep, anyUpload)
+			continue
+		}
 		if n != "release.yml" {
 			if anyUpload.MatchString(body) {
 				t.Errorf("%s uploads artifacts; only release.yml may (CHK-CI-01 exception)", n)
@@ -72,5 +78,39 @@ func TestCHK_CI_01_ArtifactsOnlyRelease(t *testing.T) {
 	}
 	if !seen["ci.yml"] || !seen["release.yml"] {
 		t.Fatalf("workflows not found: %v", seen)
+	}
+}
+
+// checkScreensArtifact: ci.yml has exactly one upload step, the
+// ui-screens artifact of the windows job, retention-days: 7.
+func checkScreensArtifact(t *testing.T, body string, uploadStep, anyUpload *regexp.Regexp) {
+	t.Helper()
+	if c, all := len(uploadStep.FindAllString(body, -1)), len(anyUpload.FindAllString(body, -1)); c != 1 || all != 1 {
+		t.Errorf("ci.yml: want exactly one actions/upload-artifact step (ui-screens), got %d (%d upload mentions)", c, all)
+		return
+	}
+	win := strings.Index(body, "\n  windows:\n")
+	lin := strings.Index(body, "\n  linux:\n")
+	up := uploadStep.FindStringIndex(body)
+	if win < 0 || lin < 0 || up == nil || up[0] < win || (lin > win && up[0] > lin) {
+		t.Error("ci.yml: the ui-screens upload must be a step of the windows job")
+		return
+	}
+	end := len(body)
+	if lin > up[0] {
+		end = lin
+	}
+	step := body[up[0]:end]
+	if i := strings.Index(step[1:], "\n      - "); i >= 0 {
+		step = step[:i+1]
+	}
+	if !regexp.MustCompile(`(?m)^\s*name:\s*ui-screens\s*$`).MatchString(step) {
+		t.Errorf("ci.yml: the artifact must be named ui-screens: %q", step)
+	}
+	if !regexp.MustCompile(`(?m)^\s*retention-days:\s*7\s*$`).MatchString(step) {
+		t.Errorf("ci.yml: ui-screens retention-days: 7 missing: %q", step)
+	}
+	if !strings.Contains(step, "ui-screens") || strings.Contains(step, ".exe") || strings.Contains(step, ".zip") {
+		t.Errorf("ci.yml: the ui-screens step uploads something else: %q", step)
 	}
 }

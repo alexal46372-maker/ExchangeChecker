@@ -262,7 +262,7 @@ func (dd *discoveryDialog) build() {
 	// scrolling: the details box shows the whole candidate)
 	// every multi-line box has its label (phase 11)
 	candL := label(i18n.KeyDiscCandidates)
-	cand := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idDiscList, ui.Box, 520, 132)
+	cand := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idDiscList, ui.Box, 520, 132)
 	detL := label(i18n.KeyDiscDetails)
 	det := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscDetails, ui.Box, 308, 132)
 	det.Grow = true

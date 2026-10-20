@@ -302,6 +302,7 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 			break
 		}
 	}
+	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	x, y, ww, wh := settingsRectPx(style, w.pageW, w.pageH+px(setBarH))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
@@ -336,6 +337,7 @@ func (w *settingsWindow) relayoutAll() {
 			break
 		}
 	}
+	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	w.layoutFit()
 }
@@ -359,4 +361,27 @@ func (w *settingsWindow) placeCtl(c *ui.Ctl) {
 	w.hostRect[c.H] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + h}
 	winapi.MoveWindow(c.H, r.X, r.Y, r.W, h)
 	winapi.ShowWindow(c.H, winapi.SW_SHOWNA)
+}
+
+// fitWrap sets the height of the wrapped text boxes to their text at
+// the width of the last layout (an empty box takes almost no room) and
+// lays the tree out again when a height changed.
+func (w *settingsWindow) fitWrap() {
+	changed := false
+	for _, c := range w.wrap {
+		if c.H == 0 || c.Rect.W <= 0 {
+			continue
+		}
+		hg := int32(1)
+		if text := winapi.GetWindowText(c.H); text != "" {
+			_, th := winapi.TextSize(winapi.SendMessage(c.H, 0x0031 /* WM_GETFONT */, 0, 0), text, c.Rect.W)
+			hg = unpx(th) + 1
+		}
+		if hg != c.Hgt {
+			c.Hgt, changed = hg, true
+		}
+	}
+	if changed {
+		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+	}
 }

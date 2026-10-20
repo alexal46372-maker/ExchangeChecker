@@ -162,7 +162,9 @@ func (wd *wizardDialog) add(class, text string, ex, style uint32, id, x, y, cw, 
 
 func (wd *wizardDialog) build() {
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
-	list := uint32(winapi.WS_TABSTOP | winapi.WS_VSCROLL | winapi.LBS_NOTIFY)
+	// LBS_NOINTEGRALHEIGHT (0x0100): the list keeps its laid out height (no
+	// gap under it, phase 11)
+	list := uint32(winapi.WS_TABSTOP | winapi.WS_VSCROLL | winapi.LBS_NOTIFY | 0x0100)
 	combo := uint32(winapi.WS_TABSTOP | winapi.CBS_DROPDOWNLIST)
 	// phase 11 (CHK-TRAY-45): controls created at 0,0 and laid out by
 	// the framework; the three steps share one area below the step line

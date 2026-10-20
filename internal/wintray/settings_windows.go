@@ -196,6 +196,7 @@ type settingsWindow struct {
 	root              ui.Node
 	rootM             *ui.Metrics
 	ctlOf             map[uintptr]*ui.Ctl
+	wrap              []*ui.Ctl // text boxes sized to their wrapped text (phase 11)
 	scrollSet, inBar  bool
 	barLeft, barRight []barButton
 	// expertShown: the expert-only controls are shown (test hook)
@@ -463,7 +464,7 @@ func (w *settingsWindow) build() {
 	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it
 	w.cur = &w.pageCtl[0]
 	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0),
-		add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, ui.Box, 205, 250),
+		add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idSetList, ui.Box, 205, 250),
 		&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
 			add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}}}
 	var xfer ui.Node
@@ -490,7 +491,7 @@ func (w *settingsWindow) build() {
 		field(w.t(i18n.KeySetLogin), idSetLogin, "EDIT", edit, cw),
 		field(w.t(i18n.KeySetPassword), idSetPassword, "EDIT", edit|winapi.ES_PASSWORD, cw),
 	}
-	loginRows = append(loginRows, ui.GridRow{Field: add("STATIC", "", 0, winapi.SS_LEFT, idSetPwHint, ui.Box, cw, 18)},
+	loginRows = append(loginRows, ui.GridRow{Field: add("STATIC", "", 0, winapi.SS_LEFT, idSetPwHint, ui.Box, 120, 18)},
 		ui.GridRow{Field: check(idSetClearPw, i18n.KeySetClearPassword)})
 	loginG := &ui.Grid{Gap: ui.P4, Rows: loginRows}
 	login := group(i18n.KeySetGroupLogin, loginG)
@@ -519,6 +520,10 @@ func (w *settingsWindow) build() {
 	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 120, 30)
 	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 120, 16)
 	hints.Grow, info.Grow = true, true
+	pwHint := loginRows[len(loginRows)-2].Field.(*ui.Ctl)
+	pwHint.Grow = true
+	// phase 11: the wrapped text boxes are as high as their text
+	w.wrap = []*ui.Ctl{hints, info}
 	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
 
 	// general settings page (hidden until «Общие настройки…»)
@@ -894,8 +899,12 @@ func (w *settingsWindow) update() {
 		pw = ed.PasswordHint()
 	}
 	winapi.SetWindowText(w.ctl[idSetPwHint], pw)
-	winapi.SetWindowText(w.ctl[idSetHints], strings.Join(ed.Hints(), "\r\n"))
-	winapi.SetWindowText(w.ctl[idSetInfo], w.info())
+	hints, info := strings.Join(ed.Hints(), "\r\n"), w.info()
+	if winapi.GetWindowText(w.ctl[idSetHints]) != hints || winapi.GetWindowText(w.ctl[idSetInfo]) != info {
+		winapi.SetWindowText(w.ctl[idSetHints], hints)
+		winapi.SetWindowText(w.ctl[idSetInfo], info)
+		w.relayoutAll() // the boxes are as high as their text
+	}
 	testing := w.testCancel != nil
 	sess := w.cfg.session
 	winapi.EnableWindow(w.ctl[idSetTest], has && !testing && sess.Supported(model.CmdTestProfile))

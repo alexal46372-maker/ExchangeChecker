@@ -134,8 +134,8 @@ func (w *settingsWindow) buildViber() (page ui.Node) {
 	testL := label(i18n.KeyVbTestTo, idVbTestTo)
 	testTo := add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idVbTestTo, ui.Combo, 270, 0)
 	test := add("BUTTON", w.t(i18n.KeyVbTest), 0, winapi.WS_TABSTOP, idVbTest, ui.Button, 110, 0)
-	result := add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, ui.Box, 360, 64)
-	status := add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, ui.Box, 360, 54)
+	result := add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, ui.Box, 300, 64)
+	status := add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, ui.Box, 300, 54)
 	result.Grow, status.Grow = true, true
 	w.cur = nil
 	page = &ui.GroupBox{Box: box, Child: &ui.Col{Items: []ui.Node{

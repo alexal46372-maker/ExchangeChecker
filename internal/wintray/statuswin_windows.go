@@ -63,12 +63,9 @@ var rowBk = map[trayui.Color]uint32{ // pale COLORREF (0x00BBGGRR)
 
 func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, error) {
 	const w = 1060
-	// phase 11 (CHK-TRAY-48): the cards above the table, two rows of them
-	// when the window still fits the work area, otherwise one
-	cardRows := int32(2)
-	if work := workArea(); px(440+cardPanelHeight(2)+8)+px(40) > work.Bottom-work.Top {
-		cardRows = 1
-	}
+	// phase 11 (CHK-TRAY-48): one row of cards above the table (no empty
+	// second row with few databases; the table has them all)
+	cardRows := int32(1)
 	h := 440 + cardPanelHeight(cardRows) + 8
 	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2
 	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 3

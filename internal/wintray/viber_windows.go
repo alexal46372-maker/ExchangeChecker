@@ -140,20 +140,18 @@ func (w *settingsWindow) buildViber() (page ui.Node) {
 	// phase 11 (CHK-TRAY-48): as high as their text (no gap after «Тест»)
 	w.wrap = append(w.wrap, result, status)
 	w.cur = nil
-	page = &ui.GroupBox{Box: box, Child: &ui.Col{Items: []ui.Node{
-		enabled,
-		&ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: tokenL, Field: token}, {Field: tokenState}, {Field: clear}}},
-		recL, rec,
-		&ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
-			{Label: daysL, Field: &ui.Col{Gap: ui.P4, Items: []ui.Node{&ui.Row{Gap: ui.P4, Items: days[:4]}, &ui.Row{Gap: ui.P4, Items: days[4:]}}}},
-			{Label: fromL, Field: &ui.Row{Items: []ui.Node{from, toL, to}}},
-			{Label: evL, Field: &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: nil, Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[0], ev[1]}}},
-				{Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[2], ev[3]}}}}}},
-			{Label: remL, Field: &ui.Col{Gap: 2, Items: []ui.Node{rem, remHint}}},
-			{Label: testL, Field: &ui.Row{Items: []ui.Node{testTo, test}}},
-		}},
-		result, status,
-	}}}
+	tokenG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: tokenL, Field: token}, {Field: tokenState}, {Field: clear}}}
+	mainG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
+		{Label: daysL, Field: &ui.Col{Gap: ui.P4, Items: []ui.Node{&ui.Row{Gap: ui.P4, Items: days[:4]}, &ui.Row{Gap: ui.P4, Items: days[4:]}}}},
+		{Label: fromL, Field: &ui.Row{Items: []ui.Node{from, toL, to}}},
+		{Label: evL, Field: &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: nil, Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[0], ev[1]}}},
+			{Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[2], ev[3]}}}}}},
+		{Label: remL, Field: &ui.Col{Gap: 2, Items: []ui.Node{rem, remHint}}},
+		{Label: testL, Field: &ui.Row{Items: []ui.Node{testTo, test}}},
+	}}
+	// phase 11 (CHK-TRAY-48): one field column for the whole page
+	ui.Share(tokenG, mainG)
+	page = &ui.GroupBox{Box: box, Child: &ui.Col{Items: []ui.Node{enabled, tokenG, recL, rec, mainG, result, status}}}
 	for _, h := range w.pageCtl[pageViber] {
 		winapi.ShowWindow(h, winapi.SW_HIDE)
 	}

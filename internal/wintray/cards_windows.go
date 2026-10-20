@@ -19,7 +19,7 @@ import (
 const (
 	cardsClass = "ExchangeCheckerCards"
 	cardClass  = "ExchangeCheckerCard"
-	cardW      = 236 // units: the narrowest card
+	cardW      = 180 // units: the narrowest card
 	cardH      = 76
 	cardGap    = 8
 	cardSlots  = 12

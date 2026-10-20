@@ -213,14 +213,26 @@ func (w *settingsWindow) layoutFit() {
 	for _, b := range right {
 		rightW += b.width + gap
 	}
-	leftW := m
+	// left buttons flow over as many rows as needed (phase 11: widths
+	// follow the texts); the right buttons end the last row, or get a row
+	// of their own when they do not fit beside the left ones
+	type spot struct {
+		b      btn
+		x, row int32
+	}
+	var spots []spot
+	x, row := m, int32(0)
 	for _, b := range left {
-		leftW += b.width + gap
+		if x > m && x+b.width > cw-m {
+			x, row = m, row+1
+		}
+		spots = append(spots, spot{b, x, row})
+		x += b.width + gap
 	}
-	rows := int32(1)
-	if leftW > cw-m-rightW {
-		rows = 2
+	if len(right) > 0 && x > m && x > cw-m-rightW {
+		row++
 	}
+	rows := row + 1
 	barH := px(setBarH) + (rows-1)*(bh+gap)
 	if barH > ch/2 {
 		barH = ch / 2
@@ -228,18 +240,13 @@ func (w *settingsWindow) layoutFit() {
 	top := ch - barH
 	winapi.MoveWindow(w.ctl[idSetStatus], m, top+gap, cw-2*m, px(40))
 	by := top + gap + px(40) + gap
-	x := m
-	for _, b := range left {
-		winapi.MoveWindow(b.h, x, by, b.width, bh)
-		x += b.width + gap
-	}
-	if rows == 2 {
-		by += bh + gap
+	for _, s := range spots {
+		winapi.MoveWindow(s.b.h, s.x, by+s.row*(bh+gap), s.b.width, bh)
 	}
 	x = cw - m
 	for i := len(right) - 1; i >= 0; i-- {
 		x -= right[i].width
-		winapi.MoveWindow(right[i].h, x, by, right[i].width, bh)
+		winapi.MoveWindow(right[i].h, x, by+row*(bh+gap), right[i].width, bh)
 		x -= gap
 	}
 	winapi.MoveWindow(w.host, 0, 0, cw, top)

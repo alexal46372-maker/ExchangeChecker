@@ -223,10 +223,23 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 }
 
 // uiScenes opens every tray window (settings expert / general / simple /
-// read-only, discovery, sound, history, volume, panel, about, wizard,
+// read-only, import, discovery, sound, history, volume, panel, about, wizard,
 // alert, status) in lang and visits it (layout test, CI screenshots).
 func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
 	t.Helper()
+	func() { // import dialog after a dry run (phase 11)
+		e := newXferEnv(t, lang)
+		writeImportFile(t, e.path, &traysettings.TrayBlock{Language: "ru"}, e.x.profiles[0])
+		e.w.click(t, idSetImport)
+		d := e.w.imp
+		if d == nil {
+			t.Fatalf("import dialog: %q", e.w.statusText())
+		}
+		pumpUntil(t, "dry run", func() bool { return d.res != nil })
+		visit("import", d.hwnd)
+		d.close()
+		e.w.close()
+	}()
 	func() {
 		ds := newDiscService()
 		app := startCfgApp(t, ds.cfgService, true, nil)

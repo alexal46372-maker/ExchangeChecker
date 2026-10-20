@@ -14,6 +14,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // Phase 10 E (CHK-TRAY-44): «Экспорт…» / «Импорт…» of the administrator
@@ -223,27 +224,26 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 	}
 	d.hwnd = hwnd
 	w.imp = d
-	m := int32(gridMargin)
-	cw := int32(impCW - 2*gridMargin)
-	add := func(class, text string, style uint32, id, x, y, wd, h int32) uintptr {
-		c := child(hwnd, class, text, style, id, x, y, wd, h)
+	add := func(class, text string, style uint32, id int32, kind ui.Kind) *ui.Ctl {
+		c := child(hwnd, class, text, style, id, 0, 0, 0, 0)
 		d.ctl[id] = c
-		return c
+		return uiCtl(c, kind, text)
 	}
-	add("STATIC", filepath.Base(path), winapi.SS_LEFT, idImpFile, m, m, cw, gridLabelH)
-	y := m + gridLabelH + gridGap
-	add("BUTTON", w.t(i18n.KeyXferMerge), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idImpMerge, m, y, cw, gridCheckH)
-	y += gridCheckH + 2
-	add("BUTTON", w.t(i18n.KeyXferReplace), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idImpReplace, m, y, cw, gridCheckH)
-	y += gridCheckH + gridGap
-	add("BUTTON", w.t(i18n.KeyXferTrayCheck), winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idImpTray, m, y, cw, gridCheckH)
-	y += gridCheckH + gridGap
-	by := int32(impCH - gridMargin - gridButtonH)
+	file := add("STATIC", filepath.Base(path), winapi.SS_LEFT, idImpFile, ui.Label)
+	merge := add("BUTTON", w.t(i18n.KeyXferMerge), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idImpMerge, ui.Check)
+	repl := add("BUTTON", w.t(i18n.KeyXferReplace), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idImpReplace, ui.Check)
+	tray := add("BUTTON", w.t(i18n.KeyXferTrayCheck), winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idImpTray, ui.Check)
 	pv := add("EDIT", "", winapi.WS_TABSTOP|winapi.WS_BORDER|winapi.WS_VSCROLL|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL,
-		idImpPreview, m, y, cw, by-gridGap-y)
-	_ = pv
-	add("BUTTON", w.t(i18n.KeyXferDo), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, idImpDo, impCW-gridMargin-2*120-gridGap, by, 120, gridButtonH)
-	add("BUTTON", w.t(i18n.KeyStClose), winapi.WS_TABSTOP, idImpCancel, impCW-gridMargin-120, by, 120, gridButtonH)
+		idImpPreview, ui.Edit)
+	pv.W, pv.Hgt, pv.Grow = impCW-2*gridMargin, impCH-200, true
+	do := add("BUTTON", w.t(i18n.KeyXferDo), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, idImpDo, ui.Button)
+	cl := add("BUTTON", w.t(i18n.KeyStClose), winapi.WS_TABSTOP, idImpCancel, ui.Button)
+	// phase 11 (CHK-TRAY-45): file, mode, tray block, preview, buttons
+	form := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		file, &ui.Col{Gap: ui.P4, Items: []ui.Node{merge, repl}}, tray, pv,
+		&ui.Row{Right: true, Items: []ui.Node{do, cl}},
+	}}}, 0)
+	fitToContent(hwnd, form.W, form.H)
 	winapi.SendMessage(d.ctl[idImpMerge], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
 	if f.Tray != nil && !w.cfg.otherUser {
 		winapi.SendMessage(d.ctl[idImpTray], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)

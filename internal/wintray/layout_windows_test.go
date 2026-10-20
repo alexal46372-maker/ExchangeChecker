@@ -403,6 +403,8 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	st.now = func() time.Time { return sampleNow }
+	st.update(sampleCardsStatus(), true) // phase 11: cards and rows filled (CHK-TRAY-48)
 	visit("status", st.hwnd)
 	winapi.DestroyWindow(st.hwnd)
 }

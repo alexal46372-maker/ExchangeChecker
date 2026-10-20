@@ -40,6 +40,7 @@ type statusWindow struct {
 	hwnd, list, info        uintptr
 	check, csv, html, close uintptr
 	history                 uintptr
+	cards                   *cardPanel // phase 11 database cards (CHK-TRAY-48)
 	canHistory              func() bool
 	onHistory               func(trayui.StatusRow)
 	tips                    *tooltips
@@ -61,7 +62,14 @@ var rowBk = map[trayui.Color]uint32{ // pale COLORREF (0x00BBGGRR)
 }
 
 func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, error) {
-	const w, h = 1060, 440
+	const w = 1060
+	// phase 11 (CHK-TRAY-48): the cards above the table, two rows of them
+	// when the window still fits the work area, otherwise one
+	cardRows := int32(2)
+	if work := workArea(); px(440+cardPanelHeight(2)+8)+px(40) > work.Bottom-work.Top {
+		cardRows = 1
+	}
+	h := 440 + cardPanelHeight(cardRows) + 8
 	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2
 	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 3
 	sw := &statusWindow{lang: lang, now: time.Now, onCheck: onCheck}
@@ -105,6 +113,12 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	}
 	sw.hwnd = hwnd
 	sw.tips = newTooltips(hwnd)
+	cp, err := newCardPanel(hwnd, sw.tips, lang, cardRows)
+	if err != nil {
+		destroyWindow(hwnd)
+		return nil, err
+	}
+	sw.cards = cp
 	sw.list = child(hwnd, winapi.WC_LISTVIEW, "", winapi.LVS_REPORT|winapi.LVS_SINGLESEL|winapi.LVS_SHOWSELALWAYS|
 		winapi.WS_BORDER|winapi.WS_TABSTOP, idStList, 0, 0, 0, 0)
 	winapi.SendMessage(sw.list, winapi.LVM_SETEXTENDEDLISTVIEWSTYLE, 0, winapi.LVS_EX_FULLROWSELECT|winapi.LVS_EX_GRIDLINES)
@@ -120,14 +134,19 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	// phase 11 (CHK-TRAY-45/47): the list, then the pinned bar (info line
 	// above the buttons); never wider than the work area, the columns
 	// share the width of the list
-	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: h - 120, Grow: true}},
-		&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
-			&ui.Ctl{H: sw.info, Kind: ui.Box, W: 320, Hgt: 22, Grow: true},
+	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		&ui.Ctl{H: cp.hwnd, Kind: ui.Box, W: w - 36, Hgt: cardPanelHeight(cardRows)},
+		&ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: 440 - 120, Grow: true}}}},
+		// phase 11 (CHK-TRAY-48): the info line left of the buttons, in
+		// the same row (no empty line above the buttons)
+		&ui.Pad{All: ui.P12, Child: &ui.Row{Grow: true, Items: []ui.Node{
+			&ui.Ctl{H: sw.info, Kind: ui.Box, W: 120, Hgt: 22, Grow: true},
 			&ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
 				uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}},
 		}}}, 0, false)
 	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, lang)
 	sw.tips.set(sw.list, i18n.T(i18n.KeyTipStList, lang))
+	sw.tips.set(cp.hwnd, i18n.T(i18n.KeyTipCards, lang))
 	sw.tips.set(sw.check, i18n.T(i18n.KeyTipCheckNow, lang))
 	sw.tips.set(sw.csv, i18n.T(i18n.KeyTipExportCSV, lang))
 	sw.tips.set(sw.html, i18n.T(i18n.KeyTipExportHTML, lang))
@@ -159,6 +178,7 @@ func (sw *statusWindow) update(st trayipc.Status, connected bool) {
 			winapi.ListViewSelect(sw.list, i) // the selection survives a refresh
 		}
 	}
+	sw.cards.set(trayui.Cards(sw.rows, sw.lang))
 	sw.updateHistoryButton()
 	winapi.EnableWindow(sw.check, connected)
 	if sw.rows == nil {

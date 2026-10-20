@@ -175,3 +175,18 @@ const (
 	BN_DBLCLK    = 5
 	BN_SETFOCUS  = 6
 )
+
+// DT_END_ELLIPSIS / DT_VCENTER of DrawText (phase 11 database cards).
+const (
+	DT_VCENTER      = 0x0004
+	DT_END_ELLIPSIS = 0x8000
+)
+
+// DrawText draws text into r of dc with the DT_* flags (phase 11).
+func DrawText(dc uintptr, text string, r RECT, flags uint32) {
+	u, err := syscall.UTF16FromString(text)
+	if err != nil || len(u) < 2 {
+		return
+	}
+	callProc(procDrawTextW, dc, uintptr(unsafe.Pointer(&u[0])), uintptr(len(u)-1), uintptr(unsafe.Pointer(&r)), uintptr(flags|DT_NOPREFIX))
+}

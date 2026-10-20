@@ -282,7 +282,7 @@ type barButton struct {
 // sized for the page shown now (the databases page) and is never wider
 // than the work area.
 func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Node) {
-	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P16, Bottom: ui.P8,
+	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8,
 		Child: &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, &ui.Col{Gap: -1, Items: pages}}}}
 	w.rootM = m
 	w.ctlOf = map[uintptr]*ui.Ctl{}

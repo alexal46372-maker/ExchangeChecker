@@ -640,7 +640,7 @@ func (f *Form) Show(on bool, cs ...*Ctl) {
 }
 
 // Shrink narrows the wide boxes of a subtree (Edit / Combo / Box of at
-// least 200 units) by d units, not below 120: a window that is wider
+// least 200 units) by d units, not below 90: a window that is wider
 // than the work area (phase 11, CHK-TRAY-47). It reports whether
 // anything changed.
 func Shrink(n Node, d int32) bool {
@@ -648,8 +648,8 @@ func Shrink(n Node, d int32) bool {
 	Walk(n, func(c *Ctl) {
 		if (c.Kind == Edit || c.Kind == Combo || c.Kind == Box) && !c.NoShrink && c.W >= 200 {
 			w := c.W - d
-			if w < 120 {
-				w = 120
+			if w < 90 {
+				w = 90
 			}
 			if w != c.W {
 				c.W, changed = w, true

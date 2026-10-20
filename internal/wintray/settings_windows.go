@@ -190,12 +190,14 @@ type settingsWindow struct {
 	hostRect                       map[uintptr]winapi.RECT
 	scrollX, scrollY, viewW, viewH int32
 	contentW, contentH             int32
-	pageW, pageH                   int32   // laid out page content (px, phase 11)
-	left                           ui.Node // the left column (relayoutLeft)
-	leftM                          *ui.Metrics
-	leftX, leftY                   int32
-	scrollSet, inBar               bool
-	barLeft, barRight              []barButton
+	pageW, pageH                   int32 // laid out page content (px, phase 11)
+	// phase 11 (CHK-TRAY-47): the laid out host content; visibility of
+	// its controls is ui.Ctl.Hidden (show), applied by relayoutAll
+	root              ui.Node
+	rootM             *ui.Metrics
+	ctlOf             map[uintptr]*ui.Ctl
+	scrollSet, inBar  bool
+	barLeft, barRight []barButton
 	// expertShown: the expert-only controls are shown (test hook)
 	expertShown bool
 	// phase 10 E: the import dialog, the profiles of needPassword, the
@@ -461,7 +463,7 @@ func (w *settingsWindow) build() {
 	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it
 	w.cur = &w.pageCtl[0]
 	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0),
-		add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, ui.Box, 205, 340),
+		add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, ui.Box, 205, 250),
 		&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
 			add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}}}
 	var xfer ui.Node
@@ -471,27 +473,34 @@ func (w *settingsWindow) build() {
 			add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, ui.Button, 100, 0)}}
 	}
 	// profile page: four group boxes (phase 10 D3)
-	conn := group(i18n.KeySetGroupConn, &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
-		field(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw),
-		field(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw),
-		field(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200),
-		field(w.t(i18n.KeySetPort), idSetPort, "EDIT", edit, 80),
-		field(w.t(i18n.KeySetDatabase), idSetDatabase, "EDIT", edit, cw),
-	}})
+	// phase 11 (CHK-TRAY-47): one field column for the whole page
+	// (ui.Share), «Порт» beside «Экземпляр», the TLS boxes in one row,
+	// hints | info side by side: the page fits 1024×768 at 96 dpi
+	nameRow := field(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw)
+	hostRow := field(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw)
+	instRow := field(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200)
+	portL := label(w.t(i18n.KeySetPort), idSetPort)
+	port := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idSetPort, ui.Edit, 80, 0)
+	instRow.Field = &ui.Row{Items: []ui.Node{instRow.Field, &ui.Space{W: ui.P4}, portL, port}}
+	connG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{nameRow, hostRow, instRow,
+		field(w.t(i18n.KeySetDatabase), idSetDatabase, "EDIT", edit, cw)}}
+	conn := group(i18n.KeySetGroupConn, connG)
 	loginRows := []ui.GridRow{
 		field(w.t(i18n.KeySetAuth), idSetAuth, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 		field(w.t(i18n.KeySetLogin), idSetLogin, "EDIT", edit, cw),
 		field(w.t(i18n.KeySetPassword), idSetPassword, "EDIT", edit|winapi.ES_PASSWORD, cw),
 	}
-	loginRows = append(loginRows, ui.GridRow{Field: add("STATIC", "", 0, winapi.SS_LEFT, idSetPwHint, ui.Box, cw, 26)},
+	loginRows = append(loginRows, ui.GridRow{Field: add("STATIC", "", 0, winapi.SS_LEFT, idSetPwHint, ui.Box, cw, 18)},
 		ui.GridRow{Field: check(idSetClearPw, i18n.KeySetClearPassword)})
-	login := group(i18n.KeySetGroupLogin, &ui.Grid{Gap: ui.P4, Rows: loginRows})
+	loginG := &ui.Grid{Gap: ui.P4, Rows: loginRows}
+	login := group(i18n.KeySetGroupLogin, loginG)
 	tlsRows := []ui.GridRow{
 		field(w.t(i18n.KeySetEncrypt), idSetEncrypt, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 		field(w.t(i18n.KeySetPreset), idSetPreset, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 	}
-	tlsRows = append(tlsRows, ui.GridRow{Field: check(idSetTLS10, i18n.KeySetTLS10)}, ui.GridRow{Field: check(idSetTrust, i18n.KeySetTrust)})
-	tls := group(i18n.KeySetGroupTLS, &ui.Grid{Gap: ui.P4, Rows: tlsRows})
+	tlsRows = append(tlsRows, ui.GridRow{Span: true, Field: &ui.Row{Gap: ui.P16, Items: []ui.Node{check(idSetTLS10, i18n.KeySetTLS10), check(idSetTrust, i18n.KeySetTrust)}}})
+	tlsG := &ui.Grid{Gap: ui.P4, Rows: tlsRows}
+	tls := group(i18n.KeySetGroupTLS, tlsG)
 	enabled := check(idSetEnabled, i18n.KeySetEnabled)
 	// two number boxes per row: own thresholds, then timeouts (phase 8)
 	pair := func(k1 string, id1 int32, k2 string, id2 int32) ui.GridRow {
@@ -501,14 +510,16 @@ func (w *settingsWindow) build() {
 		e2 := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id2, ui.Edit, 55, 0)
 		return ui.GridRow{Label: l1, Field: &ui.Row{Items: []ui.Node{e1, &ui.Space{W: ui.P8}, l2, e2}}}
 	}
-	checks := group(i18n.KeySetGroupChecks, &ui.Col{Items: []ui.Node{enabled, &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
+	checksG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Span: true, Field: enabled},
 		pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError),
 		pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO),
-	}}}})
-	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 525, 40)
-	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 525, 30)
-	hints.Grow, info.Grow = true, true
-	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, hints, info}}
+	}}
+	checks := group(i18n.KeySetGroupChecks, checksG)
+	ui.Share(connG, loginG, tlsG, checksG)
+	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 300, 40)
+	info := add("STATIC", "", 0, winapi.SS_LEFT, idSetInfo, ui.Box, 260, 40)
+	hints.Grow = true
+	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Row{Align: ui.Top, Grow: true, Items: []ui.Node{hints, info}}}}
 
 	// general settings page (hidden until «Общие настройки…»)
 	w.cur = &w.pageCtl[1]
@@ -590,13 +601,14 @@ func (w *settingsWindow) build() {
 		winapi.SendMessageString(w.ctl[idGenLang], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
 	for _, h := range w.pageCtl[1] {
-		winapi.ShowWindow(h, winapi.SW_HIDE)
+		w.show(h, false)
 	}
 	w.applyUIMode()
 	if w.cfg.mode == traysettings.ReadOnly {
-		winapi.ShowWindow(w.ctl[idSetAdd], winapi.SW_HIDE)
-		winapi.ShowWindow(w.ctl[idSetDelete], winapi.SW_HIDE)
-		winapi.ShowWindow(w.ctl[idSetClearPw], winapi.SW_HIDE)
+		w.show(w.ctl[idSetAdd], false)
+		w.show(w.ctl[idSetDelete], false)
+		w.show(w.ctl[idSetClearPw], false)
+		w.relayoutAll()
 		w.status = w.t(i18n.KeySetReadOnlyNote)
 	} else {
 		w.status = w.t(i18n.KeySetLoading)
@@ -1049,13 +1061,10 @@ func (w *settingsWindow) setPage(p int) {
 			cmd = winapi.SW_SHOW
 		}
 		for _, h := range hs {
-			winapi.ShowWindow(h, cmd)
+			w.show(h, cmd == winapi.SW_SHOW)
 		}
 	}
-	if w.host != 0 {
-		w.layoutFit() // the bar without the hidden buttons of the page
-	}
-	w.applyUIMode()
+	w.applyUIMode() // lays the page out (relayoutAll)
 	w.update()
 }
 

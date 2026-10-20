@@ -259,8 +259,8 @@ func (w *settingsWindow) updateViber() {
 		if avail {
 			cmd = winapi.SW_SHOW
 		}
-		winapi.ShowWindow(b, cmd)
-		w.relayoutLeft()
+		w.show(b, cmd == winapi.SW_SHOW)
+		w.relayoutAll()
 	}
 	winapi.EnableWindow(w.ctl[idSetViber], avail && w.page != pageViber)
 	can := w.ed.CanEditViber()

@@ -276,36 +276,71 @@ type barButton struct {
 	width int32
 }
 
-// layoutPages lays out the page host (phase 11, CHK-TRAY-45): the profile
-// list column on the left and the pages, all in one area as large as the
-// largest page, on the right. Visibility stays with setPage /
-// applyUIMode; this only places (host coordinates, hostRect for the
-// scrolling) and sizes the window to the content.
+// layoutPages lays out the page host (phase 11, CHK-TRAY-47): one tree;
+// the pages share the area right of the navigation because only the
+// current page is visible; hidden controls take no room. The window is
+// sized for the page shown now (the databases page) and is never wider
+// than the work area.
 func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Node) {
-	var pw, ph int32
-	for _, n := range pages {
-		x, y := ui.Layout(n, m, 0, 0, 0)
-		pw, ph = max32(pw, x), max32(ph, y)
+	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P16, Bottom: ui.P8,
+		Child: &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, &ui.Col{Gap: -1, Items: pages}}}}
+	w.rootM = m
+	w.ctlOf = map[uintptr]*ui.Ctl{}
+	ui.Walk(w.root, func(c *ui.Ctl) {
+		if c.H != 0 {
+			w.ctlOf[c.H] = c
+			c.Hidden = winapi.WindowStyle(c.H)&winapi.WS_VISIBLE == 0
+		}
+	})
+	style := winapi.WindowStyle(w.hwnd) &^ (winapi.WS_VSCROLL | winapi.WS_HSCROLL)
+	work := workArea()
+	fw, _ := outerSize(0, 0, style, 0)
+	maxW := work.Right - work.Left - fw - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
+	for i := 0; i < 8; i++ {
+		w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, 0)
+		if over := w.pageW - maxW; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) {
+			break
+		}
 	}
-	area := &ui.Ctl{Kind: ui.Box, W: unpx(pw), Hgt: unpx(ph)}
-	root := &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P16, Bottom: ui.P8,
-		Child: &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, area}}}
-	w.left, w.leftM, w.leftX, w.leftY = left, m, m.Px(ui.P12), m.Px(ui.P4)+m.Px(6)
-	w.pageW, w.pageH = ui.Layout(root, m, 0, 0, 0)
-	ui.Walk(root, w.placeCtl)
-	for _, n := range pages {
-		ui.Layout(n, m, area.Rect.X, area.Rect.Y, area.Rect.W)
-		ui.Walk(n, w.placeCtl)
-	}
-	style := winapi.WindowStyle(w.hwnd)
-	x, y, ww, wh := settingsRectPx(style&^(winapi.WS_VSCROLL|winapi.WS_HSCROLL), w.pageW, w.pageH+px(setBarH))
+	ui.Walk(w.root, w.placeCtl)
+	x, y, ww, wh := settingsRectPx(style, w.pageW, w.pageH+px(setBarH))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 }
 
+// show shows or hides a control: a laid out one through ui.Ctl.Hidden
+// (relayoutAll applies it), the others (bar, before the layout) at once.
+func (w *settingsWindow) show(h uintptr, on bool) {
+	if c := w.ctlOf[h]; c != nil {
+		c.Hidden = !on
+		return
+	}
+	cmd := int32(winapi.SW_HIDE)
+	if on {
+		cmd = winapi.SW_SHOW
+	}
+	winapi.ShowWindow(h, cmd)
+}
+
+// relayoutAll lays the host content out again (no holes for hidden
+// controls), shows / hides the controls and fits the bar and scrolling.
+func (w *settingsWindow) relayoutAll() {
+	if w.root == nil {
+		return
+	}
+	w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+	ui.Walk(w.root, w.placeCtl)
+	w.layoutFit()
+}
+
 // placeCtl moves a laid out page control (host coordinates; combo boxes
-// keep their drop-down height) and records it for the scrolling.
+// keep their drop-down height), records it for the scrolling and shows
+// it; an unplaced (hidden) one is hidden.
 func (w *settingsWindow) placeCtl(c *ui.Ctl) {
-	if c.H == 0 || !c.Placed {
+	if c.H == 0 {
+		return
+	}
+	if !c.Placed {
+		winapi.ShowWindow(c.H, winapi.SW_HIDE)
 		return
 	}
 	r := c.Rect
@@ -315,23 +350,5 @@ func (w *settingsWindow) placeCtl(c *ui.Ctl) {
 	}
 	w.hostRect[c.H] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + h}
 	winapi.MoveWindow(c.H, r.X, r.Y, r.W, h)
-}
-
-// relayoutLeft lays the left column out again without its hidden
-// controls (phase 11, CHK-TRAY-47: no gaps for the navigation buttons
-// hidden in «Простой» / without Viber, nor for the profile list on the
-// other pages).
-func (w *settingsWindow) relayoutLeft() {
-	if w.left == nil {
-		return
-	}
-	ui.Walk(w.left, func(c *ui.Ctl) {
-		if c.H != 0 {
-			c.Hidden = winapi.WindowStyle(c.H)&winapi.WS_VISIBLE == 0
-		}
-	})
-	ui.Layout(w.left, w.leftM, w.leftX, w.leftY, 0)
-	ui.Walk(w.left, w.placeCtl)
-	w.scrollSet = false
-	w.scrollTo(w.scrollX, w.scrollY)
+	winapi.ShowWindow(c.H, winapi.SW_SHOWNA)
 }

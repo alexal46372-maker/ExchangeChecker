@@ -45,10 +45,10 @@ func (w *settingsWindow) applyUIMode() {
 			continue
 		}
 		if h := w.ctl[id]; h != 0 {
-			winapi.ShowWindow(h, cmd)
+			w.show(h, cmd == winapi.SW_SHOW)
 		}
 		if h := w.labels[id]; h != 0 {
-			winapi.ShowWindow(h, cmd)
+			w.show(h, cmd == winapi.SW_SHOW)
 		}
 	}
 	if g := w.groups[i18n.KeySetGroupTLS]; g != 0 {
@@ -56,7 +56,7 @@ func (w *settingsWindow) applyUIMode() {
 		if simple || w.page != 0 {
 			cmd = winapi.SW_HIDE
 		}
-		winapi.ShowWindow(g, cmd)
+		w.show(g, cmd == winapi.SW_SHOW)
 	}
 	w.expertShown = !simple && w.page == 0
 	key := i18n.KeySetModeExpert
@@ -70,7 +70,7 @@ func (w *settingsWindow) applyUIMode() {
 	// the navigation marks the current page (phase 11, CHK-TRAY-47)
 	winapi.EnableWindow(w.ctl[idSetNavProfiles], w.page != 0)
 	winapi.EnableWindow(w.ctl[idSetPage], w.page != 1)
-	w.relayoutLeft() // no gap for the hidden navigation buttons
+	w.relayoutAll() // Hidden controls take no room (no holes)
 }
 
 func (w *settingsWindow) toggleUIMode() {

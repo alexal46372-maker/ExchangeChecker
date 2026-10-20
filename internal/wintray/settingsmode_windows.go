@@ -69,6 +69,7 @@ func (w *settingsWindow) applyUIMode() {
 	}
 	// the navigation marks the current page (phase 11, CHK-TRAY-47)
 	w.markNav()
+	w.navIcons()
 	w.relayoutAll() // Hidden controls take no room (no holes)
 }
 
@@ -154,4 +155,15 @@ func (w *settingsWindow) markNav() {
 // navChecked reports a pressed navigation button.
 func navChecked(h uintptr) bool {
 	return winapi.SendMessage(h, winapi.BM_GETCHECK, 0, 0) == winapi.BST_CHECKED
+}
+
+// navIcons puts an icon on every navigation button (phase 11,
+// CHK-TRAY-49); set again after the buttons are relabelled.
+func (w *settingsWindow) navIcons() {
+	for id, ico := range map[int32]string{idSetNavProfiles: trayui.IcoNavDatabases, idSetPage: trayui.IcoNavGeneral,
+		idSetViber: trayui.IcoNavViber, idSetUIMode: trayui.IcoNavMode} {
+		if h := w.ctl[id]; h != 0 && winapi.SendMessage(h, winapi.BM_GETIMAGE, winapi.IMAGE_ICON, 0) == 0 {
+			setButtonIcon(h, ico)
+		}
+	}
 }

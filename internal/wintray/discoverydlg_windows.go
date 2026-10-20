@@ -257,8 +257,8 @@ func (dd *discoveryDialog) build() {
 	// candidates and the details of the selected one (no horizontal
 	// scrolling: the details box shows the whole candidate)
 	lists := &ui.Row{Align: ui.Top, Grow: true, Items: []ui.Node{
-		c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idDiscList, ui.Box, 520, 160),
-		c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscDetails, ui.Box, 308, 160)}}
+		c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idDiscList, ui.Box, 520, 150),
+		c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscDetails, ui.Box, 308, 150)}}
 	// mapping editor: the kind, its source label, two columns of boxes
 	modeL := label(i18n.KeyDiscMode)
 	mode := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, idDiscMode, ui.Combo, 290, 0)
@@ -280,9 +280,9 @@ func (dd *discoveryDialog) build() {
 	sqlHead := &ui.Row{Grow: true, Items: []ui.Node{label(i18n.KeyDiscManualSQL), &ui.Row{Right: true, Items: []ui.Node{label(i18n.KeyDiscTemplate),
 		c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idDiscTemplate, ui.Combo, 300, 0)}}}}
 	sql := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_WANTRETURN|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
-		idDiscSQL, ui.Box, 836, 80)
+		idDiscSQL, ui.Box, 836, 64)
 	sql.Grow = true
-	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscResult, ui.Box, 836, 76)
+	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscResult, ui.Box, 836, 60)
 	res.Grow = true
 	buttons := &ui.Row{Grow: true, Items: []ui.Node{btn(i18n.KeyDiscCheck, idDiscCheck), btn(i18n.KeyDiscApply, idDiscApply),
 		&ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscClose, idDiscClose)}}}}

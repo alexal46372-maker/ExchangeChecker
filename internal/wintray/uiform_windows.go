@@ -3,6 +3,8 @@
 package wintray
 
 import (
+	"strings"
+
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
@@ -37,7 +39,11 @@ func uiCtl(h uintptr, kind ui.Kind, text string) *ui.Ctl {
 	if text == "" && h != 0 && kind != ui.Edit && kind != ui.Box {
 		text = winapi.GetWindowText(h)
 	}
-	return &ui.Ctl{H: h, Kind: kind, Text: text}
+	c := &ui.Ctl{H: h, Kind: kind, Text: text}
+	if kind == ui.Label {
+		c.Lines = strings.Count(text, "\n") + 1
+	}
+	return c
 }
 
 // applyCtl moves a placed control and shows it; an unplaced one is

@@ -190,7 +190,7 @@ func (wd *wizardDialog) build() {
 	inst := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, ui.Box, 590, 120)
 	inst.Grow = true
 	portL := label(i18n.KeyWizPort)
-	port := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idWizPort, ui.Edit, 80, 0)
+	port := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idWizPort, ui.Edit, 200, 0)
 	authL := label(i18n.KeyWizAuth)
 	auth := c("COMBOBOX", "", 0, combo, idWizAuth, ui.Combo, 450, 0)
 	loginL := label(i18n.KeyWizLogin)

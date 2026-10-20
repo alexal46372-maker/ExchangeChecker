@@ -413,6 +413,15 @@ const (
 	KeyAgoDays               = "ago.days"
 )
 
+// Phase 11: database cards of the «Состояние» window (CHK-TRAY-48).
+const (
+	KeyCardFresh  = "card.fresh"
+	KeyCardNoData = "card.no_data"
+	KeyCardPoints = "card.points"
+	KeyCardTip    = "card.tip"
+	KeyTipCards   = "tip.cards"
+)
+
 // Phase 9b (CHK-TRAY-22..29).
 const (
 	KeyCheckRateLimited   = "check.rate_limited"
@@ -757,6 +766,11 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyMenuStatusWin:         {"Состояние…", "Status…"},
 	KeyMenuCheckNow:          {"Проверить сейчас", "Check now"},
 	KeyStTitle:               {"Состояние", "Status"},
+	KeyCardFresh:             {"Свежесть: %s", "Freshness: %s"},
+	KeyCardNoData:            {"нет данных", "no data"},
+	KeyCardPoints:            {"Точек: %d, с проблемами: %d", "Points: %d, with problems: %d"},
+	KeyCardTip:               {"Цвет карточки — худшее состояние точек базы, свежесть — по самой давней точке. Подробности — в таблице ниже.", "The card colour is the worst state of the database points, freshness is that of the stalest point. Details are in the table below."},
+	KeyTipCards:              {"Карточки баз: цвет — состояние, свежесть и число точек с проблемами. Наведите на карточку, чтобы увидеть точки.", "Database cards: colour is the state, freshness and the number of points with problems. Hover over a card to see its points."},
 	KeyStDatabase:            {"База", "Database"},
 	KeyStPoint:               {"Точка", "Point"},
 	KeyStPlan:                {"План обмена", "Exchange plan"},

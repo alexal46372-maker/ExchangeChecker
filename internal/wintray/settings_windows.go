@@ -456,7 +456,7 @@ func (w *settingsWindow) build() {
 			add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, ui.Button, 100, 0)}}
 	}
 	// profile page: four group boxes (phase 10 D3)
-	conn := group(i18n.KeySetGroupConn, &ui.Grid{Rows: []ui.GridRow{
+	conn := group(i18n.KeySetGroupConn, &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
 		field(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw),
 		field(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw),
 		field(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200),
@@ -470,13 +470,13 @@ func (w *settingsWindow) build() {
 	}
 	loginRows = append(loginRows, ui.GridRow{Field: add("STATIC", "", 0, winapi.SS_LEFT, idSetPwHint, ui.Box, cw, 26)},
 		ui.GridRow{Field: check(idSetClearPw, i18n.KeySetClearPassword)})
-	login := group(i18n.KeySetGroupLogin, &ui.Grid{Rows: loginRows})
+	login := group(i18n.KeySetGroupLogin, &ui.Grid{Gap: ui.P4, Rows: loginRows})
 	tlsRows := []ui.GridRow{
 		field(w.t(i18n.KeySetEncrypt), idSetEncrypt, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 		field(w.t(i18n.KeySetPreset), idSetPreset, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, cw),
 	}
 	tlsRows = append(tlsRows, ui.GridRow{Field: check(idSetTLS10, i18n.KeySetTLS10)}, ui.GridRow{Field: check(idSetTrust, i18n.KeySetTrust)})
-	tls := group(i18n.KeySetGroupTLS, &ui.Grid{Rows: tlsRows})
+	tls := group(i18n.KeySetGroupTLS, &ui.Grid{Gap: ui.P4, Rows: tlsRows})
 	enabled := check(idSetEnabled, i18n.KeySetEnabled)
 	// two number boxes per row: own thresholds, then timeouts (phase 8)
 	pair := func(k1 string, id1 int32, k2 string, id2 int32) ui.GridRow {
@@ -486,7 +486,7 @@ func (w *settingsWindow) build() {
 		e2 := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, id2, ui.Edit, 55, 0)
 		return ui.GridRow{Label: l1, Field: &ui.Row{Items: []ui.Node{e1, &ui.Space{W: ui.P8}, l2, e2}}}
 	}
-	checks := group(i18n.KeySetGroupChecks, &ui.Col{Items: []ui.Node{enabled, &ui.Grid{Rows: []ui.GridRow{
+	checks := group(i18n.KeySetGroupChecks, &ui.Col{Items: []ui.Node{enabled, &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
 		pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError),
 		pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO),
 	}}}})
@@ -512,7 +512,7 @@ func (w *settingsWindow) build() {
 	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 525, 100)
 	autoErr.Grow, note.Grow = true, true
 	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
-	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Rows: gRows}}
+	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
 	w.cur = nil
 
 	left = append(left, add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, ui.Button, 205, 0),

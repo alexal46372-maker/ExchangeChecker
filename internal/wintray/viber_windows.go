@@ -141,9 +141,9 @@ func (w *settingsWindow) buildViber() (button, page ui.Node) {
 	w.cur = nil
 	page = &ui.GroupBox{Box: box, Child: &ui.Col{Items: []ui.Node{
 		enabled,
-		&ui.Grid{Rows: []ui.GridRow{{Label: tokenL, Field: token}, {Field: tokenState}, {Field: clear}}},
+		&ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: tokenL, Field: token}, {Field: tokenState}, {Field: clear}}},
 		recL, rec,
-		&ui.Grid{Rows: []ui.GridRow{
+		&ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
 			{Label: daysL, Field: &ui.Row{Gap: ui.P4, Items: days}},
 			{Label: fromL, Field: &ui.Row{Items: []ui.Node{from, toL, to}}},
 			{Label: evL, Field: &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: nil, Field: &ui.Row{Gap: ui.P16, Items: []ui.Node{ev[0], ev[1]}}},

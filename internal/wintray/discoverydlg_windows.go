@@ -263,7 +263,7 @@ func (dd *discoveryDialog) build() {
 	modeL := label(i18n.KeyDiscMode)
 	mode := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, idDiscMode, ui.Combo, 290, 0)
 	modeRow := &ui.Row{Grow: true, Items: []ui.Node{modeL, mode, &ui.Space{W: ui.P8}, c("STATIC", "", 0, winapi.SS_LEFT, idDiscSource, ui.Box, 400, 18)}}
-	var g1, g2 ui.Grid
+	g1, g2 := ui.Grid{Gap: ui.P4}, ui.Grid{Gap: ui.P4}
 	for i, e := range discMapEdits {
 		l := label(e.key)
 		g, cw := &g1, int32(290)
@@ -286,7 +286,7 @@ func (dd *discoveryDialog) build() {
 	res.Grow = true
 	buttons := &ui.Row{Grow: true, Items: []ui.Node{btn(i18n.KeyDiscCheck, idDiscCheck), btn(i18n.KeyDiscApply, idDiscApply),
 		&ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscClose, idDiscClose)}}}}
-	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: 6, Items: []ui.Node{
 		top, &ui.Col{Gap: ui.P4, Items: []ui.Node{byValue, hint}}, lists, modeRow, maps, checks, sqlHead, sql, res, buttons,
 	}}}, 0)
 	fitToContent(dd.hwnd, f.W, f.H)

@@ -605,18 +605,8 @@ func (w *settingsWindow) build() {
 	if xfer != nil {
 		left = append(left, xfer)
 	}
-	w.layoutPages(m, &ui.Col{Gap: ui.P12, Items: []ui.Node{nav, &ui.Col{Gap: ui.P8 - 2, Items: left}}},
-		[]ui.Node{profilePage, generalPage, viberPage})
-	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
-		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
-	}
-	for _, k := range traysettings.EncryptKeys() {
-		winapi.SendMessageString(w.ctl[idSetEncrypt], winapi.CB_ADDSTRING, 0, w.t(k))
-	}
-	for _, k := range traysettings.PresetKeys() {
-		winapi.SendMessageString(w.ctl[idSetPreset], winapi.CB_ADDSTRING, 0, w.t(k))
-	}
-	// grey hints of empty boxes (phase 8, CHK-TRAY-12)
+	// grey hints of empty boxes (phase 8, CHK-TRAY-12); before the layout:
+	// the boxes are at least as wide as their cues (phase 11, CHK-TRAY-48)
 	w.setCue(idSetPort, w.t(i18n.KeySetPortCue))
 	// phase 11 (PLAN §12 p.50): every edit box shows its cue
 	w.setCue(idSetName, w.t(i18n.KeyCueName))
@@ -632,6 +622,17 @@ func (w *settingsWindow) build() {
 	w.setCue(idSetError, w.t(i18n.KeySetThreshCue))
 	w.setCue(idSetConnTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultConnectTimeoutSec))
 	w.setCue(idSetQueryTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultQueryTimeoutSec))
+	w.layoutPages(m, &ui.Col{Gap: ui.P12, Items: []ui.Node{nav, &ui.Col{Gap: ui.P8 - 2, Items: left}}},
+		[]ui.Node{profilePage, generalPage, viberPage})
+	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
+		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
+	for _, k := range traysettings.EncryptKeys() {
+		winapi.SendMessageString(w.ctl[idSetEncrypt], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
+	for _, k := range traysettings.PresetKeys() {
+		winapi.SendMessageString(w.ctl[idSetPreset], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
 	w.tips = newTooltips(w.hwnd)
 	for id, h := range w.ctl {
 		if key, ok := settingsTips[id]; ok {

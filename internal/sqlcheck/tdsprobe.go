@@ -215,9 +215,6 @@ func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, ot
 			return nil, "", nil, false, errors.New("no IPv4 interface")
 		}
 		nw = locals[0]
-		if ones, bits := ifs[0].Mask.Size(); bits == 32 && ones < 24 || bits == 128 && ones < 120 {
-			narrowed = true
-		}
 	} else {
 		_, nw, err = net.ParseCIDR(cidr)
 		if err != nil || nw.IP.To4() == nil {
@@ -229,6 +226,15 @@ func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, ot
 		}
 		if !ok {
 			return nil, "", nil, false, errNotLocalSubnet
+		}
+	}
+	// narrowed: the interface the scanned network belongs to is wider
+	// than /24 (not just ifs[0])
+	for _, n := range ifs {
+		if nw.Contains(n.IP) || n.Contains(nw.IP) {
+			ones, bits := n.Mask.Size()
+			narrowed = bits == 32 && ones < 24
+			break
 		}
 	}
 	for _, l := range locals {

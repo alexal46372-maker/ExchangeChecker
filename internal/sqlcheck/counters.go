@@ -9,6 +9,22 @@ import (
 )
 
 // counterKey identifies a point across polls: hex _IDRRef, else code, else name.
+// NodeKey is the node key shared by ListPoints (ExchangePoint.NodeKey)
+// and ReadNodeStates (SQLNodeState.Key): "<point table>:<counterKey>"
+// for a mapping whose point table is a 1C exchange-plan table (_NodeNNN;
+// in counters mode any point table). Empty when the node is not
+// determined (no table, a timestamp mapping on a non-plan table).
+func NodeKey(m model.Mapping, key []byte, id, name string) string {
+	t := m.PlanTable()
+	if t == "" && m.Mode == model.MappingCounters {
+		t = strings.TrimSpace(m.Table)
+	}
+	if t == "" {
+		return ""
+	}
+	return t + ":" + counterKey(RawCounter{Key: key, ID: id, Name: name})
+}
+
 func counterKey(c RawCounter) string {
 	switch {
 	case len(c.Key) > 0:

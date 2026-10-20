@@ -168,6 +168,7 @@ func (b *base) listMappings(ctx context.Context, primaryManual bool) ([]model.Ex
 	var out []model.ExchangePoint
 	var obs []model.CounterObservation
 	owner := map[string]model.Mapping{}
+	nodeKeys := map[string]string{} // counter state key -> NodeKey
 	now := b.opt.Now()
 	for i, m := range b.profile.AllMappings() {
 		manual := usesManualSQL(m)
@@ -188,12 +189,13 @@ func (b *base) listMappings(ctx context.Context, primaryManual bool) ([]model.Ex
 			if err != nil {
 				return nil, err
 			}
-			for _, o := range CounterObservations(raw) {
+			for j, o := range CounterObservations(raw) {
 				if i > 0 {
 					o.Key = m.Table + "/" + o.Key
 				}
 				if _, dup := owner[o.Key]; !dup {
 					owner[o.Key] = m
+					nodeKeys[o.Key] = NodeKey(m, raw[j].Key, raw[j].ID, raw[j].Name)
 				}
 				obs = append(obs, o)
 			}
@@ -204,6 +206,9 @@ func (b *base) listMappings(ctx context.Context, primaryManual bool) ([]model.Ex
 			}
 			pts := toPoints(raw, m.YearOffset, b.profile.ID, b.opt.Settings, now)
 			tagPlan(pts, m)
+			for j := range pts { // toPoints keeps the order of raw
+				pts[j].NodeKey = NodeKey(m, raw[j].Key, raw[j].ID, raw[j].Name)
+			}
 			out = append(out, pts...)
 		}
 	}
@@ -216,6 +221,7 @@ func (b *base) listMappings(ctx context.Context, primaryManual bool) ([]model.Ex
 	}
 	for i := range pts {
 		tagPlan(pts[i:i+1], owner[times[i].Key])
+		pts[i].NodeKey = nodeKeys[times[i].Key]
 	}
 	return append(out, pts...), nil
 }

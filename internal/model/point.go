@@ -36,11 +36,13 @@ type ExchangePoint struct {
 	// (sqlcheck.ReadNodeStates, phase 11, CHK-MON-18).
 	SentNo     *int64 `json:"sentNo,omitempty"`
 	ReceivedNo *int64 `json:"receivedNo,omitempty"`
-	// NodeKey: the 1C exchange node key / code the point belongs to
-	// (counters points: SQLNodeState.Key). Internal, matches a stalled
-	// counters point to its time-based peer (CHK-MON-18); empty when the
-	// source does not report it.
-	NodeKey string `json:"-"`
+	// NodeKey identifies the 1C exchange-plan node of the point, the same
+	// value as SQLNodeState.Key ("<_NodeNNN>:<hex _IDRRef | code:… |
+	// name:…>", sqlcheck.NodeKey), so the service can match ListPoints
+	// times with ReadNodeStates numbers (phase 11; CHK-MON-18 stalled peer,
+	// counters points get it from model.CounterPoints). Empty when the node is
+	// not determined (manual SQL, a non-plan point table).
+	NodeKey string `json:"nodeKey,omitempty"`
 }
 
 // FreshAt returns the later of LastSend / LastRecv in DBZone; NULLs are ignored.

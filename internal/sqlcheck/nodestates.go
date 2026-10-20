@@ -17,6 +17,7 @@ func ReadNodeStates(ctx context.Context, st Store, p model.Profile, opt Options)
 	b := &base{st: st, profile: p, opt: opt.withDefaults()}
 	var obs []model.CounterObservation
 	owner := map[string]model.Mapping{}
+	nodeKeys := map[string]string{}
 	for i, m := range p.AllMappings() {
 		if m.Mode != model.MappingCounters || usesManualSQL(m) {
 			continue
@@ -25,7 +26,7 @@ func ReadNodeStates(ctx context.Context, st Store, p model.Profile, opt Options)
 		if err != nil {
 			return nil, err
 		}
-		for _, o := range CounterObservations(raw) {
+		for j, o := range CounterObservations(raw) {
 			if i > 0 {
 				o.Key = m.Table + "/" + o.Key
 			}
@@ -33,6 +34,7 @@ func ReadNodeStates(ctx context.Context, st Store, p model.Profile, opt Options)
 				continue
 			}
 			owner[o.Key] = m
+			nodeKeys[o.Key] = NodeKey(m, raw[j].Key, raw[j].ID, raw[j].Name)
 			obs = append(obs, o)
 		}
 	}
@@ -50,6 +52,7 @@ func ReadNodeStates(ctx context.Context, st Store, p model.Profile, opt Options)
 	}
 	for _, t := range times {
 		s := model.NodeStateFrom(byKey[t.Key], t)
+		s.Key = nodeKeys[t.Key] // the shared NodeKey, not the counter state key
 		m := owner[t.Key]
 		s.PlanTable, s.PlanNo, s.PlanLabel = m.PlanTable(), m.PlanNo(), m.PlanLabel
 		out = append(out, s)

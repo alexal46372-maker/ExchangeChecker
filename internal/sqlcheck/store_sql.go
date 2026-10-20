@@ -240,11 +240,12 @@ func (s *SQLStore) Points(ctx context.Context, m model.Mapping, limit int) ([]Ra
 	for rows.Next() {
 		var name, id interface{}
 		var send, recv sql.NullTime
-		if err := rows.Scan(&name, &id, &send, &recv); err != nil {
+		var key []byte
+		if err := rows.Scan(&name, &id, &send, &recv, &key); err != nil {
 			return nil, classify("points", err, false)
 		}
 		tp := timePtrs([]sql.NullTime{send, recv})
-		out = append(out, RawPoint{Name: valueString(name), ID: valueString(id), Send: tp[0], Recv: tp[1]})
+		out = append(out, RawPoint{Key: key, Name: valueString(name), ID: valueString(id), Send: tp[0], Recv: tp[1]})
 	}
 	return out, classify("points", rows.Err(), false)
 }

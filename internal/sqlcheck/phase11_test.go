@@ -551,3 +551,89 @@ func TestCHK_SQL_11_BrowserDisabled(t *testing.T) {
 		t.Error("not registered")
 	}
 }
+
+// CHK-SQL-14: ListPoints (linked time mapping on _Node123) and
+// ReadNodeStates (counters on _Node123) report the same NodeKey per node.
+func TestCHK_SQL_14_NodeKeyMatch(t *testing.T) {
+	st := newFake(fx1CNode(2000)...)
+	checkNodeKeysMatch(t, st)
+	// unit: the shared key function
+	m := model.Mapping{Table: "_Node123"}
+	if k := NodeKey(m, []byte{0xab, 0x01}, "001", "x"); k != "_Node123:ab01" {
+		t.Error(k)
+	}
+	if k := NodeKey(m, nil, " 001 ", "x"); k != "_Node123:code:001" {
+		t.Error(k)
+	}
+	if k := NodeKey(model.Mapping{Table: "_InfoRg456"}, []byte{1}, "", ""); k != "" {
+		t.Errorf("non-plan time table: %q", k)
+	}
+	if k := NodeKey(model.Mapping{Mode: model.MappingCounters, Table: "Custom"}, nil, "", "n"); k != "Custom:name:n" {
+		t.Error(k)
+	}
+	// single (non-linked) mapping on a plan table carries the key via MIN(t.k)
+	q, err := buildPointsSQL(model.Mapping{Mode: model.MappingManual, Table: "_Node123", PointNameColumn: "_Description", PointKeyColumn: "_IDRRef", LastSendColumn: "_Fld1"})
+	if err != nil || !strings.Contains(q, "MIN(t.k)") || !strings.Contains(q, "[_IDRRef] AS k") {
+		t.Errorf("%s %v", q, err)
+	}
+}
+
+// checkNodeKeysMatch runs both paths on st (fake or the real fixture).
+func checkNodeKeysMatch(t *testing.T, st Store) {
+	t.Helper()
+	p := linkedProfile(2000)
+	p.ID = "nk"
+	pts, err := NewDiscoveringReader(st, p, fixOpt()).ListPoints(context.Background())
+	if err != nil || len(pts) == 0 {
+		t.Fatalf("%v %v", pts, err)
+	}
+	c := p
+	c.Mapping = model.Mapping{Mode: model.MappingCounters, Table: "_Node123", PointNameColumn: "_Description", PointIDColumn: "_Code", PointKeyColumn: "_IDRRef"}
+	opt := fixOpt()
+	opt.Counters = model.NewMemCounterStore()
+	ns, err := ReadNodeStates(context.Background(), st, c, opt)
+	if err != nil || len(ns) == 0 {
+		t.Fatalf("%v %v", ns, err)
+	}
+	byName := map[string]string{}
+	for _, n := range ns {
+		if !strings.HasPrefix(n.Key, "_Node123:") || len(n.Key) != len("_Node123:")+32 {
+			t.Errorf("state key %q", n.Key)
+		}
+		byName[n.Name] = n.Key
+	}
+	for _, pt := range pts {
+		if pt.NodeKey == "" || pt.NodeKey != byName[pt.Name] {
+			t.Errorf("%s: point %q, state %q", pt.Name, pt.NodeKey, byName[pt.Name])
+		}
+	}
+	// counters-mode ListPoints carries the same NodeKey too
+	cp, err := NewDiscoveringReader(st, c, opt).ListPoints(context.Background())
+	if err != nil || len(cp) != len(ns) {
+		t.Fatalf("%v %v", cp, err)
+	}
+	for _, pt := range cp {
+		if pt.NodeKey != byName[pt.Name] {
+			t.Errorf("counters point %s: %q vs %q", pt.Name, pt.NodeKey, byName[pt.Name])
+		}
+	}
+	t.Logf("matched %d time points, %d node states", len(pts), len(ns))
+}
+
+// CHK-SQL-12: narrowed reflects the interface whose network is scanned.
+func TestCHK_SQL_12_NarrowedUsedInterface(t *testing.T) {
+	ifs := []*net.IPNet{{IP: net.IPv4(10, 1, 2, 3).To4(), Mask: net.CIDRMask(24, 32)}, {IP: net.IPv4(172, 20, 5, 9).To4(), Mask: net.CIDRMask(16, 32)}}
+	if _, used, _, nar, err := subnetHosts("", ifs); err != nil || used != "10.1.2.0/24" || nar {
+		t.Errorf("default /24: %s %v %v", used, nar, err)
+	}
+	if _, used, _, nar, err := subnetHosts("172.20.7.0/24", ifs); err != nil || used != "172.20.7.0/24" || !nar {
+		t.Errorf("inside the /16 interface: %s %v %v", used, nar, err)
+	}
+	if _, _, _, nar, err := subnetHosts("10.1.2.0/25", ifs); err != nil || nar {
+		t.Errorf("inside the /24 interface: %v %v", nar, err)
+	}
+	rev := []*net.IPNet{ifs[1], ifs[0]}
+	if _, used, _, nar, err := subnetHosts("10.1.2.0/24", rev); err != nil || used != "10.1.2.0/24" || nar {
+		t.Errorf("ifs[0] is /16 but the /24 one is used: %v %v", nar, err)
+	}
+}

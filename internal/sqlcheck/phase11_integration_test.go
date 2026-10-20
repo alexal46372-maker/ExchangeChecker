@@ -22,12 +22,34 @@ func TestCHK_SQL_13_IntegrationCheckServer(t *testing.T) {
 	server := p.Server + "," + strconv.Itoa(port)
 	var ids []string
 	res, err := CheckServer(context.Background(), server, ServerCheckOptions{Profile: &p, Password: pw, Step: func(s model.SQLCheckStep) { ids = append(ids, s.ID) }})
-	if err != nil || !res.OK || strings.Join(ids, ",") != "parse,dns,tcp,prelogin,tls,login,db,tables" || res.Version == "" {
+	if err != nil || !res.OK || strings.Join(ids, ",") != "parse,dns,tcp,prelogin,tls,login,db,tables" || stepIDs(res) != strings.Join(ids, ",") || res.Version == "" {
 		t.Fatalf("%+v %v %v", res, err, ids)
 	}
 	if last(res).Detail == "0" {
 		t.Errorf("tables: %+v", last(res))
 	}
+	logSteps(t, "with port", res)
+	// without a port: the default port 1433 (plain host)
+	if port == model.DefaultSQLPort {
+		q := p
+		q.Port = 0
+		res, err = CheckServer(context.Background(), p.Server, ServerCheckOptions{Profile: &q, Password: pw})
+		if err != nil || !res.OK || res.Port != 1433 || stepIDs(res) != "parse,dns,tcp,prelogin,tls,login,db,tables" {
+			t.Fatalf("no port: %+v %v", res, err)
+		}
+		logSteps(t, "no port (1433)", res)
+	} else {
+		t.Errorf("the test server must listen on 1433 for the no-port check, port %d", port)
+	}
+	// host\instance without a port: the browser stage runs (no SQL Browser
+	// on the CI host: browser_unreachable, the check stops there)
+	q := p
+	q.Port = 0 // no port anywhere: the instance port comes from the Browser
+	res, _ = CheckServer(context.Background(), p.Server+`\NOSUCHINST`, ServerCheckOptions{Profile: &q, Password: pw, Timeout: time.Second})
+	if res.OK || stepIDs(res) != "parse,dns,browser" || last(res).Code != model.SQLCodeBrowserUnreachable && last(res).Code != model.SQLCodeInstanceNotFound {
+		t.Errorf("browser: %+v", res)
+	}
+	logSteps(t, "instance, no port", res)
 	res, _ = CheckServer(context.Background(), server, ServerCheckOptions{Profile: &p, Password: pw + "x"})
 	if res.OK || last(res).ID != model.SQLStepLogin || last(res).Code != model.SQLCodeLoginFailed || res.Diagnosis == nil {
 		t.Errorf("bad password: %+v", res)
@@ -78,5 +100,21 @@ func TestCHK_SQL_14_IntegrationNodeStates(t *testing.T) {
 	q.Mapping = model.Mapping{Table: "x"}
 	if out, err := ReadNodeStates(context.Background(), st, q, opt); err != nil || out == nil || len(out) != 0 {
 		t.Errorf("%v %v", out, err)
+	}
+}
+
+func stepIDs(r model.SQLServerCheckResult) string {
+	var ids []string
+	for _, s := range r.Steps {
+		ids = append(ids, s.ID)
+	}
+	return strings.Join(ids, ",")
+}
+
+// logSteps logs the executed stages (CI evidence that nothing is skipped).
+func logSteps(t *testing.T, what string, r model.SQLServerCheckResult) {
+	t.Helper()
+	for _, s := range r.Steps {
+		t.Logf("%s: step %-8s ok=%v ms=%d code=%s detail=%q", what, s.ID, s.OK, s.Ms, s.Code, s.Detail)
 	}
 }

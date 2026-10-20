@@ -20,6 +20,11 @@ const (
 	// MinSQLBrowseTimeoutMs / MaxSQLBrowseTimeoutMs bound TimeoutMs.
 	MinSQLBrowseTimeoutMs = 500
 	MaxSQLBrowseTimeoutMs = 5000
+	// MaxSQLSubnetTimeoutMs / DefaultSQLSubnetTimeoutMs: subnet mode (TCP
+	// scan of up to 254 addresses) may run up to 15 s (architect, phase 11);
+	// subnet runs only when requested explicitly, never for mode "".
+	MaxSQLSubnetTimeoutMs     = 15000
+	DefaultSQLSubnetTimeoutMs = 15000
 	// MaxSQLBrowseInstances caps the instances of one result (Truncated).
 	MaxSQLBrowseInstances = 256
 	// MaxSQLBrowseHostLen: host name / IP literal length.
@@ -144,17 +149,45 @@ type SQLBrowseResult struct {
 // Timeout returns TimeoutMs or the default.
 func (r SQLBrowseRequest) Timeout() int {
 	if r.TimeoutMs == 0 {
+		if r.EffectiveMode() == SQLBrowseSubnet {
+			return DefaultSQLSubnetTimeoutMs
+		}
 		return DefaultSQLBrowseTimeoutMs
 	}
 	return r.TimeoutMs
 }
 
+// MaxTimeoutMs is the upper TimeoutMs bound of the request's mode.
+func (r SQLBrowseRequest) MaxTimeoutMs() int {
+	if r.EffectiveMode() == SQLBrowseSubnet {
+		return MaxSQLSubnetTimeoutMs
+	}
+	return MaxSQLBrowseTimeoutMs
+}
+
+// ClampSQLBrowseTimeoutMsFor is ClampSQLBrowseTimeoutMs with the subnet
+// bound (15 s) for mode subnet (proposal for the IPC layer).
+func ClampSQLBrowseTimeoutMsFor(mode string, ms int) int {
+	if mode != SQLBrowseSubnet {
+		return ClampSQLBrowseTimeoutMs(ms)
+	}
+	switch {
+	case ms <= 0:
+		return DefaultSQLSubnetTimeoutMs
+	case ms < IPCSQLBrowseMinTimeoutMs:
+		return IPCSQLBrowseMinTimeoutMs
+	case ms > MaxSQLSubnetTimeoutMs:
+		return MaxSQLSubnetTimeoutMs
+	}
+	return ms
+}
+
 // Validate checks the request; errors are *FieldError (host, instance,
 // timeoutMs).
 func (r SQLBrowseRequest) Validate() error {
-	if r.TimeoutMs != 0 && (r.TimeoutMs < MinSQLBrowseTimeoutMs || r.TimeoutMs > MaxSQLBrowseTimeoutMs) {
+	if r.TimeoutMs != 0 && (r.TimeoutMs < MinSQLBrowseTimeoutMs || r.TimeoutMs > r.MaxTimeoutMs()) {
 		return fieldErr("timeoutMs", ValRange, "timeoutMs out of range", strconv.Itoa(MinSQLBrowseTimeoutMs),
-			strconv.Itoa(MaxSQLBrowseTimeoutMs), strconv.Itoa(r.TimeoutMs))
+			strconv.Itoa(r.MaxTimeoutMs()), strconv.Itoa(r.TimeoutMs))
 	}
 	if r.Limit < 0 || r.Limit > MaxSQLBrowseInstances {
 		return fieldErr("limit", ValRange, "limit out of range", "0", strconv.Itoa(MaxSQLBrowseInstances), strconv.Itoa(r.Limit))

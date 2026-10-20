@@ -10,7 +10,7 @@ import (
 
 // sqlcheckWinAPI is the WinAPI allowlist of internal/sqlcheck (SSRP ANSI
 // decoding; phase 11: InstalledInstances REG_MULTI_SZ; NT 3.1+).
-var sqlcheckWinAPI = []string{"MultiByteToWideChar", "RegCloseKey", "RegOpenKeyExW", "RegQueryValueExW"}
+var sqlcheckWinAPI = []string{"CloseServiceHandle", "MultiByteToWideChar", "OpenSCManagerW", "OpenServiceW", "QueryServiceConfigW", "RegCloseKey", "RegOpenKeyExW", "RegQueryValueExW"}
 
 // CHK-SQL-06: the package loads only allowlisted WinAPI functions and no
 // os/exec.

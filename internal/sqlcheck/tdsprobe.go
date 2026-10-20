@@ -197,7 +197,7 @@ func lookupIPv4(ctx context.Context, host string) ([]net.IP, error) {
 // interface's /24) and the other local /24s. A CIDR must overlap a local
 // interface network (no scans of foreign networks); a /24../30 (checked by
 // the model) has at most 254 hosts.
-func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, others []string, err error) {
+func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, others []string, narrowed bool, err error) {
 	var locals []*net.IPNet
 	for _, n := range ifs {
 		_, l, _ := net.ParseCIDR(n.IP.String() + "/24")
@@ -212,20 +212,23 @@ func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, ot
 	var nw *net.IPNet
 	if cidr == "" {
 		if len(locals) == 0 {
-			return nil, "", nil, errors.New("no IPv4 interface")
+			return nil, "", nil, false, errors.New("no IPv4 interface")
 		}
 		nw = locals[0]
+		if ones, bits := ifs[0].Mask.Size(); bits == 32 && ones < 24 || bits == 128 && ones < 120 {
+			narrowed = true
+		}
 	} else {
 		_, nw, err = net.ParseCIDR(cidr)
 		if err != nil || nw.IP.To4() == nil {
-			return nil, "", nil, errors.New("bad CIDR")
+			return nil, "", nil, false, errors.New("bad CIDR")
 		}
 		ok := false
 		for _, n := range ifs {
 			ok = ok || nw.Contains(n.IP) || n.Contains(nw.IP)
 		}
 		if !ok {
-			return nil, "", nil, errNotLocalSubnet
+			return nil, "", nil, false, errNotLocalSubnet
 		}
 	}
 	for _, l := range locals {
@@ -241,7 +244,7 @@ func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, ot
 		binary.BigEndian.PutUint32(ip, base+i)
 		hosts = append(hosts, ip.String())
 	}
-	return hosts, nw.String(), others, nil
+	return hosts, nw.String(), others, narrowed, nil
 }
 
 var errNotLocalSubnet = errors.New("subnet is not a local network")
@@ -252,7 +255,11 @@ func (b *browseRun) subnet(ctx context.Context, cidr string, port int) error {
 	b.res.TCPProbe = tp
 	hosts := b.opt.SubnetHosts
 	if hosts == nil {
-		h, used, others, err := subnetHosts(cidr, interfaceIPv4s())
+		ifs := interfaceIPv4s
+		if b.opt.ifaces != nil {
+			ifs = b.opt.ifaces
+		}
+		h, used, others, narrowed, err := subnetHosts(cidr, ifs())
 		if errors.Is(err, errNotLocalSubnet) {
 			return &Error{Kind: KindConfig, Op: "browse", Err: &model.FieldError{Field: "cidr", Key: model.ValSQLBrowseCIDR, Msg: "cidr: not a network of this computer"}}
 		}
@@ -260,7 +267,7 @@ func (b *browseRun) subnet(ctx context.Context, cidr string, port int) error {
 			b.sendErr("", "subnet", err)
 			return nil
 		}
-		hosts, tp.CIDR = h, used
+		hosts, tp.CIDR, tp.Narrowed = h, used, narrowed
 		tp.Subnets = append(tp.Subnets, others...)
 	}
 	if len(hosts) > model.MaxSQLSubnetHosts {

@@ -33,6 +33,28 @@ type localSource interface {
 	browserState() string
 }
 
+// mapBrowserState maps the SCM state (SERVICE_STOPPED=1 … SERVICE_PAUSED=7)
+// and the start type (haveStart: QueryServiceConfig succeeded;
+// SERVICE_DISABLED=4 wins) to model.SQLBrowser*.
+func mapBrowserState(state, startType uint32, haveStart bool) string {
+	if haveStart && startType == 4 {
+		return model.SQLBrowserDisabled
+	}
+	switch state {
+	case 1:
+		return model.SQLBrowserStopped
+	case 2:
+		return model.SQLBrowserStartPending
+	case 3:
+		return model.SQLBrowserStopPending
+	case 4:
+		return model.SQLBrowserRunning
+	case 7:
+		return model.SQLBrowserPaused
+	}
+	return model.SQLBrowserUnknown
+}
+
 // localInstances reads the installed instances from src (both views,
 // deduplicated by name; the 64-bit view wins).
 func localInstances(src localSource) (names []string, insts []model.SQLServerInstance, firstErr error) {

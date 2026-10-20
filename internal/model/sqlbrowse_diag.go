@@ -26,7 +26,8 @@ type SQLBrowseLocalInfo struct {
 	// 64- and 32-bit views).
 	Installed []string `json:"installed"`
 	// BrowserState: SQLBrowser service state: running | stopped |
-	// start_pending | stop_pending | paused | not_installed | unknown.
+	// start_pending | stop_pending | paused | disabled (start type
+	// SERVICE_DISABLED, wins over the state) | not_installed | unknown.
 	BrowserState string `json:"browserState"`
 	// BrowserAnswered: 127.0.0.1:1434 answered.
 	BrowserAnswered bool `json:"browserAnswered"`
@@ -43,6 +44,9 @@ const (
 	SQLBrowserPaused       = "paused"
 	SQLBrowserNotInstalled = "not_installed"
 	SQLBrowserUnknown      = "unknown"
+	// SQLBrowserDisabled: the service start type is SERVICE_DISABLED (4),
+	// whatever its state (it cannot be started until re-enabled).
+	SQLBrowserDisabled = "disabled"
 )
 
 // SQLBrowseTCPInfo summarizes the TCP PRELOGIN probe.
@@ -58,6 +62,9 @@ type SQLBrowseTCPInfo struct {
 	// wizard may scan next (one /24 per request, <= 254 addresses).
 	CIDR    string   `json:"cidr,omitempty"`
 	Subnets []string `json:"subnets,omitempty"`
+	// Narrowed: the scanned interface network is wider than /24 (only
+	// its own /24 was scanned; advice sql.browse_advice_subnet_narrowed).
+	Narrowed bool `json:"narrowed,omitempty"`
 }
 
 // Subnet probe limits.
@@ -88,6 +95,11 @@ const (
 	MsgSQLBrowseAdvicePort1433      = "sql.browse_advice_port_1433"
 	MsgSQLBrowseAdviceSendFailed    = "sql.browse_advice_send_failed"
 	MsgSQLBrowseAdviceTCPDisabled   = "sql.browse_advice_tcp_disabled"
+	// MsgSQLBrowseAdviceBrowserDisabled: SQLBrowser start type Disabled.
+	MsgSQLBrowseAdviceBrowserDisabled = "sql.browse_advice_browser_disabled"
+	// MsgSQLBrowseAdviceSubnetNarrowed: the interface network is wider
+	// than /24; only its own /24 was scanned.
+	MsgSQLBrowseAdviceSubnetNarrowed = "sql.browse_advice_subnet_narrowed"
 )
 
 // Server check stages (SQLCheckStep.ID), in order; the check stops at the
@@ -180,6 +192,10 @@ var sqlBrowseDiagMessages = map[string]LocalizedText{
 	MsgSQLCheckAdviceDB:       {"База недоступна этому логину: выберите базу из списка или выполните скрипт «Выдать права».", "The database is not available to this login: pick it from the list or run the \"Grant access\" script."},
 	MsgSQLCheckAdviceTables:   {"В базе не видны таблицы планов обмена 1С (_Node…): проверьте, что выбрана база 1С, и права db_datareader.", "No 1C exchange plan tables (_Node…) are visible in the database: check that a 1C database is selected and the db_datareader rights."},
 	ValSQLBrowseCIDR:          {"Поле «{0}»: укажите сеть IPv4 вида 192.168.1.0/24 (от /24 до /30, не более 254 адресов) одного из сетевых интерфейсов этого компьютера.", "Field \"{0}\": enter an IPv4 network like 192.168.1.0/24 (/24 to /30, at most 254 addresses) of one of this computer's network interfaces."},
+	MsgSQLBrowseAdviceBrowserDisabled: {"Служба «SQL Server Browser» отключена (тип запуска «Отключена»): в «Службах» или SQL Server Configuration Manager задайте тип запуска «Автоматически» и запустите службу.",
+		"The \"SQL Server Browser\" service is disabled (start type Disabled): in Services or SQL Server Configuration Manager set the start type to Automatic and start the service."},
+	MsgSQLBrowseAdviceSubnetNarrowed: {"Сеть интерфейса шире /24: проверена только своя /24 (до 254 адресов). Для другой части сети укажите её /24 вручную или введите имя сервера.",
+		"The interface network is wider than /24: only its own /24 (up to 254 addresses) was scanned. For another part of the network enter its /24 or the server name."},
 	MsgSQLBrowseAdviceTCPDisabled: {"У локального экземпляра не задан TCP-порт: включите протокол TCP/IP в SQL Server Configuration Manager и перезапустите службу SQL Server.",
 		"The local instance has no TCP port: enable the TCP/IP protocol in SQL Server Configuration Manager and restart the SQL Server service."},
 }
@@ -194,6 +210,7 @@ func init() {
 func SQLBrowseAdviceKeys() []string {
 	return []string{MsgSQLBrowseAdviceEnableBrowser, MsgSQLBrowseAdviceOpenUDP1434, MsgSQLBrowseAdviceEnterServer,
 		MsgSQLBrowseAdvicePort1433, MsgSQLBrowseAdviceSendFailed, MsgSQLBrowseAdviceTCPDisabled,
+		MsgSQLBrowseAdviceBrowserDisabled, MsgSQLBrowseAdviceSubnetNarrowed,
 		MsgSQLCheckAdviceParse, MsgSQLCheckAdviceDNS, MsgSQLCheckAdviceBrowser, MsgSQLCheckAdviceTCP,
 		MsgSQLCheckAdvicePrelogin, MsgSQLCheckAdviceTLS, MsgSQLCheckAdviceLogin, MsgSQLCheckAdviceDB, MsgSQLCheckAdviceTables}
 }

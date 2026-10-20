@@ -60,8 +60,11 @@ type BrowseOptions struct {
 	ProbeTimeout time.Duration
 	Concurrency  int
 
-	dial  func(ctx context.Context, addr string) (net.Conn, error) // tests
-	local localSource                                              // tests
+	dial func(ctx context.Context, addr string) (net.Conn, error) // tests
+	// sendFault, if set, fails the matching sends (tests: Windows accepts
+	// sends that Linux rejects, so real errors are not portable).
+	sendFault func(target string) error
+	local     localSource // tests
 }
 
 // ListServers is Browse with default options (EC Tray naming).
@@ -403,7 +406,14 @@ func (b *browseRun) ssrpRound(ctx context.Context, msg []byte, targets []*net.UD
 				if addressed && responders[(&net.UDPAddr{IP: t.IP.To4(), Port: t.Port}).String()] {
 					continue // answered: no retry
 				}
-				if _, err := s.pc.WriteTo(msg, t); err != nil {
+				var err error
+				if b.opt.sendFault != nil {
+					err = b.opt.sendFault(t.String())
+				}
+				if err == nil {
+					_, err = s.pc.WriteTo(msg, t)
+				}
+				if err != nil {
 					b.sendErr(s.local, t.String(), err)
 				} else {
 					b.mu.Lock()

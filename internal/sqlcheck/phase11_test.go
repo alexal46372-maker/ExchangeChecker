@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -157,7 +158,14 @@ func TestCHK_SQL_10_SSRPRetries(t *testing.T) {
 
 // CHK-SQL-10: send errors are counted and listed, not swallowed; advice.
 func TestCHK_SQL_10_SendErrors(t *testing.T) {
-	res, err := Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 700}, BrowseOptions{Targets: []string{"127.0.0.1:0"}})
+	if runtime.GOOS == "linux" { // the real error path: sendto port 0 is EINVAL on Linux
+		res, err := Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 700}, BrowseOptions{Targets: []string{"127.0.0.1:0"}})
+		if err != nil || res.Sent != 0 || res.SendErrorCount != 3 {
+			t.Fatalf("%+v %v", res, err)
+		}
+	}
+	fault := func(string) error { return errors.New("sendto: network is unreachable") }
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 700}, BrowseOptions{Targets: []string{"127.0.0.1:0"}, sendFault: fault})
 	if err != nil {
 		t.Fatal(err)
 	}

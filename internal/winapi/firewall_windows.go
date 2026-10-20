@@ -34,8 +34,9 @@ const (
 	FirewallProtocolUDP = 17
 	// FirewallRemotePorts is the SQL Browser source port of SSRP replies.
 	FirewallRemotePorts = "1434"
-	// FirewallLocalPorts is "*" (any / ephemeral ListenPacket :0).
-	FirewallLocalPorts = "*"
+	// FirewallLocalPorts empty = any (INetFwRule; "*" is rejected with
+	// E_INVALIDARG). Same meaning as netsh/PowerShell LocalPort Any / "*".
+	FirewallLocalPorts = ""
 	// FirewallRemoteAddresses is "*" (any IPv4 peer, including broadcast replies).
 	FirewallRemoteAddresses = "*"
 	// FirewallGrouping tags the rule for Remove-by-group on upgrade/uninstall.
@@ -290,7 +291,6 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	}{
 		{FwRulePutName, "put_Name", FirewallRuleName},
 		{FwRulePutApplicationName, "put_ApplicationName", appExe},
-		{FwRulePutLocalPorts, "put_LocalPorts", FirewallLocalPorts},
 		{FwRulePutRemotePorts, "put_RemotePorts", FirewallRemotePorts},
 		{FwRulePutRemoteAddresses, "put_RemoteAddresses", FirewallRemoteAddresses},
 		{FwRulePutGrouping, "put_Grouping", FirewallGrouping},
@@ -298,6 +298,13 @@ func AddSQLBrowserFirewallRule(appExe string) error {
 	}
 	for _, s := range set {
 		if err := putBSTR(rule, s.idx, s.what, s.val); err != nil {
+			return err
+		}
+	}
+	// LocalPorts: leave unset when FirewallLocalPorts is empty (= any).
+	// put_LocalPorts("*") returns E_INVALIDARG on INetFwRule.
+	if FirewallLocalPorts != "" {
+		if err := putBSTR(rule, FwRulePutLocalPorts, "put_LocalPorts", FirewallLocalPorts); err != nil {
 			return err
 		}
 	}

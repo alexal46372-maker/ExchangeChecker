@@ -55,9 +55,8 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		if r.RemotePorts != winapi.FirewallRemotePorts {
 			return fmt.Errorf("remotePorts %q", r.RemotePorts)
 		}
-		if r.LocalPorts != winapi.FirewallLocalPorts && r.LocalPorts != "" {
-			// "*" or empty both mean any; prefer "*"
-			return fmt.Errorf("localPorts %q", r.LocalPorts)
+		if r.LocalPorts != "" && r.LocalPorts != "*" {
+			return fmt.Errorf("localPorts %q (want empty/any)", r.LocalPorts)
 		}
 		if r.RemoteAddresses != winapi.FirewallRemoteAddresses && r.RemoteAddresses != "*" {
 			return fmt.Errorf("remoteAddresses %q", r.RemoteAddresses)
@@ -120,7 +119,7 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		t.Fatal("GUIDs changed")
 	}
 	if winapi.FirewallProtocolUDP != 17 || winapi.FirewallRemotePorts != "1434" ||
-		winapi.FirewallLocalPorts != "*" || winapi.FirewallRemoteAddresses != "*" ||
+		winapi.FirewallLocalPorts != "" || winapi.FirewallRemoteAddresses != "*" ||
 		winapi.FirewallGrouping != "Exchange Checker" || winapi.FirewallProfiles != 0x3 ||
 		winapi.FirewallRuleName != "Exchange Checker (SQL Browser)" {
 		t.Fatal("firewall constants changed")

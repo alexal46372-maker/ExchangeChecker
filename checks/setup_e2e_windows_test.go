@@ -124,8 +124,8 @@ func checkSQLBrowserFirewall(t *testing.T, wantApp string, wantCount int) {
 	if r.Protocol != winapi.FirewallProtocolUDP || r.RemotePorts != winapi.FirewallRemotePorts {
 		t.Fatalf("firewall proto/ports %d/%q", r.Protocol, r.RemotePorts)
 	}
-	if r.LocalPorts != winapi.FirewallLocalPorts && r.LocalPorts != "" {
-		t.Fatalf("firewall localPorts %q", r.LocalPorts)
+	if r.LocalPorts != "" && r.LocalPorts != "*" {
+		t.Fatalf("firewall localPorts %q (want empty/any)", r.LocalPorts)
 	}
 	if r.Grouping != winapi.FirewallGrouping {
 		t.Fatalf("firewall grouping %q", r.Grouping)

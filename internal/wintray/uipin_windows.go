@@ -32,10 +32,14 @@ func fitForm(hwnd uintptr, content, bar ui.Node, minW int32, keep bool) (int32, 
 	vs := winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
 	root := &ui.Col{Gap: -1, Items: []ui.Node{content, bar}}
 	var cw, ch int32
+	// phase 11 (CHK-TRAY-49): a window that already has a scroll host
+	// keeps room for its vertical scroll bar (no horizontal scrolling when
+	// a relayout makes the content just fit)
+	hadHost := pinnedHosts[hwnd] != 0
 	for i := 0; i < 8; i++ {
 		cw, ch = ui.Layout(root, m, 0, 0, px(minW))
 		limit := maxW
-		if ch > maxH {
+		if ch > maxH || hadHost {
 			limit -= vs
 		}
 		over := cw - limit
@@ -62,7 +66,7 @@ func fitForm(hwnd uintptr, content, bar ui.Node, minW int32, keep bool) (int32, 
 	}
 	_, bh := ui.Layout(bar, m, 0, 0, cw)
 	viewH := min32(ch, maxH) - bh
-	scroll := ch > maxH
+	scroll := ch > maxH || hadHost
 	inner := cw
 	if scroll {
 		inner = min32(cw+vs, maxW) - vs

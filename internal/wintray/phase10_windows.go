@@ -11,6 +11,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // Phase 10 C (CHK-TRAY-37..39): the blinking icon, the problem panel by
@@ -24,7 +25,6 @@ const (
 	panelClass  = "ExchangeCheckerTrayPanel"
 	idPanelText = 400
 	panelWidth  = 380
-	panelLineH  = 16
 )
 
 // SetStatusExt applies the optional phase10-svc status fields (raw
@@ -164,16 +164,20 @@ func (a *App) updatePanel() {
 			return
 		}
 		p.hwnd = h
-		p.text = child(h, "STATIC", "", winapi.SS_LEFT|ssNotify, idPanelText, 8, 6, panelWidth-18, 20)
+		p.text = child(h, "STATIC", "", winapi.SS_LEFT|ssNotify, idPanelText, 0, 0, 0, 0)
 		a.panel = p
 	}
 	p := a.panel
 	p.lines = lines
 	winapi.SetWindowText(p.text, strings.Join(lines, "\r\n"))
-	hgt := int32(len(lines)*panelLineH + 14)
-	winapi.MoveWindow(p.text, px(8), px(6), px(panelWidth-18), px(hgt-12))
-	x, y := a.panelPos(px(panelWidth), px(hgt))
-	winapi.SetWindowPos(p.hwnd, winapi.HWND_TOPMOST, x, y, px(panelWidth), px(hgt), winapi.SWP_NOACTIVATE)
+	// phase 11 (CHK-TRAY-45): the text measured by the framework, at
+	// least panelWidth wide, one line per problem
+	text := uiCtl(p.text, ui.Label, strings.Join(lines, "\n"))
+	text.W = panelWidth - 18
+	f := newForm(&ui.Pad{Left: ui.P8, Right: ui.P8, Top: 6, Bottom: 6, Child: text}, 0)
+	ow, oh := outerSize(f.W, f.H, winapi.WS_POPUP|winapi.WS_BORDER, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW|winapi.WS_EX_NOACTIVATE)
+	x, y := a.panelPos(ow, oh)
+	winapi.SetWindowPos(p.hwnd, winapi.HWND_TOPMOST, x, y, ow, oh, winapi.SWP_NOACTIVATE)
 	if !p.shown {
 		p.shown = true
 		if !a.opt.HiddenPanel && !a.opt.HiddenAlerts {

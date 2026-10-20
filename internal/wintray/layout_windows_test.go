@@ -322,7 +322,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	aw.apply(sampleAlert(), false) // a sample alert: text and status filled
+	aw.apply(sampleAlert(lang), false) // a sample alert: text and status filled
 	visit("alert", aw.hwnd)
 	winapi.DestroyWindow(aw.hwnd)
 	st, err := newStatusWindow(lang, false, nil)
@@ -334,9 +334,13 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 }
 
 // sampleAlert is an alert view for the layout test and the screenshots.
-func sampleAlert() trayalert.View {
+func sampleAlert(lang string) trayalert.View {
+	msg := "Служба: подтверждение отправлено"
+	if lang == i18n.EN {
+		msg = "Service: acknowledgement sent"
+	}
 	at := time.Date(2026, 10, 20, 9, 30, 0, 0, time.FixedZone("UTC+3", 3*3600))
-	return trayalert.View{Visible: true, Level: model.LevelError, CanAck: true, Message: "Служба: подтверждение отправлено / ack sent",
+	return trayalert.View{Visible: true, Level: model.LevelError, CanAck: true, Message: msg,
 		Alerts: []model.AlertEvent{
 			{ID: 1, ProfileID: "p1", ProfileName: "Склад", PointName: "ЦБ", PlanTable: "_Node123", From: model.LevelWarning, To: model.LevelError, At: at, FreshAt: &at, LagMinutes: 45},
 			{ID: 2, ProfileID: "p2", ProfileName: "Магазин 12", From: model.LevelOK, To: model.LevelError, At: at},

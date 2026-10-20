@@ -3,6 +3,8 @@
 package wintray
 
 import (
+	"strings"
+
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
@@ -41,7 +43,8 @@ type alertWindow struct {
 	onAck, onClose           func()
 	onMute                   func()
 	style                    uint32 // window style (tests: only Minimize / Close)
-	form                     *ui.Form
+	laid                     bool   // laid out once: relayouts keep the position
+	textStr, statusStr       string // the shown texts (their size, phase 11)
 }
 
 // layout places the controls (phase 11, CHK-TRAY-45): icon | text and
@@ -54,23 +57,20 @@ func (aw *alertWindow) layout() {
 		&ui.Row{Align: ui.Top, Gap: ui.P16, Grow: true, Items: []ui.Node{
 			&ui.Ctl{H: aw.icon, Kind: ui.Box, W: 32, Hgt: 32},
 			&ui.Col{Gap: ui.P8, Items: []ui.Node{
-				&ui.Ctl{H: aw.text, Kind: ui.Box, W: 448, Hgt: 160, Grow: true},
-				&ui.Ctl{H: aw.status, Kind: ui.Box, W: 448, Hgt: 20, Grow: true},
+				// phase 11: as tall as the alert text (no hole above the
+				// status line); the status only when there is one
+				&ui.Ctl{H: aw.text, Kind: ui.Label, W: 448, Text: aw.textStr, Lines: strings.Count(aw.textStr, "\n") + 1, Grow: true},
+				&ui.Ctl{H: aw.status, Kind: ui.Label, W: 448, Text: aw.statusStr, Lines: 1, Grow: true, Hidden: aw.statusStr == ""},
 			}},
 		}},
 		uiCtl(aw.hint, ui.Label, ""),
 		&ui.Row{Grow: true, Items: []ui.Node{mute, &ui.Row{Right: true, Items: []ui.Node{
 			uiCtl(aw.ack, ui.Button, ""), uiCtl(aw.close, ui.Button, "")}}}},
 	}}}
-	again := aw.form != nil
-	aw.form = newForm(root, 0)
-	if again {
-		// language change: new size, same position (no jump to the centre)
-		ow, oh := outerSize(aw.form.W, aw.form.H, winapi.WindowStyle(aw.hwnd), winapi.WindowExStyle(aw.hwnd))
-		winapi.SetWindowPos(aw.hwnd, 0, 0, 0, ow, oh, winapi.SWP_NOMOVE|winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
-		return
-	}
-	fitToContent(aw.hwnd, aw.form.W, aw.form.H)
+	// a relayout (language change, new text) keeps the position
+	fitForm(aw.hwnd, &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: root.Child.(*ui.Col).Items[:2]}},
+		&ui.Pad{Left: ui.P16, Right: ui.P16, Bottom: ui.P16, Child: root.Child.(*ui.Col).Items[2]}, 0, aw.laid)
+	aw.laid = true
 }
 
 // longest is the longest of the texts (a control showing either).
@@ -150,8 +150,13 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 		winapi.SendMessage(aw.icon, winapi.STM_SETICON, winapi.LoadSystemIcon(icon), 0)
 	}
 	winapi.SetWindowText(aw.hwnd, trayalert.Title(v, aw.lang))
-	winapi.SetWindowText(aw.text, trayalert.Text(v, aw.lang))
+	text := trayalert.Text(v, aw.lang)
+	winapi.SetWindowText(aw.text, text)
 	winapi.SetWindowText(aw.status, v.Message)
+	if t := strings.ReplaceAll(text, "\r\n", "\n"); t != aw.textStr || v.Message != aw.statusStr {
+		aw.textStr, aw.statusStr = t, v.Message
+		aw.layout()
+	}
 	winapi.EnableWindow(aw.ack, v.CanAck)
 	aw.muted = v.Muted
 	winapi.SetWindowText(aw.mute, aw.muteText())

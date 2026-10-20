@@ -96,3 +96,37 @@ func TestCHK_MON_18_StalledSettings(t *testing.T) {
 		t.Error("viber mapping")
 	}
 }
+
+// TestCHK_MON_18_PeerNodeKeyFromListPoints — time-based points carry
+// ExchangePoint.NodeKey from sqlcheck ListPoints (EC SQL 97d3236, json
+// nodeKey); through NewProfileSnapshot the stalled peer is matched by it:
+// same key with a different name is the peer, an empty key or a different
+// key is no peer.
+func TestCHK_MON_18_PeerNodeKeyFromListPoints(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, DBZone)
+	at := func(m int) *time.Time { x := now.Add(-time.Duration(m) * time.Minute); return &x }
+	const key = "_Node12:0a1b2c"
+	p := NewProfile("db1")
+	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 60, 600, 1200
+	g := DefaultSettings()
+	counters := ExchangePoint{ProfileID: "db1", Name: "Магазин 1", NodeKey: key, Source: PointSourceCounters, LastSend: at(200), LastRecv: at(200)}
+	for _, c := range []struct {
+		name, peerName, peerKey string
+		stalled                 bool
+	}{
+		{"same key, other name: peer stopped too", "Shop #1 (time)", key, false},
+		{"empty key: no peer", "Магазин 1", "", true},
+		{"other key: no peer", "Магазин 1", "_Node12:ffff", true},
+	} {
+		peer := ExchangePoint{ProfileID: "db1", Name: c.peerName, NodeKey: c.peerKey, LastSend: at(300), LastRecv: at(300)}
+		snap := NewProfileSnapshot(p, ProfileStatus{ProfileID: "db1", Points: []ExchangePoint{counters, peer}}, g, now)
+		if len(snap.Points) != 2 || snap.Points[1].NodeKey != c.peerKey || snap.Points[0].Stalled != c.stalled || snap.Stalled != c.stalled {
+			t.Errorf("%s: %+v", c.name, snap.Points)
+		}
+	}
+	// the alive peer of the same key: a real stall
+	peer := ExchangePoint{ProfileID: "db1", Name: "x", NodeKey: key, LastSend: at(5), LastRecv: at(5)}
+	if snap := NewProfileSnapshot(p, ProfileStatus{ProfileID: "db1", Points: []ExchangePoint{counters, peer}}, g, now); !snap.Points[0].Stalled {
+		t.Errorf("alive peer: %+v", snap.Points)
+	}
+}

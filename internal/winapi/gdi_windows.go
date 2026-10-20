@@ -177,3 +177,9 @@ var procDrawIconEx = moduser32.NewProc("DrawIconEx")
 func DrawIconEx(dc uintptr, x, y int32, icon uintptr, w, h int32) {
 	callProc(procDrawIconEx, dc, uintptr(x), uintptr(y), icon, uintptr(w), uintptr(h), 0, 0, DI_NORMAL)
 }
+
+// Icon statics of the settings navigation (phase 11, CHK-TRAY-49).
+const (
+	SS_CENTERIMAGE = 0x0200
+	STM_GETICON    = 0x0171
+)

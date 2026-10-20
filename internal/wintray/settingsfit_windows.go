@@ -293,6 +293,7 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 			c.Hidden = winapi.WindowStyle(c.H)&winapi.WS_VISIBLE == 0
 		}
 	})
+	w.syncNavIcons()
 	style := winapi.WindowStyle(w.hwnd) &^ (winapi.WS_VSCROLL | winapi.WS_HSCROLL)
 	work := workArea()
 	fw, _ := outerSize(0, 0, style, 0)
@@ -345,6 +346,7 @@ func (w *settingsWindow) relayoutAll() {
 		return
 	}
 	syncCues(w.root)
+	w.syncNavIcons()
 	// another page may be wider: shrink it to the window (no horizontal
 	// scrolling, phase 11)
 	avail := winapi.GetClientRect(w.hwnd).Right - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)

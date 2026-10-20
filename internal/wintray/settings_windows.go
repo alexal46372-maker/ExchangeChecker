@@ -15,6 +15,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
@@ -246,6 +247,8 @@ type settingsWindow struct {
 	// cues: cue banners set on the edit boxes (CHK-TRAY-17; EM_SETCUEBANNER
 	// itself needs comctl32 v6 of the tray manifest)
 	cues map[int32]string
+	// navIco: navigation button and its icon static (phase 11, CHK-TRAY-49)
+	navIco [][2]*ui.Ctl
 }
 
 func (w *settingsWindow) setCue(id int32, text string) {
@@ -462,13 +465,21 @@ func (w *settingsWindow) build() {
 	// current one pressed (push-like check box, not disabled: Кончита); then the mode switch; then the profile list
 	// column of the databases page
 	w.cur = nil
+	// phase 11 (CHK-TRAY-49): an icon (SS_ICON static) left of every
+	// navigation button; it is shown and hidden with its button
+	navRow := func(b *ui.Ctl, ico string) ui.Node {
+		h := w.add("STATIC", "", 0, winapi.SS_ICON|winapi.SS_CENTERIMAGE, 0, 0, 0, 0, 0)
+		winapi.SendMessage(h, winapi.STM_SETICON, uiIcons.ico(ico, px(icoSmall)), 0)
+		ic := &ui.Ctl{H: h, Kind: ui.Box, W: icoSmall, Hgt: icoSmall + 8}
+		w.navIco = append(w.navIco, [2]*ui.Ctl{b, ic})
+		return &ui.Row{Gap: ui.P4, Items: []ui.Node{ic, b}}
+	}
 	nav := &ui.Col{Gap: ui.P4, Items: []ui.Node{
-		add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP|navStyle, idSetNavProfiles, ui.Button, 205, 0),
-		add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP|navStyle, idSetPage, ui.Button, 205, 0),
-		add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP|navStyle, idSetViber, ui.Button, 205, 0),
-		add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0),
+		navRow(add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP|navStyle, idSetNavProfiles, ui.Button, 205, 0), trayui.IcoNavDatabases),
+		navRow(add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP|navStyle, idSetPage, ui.Button, 205, 0), trayui.IcoNavGeneral),
+		navRow(add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP|navStyle, idSetViber, ui.Button, 205, 0), trayui.IcoNavViber),
+		navRow(add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0), trayui.IcoNavMode),
 	}}
-	w.navIcons()
 	winapi.SetWindowText(w.ctl[idSetUIMode], "")         // applyUIMode names it
 	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it
 	w.cur = &w.pageCtl[0]

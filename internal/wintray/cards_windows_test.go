@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -92,16 +91,19 @@ func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
 	app := startCfgApp(t, newCfgService(), true, nil)
 	defer app.Exit()
 	w := openAdmin(t, app)
-	for _, id := range []int32{idSetNavProfiles, idSetPage, idSetUIMode} {
-		// Common Controls 6 draws an image beside the text of any button;
-		// the classic (v5) check boxes of a window made without the
-		// activation context take none (the tray exe always has v6)
-		var size [2]int32
-		v6 := winapi.SendMessage(w.ctl[id], 0x1601 /* BCM_GETIDEALSIZE */, 0, uintptr(unsafe.Pointer(&size))) != 0
-		if img := winapi.SendMessage(w.ctl[id], winapi.BM_GETIMAGE, winapi.IMAGE_ICON, 0); img == 0 && v6 {
-			t.Errorf("nav %d without icon", id)
-		} else if img == 0 {
-			t.Logf("nav %d: classic button (no Common Controls 6 on this thread), no image", id)
+	if len(w.navIco) != 4 {
+		t.Fatalf("%d navigation icons", len(w.navIco))
+	}
+	for _, p := range w.navIco {
+		b, ic := p[0].H, p[1].H
+		if winapi.SendMessage(ic, winapi.STM_GETICON, 0, 0) == 0 {
+			t.Errorf("nav %q without icon", winapi.GetWindowText(b))
+		}
+		if visible(b) != visible(ic) {
+			t.Errorf("nav %q: icon visible %v, button %v", winapi.GetWindowText(b), visible(ic), visible(b))
+		}
+		if visible(b) && winapi.GetWindowRect(ic).Right > winapi.GetWindowRect(b).Left {
+			t.Errorf("nav %q: icon not left of the button", winapi.GetWindowText(b))
 		}
 	}
 	if winapi.SendMessage(w.hwnd, winapi.WM_GETICON, winapi.ICON_SMALL, 0) == 0 {

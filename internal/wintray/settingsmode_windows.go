@@ -5,7 +5,6 @@ package wintray
 import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -70,7 +69,6 @@ func (w *settingsWindow) applyUIMode() {
 	}
 	// the navigation marks the current page (phase 11, CHK-TRAY-47)
 	w.markNav()
-	w.navIcons()
 	w.relayoutAll() // Hidden controls take no room (no holes)
 }
 
@@ -158,13 +156,10 @@ func navChecked(h uintptr) bool {
 	return winapi.SendMessage(h, winapi.BM_GETCHECK, 0, 0) == winapi.BST_CHECKED
 }
 
-// navIcons puts an icon on every navigation button (phase 11,
-// CHK-TRAY-49); set again after the buttons are relabelled.
-func (w *settingsWindow) navIcons() {
-	for id, ico := range map[int32]string{idSetNavProfiles: trayui.IcoNavDatabases, idSetPage: trayui.IcoNavGeneral,
-		idSetViber: trayui.IcoNavViber, idSetUIMode: trayui.IcoNavMode} {
-		if h := w.ctl[id]; h != 0 && winapi.SendMessage(h, winapi.BM_GETIMAGE, winapi.IMAGE_ICON, 0) == 0 {
-			setButtonIcon(h, ico)
-		}
+// syncNavIcons gives every navigation icon the visibility of its button
+// (before a layout).
+func (w *settingsWindow) syncNavIcons() {
+	for _, p := range w.navIco {
+		p[1].Hidden = p[0].Hidden
 	}
 }

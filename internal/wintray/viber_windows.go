@@ -145,8 +145,8 @@ func (w *settingsWindow) buildViber() (page ui.Node) {
 		&ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
 			{Label: daysL, Field: &ui.Col{Gap: ui.P4, Items: []ui.Node{&ui.Row{Gap: ui.P4, Items: days[:4]}, &ui.Row{Gap: ui.P4, Items: days[4:]}}}},
 			{Label: fromL, Field: &ui.Row{Items: []ui.Node{from, toL, to}}},
-			{Label: evL, Field: &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: nil, Field: &ui.Row{Gap: ui.P16, Items: []ui.Node{ev[0], ev[1]}}},
-				{Field: &ui.Row{Gap: ui.P16, Items: []ui.Node{ev[2], ev[3]}}}}}},
+			{Label: evL, Field: &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: nil, Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[0], ev[1]}}},
+				{Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[2], ev[3]}}}}}},
 			{Label: remL, Field: &ui.Col{Gap: 2, Items: []ui.Node{rem, remHint}}},
 			{Label: testL, Field: &ui.Row{Items: []ui.Node{testTo, test}}},
 		}},

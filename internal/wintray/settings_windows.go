@@ -466,19 +466,19 @@ func (w *settingsWindow) build() {
 	// column of the databases page
 	w.cur = nil
 	// phase 11 (CHK-TRAY-49): an icon (SS_ICON static) left of every
-	// navigation button; it is shown and hidden with its button
+	// navigation button (185 + 4 + 16 = the former 205 units); it is shown and hidden with its button
 	navRow := func(b *ui.Ctl, ico string) ui.Node {
 		h := w.add("STATIC", "", 0, winapi.SS_ICON|winapi.SS_CENTERIMAGE, 0, 0, 0, 0, 0)
 		winapi.SendMessage(h, winapi.STM_SETICON, uiIcons.ico(ico, px(icoSmall)), 0)
-		ic := &ui.Ctl{H: h, Kind: ui.Box, W: icoSmall, Hgt: icoSmall + 8}
+		ic := &ui.Ctl{H: h, Kind: ui.Box, W: icoSmall, Hgt: icoSmall}
 		w.navIco = append(w.navIco, [2]*ui.Ctl{b, ic})
-		return &ui.Row{Gap: ui.P4, Items: []ui.Node{ic, b}}
+		return &ui.Row{Gap: ui.P4, Align: ui.Center, Items: []ui.Node{ic, b}}
 	}
 	nav := &ui.Col{Gap: ui.P4, Items: []ui.Node{
-		navRow(add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP|navStyle, idSetNavProfiles, ui.Button, 205, 0), trayui.IcoNavDatabases),
-		navRow(add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP|navStyle, idSetPage, ui.Button, 205, 0), trayui.IcoNavGeneral),
-		navRow(add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP|navStyle, idSetViber, ui.Button, 205, 0), trayui.IcoNavViber),
-		navRow(add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0), trayui.IcoNavMode),
+		navRow(add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP|navStyle, idSetNavProfiles, ui.Button, 185, 0), trayui.IcoNavDatabases),
+		navRow(add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP|navStyle, idSetPage, ui.Button, 185, 0), trayui.IcoNavGeneral),
+		navRow(add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP|navStyle, idSetViber, ui.Button, 185, 0), trayui.IcoNavViber),
+		navRow(add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 185, 0), trayui.IcoNavMode),
 	}}
 	winapi.SetWindowText(w.ctl[idSetUIMode], "")         // applyUIMode names it
 	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it

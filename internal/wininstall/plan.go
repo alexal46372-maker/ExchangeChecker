@@ -288,15 +288,21 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	// 7c. Windows Firewall inbound UDP for SQL Browser (SSRP) replies
 	// (CHK-SETUP-13). Application = service exe (ImagePath); RemotePorts
-	// 1434; LocalPorts *; Domain|Private (no Public); Grouping
-	// "Exchange Checker". Remove-by-name-or-group then Add. Not fatal:
-	// firewall service off / COM failure → WARNING and continue.
+	// 1434; LocalPorts any; RemoteAddresses LocalSubnet; Domain|Private
+	// (no Public); Grouping "Exchange Checker". Remove-by-name-or-group
+	// then Add. Not fatal: firewall service off / COM failure → WARNING.
+	// An active Public profile → WARNING (discovery will not work there).
 	if err := sys.AddSQLBrowserFirewallRule(svcExe); err != nil {
 		warn("firewall rule (SQL Browser): %v", err)
 	} else {
 		log.Printf("firewall rule %s for %s", FirewallRuleName, svcExe)
 		if fresh {
 			undo.push(sys.RemoveSQLBrowserFirewallRule)
+		}
+		if prof, err := sys.FirewallCurrentProfiles(); err != nil {
+			warn("firewall current profiles: %v", err)
+		} else if prof&FirewallProfilePublic != 0 {
+			warn("firewall: the active network profile is Public; the SQL Browser rule covers only Domain|Private, so SQL Server discovery will not work until the network is switched to Home/Work (Private) or Domain")
 		}
 	}
 	// 8. Uninstall key — journal previous values (DisplayVersion etc.) for rollback

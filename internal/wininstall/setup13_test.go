@@ -81,6 +81,36 @@ func TestCHK_SETUP_13_PlanFirewall(t *testing.T) {
 		t.Fatal("failed Add must leave firewall unset")
 	}
 
+	// active Public profile: WARNING, install still succeeds
+	pf := newFake()
+	pf.FwProfiles = 0x4
+	plog := &memLog{}
+	res = Install(pf, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.0.0", Now: time.Now(),
+	}, plog)
+	if res.Code != ExitOK {
+		t.Fatalf("public profile must not fail install: code=%d err=%v", res.Code, res.Err)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n")+strings.Join(plog.lines, "\n"), "Public") {
+		t.Fatalf("expected Public WARNING, log=%v warnings=%v", plog.lines, res.Warnings)
+	}
+	if pf.Firewall != `C:\EC\`+config.ServiceExeName {
+		t.Fatalf("public profile: rule still added, got %q", pf.Firewall)
+	}
+	// Domain|Private only: no Public warning
+	dp := newFake()
+	dp.FwProfiles = 0x3
+	res = Install(dp, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.0.0", Now: time.Now(),
+	}, &memLog{})
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "Public") {
+			t.Fatalf("unexpected Public warning: %q", w)
+		}
+	}
+
 	// fresh rollback removes a rule that was just added
 	r := newFake()
 	r.FailAt = "WriteUninstallKey|"
@@ -112,7 +142,6 @@ func TestCHK_SETUP_13_PlanFirewall(t *testing.T) {
 		t.Fatalf("expected WARNING on firewall remove failure, log=%v", ulog.lines)
 	}
 }
-
 
 func countPrefix(steps []string, prefix string) int {
 	n := 0

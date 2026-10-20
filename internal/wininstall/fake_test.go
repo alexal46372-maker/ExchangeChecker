@@ -36,6 +36,7 @@ type recordingSystem struct {
 	TrayWarn    []string
 	Shortcut    string // target of the start-menu shortcut ("" = none)
 	Firewall    string // service exe of the SQL Browser firewall rule ("" = none)
+	FwProfiles  int32  // active firewall profiles (FirewallCurrentProfiles)
 }
 
 func newFake() *recordingSystem {
@@ -308,6 +309,15 @@ func (f *recordingSystem) RemoveSQLBrowserFirewallRule() error {
 	}
 	f.Firewall = ""
 	return nil
+}
+
+func (f *recordingSystem) FirewallCurrentProfiles() (int32, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("FirewallCurrentProfiles"); err != nil {
+		return 0, err
+	}
+	return f.FwProfiles, nil
 }
 
 func (f *recordingSystem) LongPath(p string) string {

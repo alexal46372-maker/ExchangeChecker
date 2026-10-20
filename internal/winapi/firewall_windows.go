@@ -19,12 +19,10 @@ var (
 	modoleaut32         = newSystemDLL("oleaut32.dll")
 	procSysAllocString  = modoleaut32.NewProc("SysAllocString")
 	procSysFreeString   = modoleaut32.NewProc("SysFreeString")
+	procSysStringLen    = modoleaut32.NewProc("SysStringLen")
 	procVariantClear    = modoleaut32.NewProc("VariantClear")
 	procCLSIDFromProgID = modole32.NewProc("CLSIDFromProgID") // ole32, same as com_windows.go
 )
-
-const clsctxAll = 0x17 // INPROC_SERVER|INPROC_HANDLER|LOCAL_SERVER|REMOTE_SERVER
-
 
 // Firewall rule constants (one place for port/protocol tuning; matches
 // internal/sqlcheck.SQLBrowserPort = 1434 and UDP SSRP replies).
@@ -38,13 +36,21 @@ const (
 	// FirewallLocalPorts empty = any (INetFwRule; "*" is rejected with
 	// E_INVALIDARG). Same meaning as "Any" / all local ports.
 	FirewallLocalPorts = ""
-	// FirewallRemoteAddresses is "*" (any IPv4 peer, including broadcast replies).
-	FirewallRemoteAddresses = "*"
+	// FirewallRemoteAddresses is "LocalSubnet": SSRP replies come from SQL
+	// servers on the local subnet. Edge case: a multi-homed SQL server that
+	// answers from an address on another subnet is not let through.
+	FirewallRemoteAddresses = "LocalSubnet"
 	// FirewallGrouping tags the rule for Remove-by-group on upgrade/uninstall.
 	FirewallGrouping = "Exchange Checker"
 	// FirewallProfiles is NET_FW_PROFILE2_DOMAIN|PRIVATE (Public excluded —
 	// EC Service advice: discovery is for LAN/domain, not public networks).
 	FirewallProfiles = 0x3
+	// FirewallProfilePublic is NET_FW_PROFILE2_PUBLIC.
+	FirewallProfilePublic = 0x4
+	// fwMaxRemoveLoops bounds Remove-while-Item-finds-it (duplicate names).
+	fwMaxRemoveLoops = 16
+	// hrFileNotFound is HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND): Item miss.
+	hrFileNotFound = 0x80070002
 
 	netFwActionAllow = 1
 	netFwRuleDirIn   = 1
@@ -73,12 +79,17 @@ var (
 // netfw.h order). get_Rules is the 12th INetFwPolicy2 method → slot 18
 // (HSP/netfw.h). Verified by TestCHK_SETUP_13_FirewallRoundTrip.
 const (
-	FwPolicy2GetRules = 18 // after CurrentProfileTypes…UnicastResponses put
+	// netfw.h INetFwPolicy2: get_CurrentProfileTypes is the first method
+	// after IDispatch (slot 7); then FirewallEnabled get/put (8, 9),
+	// ExcludedInterfaces (10, 11), BlockAllInboundTraffic (12, 13),
+	// NotificationsDisabled (14, 15), UnicastResponses… (16, 17), get_Rules.
+	FwPolicy2GetCurrentProfileTypes = 7
+	FwPolicy2GetRules               = 18
 
-	FwRulesGetCount  = 7
-	FwRulesAdd       = 8
-	FwRulesRemove    = 9
-	FwRulesItem      = 10 // Item([in] BSTR name, …) — NOT VARIANT
+	FwRulesGetCount   = 7
+	FwRulesAdd        = 8
+	FwRulesRemove     = 9
+	FwRulesItem       = 10 // Item([in] BSTR name, …) — NOT VARIANT
 	FwRulesGetNewEnum = 11
 
 	// IEnumVARIANT (after IUnknown): Next=3
@@ -92,32 +103,32 @@ const (
 	FwRulePutProtocol        = 16
 	FwRuleGetLocalPorts      = 17
 	FwRulePutLocalPorts      = 18
-	FwRuleGetRemotePorts      = 19
-	FwRulePutRemotePorts      = 20
-	FwRuleGetRemoteAddresses  = 23
-	FwRulePutRemoteAddresses  = 24
-	FwRuleGetDirection        = 27
-	FwRulePutDirection        = 28
-	FwRulePutInterfaceTypes   = 32
-	FwRuleGetEnabled          = 33
-	FwRulePutEnabled          = 34
-	FwRuleGetGrouping         = 35
-	FwRulePutGrouping         = 36
-	FwRuleGetProfiles         = 37
-	FwRulePutProfiles         = 38
-	FwRuleGetEdgeTraversal    = 39
-	FwRulePutEdgeTraversal    = 40
-	FwRuleGetAction           = 41
-	FwRulePutAction           = 42
+	FwRuleGetRemotePorts     = 19
+	FwRulePutRemotePorts     = 20
+	FwRuleGetRemoteAddresses = 23
+	FwRulePutRemoteAddresses = 24
+	FwRuleGetDirection       = 27
+	FwRulePutDirection       = 28
+	FwRulePutInterfaceTypes  = 32
+	FwRuleGetEnabled         = 33
+	FwRulePutEnabled         = 34
+	FwRuleGetGrouping        = 35
+	FwRulePutGrouping        = 36
+	FwRuleGetProfiles        = 37
+	FwRulePutProfiles        = 38
+	FwRuleGetEdgeTraversal   = 39
+	FwRulePutEdgeTraversal   = 40
+	FwRuleGetAction          = 41
+	FwRulePutAction          = 42
 )
 
 // variant is the Win32 VARIANT (24 bytes on amd64).
 type variant struct {
-	VT         uint16
-	Reserved1  uint16
-	Reserved2  uint16
-	Reserved3  uint16
-	Val        [16]byte
+	VT        uint16
+	Reserved1 uint16
+	Reserved2 uint16
+	Reserved3 uint16
+	Val       [16]byte
 }
 
 func allocBSTR(s string) (*uint16, error) {
@@ -157,9 +168,18 @@ func getBSTR(obj *comObject, idx int, what string) (string, error) {
 	if b == nil {
 		return "", nil
 	}
-	return syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(b))[:]), nil
+	return bstrToString(b), nil
 }
 
+// bstrToString copies a BSTR using its SysStringLen length prefix (a BSTR
+// may contain NULs and is not guaranteed to be NUL-terminated by us).
+func bstrToString(b *uint16) string {
+	n, _, _ := callProc(procSysStringLen, uintptr(unsafe.Pointer(b)))
+	if n == 0 {
+		return ""
+	}
+	return syscall.UTF16ToString(unsafe.Slice(b, int(n)))
+}
 
 // FirewallServiceName is the Windows Firewall service (MpsSvc).
 const FirewallServiceName = "MpsSvc"
@@ -172,6 +192,21 @@ func FirewallServiceRunning() (bool, error) {
 		return false, err
 	}
 	return state == ServiceRunning, nil
+}
+
+// FirewallCurrentProfiles returns INetFwPolicy2::get_CurrentProfileTypes
+// (NET_FW_PROFILE2_* bit mask of the active profiles). Call inside WithCOM.
+func FirewallCurrentProfiles() (int32, error) {
+	policy, err := newFwPolicy2()
+	if err != nil {
+		return 0, err
+	}
+	defer comCall(policy, vtRelease)
+	var prof int32
+	if err := hrErr("INetFwPolicy2.get_CurrentProfileTypes", comCall(policy, FwPolicy2GetCurrentProfileTypes, uintptr(unsafe.Pointer(&prof)))); err != nil {
+		return 0, err
+	}
+	return prof, nil
 }
 
 func clsidFromProgID(prog string) (GUID, error) {
@@ -229,8 +264,26 @@ func fwRemoveByName(rules *comObject, name string) error {
 		return err
 	}
 	defer freeBSTR(b)
-	// Remove deletes every rule with that name; missing = S_OK.
-	return hrErr("INetFwRules.Remove", comCall(rules, FwRulesRemove, uintptr(unsafe.Pointer(b))))
+	// INetFwRules::Remove deletes one rule with that name (missing = S_OK);
+	// repeat while Item still finds one, so duplicates go too (bounded).
+	for i := 0; i < fwMaxRemoveLoops; i++ {
+		_, ok, err := itemByName(rules, name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		if err := hrErr("INetFwRules.Remove", comCall(rules, FwRulesRemove, uintptr(unsafe.Pointer(b)))); err != nil {
+			return err
+		}
+	}
+	if _, ok, err := itemByName(rules, name); err != nil {
+		return err
+	} else if ok {
+		return fmt.Errorf("INetFwRules.Remove: rule %q still present after %d removals", name, fwMaxRemoveLoops)
+	}
+	return nil
 }
 
 // fwRemoveOurs deletes every rule whose Name is FirewallRuleName or whose
@@ -244,7 +297,7 @@ func fwRemoveOurs(rules *comObject) error {
 	seen := map[string]bool{}
 	var names []string
 	for _, info := range list {
-		if strings.EqualFold(info.Name, FirewallRuleName) || info.Grouping == FirewallGrouping {
+		if strings.EqualFold(info.Name, FirewallRuleName) || strings.EqualFold(info.Grouping, FirewallGrouping) {
 			if !seen[info.Name] && info.Name != "" {
 				seen[info.Name] = true
 				names = append(names, info.Name)
@@ -376,9 +429,8 @@ func RemoveSQLBrowserFirewallRule() error {
 	return fwRemoveOurs(rules)
 }
 
-
 // LookupFirewallRule returns one rule by Name via INetFwRules::Item.
-// ok is false when no such rule exists. Call inside WithCOM… actually opens its own policy; use from tests via WithCOM wrapper or standalone.
+// ok is false when no such rule exists. Call inside WithCOM.
 func LookupFirewallRule(name string) (info FirewallRuleInfo, ok bool, err error) {
 	policy, err := newFwPolicy2()
 	if err != nil {
@@ -403,8 +455,14 @@ func itemByName(rules *comObject, name string) (FirewallRuleInfo, bool, error) {
 	// INetFwRules::Item([in] BSTR name, [out,retval] INetFwRule**) — BSTR, not VARIANT.
 	var rule *comObject
 	hr := comCall(rules, FwRulesItem, uintptr(unsafe.Pointer(b)), uintptr(unsafe.Pointer(&rule)))
-	if int32(hr) < 0 || rule == nil {
+	if uint32(hr) == hrFileNotFound {
 		return info, false, nil
+	}
+	if err := hrErr("INetFwRules.Item", hr); err != nil {
+		return info, false, err
+	}
+	if rule == nil {
+		return info, false, fmt.Errorf("INetFwRules.Item: S_OK with nil rule")
 	}
 	info, err = readFwRule(rule)
 	comCall(rule, vtRelease)
@@ -440,6 +498,9 @@ func listFwRules(rules *comObject) ([]FirewallRuleInfo, error) {
 		var v variant
 		var fetched uint32
 		hr := comCall(enumer, enumVariantNext, 1, uintptr(unsafe.Pointer(&v)), uintptr(unsafe.Pointer(&fetched)))
+		if int32(hr) < 0 {
+			return nil, hrErr("IEnumVARIANT.Next", hr)
+		}
 		if fetched == 0 {
 			break
 		}
@@ -457,13 +518,12 @@ func listFwRules(rules *comObject) ([]FirewallRuleInfo, error) {
 			}
 		}
 		callProc(procVariantClear, uintptr(unsafe.Pointer(&v)))
-		if hr != 0 { // S_FALSE (1) or error — stop after processing this element
+		if hr != 0 { // S_FALSE: last element processed
 			break
 		}
 	}
 	return out, nil
 }
-
 
 // ListFirewallRulesNamed returns every rule whose Name equals name
 // (case-sensitive, as stored). Call inside WithCOM.

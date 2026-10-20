@@ -493,6 +493,16 @@ func (winSystem) AddSQLBrowserFirewallRule(serviceExe string) error {
 	})
 }
 
+func (winSystem) FirewallCurrentProfiles() (int32, error) {
+	var p int32
+	err := winapi.WithCOM(func() error {
+		var e error
+		p, e = winapi.FirewallCurrentProfiles()
+		return e
+	})
+	return p, err
+}
+
 func (winSystem) RemoveSQLBrowserFirewallRule() error {
 	return winapi.WithCOM(func() error {
 		return winapi.RemoveSQLBrowserFirewallRule()

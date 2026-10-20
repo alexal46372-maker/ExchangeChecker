@@ -83,7 +83,6 @@ func TestCHK_SVC_01_RealSCM(t *testing.T) {
 	}
 }
 
-
 // countSQLBrowserFirewallRules returns how many inbound rules share the
 // CHK-SETUP-13 name (via the same COM path the installer uses).
 func countSQLBrowserFirewallRules(t *testing.T) []winapi.FirewallRuleInfo {
@@ -127,6 +126,9 @@ func checkSQLBrowserFirewall(t *testing.T, wantApp string, wantCount int) {
 	if r.LocalPorts != "" && r.LocalPorts != "*" {
 		t.Fatalf("firewall localPorts %q (want empty/any)", r.LocalPorts)
 	}
+	if !strings.EqualFold(r.RemoteAddresses, winapi.FirewallRemoteAddresses) {
+		t.Fatalf("firewall remoteAddresses %q want %q", r.RemoteAddresses, winapi.FirewallRemoteAddresses)
+	}
 	if r.Grouping != winapi.FirewallGrouping {
 		t.Fatalf("firewall grouping %q", r.Grouping)
 	}
@@ -136,8 +138,8 @@ func checkSQLBrowserFirewall(t *testing.T, wantApp string, wantCount int) {
 	if r.Direction != 1 || r.Action != 1 || !r.Enabled || r.EdgeTraversal {
 		t.Fatalf("firewall dir/action/enabled/edge %d/%d/%v/%v", r.Direction, r.Action, r.Enabled, r.EdgeTraversal)
 	}
-	t.Logf("firewall ok: count=%d name=%q app=%s UDP remote=%s local=%s profiles=%#x grouping=%q enabled=%v",
-		len(list), r.Name, r.Application, r.RemotePorts, r.LocalPorts, uint32(r.Profiles), r.Grouping, r.Enabled)
+	t.Logf("firewall ok: count=%d name=%q app=%s UDP remote=%s local=%s addrs=%s profiles=%#x grouping=%q enabled=%v",
+		len(list), r.Name, r.Application, r.RemotePorts, r.LocalPorts, r.RemoteAddresses, uint32(r.Profiles), r.Grouping, r.Enabled)
 }
 
 // TestCHK_SETUP_12_E2E — gated EC_SETUP_E2E=1; needs EC_SETUP_EXE.

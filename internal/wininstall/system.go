@@ -90,6 +90,9 @@ type System interface {
 	// RemoveSQLBrowserFirewallRule removes every rule named
 	// "Exchange Checker (SQL Browser)" (missing = ok).
 	RemoveSQLBrowserFirewallRule() error
+	// FirewallCurrentProfiles returns the active firewall profile mask
+	// (NET_FW_PROFILE2_*: Domain=1, Private=2, Public=4).
+	FirewallCurrentProfiles() (int32, error)
 	// LongPath expands 8.3 components (identity on non-Windows / fakes).
 	LongPath(p string) string
 	DeleteService(name string) error

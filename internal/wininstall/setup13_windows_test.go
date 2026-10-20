@@ -35,6 +35,14 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		if err := winapi.AddSQLBrowserFirewallRule(app); err != nil {
 			return err
 		}
+		prof, err := winapi.FirewallCurrentProfiles()
+		if err != nil {
+			return err
+		}
+		if prof == 0 || prof&^0x7 != 0 {
+			return fmt.Errorf("current profiles %#x", uint32(prof))
+		}
+		t.Logf("firewall current profiles %#x", uint32(prof))
 		list, err := winapi.ListFirewallRulesNamed(name)
 		if err != nil {
 			return err
@@ -58,7 +66,7 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		if r.LocalPorts != "" && r.LocalPorts != "*" {
 			return fmt.Errorf("localPorts %q (want empty/any)", r.LocalPorts)
 		}
-		if r.RemoteAddresses != winapi.FirewallRemoteAddresses && r.RemoteAddresses != "*" {
+		if !strings.EqualFold(r.RemoteAddresses, winapi.FirewallRemoteAddresses) {
 			return fmt.Errorf("remoteAddresses %q", r.RemoteAddresses)
 		}
 		if r.Grouping != winapi.FirewallGrouping {
@@ -104,7 +112,7 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("firewall COM: %v", err)
 	}
-	if winapi.FwPolicy2GetRules != 18 || winapi.FwRulesAdd != 8 || winapi.FwRulesRemove != 9 ||
+	if winapi.FwPolicy2GetCurrentProfileTypes != 7 || winapi.FwPolicy2GetRules != 18 || winapi.FwRulesAdd != 8 || winapi.FwRulesRemove != 9 ||
 		winapi.FwRulePutName != 8 || winapi.FwRulePutApplicationName != 12 ||
 		winapi.FwRulePutProtocol != 16 || winapi.FwRulePutRemotePorts != 20 ||
 		winapi.FwRulePutDirection != 28 || winapi.FwRulePutEnabled != 34 ||
@@ -119,10 +127,13 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		t.Fatal("GUIDs changed")
 	}
 	if winapi.FirewallProtocolUDP != 17 || winapi.FirewallRemotePorts != "1434" ||
-		winapi.FirewallLocalPorts != "" || winapi.FirewallRemoteAddresses != "*" ||
+		winapi.FirewallLocalPorts != "" || winapi.FirewallRemoteAddresses != "LocalSubnet" ||
 		winapi.FirewallGrouping != "Exchange Checker" || winapi.FirewallProfiles != 0x3 ||
 		winapi.FirewallRuleName != "Exchange Checker (SQL Browser)" {
 		t.Fatal("firewall constants changed")
+	}
+	if FirewallProfilePublic != winapi.FirewallProfilePublic {
+		t.Fatal("wininstall.FirewallProfilePublic != winapi")
 	}
 	if FirewallRuleName != winapi.FirewallRuleName {
 		t.Fatalf("wininstall.FirewallRuleName %q != winapi", FirewallRuleName)

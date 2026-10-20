@@ -54,19 +54,23 @@ const (
 var (
 	// CLSID_NetFwPolicy2 {E2B3C97F-6AE1-41AC-817A-F6F92166D7DD}
 	CLSID_NetFwPolicy2 = GUID{0xE2B3C97F, 0x6AE1, 0x41AC, [8]byte{0x81, 0x7A, 0xF6, 0xF9, 0x21, 0x66, 0xD7, 0xDD}}
-	// IID_INetFwPolicy2 {98325047-C671-4174-8E67-CFC62AF2E0DB}
-	IID_INetFwPolicy2 = GUID{0x98325047, 0xC671, 0x4174, [8]byte{0x8E, 0x67, 0xCF, 0xC6, 0x2A, 0xF2, 0xE0, 0xDB}}
+	// IID_INetFwPolicy2 {98325047-C671-4174-8D81-DEFCD3F03186} (netfw.h; NOT the
+	// commonly mis-copied 8E67-CFC62AF2E0DB which yields E_NOINTERFACE).
+	IID_INetFwPolicy2 = GUID{0x98325047, 0xC671, 0x4174, [8]byte{0x8D, 0x81, 0xDE, 0xFC, 0xD3, 0xF0, 0x31, 0x86}}
 	// CLSID_NetFwRule {2C5BC43E-3369-4C33-AB0C-BE9469677AF4}
 	CLSID_NetFwRule = GUID{0x2C5BC43E, 0x3369, 0x4C33, [8]byte{0xAB, 0x0C, 0xBE, 0x94, 0x69, 0x67, 0x7A, 0xF4}}
 	// IID_INetFwRule {AF230D27-BABA-4E42-ACED-F524F22CFCE2}
 	IID_INetFwRule = GUID{0xAF230D27, 0xBABA, 0x4E42, [8]byte{0xAC, 0xED, 0xF5, 0x24, 0xF2, 0x2C, 0xFC, 0xE2}}
+	// IID_INetFwRules {9C4C6277-5027-441E-AFAE-CA1F542DA009}
+	IID_INetFwRules = GUID{0x9C4C6277, 0x5027, 0x441E, [8]byte{0xAF, 0xAE, 0xCA, 0x1F, 0x54, 0x2D, 0xA0, 0x09}}
 )
 
 // INetFwPolicy2 / INetFwRules / INetFwRule vtable slots (IDispatch-based;
-// IUnknown 0–2, IDispatch 3–6, then interface methods). Verified by
-// TestCHK_SETUP_13_FirewallRoundTrip on Windows.
+// IUnknown 0–2, IDispatch 3–6 = 7 base slots, then interface methods in
+// netfw.h order). get_Rules is the 12th INetFwPolicy2 method → slot 18
+// (HSP/netfw.h). Verified by TestCHK_SETUP_13_FirewallRoundTrip.
 const (
-	FwPolicy2GetRules = 18
+	FwPolicy2GetRules = 18 // after CurrentProfileTypes…UnicastResponses put
 
 	FwRulesGetCount = 7
 	FwRulesAdd      = 8
@@ -149,6 +153,20 @@ func getBSTR(obj *comObject, idx int, what string) (string, error) {
 	return syscall.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(b))[:]), nil
 }
 
+
+// FirewallServiceName is the Windows Firewall service (MpsSvc).
+const FirewallServiceName = "MpsSvc"
+
+// FirewallServiceRunning reports whether MpsSvc is SERVICE_RUNNING.
+// When false, COM INetFwPolicy2 calls typically fail; tests may skip.
+func FirewallServiceRunning() (bool, error) {
+	state, _, err := ServiceProcessID(FirewallServiceName)
+	if err != nil {
+		return false, err
+	}
+	return state == ServiceRunning, nil
+}
+
 func clsidFromProgID(prog string) (GUID, error) {
 	var g GUID
 	hr, _, _ := callProc(procCLSIDFromProgID, uintptr(unsafe.Pointer(UTF16Ptr(prog))), uintptr(unsafe.Pointer(&g)))
@@ -190,8 +208,16 @@ func newFwRule() (*comObject, error) {
 }
 
 func fwRules(policy *comObject) (*comObject, error) {
+	var raw *comObject
+	if err := hrErr("INetFwPolicy2.get_Rules", comCall(policy, FwPolicy2GetRules, uintptr(unsafe.Pointer(&raw)))); err != nil {
+		return nil, err
+	}
+	// get_Rules returns INetFwRules*; QI to the documented IID to catch a
+	// wrong interface pointer early (same pattern as IPersistFile).
 	var rules *comObject
-	if err := hrErr("INetFwPolicy2.get_Rules", comCall(policy, FwPolicy2GetRules, uintptr(unsafe.Pointer(&rules)))); err != nil {
+	hr := comCall(raw, vtQueryInterface, uintptr(unsafe.Pointer(&IID_INetFwRules)), uintptr(unsafe.Pointer(&rules)))
+	comCall(raw, vtRelease)
+	if err := hrErr("QueryInterface(INetFwRules)", hr); err != nil {
 		return nil, err
 	}
 	return rules, nil

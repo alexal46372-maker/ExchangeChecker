@@ -16,6 +16,13 @@ import (
 // read it back (name, app, protocol UDP, remote 1434, inbound allow,
 // enabled, all profiles), add again (still exactly one), remove (zero).
 func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
+	running, err := winapi.FirewallServiceRunning()
+	if err != nil {
+		t.Fatalf("query MpsSvc: %v", err)
+	}
+	if !running {
+		t.Skip("MpsSvc (Windows Firewall) is not SERVICE_RUNNING; cannot exercise INetFwPolicy2")
+	}
 	win, err := winapi.WindowsDirectory()
 	if err != nil {
 		t.Fatal(err)
@@ -96,9 +103,7 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		// Firewall service off / access denied → soft skip (WARNING path)
-		t.Logf("firewall COM unavailable (WARNING path): %v", err)
-		t.Skip(err)
+		t.Fatalf("firewall COM: %v", err)
 	}
 	if winapi.FwPolicy2GetRules != 18 || winapi.FwRulesAdd != 8 || winapi.FwRulesRemove != 9 ||
 		winapi.FwRulePutName != 8 || winapi.FwRulePutApplicationName != 12 ||
@@ -107,7 +112,11 @@ func TestCHK_SETUP_13_FirewallRoundTrip(t *testing.T) {
 		winapi.FwRulePutProfiles != 38 || winapi.FwRulePutAction != 42 {
 		t.Fatal("vtable indices changed")
 	}
-	if winapi.CLSID_NetFwPolicy2.Data1 != 0xE2B3C97F || winapi.IID_INetFwRule.Data1 != 0xAF230D27 {
+	// Official netfw.h GUIDs (IID_INetFwPolicy2 must be 8D81-DEFCD3F03186).
+	if winapi.CLSID_NetFwPolicy2.Data1 != 0xE2B3C97F ||
+		winapi.IID_INetFwPolicy2.Data4 != [8]byte{0x8D, 0x81, 0xDE, 0xFC, 0xD3, 0xF0, 0x31, 0x86} ||
+		winapi.IID_INetFwRule.Data1 != 0xAF230D27 ||
+		winapi.IID_INetFwRules.Data1 != 0x9C4C6277 {
 		t.Fatal("GUIDs changed")
 	}
 	if winapi.FirewallProtocolUDP != 17 || winapi.FirewallRemotePorts != "1434" ||

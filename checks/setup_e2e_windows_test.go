@@ -86,7 +86,7 @@ func TestCHK_SVC_01_RealSCM(t *testing.T) {
 
 // countSQLBrowserFirewallRules returns how many inbound rules share the
 // CHK-SETUP-13 name (via the same COM path the installer uses).
-func countSQLBrowserFirewallRules(t *testing.T) ([]winapi.FirewallRuleInfo, error) {
+func countSQLBrowserFirewallRules(t *testing.T) []winapi.FirewallRuleInfo {
 	t.Helper()
 	var list []winapi.FirewallRuleInfo
 	err := winapi.WithCOM(func() error {
@@ -94,22 +94,27 @@ func countSQLBrowserFirewallRules(t *testing.T) ([]winapi.FirewallRuleInfo, erro
 		list, e = winapi.ListFirewallRulesNamed(winapi.FirewallRuleName)
 		return e
 	})
-	return list, err
+	if err != nil {
+		t.Fatalf("list firewall rules: %v", err)
+	}
+	return list
 }
 
 func checkSQLBrowserFirewall(t *testing.T, wantApp string, wantCount int) {
 	t.Helper()
-	list, err := countSQLBrowserFirewallRules(t)
+	running, err := winapi.FirewallServiceRunning()
 	if err != nil {
-		// Same WARNING path as the installer: MpsSvc off / COM unavailable.
-		// Do not fail CHK-SETUP-12; RoundTrip covers the COM path when present.
-		t.Logf("firewall COM unavailable (skip CHK-SETUP-13 e2e asserts): %v", err)
-		return
+		t.Fatalf("query MpsSvc: %v", err)
 	}
+	if !running {
+		t.Skip("MpsSvc (Windows Firewall) is not SERVICE_RUNNING; skipping CHK-SETUP-13 e2e asserts")
+	}
+	list := countSQLBrowserFirewallRules(t)
 	if len(list) != wantCount {
 		t.Fatalf("firewall rules named %q: got %d want %d", winapi.FirewallRuleName, len(list), wantCount)
 	}
 	if wantCount == 0 {
+		t.Logf("firewall ok: zero rules named %q after uninstall", winapi.FirewallRuleName)
 		return
 	}
 	r := list[0]
@@ -131,7 +136,8 @@ func checkSQLBrowserFirewall(t *testing.T, wantApp string, wantCount int) {
 	if r.Direction != 1 || r.Action != 1 || !r.Enabled || r.EdgeTraversal {
 		t.Fatalf("firewall dir/action/enabled/edge %d/%d/%v/%v", r.Direction, r.Action, r.Enabled, r.EdgeTraversal)
 	}
-	t.Logf("firewall ok: %s -> %s UDP remote %s profiles=%#x grouping=%q", r.Name, r.Application, r.RemotePorts, uint32(r.Profiles), r.Grouping)
+	t.Logf("firewall ok: count=%d name=%q app=%s UDP remote=%s local=%s profiles=%#x grouping=%q enabled=%v",
+		len(list), r.Name, r.Application, r.RemotePorts, r.LocalPorts, uint32(r.Profiles), r.Grouping, r.Enabled)
 }
 
 // TestCHK_SETUP_12_E2E — gated EC_SETUP_E2E=1; needs EC_SETUP_EXE.

@@ -57,11 +57,12 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 // mode (rate_limited + retryAfterMs): broadcast / auto 15 s, local 3 s,
 // subnet 15 s, host 3 s (+ any host 1 s); a running browse: busy +
 // retryAfterMs. Subnet: the whole request ends after
-// model.IPCSQLBrowseSubnetTimeout.
+// timeoutMs (model.ClampSQLBrowseTimeoutMsFor: subnet default and max
+// 15 s) plus model.IPCSQLBrowseGrace.
 func (m *Monitor) SQLBrowseProgress(ctx context.Context, req model.IPCRequest, progress func(model.SQLBrowseProgress)) (model.SQLBrowseResult, error) {
 	var res model.SQLBrowseResult
 	br := model.SQLBrowseRequest{Host: strings.TrimSpace(req.Host), Instance: strings.TrimSpace(req.Instance),
-		TimeoutMs: model.ClampSQLBrowseTimeoutMs(req.TimeoutMs), Limit: req.Limit,
+		TimeoutMs: model.ClampSQLBrowseTimeoutMsFor(req.Mode, req.TimeoutMs), Limit: req.Limit,
 		Mode: req.Mode, Port: req.Port, CIDR: strings.TrimSpace(req.CIDR)}
 	if br.Host != "" {
 		if err := model.ValidateSQLServerAddr(br.Host); err != nil {
@@ -104,10 +105,9 @@ func (m *Monitor) SQLBrowseProgress(ctx context.Context, req model.IPCRequest, p
 		return res, &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgBrowseRateLimited,
 			Message: "monitor: sql_browse rate limited, retry after " + strconv.FormatInt(ms, 10) + " ms", RetryAfterMs: ms}
 	}
+	// subnet: timeoutMs default / max 15 s (ClampSQLBrowseTimeoutMsFor,
+	// only on an explicit mode "subnet"; "" = host or broadcast)
 	total := time.Duration(br.TimeoutMs)*time.Millisecond + model.IPCSQLBrowseGrace
-	if mode == model.SQLBrowseSubnet {
-		total = model.IPCSQLBrowseSubnetTimeout
-	}
 	if x.browsing {
 		ms := int64(x.browseEnd.Sub(now) / time.Millisecond)
 		if ms < 1 {

@@ -29,8 +29,6 @@ const (
 	// (its remaining time).
 	SQLBrowseLocalInterval  = 3 * time.Second
 	SQLBrowseSubnetInterval = 15 * time.Second
-	// IPCSQLBrowseSubnetTimeout: the whole subnet browse (IPC).
-	IPCSQLBrowseSubnetTimeout = 15 * time.Second
 	// IPCSQLTestStepsTimeout: the whole sql_test_steps request.
 	IPCSQLTestStepsTimeout = 60 * time.Second
 	// SQLBrowseProgressEvery throttles sql_browse_progress pushes (the

@@ -54,7 +54,7 @@ func TestCHK_IPC_12_SQLBrowseModes(t *testing.T) {
 	if err != nil || res.Mode != "subnet" || len(res.SendErrors) != model.MaxSQLBrowseSendErrors || res.SendErrorCount != 20 || len(events) != 1 {
 		t.Fatalf("subnet %+v %v %v", res, err, events)
 	}
-	if got[0].CIDR != "192.168.1.0/24" || got[0].Port != 1444 || deadlines[0] < 14*time.Second || deadlines[0] > 15*time.Second {
+	if got[0].CIDR != "192.168.1.0/24" || got[0].Port != 1444 || got[0].TimeoutMs != model.DefaultSQLSubnetTimeoutMs || deadlines[0] < 16*time.Second || deadlines[0] > 17*time.Second {
 		t.Errorf("subnet req %+v deadline %v", got[0], deadlines[0])
 	}
 	limited := func(what string, err error, ms int64) {
@@ -64,8 +64,12 @@ func TestCHK_IPC_12_SQLBrowseModes(t *testing.T) {
 			t.Errorf("%s: %#v", what, err)
 		}
 	}
-	_, err = m.SQLBrowseProgress(ctx, model.IPCRequest{Mode: "subnet"}, nil)
+	_, err = m.SQLBrowseProgress(ctx, model.IPCRequest{Mode: "subnet", TimeoutMs: 60000}, nil)
 	limited("subnet again", err, 15000)
+	// timeoutMs clamped per mode: subnet up to 15 s, others 5 s
+	if model.ClampSQLBrowseTimeoutMsFor("subnet", 60000) != 15000 || model.ClampSQLBrowseTimeoutMsFor("", 60000) != model.IPCSQLBrowseMaxTimeoutMs {
+		t.Error("clamp")
+	}
 	if _, err = m.SQLBrowseProgress(ctx, model.IPCRequest{Mode: "local"}, nil); err != nil {
 		t.Fatal("local after subnet:", err)
 	}
@@ -181,3 +185,33 @@ func nil2(f func(model.SQLCheckStep)) func(model.SQLCheckStep) { return f }
 type logFunc func(string, ...interface{})
 
 func (f logFunc) Printf(format string, a ...interface{}) { f(format, a...) }
+
+// TestCHK_IPC_12_BrowsePassThrough — the EC SQL fields reach the reply
+// unchanged (local.browserState "disabled", tcpProbe.narrowed, advice
+// browser_disabled / subnet_narrowed); mode "" = host (host given) or
+// broadcast, never subnet (cidr without mode:"subnet" is refused).
+func TestCHK_IPC_12_BrowsePassThrough(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	m := New(baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings()}), clk))
+	var modes []string
+	m.explorer.BrowseWith = func(ctx context.Context, req model.SQLBrowseRequest, opt sqlcheck.BrowseOptions) (model.SQLBrowseResult, error) {
+		modes = append(modes, req.EffectiveMode())
+		return model.SQLBrowseResult{Mode: req.EffectiveMode(), Local: &model.SQLBrowseLocalInfo{Supported: true, BrowserState: model.SQLBrowserDisabled},
+			TCPProbe: &model.SQLBrowseTCPInfo{Port: 1433, Narrowed: true},
+			Advice:   []string{model.MsgSQLBrowseAdviceBrowserDisabled, model.MsgSQLBrowseAdviceSubnetNarrowed}}, nil
+	}
+	ctx := context.Background()
+	res, err := m.SQLBrowseProgress(ctx, model.IPCRequest{}, nil)
+	if err != nil || res.Local.BrowserState != "disabled" || !res.TCPProbe.Narrowed || len(res.Advice) != 2 ||
+		res.Advice[0] != "sql.browse_advice_browser_disabled" || res.Advice[1] != "sql.browse_advice_subnet_narrowed" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if _, err = m.SQLBrowseProgress(ctx, model.IPCRequest{Host: "srv"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.SQLBrowseProgress(ctx, model.IPCRequest{CIDR: "192.168.1.0/24"}, nil)
+	wizBadRequest(t, "cidr without subnet", err, "cidr", model.ValSQLBrowseCIDR)
+	if len(modes) != 2 || modes[0] != "broadcast" || modes[1] != "host" {
+		t.Errorf("modes %v", modes)
+	}
+}

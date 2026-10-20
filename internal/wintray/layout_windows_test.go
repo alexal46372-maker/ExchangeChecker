@@ -5,6 +5,8 @@ package wintray
 import (
 	"fmt"
 	"runtime"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,6 +73,22 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 	if len(cs) == 0 {
 		t.Errorf("%s: no visible controls", what)
 	}
+	// phase 11 (CHK-TRAY-47): never a horizontal scroll bar; a top-level
+	// window does not scroll at all (the button bar is pinned and visible,
+	// only a scroll host child scrolls, vertically)
+	if st := winapi.WindowStyle(hwnd); st&winapi.WS_HSCROLL != 0 {
+		t.Errorf("%s: horizontal scroll bar", what)
+	} else if !strings.HasSuffix(what, "(page)") && st&winapi.WS_VSCROLL != 0 {
+		t.Errorf("%s: the window scrolls (the bar must stay visible)", what)
+	}
+	if ext, ok := hostExtent[hwnd]; ok && ext[0] > cr.Right {
+		t.Errorf("%s: content %d px wider than the client %d px", what, ext[0], cr.Right)
+	}
+	// no vertical hole larger than the grid step (16 units): the bands
+	// covered by the controls leave no gap between the first and the last
+	if gap := maxGap(cs); gap > px(16) {
+		t.Errorf("%s: a vertical gap of %d px (> %d)", what, gap, px(16))
+	}
 	for _, c := range cs {
 		if !contains(bounds, c.r) {
 			t.Errorf("%s: %v outside the window %+v", what, c, bounds)
@@ -130,6 +148,27 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 			t.Errorf("%s: text does not fit %v", what, c)
 		}
 	}
+}
+
+// maxGap is the largest vertical band between the topmost and the
+// bottommost control that no control covers.
+func maxGap(cs []laidCtl) int32 {
+	type band struct{ a, b int32 }
+	bs := make([]band, 0, len(cs))
+	for _, c := range cs {
+		bs = append(bs, band{c.r.Top, c.r.Bottom})
+	}
+	sort.Slice(bs, func(i, j int) bool { return bs[i].a < bs[j].a })
+	gap, end := int32(0), int32(0)
+	for i, b := range bs {
+		if i > 0 && b.a-end > gap {
+			gap = b.a - end
+		}
+		if i == 0 || b.b > end {
+			end = b.b
+		}
+	}
+	return gap
 }
 
 // TestCHK_TRAY_42_Font — Segoe UI 9 pt scaled to the DPI.

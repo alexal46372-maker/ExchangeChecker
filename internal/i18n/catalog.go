@@ -270,6 +270,17 @@ const (
 	KeySetPortCue         = "set.port_cue"
 	KeySetThreshCue       = "set.thresh_cue"
 	KeySetTimeoutCue      = "set.timeout_cue"
+	KeyCueName            = "cue.name"
+	KeyCueHost            = "cue.host"
+	KeyCueInstance        = "cue.instance"
+	KeyCueDatabase        = "cue.database"
+	KeyCueLogin           = "cue.login"
+	KeyCuePassword        = "cue.password"
+	KeyCueWizServer       = "cue.wiz_server"
+	KeyCueDiscTime        = "cue.disc_time"
+	KeyCueDiscSchema      = "cue.disc_schema"
+	KeyCueDiscColumn      = "cue.disc_column"
+	KeyCueVbToken         = "cue.vb_token"
 	KeyMenuService        = "menu.service"
 	KeyMenuSvcStart       = "menu.svc_start"
 	KeyMenuSvcStop        = "menu.svc_stop"
@@ -1057,6 +1068,17 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetPortCue:          {"1433 или пусто для SQL Browser", "1433 or empty for SQL Browser"},
 	KeySetThreshCue:        {"как в общих настройках", "as in the general settings"},
 	KeySetTimeoutCue:       {"по умолчанию %d", "default %d"},
+	KeyCueName:             {"например, Склад", "e.g. Warehouse"},
+	KeyCueHost:             {"имя или IP-адрес сервера", "server name or IP address"},
+	KeyCueInstance:         {"пусто — экземпляр по умолчанию", "empty = the default instance"},
+	KeyCueDatabase:         {"имя базы 1С на сервере", "the 1C database name on the server"},
+	KeyCueLogin:            {"SQL-логин, например ec_monitor", "SQL login, e.g. ec_monitor"},
+	KeyCuePassword:         {"пароль SQL-логина", "SQL login password"},
+	KeyCueWizServer:        {"имя, IP или сервер\\экземпляр", "name, IP or server\\instance"},
+	KeyCueDiscTime:         {"ДД.ММ.ГГГГ ЧЧ:ММ", "DD.MM.YYYY HH:MM"},
+	KeyCueDiscSchema:       {"dbo", "dbo"},
+	KeyCueDiscColumn:       {"из кандидата или вручную", "from the candidate or by hand"},
+	KeyCueVbToken:          {"токен бота из Viber Admin Panel", "the bot token from the Viber Admin Panel"},
 	KeyMenuService:         {"Служба", "Service"},
 	KeyMenuSvcStart:        {"Запустить", "Start"},
 	KeyMenuSvcStop:         {"Остановить", "Stop"},

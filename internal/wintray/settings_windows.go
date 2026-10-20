@@ -598,6 +598,16 @@ func (w *settingsWindow) build() {
 	}
 	// grey hints of empty boxes (phase 8, CHK-TRAY-12)
 	w.setCue(idSetPort, w.t(i18n.KeySetPortCue))
+	// phase 11 (PLAN §12 p.50): every edit box shows its cue
+	w.setCue(idSetName, w.t(i18n.KeyCueName))
+	w.setCue(idSetHost, w.t(i18n.KeyCueHost))
+	w.setCue(idSetInstance, w.t(i18n.KeyCueInstance))
+	w.setCue(idSetDatabase, w.t(i18n.KeyCueDatabase))
+	w.setCue(idSetLogin, w.t(i18n.KeyCueLogin))
+	w.setCue(idSetPassword, w.t(i18n.KeyCuePassword))
+	if w.ctl[idVbToken] != 0 {
+		w.setCue(idVbToken, w.t(i18n.KeyCueVbToken))
+	}
 	w.setCue(idSetWarn, w.t(i18n.KeySetThreshCue))
 	w.setCue(idSetError, w.t(i18n.KeySetThreshCue))
 	w.setCue(idSetConnTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultConnectTimeoutSec))

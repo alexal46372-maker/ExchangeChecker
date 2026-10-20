@@ -254,6 +254,11 @@ func (wd *wizardDialog) build() {
 	}
 	winapi.SendMessage(wd.ctl[idWizAuth], winapi.CB_SETCURSEL, 0, 0)
 	winapi.SendMessage(wd.ctl[idWizEncrypt], winapi.CB_SETCURSEL, uintptr(traysettings.EncryptIndex(wd.z.Encrypt)), 0)
+	// cues of the edit boxes (phase 11, PLAN §12 p.50)
+	winapi.SetCueBanner(wd.ctl[idWizServer], wd.t(i18n.KeyCueWizServer))
+	winapi.SetCueBanner(wd.ctl[idWizPort], wd.t(i18n.KeySetPortCue))
+	winapi.SetCueBanner(wd.ctl[idWizLogin], wd.t(i18n.KeyCueLogin))
+	winapi.SetCueBanner(wd.ctl[idWizPassword], wd.t(i18n.KeyCuePassword))
 	wd.tips = newTooltips(wd.hwnd)
 	for id, h := range wd.ctl {
 		if key, ok := wizardTips[id]; ok {

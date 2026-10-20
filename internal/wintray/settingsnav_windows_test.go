@@ -82,3 +82,30 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 		app.Exit()
 	}
 }
+
+// TestCHK_TRAY_47_Cues — every single-line edit box of the databases
+// page and the Viber token shows a cue (PLAN §12 p.50), RU and EN.
+func TestCHK_TRAY_47_Cues(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	for _, lang := range []string{i18n.RU, i18n.EN} {
+		svc := newViberCfg()
+		app := startCfgApp(t, svc.cfgService, true, nil)
+		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []int32{idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetPassword,
+			idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idVbToken} {
+			if w.cues[id] == "" {
+				t.Errorf("%s: control %d without a cue", lang, id)
+			}
+		}
+		if w.cues[idSetName] != i18n.T(i18n.KeyCueName, lang) {
+			t.Errorf("%s: name cue %q", lang, w.cues[idSetName])
+		}
+		w.close()
+		app.Exit()
+	}
+}

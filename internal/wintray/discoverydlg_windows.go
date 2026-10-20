@@ -310,6 +310,16 @@ func (dd *discoveryDialog) build() {
 	for _, s := range traysettings.TemplateTitles(dd.w.cfg.lang) {
 		winapi.SendMessageString(dd.ctl[idDiscTemplate], winapi.CB_ADDSTRING, 0, s)
 	}
+	// cues of the edit boxes (phase 11, PLAN §12 p.50)
+	winapi.SetCueBanner(dd.ctl[idDiscTime], dd.t(i18n.KeyCueDiscTime))
+	winapi.SetCueBanner(dd.ctl[idDiscTol], fmt.Sprintf(dd.t(i18n.KeySetTimeoutCue), 1440))
+	for _, e := range discMapEdits {
+		cue := i18n.KeyCueDiscColumn
+		if e.id == idDiscSchema {
+			cue = i18n.KeyCueDiscSchema
+		}
+		winapi.SetCueBanner(dd.ctl[e.id], dd.t(cue))
+	}
 	dd.tips = newTooltips(dd.hwnd)
 	for id, h := range dd.ctl {
 		if key, ok := discoveryTips[id]; ok {

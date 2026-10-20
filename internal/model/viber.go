@@ -78,6 +78,10 @@ const (
 	MsgViberNetwork         = "notify.viber_network"
 	MsgViberTLS             = "notify.viber_tls"
 	MsgViberFailed          = "notify.viber_failed"
+	// MsgViberCanceled / MsgViberTimeout: the request ended (cancel /
+	// deadline) before this recipient was sent to (phase 11, CHK-IPC-11).
+	MsgViberCanceled = "notify.viber_canceled"
+	MsgViberTimeout  = "notify.viber_timeout"
 	MsgViberInvalid         = "notify.viber_invalid"
 	// texts of the messages themselves
 	MsgViberNotChecked   = "notify.not_checked"   // summary: profile not polled yet

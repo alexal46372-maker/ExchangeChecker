@@ -20,7 +20,8 @@ func (a alarmTester) AlarmTest(ctx context.Context, e model.AlertEvent, viber bo
 		if a.lang == model.LangEN {
 			text = "Test"
 		}
-		res.Viber, _ = a.viber.TestMessage(ctx, "ExchangeChecker: "+text)
+		vr, key := a.viber.TestMessage(ctx, "ExchangeChecker: "+text)
+		res.Viber = &model.AlarmTestViber{ViberTestResult: *vr, ErrorKey: key}
 	}
 	return res, nil
 }

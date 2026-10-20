@@ -588,6 +588,17 @@ func (n *Notifier) ViberTest(ctx context.Context, recipientID, token string) (mo
 	return res, nil
 }
 
+// ctxErrorKey: notify.viber_timeout / notify.viber_canceled once ctx ended.
+func ctxErrorKey(ctx context.Context) string {
+	switch ctx.Err() {
+	case nil:
+		return ""
+	case context.DeadlineExceeded:
+		return model.MsgViberTimeout
+	}
+	return model.MsgViberCanceled
+}
+
 // TestMessage sends text to every saved recipient with the saved token,
 // ignoring enabled and the schedule (alarm_test, phase 11, CHK-IPC-11;
 // rate-limited by the caller). errorKey: notify.viber_no_token /
@@ -608,15 +619,17 @@ func (n *Notifier) TestMessage(ctx context.Context, text string) (res *model.Vib
 	}
 	out := &model.ViberTestResult{OK: true, Results: []model.ViberTestItem{}}
 	for _, r := range recv {
-		if ctx.Err() != nil {
-			break
+		key := ctxErrorKey(ctx)
+		if key == "" {
+			key, _, _ = n.send(ctx, token, model.ViberSenderName, r, text)
 		}
-		key, _, _ := n.send(ctx, token, model.ViberSenderName, r, text)
+		// after a cancel / timeout every remaining recipient is listed
+		// with notify.viber_canceled / notify.viber_timeout
+		if k := ctxErrorKey(ctx); k != "" && key != "" {
+			key = k
+		}
 		out.Results = append(out.Results, model.ViberTestItem{ID: r, OK: key == "", ErrorKey: key})
 		out.OK = out.OK && key == ""
-	}
-	if len(out.Results) < len(recv) {
-		out.OK = false
 	}
 	return out, ""
 }

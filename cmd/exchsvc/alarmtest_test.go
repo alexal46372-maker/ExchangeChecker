@@ -42,7 +42,7 @@ func TestCHK_IPC_11_AlarmTest(t *testing.T) {
 		t.Fatalf("alarm_test %+v %v", r, err)
 	}
 	b, _ := json.Marshal(r.AlarmTest)
-	if string(b) != `{"ok":true,"viber":{"ok":false,"results":[]}}` {
+	if string(b) != `{"ok":true,"viber":{"ok":false,"results":[],"errorKey":"notify.viber_no_token"}}` {
 		t.Fatalf("reply %s", b)
 	}
 	push := s.waitPush(t, func(m model.IPCMessage) bool { return m.Type == model.MsgAlert && m.Alert != nil && m.Alert.Test })

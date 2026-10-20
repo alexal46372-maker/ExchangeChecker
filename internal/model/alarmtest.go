@@ -31,10 +31,18 @@ const (
 
 // AlarmTestResult is the reply of alarm_test (contract with EC Tray):
 // OK = the test alert was pushed; Viber (viber:true only) per recipient,
-// {"ok":false,"results":[]} when no token / no recipient is saved.
+// {"ok":false,"results":[],"errorKey":"notify.viber_no_token" |
+// "notify.viber_no_recipients"} when nothing could be sent.
 type AlarmTestResult struct {
-	OK    bool             `json:"ok"`
-	Viber *ViberTestResult `json:"viber,omitempty"`
+	OK    bool            `json:"ok"`
+	Viber *AlarmTestViber `json:"viber,omitempty"`
+}
+
+// AlarmTestViber is the viber part of the reply: ViberTestResult plus
+// errorKey when nothing could be sent (architect review of 1ecc54b).
+type AlarmTestViber struct {
+	ViberTestResult
+	ErrorKey string `json:"errorKey,omitempty"`
 }
 
 // AlarmLevelOf maps the request level ("warning" / "error").

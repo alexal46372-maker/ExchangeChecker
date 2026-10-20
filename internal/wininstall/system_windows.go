@@ -487,6 +487,18 @@ func (winSystem) DeleteStartShortcut() error {
 	return nil
 }
 
+func (winSystem) AddSQLBrowserFirewallRule(serviceExe string) error {
+	return winapi.WithCOM(func() error {
+		return winapi.AddSQLBrowserFirewallRule(serviceExe)
+	})
+}
+
+func (winSystem) RemoveSQLBrowserFirewallRule() error {
+	return winapi.WithCOM(func() error {
+		return winapi.RemoveSQLBrowserFirewallRule()
+	})
+}
+
 func (winSystem) LongPath(p string) string {
 	if strings.Contains(p, "~") {
 		return winapi.LongPath(p)

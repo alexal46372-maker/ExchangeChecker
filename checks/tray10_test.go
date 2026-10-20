@@ -187,6 +187,8 @@ var winAPIMinVersion = map[string]float64{
 	// phase 9b part 2 «Скопировать SQL-скрипт прав» (CHK-TRAY-32)
 	"OpenClipboard": 5.0, "EmptyClipboard": 5.0, "SetClipboardData": 5.0, "CloseClipboard": 5.0,
 	"GlobalAlloc": 5.0, "GlobalLock": 5.0, "GlobalUnlock": 5.0, "GlobalFree": 5.0,
+	// phase 11: Windows Firewall COM for SQL Browser SSRP replies (CHK-SETUP-13)
+	"SysAllocString": 5.0, "SysFreeString": 5.0, "VariantClear": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

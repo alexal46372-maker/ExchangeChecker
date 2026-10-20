@@ -286,6 +286,18 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			}
 		}
 	}
+	// 7c. Windows Firewall inbound UDP for SQL Browser (SSRP) replies
+	// (CHK-SETUP-13). Application = service exe; RemotePorts 1434; any
+	// local port. Remove-then-add for idempotent upgrade. Not fatal:
+	// firewall service off / COM failure → WARNING and continue.
+	if err := sys.AddSQLBrowserFirewallRule(svcExe); err != nil {
+		warn("firewall rule (SQL Browser): %v", err)
+	} else {
+		log.Printf("firewall rule %s for %s", FirewallRuleName, svcExe)
+		if fresh {
+			undo.push(sys.RemoveSQLBrowserFirewallRule)
+		}
+	}
 	// 8. Uninstall key — journal previous values (DisplayVersion etc.) for rollback
 	if !fresh {
 		if prevVals, err := sys.ReadUninstallKey(); err != nil {
@@ -422,6 +434,13 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	step("delete HKLM Run "+config.TrayRunValue, sys.DeleteTrayRun())
 	step("delete event log source", sys.DeleteEventSource())
 	step("delete start menu shortcut", sys.DeleteStartShortcut())
+	// Firewall rule: WARNING only — a stopped MpsSvc / COM failure must
+	// not block uninstall (CHK-SETUP-13).
+	if err := sys.RemoveSQLBrowserFirewallRule(); err != nil {
+		log.Printf("WARNING: delete firewall rule: %v", err)
+	} else {
+		log.Printf("delete firewall rule: ok")
+	}
 	if dir != "" {
 		if err := ValidateDir(dir, c.DataDir); err != nil {
 			step("install folder", err)

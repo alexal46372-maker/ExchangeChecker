@@ -129,17 +129,61 @@ func (systemLocal) browserState() string {
 	if err != nil {
 		return model.SQLBrowserUnknown
 	}
-	switch state {
-	case 1:
-		return model.SQLBrowserStopped
-	case 2:
-		return model.SQLBrowserStartPending
-	case 3:
-		return model.SQLBrowserStopPending
-	case 4:
-		return model.SQLBrowserRunning
-	case 7:
-		return model.SQLBrowserPaused
+	start, cerr := serviceStartType("SQLBrowser")
+	return mapBrowserState(state, start, cerr == nil)
+}
+
+// SCM, read-only (SC_MANAGER_CONNECT; SERVICE_QUERY_CONFIG): the start
+// type through QueryServiceConfigW (advapi32, NT 3.1+, CHK-TRAY-10 list),
+// all calls Find + Call.
+var (
+	procOpenSCManagerWSQL      = modAdvapi32SQL.NewProc("OpenSCManagerW")
+	procOpenServiceWSQL        = modAdvapi32SQL.NewProc("OpenServiceW")
+	procQueryServiceConfigWSQL = modAdvapi32SQL.NewProc("QueryServiceConfigW")
+	procCloseServiceHandleSQL  = modAdvapi32SQL.NewProc("CloseServiceHandle")
+)
+
+const (
+	scManagerConnectSQL   = 0x0001
+	serviceQueryConfigSQL = 0x0001
+	errInsufficientBuffer = 122
+	maxServiceConfigBytes = 8 << 10 // QueryServiceConfig documents 8 KiB as the maximum
+)
+
+// serviceStartType returns dwStartType of a service (two-call pattern:
+// size query, then the buffer; ERROR_INSUFFICIENT_BUFFER is retried).
+func serviceStartType(name string) (uint32, error) {
+	for _, p := range []*syscall.LazyProc{procOpenSCManagerWSQL, procOpenServiceWSQL, procQueryServiceConfigWSQL, procCloseServiceHandleSQL} {
+		if err := p.Find(); err != nil {
+			return 0, err
+		}
 	}
-	return model.SQLBrowserUnknown
+	n, err := syscall.UTF16PtrFromString(name)
+	if err != nil {
+		return 0, err
+	}
+	scm, _ := findCallErr(procOpenSCManagerWSQL, 0, 0, scManagerConnectSQL)
+	if scm == 0 {
+		return 0, errors.New("OpenSCManager failed")
+	}
+	defer findCall(procCloseServiceHandleSQL, scm)
+	svc, e := findCallErr(procOpenServiceWSQL, scm, uintptr(unsafe.Pointer(n)), serviceQueryConfigSQL)
+	if svc == 0 {
+		return 0, e
+	}
+	defer findCall(procCloseServiceHandleSQL, svc)
+	var need uint32
+	r, e := findCallErr(procQueryServiceConfigWSQL, svc, 0, 0, uintptr(unsafe.Pointer(&need)))
+	for attempt := 0; r == 0 && attempt < 3; attempt++ {
+		if e != errInsufficientBuffer || need == 0 || need > maxServiceConfigBytes {
+			return 0, e
+		}
+		buf := make([]uint64, (need+7)/8) // QUERY_SERVICE_CONFIGW is pointer-aligned
+		r, e = findCallErr(procQueryServiceConfigWSQL, svc, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)*8), uintptr(unsafe.Pointer(&need)))
+		if r != 0 {
+			// dwServiceType, dwStartType: the first two DWORDs
+			return (*[2]uint32)(unsafe.Pointer(&buf[0]))[1], nil
+		}
+	}
+	return 0, errors.New("QueryServiceConfig: unexpected success with an empty buffer")
 }

@@ -296,14 +296,17 @@ func TestCHK_SQL_12_Subnet(t *testing.T) {
 	}
 	// subnetHosts: CIDR must be a local network; /24 = 254 hosts
 	ifs := []*net.IPNet{{IP: net.IPv4(192, 168, 5, 10).To4(), Mask: net.CIDRMask(16, 32)}, {IP: net.IPv4(10, 1, 2, 3).To4(), Mask: net.CIDRMask(24, 32)}}
-	h, used, others, err := subnetHosts("", ifs)
-	if err != nil || len(h) != 254 || used != "192.168.5.0/24" || h[0] != "192.168.5.1" || h[253] != "192.168.5.254" || len(others) != 1 || others[0] != "10.1.2.0/24" {
+	h, used, others, narrowed, err := subnetHosts("", ifs)
+	if err != nil || !narrowed || len(h) != 254 || used != "192.168.5.0/24" || h[0] != "192.168.5.1" || h[253] != "192.168.5.254" || len(others) != 1 || others[0] != "10.1.2.0/24" {
 		t.Errorf("%d %s %v %v", len(h), used, others, err)
 	}
-	if h, _, _, err := subnetHosts("10.1.2.0/30", ifs); err != nil || len(h) != 2 {
+	if _, _, _, nar, _ := subnetHosts("", ifs[1:]); nar {
+		t.Error("a /24 interface is not narrowed")
+	}
+	if h, _, _, nar, err := subnetHosts("10.1.2.0/30", ifs); err != nil || len(h) != 2 || nar {
 		t.Errorf("/30: %v %v", h, err)
 	}
-	if _, _, _, err := subnetHosts("172.16.0.0/24", ifs); !errors.Is(err, errNotLocalSubnet) {
+	if _, _, _, _, err := subnetHosts("172.16.0.0/24", ifs); !errors.Is(err, errNotLocalSubnet) {
 		t.Errorf("foreign: %v", err)
 	}
 	for _, c := range []string{"10.0.0.0/16", "10.0.0.0/31", "fe80::/64", "x", "10.0.0.1"} {
@@ -441,3 +444,110 @@ func TestCHK_SQL_13_CheckServerFake(t *testing.T) {
 }
 
 func last(r model.SQLServerCheckResult) model.SQLCheckStep { return r.Steps[len(r.Steps)-1] }
+
+// CHK-SQL-12 (review): a /16 interface — only its own /24 is scanned and
+// the wizard advice subnet_narrowed is emitted; the default / empty mode
+// never runs the subnet scan.
+func TestCHK_SQL_12_SubnetNarrowedAndDefaultMode(t *testing.T) {
+	dials := int32(0)
+	dial := func(ctx context.Context, a string) (net.Conn, error) {
+		atomic.AddInt32(&dials, 1)
+		return nil, errors.New("refused")
+	}
+	wide := func() []*net.IPNet {
+		return []*net.IPNet{{IP: net.IPv4(192, 168, 5, 10).To4(), Mask: net.CIDRMask(16, 32)}}
+	}
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, TimeoutMs: 5000}, BrowseOptions{dial: dial, ifaces: wide})
+	if err != nil || res.TCPProbe == nil || !res.TCPProbe.Narrowed || res.TCPProbe.CIDR != "192.168.5.0/24" || res.TCPProbe.Probed != 254 ||
+		!hasKey(res.Advice, model.MsgSQLBrowseAdviceSubnetNarrowed) {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if model.SQLMessage(model.MsgSQLBrowseAdviceSubnetNarrowed, "ru") == "" || model.SQLMessage(model.MsgSQLBrowseAdviceSubnetNarrowed, "en") == "" {
+		t.Error("no text")
+	}
+	// mode "" (no host) is broadcast: no TCP scan at all
+	atomic.StoreInt32(&dials, 0)
+	res, err = Browse(context.Background(), model.SQLBrowseRequest{TimeoutMs: 500}, BrowseOptions{Port: 1, dial: dial, ifaces: wide})
+	if err != nil || res.Mode != model.SQLBrowseBroadcast || res.TCPProbe != nil || atomic.LoadInt32(&dials) != 0 {
+		t.Errorf("default mode: %+v %v", res, err)
+	}
+	if (model.SQLBrowseRequest{}).EffectiveMode() == model.SQLBrowseSubnet || (model.SQLBrowseRequest{Host: "x"}).EffectiveMode() == model.SQLBrowseSubnet {
+		t.Error("subnet must be explicit")
+	}
+	// subnet timeout bound 15 s, others 5 s
+	if (model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, TimeoutMs: 15000}).Validate() != nil ||
+		(model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, TimeoutMs: 15001}).Validate() == nil ||
+		(model.SQLBrowseRequest{TimeoutMs: 15000}).Validate() == nil ||
+		(model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet}).Timeout() != 15000 ||
+		model.ClampSQLBrowseTimeoutMsFor(model.SQLBrowseSubnet, 60000) != 15000 || model.ClampSQLBrowseTimeoutMsFor("", 60000) != 5000 {
+		t.Error("timeouts")
+	}
+}
+
+// CHK-SQL-10 (review): 255.255.255.255 goes out once per interface socket
+// per round; the unbound socket is only the fallback without interfaces.
+func TestCHK_SQL_10_BroadcastOncePerInterface(t *testing.T) {
+	lo := func() []*net.IPNet {
+		return []*net.IPNet{{IP: net.IPv4(127, 0, 0, 1).To4(), Mask: net.CIDRMask(8, 32)}}
+	}
+	var mu sync.Mutex
+	var targets []string
+	rec := func(tg string) error { mu.Lock(); targets = append(targets, tg); mu.Unlock(); return nil }
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{Mode: model.SQLBrowseBroadcast, TimeoutMs: 500},
+		BrowseOptions{Port: 1, Sends: 2, SendInterval: 100 * time.Millisecond, ifaces: lo, sendFault: rec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bc := 0
+	for _, tg := range targets {
+		if tg == "255.255.255.255:1" {
+			bc++
+		}
+	}
+	// loopback has no directed broadcast: exactly 255.255.255.255 per round,
+	// no second copy from the unbound socket
+	if bc != 2 || len(targets) != 2 || res.Sent+res.SendErrorCount != 2 {
+		t.Errorf("one interface, 2 rounds: %v %+v", targets, res)
+	}
+	for _, e := range res.SendErrors {
+		if e.Local != "127.0.0.1" {
+			t.Errorf("unbound socket used: %+v", e)
+		}
+	}
+	targets = nil
+	none := func() []*net.IPNet { return nil }
+	res, err = Browse(context.Background(), model.SQLBrowseRequest{Mode: model.SQLBrowseBroadcast, TimeoutMs: 500},
+		BrowseOptions{Port: 1, Sends: 2, SendInterval: 100 * time.Millisecond, ifaces: none, sendFault: rec})
+	if err != nil || len(targets) != 2 || targets[0] != "255.255.255.255:1" || res.Sent+res.SendErrorCount != 2 {
+		t.Errorf("fallback: %v %+v %v", targets, res, err)
+	}
+}
+
+// CHK-SQL-11 (review): SQLBrowser start type Disabled → "disabled" and
+// the advice browser_disabled (fake SCM through the local source and the
+// pure state mapper used by the Windows SCM reader).
+func TestCHK_SQL_11_BrowserDisabled(t *testing.T) {
+	cases := []struct {
+		state, start uint32
+		have         bool
+		want         string
+	}{
+		{1, 4, true, model.SQLBrowserDisabled}, {4, 4, true, model.SQLBrowserDisabled}, {1, 3, true, model.SQLBrowserStopped},
+		{4, 2, true, model.SQLBrowserRunning}, {1, 4, false, model.SQLBrowserStopped}, {7, 3, true, model.SQLBrowserPaused},
+		{2, 3, true, model.SQLBrowserStartPending}, {3, 3, true, model.SQLBrowserStopPending}, {9, 3, true, model.SQLBrowserUnknown},
+	}
+	for _, c := range cases {
+		if got := mapBrowserState(c.state, c.start, c.have); got != c.want {
+			t.Errorf("%+v: %s", c, got)
+		}
+	}
+	f := fakeLocal{multi: map[string][]string{"64|InstalledInstances": {"MSSQLSERVER"}}, state: model.SQLBrowserDisabled}
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{Mode: model.SQLBrowseLocal, TimeoutMs: 500}, BrowseOptions{Port: 1, local: f})
+	if err != nil || res.Local.BrowserState != model.SQLBrowserDisabled || !hasKey(res.Advice, model.MsgSQLBrowseAdviceBrowserDisabled) || hasKey(res.Advice, model.MsgSQLBrowseAdviceEnableBrowser) {
+		t.Fatalf("%+v %v", res, err)
+	}
+	k := model.MsgSQLBrowseAdviceBrowserDisabled
+	if model.SQLMessage(k, "ru") == "" || model.SQLMessage(k, "en") == "" || !hasKey(model.SQLWizardMessageKeys(), k) {
+		t.Error("not registered")
+	}
+}

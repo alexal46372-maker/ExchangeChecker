@@ -64,7 +64,8 @@ type BrowseOptions struct {
 	// sendFault, if set, fails the matching sends (tests: Windows accepts
 	// sends that Linux rejects, so real errors are not portable).
 	sendFault func(target string) error
-	local     localSource // tests
+	ifaces    func() []*net.IPNet // tests: the interface networks
+	local     localSource         // tests
 }
 
 // ListServers is Browse with default options (EC Tray naming).
@@ -262,8 +263,13 @@ func browseAdvice(r model.SQLBrowseResult) []string {
 	if r.Sent == 0 && r.SendErrorCount > 0 {
 		add(model.MsgSQLBrowseAdviceSendFailed)
 	}
+	disabled := false
 	if l := r.Local; l != nil && l.Supported {
-		if len(l.Installed) > 0 && l.BrowserState != model.SQLBrowserRunning {
+		switch {
+		case l.BrowserState == model.SQLBrowserDisabled:
+			disabled = true
+			add(model.MsgSQLBrowseAdviceBrowserDisabled)
+		case len(l.Installed) > 0 && l.BrowserState != model.SQLBrowserRunning:
 			add(model.MsgSQLBrowseAdviceEnableBrowser)
 		}
 		for _, in := range r.Instances {
@@ -273,10 +279,13 @@ func browseAdvice(r model.SQLBrowseResult) []string {
 		}
 	}
 	if r.Responded == 0 && r.Mode != model.SQLBrowseSubnet {
-		if r.Mode != model.SQLBrowseLocal {
+		if r.Mode != model.SQLBrowseLocal && !disabled {
 			add(model.MsgSQLBrowseAdviceEnableBrowser)
 		}
 		add(model.MsgSQLBrowseAdviceOpenUDP1434)
+	}
+	if r.TCPProbe != nil && r.TCPProbe.Narrowed {
+		add(model.MsgSQLBrowseAdviceSubnetNarrowed)
 	}
 	if len(r.Instances) == 0 {
 		if r.Mode != model.SQLBrowseHost {
@@ -330,7 +339,11 @@ func (b *browseRun) ssrpRound(ctx context.Context, msg []byte, targets []*net.UD
 	var socks []*ssrpSock
 	var lc net.ListenConfig
 	if !addressed {
-		for _, ip := range interfaceIPv4s() {
+		ifs := interfaceIPv4s
+		if b.opt.ifaces != nil {
+			ifs = b.opt.ifaces
+		}
+		for _, ip := range ifs() {
 			local := ip.IP.String()
 			pc, err := lc.ListenPacket(ctx, "udp4", net.JoinHostPort(local, "0"))
 			if err != nil {
@@ -344,15 +357,20 @@ func (b *browseRun) ssrpRound(ctx context.Context, msg []byte, targets []*net.UD
 			socks = append(socks, s)
 		}
 	}
-	pc, err := lc.ListenPacket(ctx, "udp4", ":0") // fallback / addressed socket
-	if err != nil {
-		b.sendErr("", "bind", err)
-	} else {
-		t := targets
-		if !addressed {
-			t = []*net.UDPAddr{{IP: net.IPv4bcast, Port: b.opt.Port}}
+	// The unbound socket: the addressed socket, or the broadcast fallback
+	// only when no interface socket exists (no interfaces / every bind
+	// failed), so 255.255.255.255 goes out once per interface socket.
+	if addressed || len(socks) == 0 {
+		pc, err := lc.ListenPacket(ctx, "udp4", ":0")
+		if err != nil {
+			b.sendErr("", "bind", err)
+		} else {
+			t := targets
+			if !addressed {
+				t = []*net.UDPAddr{{IP: net.IPv4bcast, Port: b.opt.Port}}
+			}
+			socks = append(socks, &ssrpSock{pc: pc, targets: t})
 		}
-		socks = append(socks, &ssrpSock{pc: pc, targets: t})
 	}
 	if len(socks) == 0 {
 		return nil

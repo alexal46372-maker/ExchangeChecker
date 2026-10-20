@@ -15,6 +15,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
@@ -468,6 +469,11 @@ func (w *settingsWindow) build() {
 		add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP|navStyle, idSetViber, ui.Button, 205, 0),
 		add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0),
 	}}
+	// phase 11 (CHK-TRAY-49): an icon on every navigation button
+	for id, ico := range map[int32]string{idSetNavProfiles: trayui.IcoNavDatabases, idSetPage: trayui.IcoNavGeneral,
+		idSetViber: trayui.IcoNavViber, idSetUIMode: trayui.IcoNavMode} {
+		setButtonIcon(w.ctl[id], ico)
+	}
 	winapi.SetWindowText(w.ctl[idSetUIMode], "")         // applyUIMode names it
 	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it
 	w.cur = &w.pageCtl[0]

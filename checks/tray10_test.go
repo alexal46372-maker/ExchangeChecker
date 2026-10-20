@@ -195,6 +195,8 @@ var winAPIMinVersion = map[string]float64{
 	"DwmGetWindowAttribute": 6.0, "DwmFlush": 6.0, "SetWindowLongW": 5.0,
 	// phase 11: Common Controls 6 for the GUI tests (cues in the screenshots, CHK-TRAY-47)
 	"CreateActCtxW": 5.1, "ActivateActCtx": 5.1, "DeactivateActCtx": 5.1, "ReleaseActCtx": 5.1,
+	// phase 11: the generated icons on the database cards (CHK-TRAY-49)
+	"DrawIconEx": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

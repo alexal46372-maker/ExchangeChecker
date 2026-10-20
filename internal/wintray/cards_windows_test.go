@@ -3,6 +3,7 @@
 package wintray
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -29,6 +31,74 @@ func sampleCardsStatus() trayipc.Status {
 		{ProfileID: "p2", Name: "Бухгалтерия", Enabled: true, Polled: true, Level: model.LevelError, Error: "login failed"},
 		{ProfileID: "p3", Name: "Архив", Enabled: false},
 	}}}
+}
+
+// sampleDemoStatus: the customer demo of the screenshots, 14 databases
+// (more than the places of one card row: «Ещё баз: N»).
+func sampleDemoStatus() trayipc.Status {
+	st := sampleCardsStatus()
+	names := []string{"Магазин 1", "Магазин 2", "Магазин 3", "Магазин 4", "Магазин 5", "Филиал Север", "Филиал Юг",
+		"Розница", "Опт", "Логистика", "Производство"}
+	for i, n := range names {
+		f := sampleNow.Add(-time.Duration(3+i*4) * time.Minute)
+		lvl := model.LevelOK
+		if i%5 == 3 {
+			lvl = model.LevelWarning
+		}
+		st.Snapshot.Profiles = append(st.Snapshot.Profiles, model.ProfileSnapshot{ProfileID: fmt.Sprintf("d%d", i), Name: n,
+			Enabled: true, Polled: true, Level: lvl, WarnMinutes: 30, ErrorMinutes: 60, Points: []model.PointStatus{
+				{ExchangePoint: model.ExchangePoint{Name: "ЦБ", Level: lvl, LastSend: &f, LastRecv: &f}, FreshAt: &f}}})
+	}
+	return st
+}
+
+// TestCHK_TRAY_49_IconsInUse — the generated icons are used at 96 and
+// 144 dpi (PLAN §12 p.144): the window icons (small / big), the settings
+// navigation buttons, the tray icon of every state; sizes follow the DPI.
+func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	done, _ := useComCtl6()
+	defer done()
+	defer func() { testDPI = 0 }()
+	for _, dpi := range []int32{96, 144} {
+		testDPI = dpi
+		var ic icons
+		for _, k := range []trayui.Icon{trayui.IconOK, trayui.IconWarning, trayui.IconError, trayui.IconOffline, trayui.IconProblem, trayui.IconBlank} {
+			if ic.get(k) == 0 {
+				t.Errorf("%d dpi: tray icon %d", dpi, k)
+			}
+		}
+		for _, n := range trayui.IconNames() {
+			if uiIcons.ico(n, px(icoSmall)) == 0 || uiIcons.ico(n, px(icoLarge)) == 0 {
+				t.Errorf("%d dpi: icon %s", dpi, n)
+			}
+		}
+		ic.free()
+		if want := map[int32]int32{96: 16, 144: 24}[dpi]; px(icoSmall) != want {
+			t.Errorf("%d dpi: small icon %d px, want %d", dpi, px(icoSmall), want)
+		}
+		sw, err := newStatusWindow(i18n.RU, false, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if winapi.SendMessage(sw.hwnd, winapi.WM_GETICON, winapi.ICON_SMALL, 0) == 0 || winapi.SendMessage(sw.hwnd, winapi.WM_GETICON, winapi.ICON_BIG, 0) == 0 {
+			t.Errorf("%d dpi: status window without icons", dpi)
+		}
+		winapi.DestroyWindow(sw.hwnd)
+	}
+	testDPI = 0
+	app := startCfgApp(t, newCfgService(), true, nil)
+	defer app.Exit()
+	w := openAdmin(t, app)
+	for _, id := range []int32{idSetNavProfiles, idSetPage, idSetUIMode} {
+		if winapi.SendMessage(w.ctl[id], winapi.BM_GETIMAGE, winapi.IMAGE_ICON, 0) == 0 {
+			t.Errorf("nav %d without icon", id)
+		}
+	}
+	if winapi.SendMessage(w.hwnd, winapi.WM_GETICON, winapi.ICON_SMALL, 0) == 0 {
+		t.Error("settings window without icon")
+	}
 }
 
 // TestCHK_TRAY_48_CardPanel — the «Состояние» window shows one card per

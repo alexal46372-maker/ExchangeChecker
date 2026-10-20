@@ -175,7 +175,16 @@ func (p *cardPanel) paint(hw uintptr, i int) {
 	defer winapi.SelectObject(dc, old)
 	_, lh := winapi.TextSize(uiFont(), "Ag", 0)
 	x, y, right := rc.Left+1+sw+px(6), rc.Top+px(4), rc.Right-px(6)
-	for _, s := range []string{c.Name, c.State, c.Fresh, c.Info} {
+	// phase 11 (CHK-TRAY-49): the state icon before the name
+	if c.ProfileID != "" || c.Color != trayui.ColorNone {
+		is := px(icoSmall)
+		winapi.DrawIconEx(dc, x, y+(lh-is)/2, uiIcons.ico(trayui.CardIco(c.Color), is), is, is)
+	}
+	for i, s := range []string{c.Name, c.State, c.Fresh, c.Info} {
+		x := x
+		if i == 0 && (c.ProfileID != "" || c.Color != trayui.ColorNone) {
+			x += px(icoSmall + 4)
+		}
 		if s != "" {
 			winapi.DrawText(dc, s, winapi.RECT{Left: x, Top: y, Right: right, Bottom: y + lh}, winapi.DT_SINGLELINE|winapi.DT_END_ELLIPSIS)
 		}

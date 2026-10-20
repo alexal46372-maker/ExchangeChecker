@@ -158,3 +158,22 @@ func ListViewSelect(lv uintptr, i int) {
 	it := LVITEMW{State: LVIS_SELECTED | LVIS_FOCUSED, StateMask: LVIS_SELECTED | LVIS_FOCUSED}
 	callSend(lv, LVM_SETITEMSTATE, uintptr(i), uintptr(unsafe.Pointer(&it)))
 }
+
+// Icons of the tray windows (phase 11, CHK-TRAY-49).
+const (
+	WM_SETICON  = 0x0080
+	WM_GETICON  = 0x007F
+	ICON_SMALL  = 0
+	ICON_BIG    = 1
+	BM_SETIMAGE = 0x00F7
+	BM_GETIMAGE = 0x00F6
+	IMAGE_ICON  = 1
+	DI_NORMAL   = 0x0003
+)
+
+var procDrawIconEx = moduser32.NewProc("DrawIconEx")
+
+// DrawIconEx draws icon at (x, y), w×h.
+func DrawIconEx(dc uintptr, x, y int32, icon uintptr, w, h int32) {
+	callProc(procDrawIconEx, dc, uintptr(x), uintptr(y), icon, uintptr(w), uintptr(h), 0, 0, DI_NORMAL)
+}

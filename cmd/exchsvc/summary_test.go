@@ -66,3 +66,19 @@ func TestCHK_SVC_07_Summary(t *testing.T) {
 		t.Fatalf("1h/12 %+v", r.Summary)
 	}
 }
+
+// TestCHK_SVC_07_SummaryLocalAlignment — buckets start at local (UTC+3)
+// midnight: 24 h in one bucket is the local day, 4 h buckets end at
+// 04:00/08:00/12:00/... local.
+func TestCHK_SVC_07_SummaryLocalAlignment(t *testing.T) {
+	now := time.Date(2026, 10, 20, 10, 15, 0, 0, model.DBZone)
+	if got, want := summaryEnd(now, 24*time.Hour), time.Date(2026, 10, 21, 0, 0, 0, 0, model.DBZone); !got.Equal(want) {
+		t.Errorf("24h: %v", got)
+	}
+	if got, want := summaryEnd(now.UTC(), 4*time.Hour), time.Date(2026, 10, 20, 12, 0, 0, 0, model.DBZone); !got.Equal(want) {
+		t.Errorf("4h: %v", got)
+	}
+	if got, want := summaryEnd(now, 30*time.Minute), time.Date(2026, 10, 20, 10, 30, 0, 0, model.DBZone); !got.Equal(want) {
+		t.Errorf("30m: %v", got)
+	}
+}

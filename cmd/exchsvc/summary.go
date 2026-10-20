@@ -25,8 +25,7 @@ func (s summarySource) Summary(ctx context.Context, hours, buckets int) (model.S
 		now = s.now
 	}
 	snap := s.mon.Snapshot()
-	// the last bucket contains now; buckets are aligned to their length
-	to := now().Truncate(d).Add(d)
+	to := summaryEnd(now(), d)
 	from := to.Add(-time.Duration(hours) * time.Hour)
 	ids := map[string]bool{}
 	for _, p := range snap.Profiles {
@@ -59,4 +58,12 @@ func (s summarySource) Summary(ctx context.Context, hours, buckets int) (model.S
 		out.Profiles = append(out.Profiles, sp)
 	}
 	return out, nil
+}
+
+// summaryEnd: end of the bucket containing now; buckets are aligned to
+// local (DBZone, UTC+3) midnight, not UTC (architect review of 1ecc54b).
+func summaryEnd(now time.Time, d time.Duration) time.Time {
+	l := now.In(model.DBZone)
+	mid := time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, model.DBZone)
+	return mid.Add((l.Sub(mid)/d + 1) * d)
 }

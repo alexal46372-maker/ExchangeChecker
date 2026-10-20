@@ -192,7 +192,7 @@ var winAPIMinVersion = map[string]float64{
 	"GetTextMetricsW": 5.0, "CreateCompatibleDC": 5.0, "CreateCompatibleBitmap": 5.0, "GetDIBits": 5.0,
 	"DeleteDC": 5.0, "BitBlt": 5.0, "GetWindowDC": 5.0, "PrintWindow": 5.1, "RedrawWindow": 5.0, "SetParent": 5.0,
 	// phase 11: visible frame for screenshots, falls back to GetWindowRect
-	"DwmGetWindowAttribute": 6.0, "SetWindowLongW": 5.0,
+	"DwmGetWindowAttribute": 6.0, "DwmFlush": 6.0, "SetWindowLongW": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

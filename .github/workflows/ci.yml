@@ -100,7 +100,11 @@ jobs:
         run: |
           for i in 1 2 3; do
             echo "attempt $i"
-            if go test ./internal/wintray -count=1 -v -timeout 10m; then exit 0; fi
+            if go test ./internal/wintray -count=1 -v -timeout 10m; then
+              echo "GUI tests internal/wintray: passed on attempt $i of 3" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "GUI tests internal/wintray: attempt $i failed" >> "$GITHUB_STEP_SUMMARY"
           done
           exit 1
       - name: tray screenshots (CHK-TRAY-46; off-screen windows, RU/EN, 96/144 dpi)
@@ -112,6 +116,7 @@ jobs:
             rm -rf "$EC_UI_SCREENS"
             if go test ./internal/wintray -run 'TestCHK_TRAY_46_Screens' -count=1 -v -timeout 10m; then
               ls "$EC_UI_SCREENS" | wc -l
+              echo "tray screenshots: passed on attempt $i of 3, $(ls "$EC_UI_SCREENS" | wc -l) files, $(ls "$EC_UI_SCREENS" | grep -c _bitblt) with _bitblt" | tee -a "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
           done

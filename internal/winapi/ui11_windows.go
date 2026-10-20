@@ -76,6 +76,27 @@ func CaptureWindow(hwnd uintptr) (int32, int32, []byte, bool) {
 // CaptureWindowFlags is CaptureWindow with explicit PrintWindow flags (0:
 // classic WM_PRINT, for windows DWM has not composed off-screen).
 func CaptureWindowFlags(hwnd uintptr, flags uintptr) (w, h int32, bgra []byte, ok bool) {
+	return capture(hwnd, flags, false)
+}
+
+// CaptureScreen copies the window rectangle from the screen (BitBlt of
+// the screen DC): the last resort of the CI screenshots, the window must
+// be on screen and on top.
+func CaptureScreen(hwnd uintptr) (w, h int32, bgra []byte, ok bool) {
+	return capture(hwnd, 0, true)
+}
+
+var procDwmFlush = moddwmapi.NewProc("DwmFlush")
+
+// DwmFlush waits for the next DWM composition (NT 6.0+ with DWM; a no-op
+// elsewhere).
+func DwmFlush() {
+	if procDwmFlush.Find() == nil {
+		callProc(procDwmFlush)
+	}
+}
+
+func capture(hwnd uintptr, flags uintptr, screen bool) (w, h int32, bgra []byte, ok bool) {
 	r := GetWindowRect(hwnd)
 	w, h = r.Right-r.Left, r.Bottom-r.Top
 	if w <= 0 || h <= 0 {
@@ -97,8 +118,9 @@ func CaptureWindowFlags(hwnd uintptr, flags uintptr) (w, h int32, bgra []byte, o
 	}
 	defer DeleteObject(bmp)
 	old := SelectObject(mdc, bmp)
-	pr, _, _ := callProc(procPrintWindow, hwnd, mdc, flags)
-	if pr == 0 {
+	if screen {
+		callProc(procBitBlt, mdc, 0, 0, uintptr(w), uintptr(h), sdc, uintptr(r.Left), uintptr(r.Top), SRCCOPY)
+	} else if pr, _, _ := callProc(procPrintWindow, hwnd, mdc, flags); pr == 0 {
 		wdc, _, _ := callProc(procGetWindowDC, hwnd)
 		if wdc != 0 {
 			callProc(procBitBlt, mdc, 0, 0, uintptr(w), uintptr(h), wdc, 0, 0, SRCCOPY)

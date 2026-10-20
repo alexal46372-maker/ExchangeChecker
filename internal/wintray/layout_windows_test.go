@@ -317,6 +317,32 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 			t.Fatal("wizard not opened")
 		}
 		visit("wizard", w.wiz.hwnd)
+		// phase 11: steps 2 and 3 too
+		wd := w.wiz
+		wd.z.Server, wd.z.Login = "srv", "mon"
+		wd.z.Databases = []model.SQLDatabaseInfo{{Name: "ut"}, {Name: "retail"}}
+		wd.z.PickDatabase(0)
+		wd.z.Step = traysettings.WizDatabase
+		wd.show()
+		visit("wizard step2", wd.hwnd)
+		wd.z.Step = traysettings.WizFinish
+		wd.show()
+		visit("wizard step3", wd.hwnd)
+	}()
+	func() { // phase 11: the Viber page
+		svc := newViberCfg()
+		app := startCfgApp(t, svc.cfgService, true, nil)
+		defer app.Exit()
+		vw, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer vw.close()
+		vw.Reload()
+		pumpUntil(t, "loaded", func() bool { return !vw.busy && vw.ed.HasViber })
+		vw.setPage(pageViber)
+		visit("settings viber", vw.hwnd)
 	}()
 	aw, err := newAlertWindow(0, lang, nil, nil)
 	if err != nil {

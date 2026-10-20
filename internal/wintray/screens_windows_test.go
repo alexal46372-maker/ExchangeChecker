@@ -36,7 +36,7 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 		for _, lang := range []string{i18n.RU, i18n.EN} {
 			testDPI = dpi
 			uiScenes(t, lang, func(name string, hwnd uintptr) {
-				file := fmt.Sprintf("%s-%s-%d.png", strings.ReplaceAll(name, " ", "_"), lang, dpi)
+				file := fmt.Sprintf("%s-%s-%d", strings.ReplaceAll(name, " ", "_"), lang, dpi)
 				if err := screenshot(hwnd, filepath.Join(dir, file)); err != nil {
 					t.Errorf("%s: %v", file, err)
 					return
@@ -50,6 +50,9 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 		t.Fatal("no screenshots")
 	}
 }
+
+// hwndNoTopmost is HWND_NOTOPMOST of SetWindowPos.
+var hwndNoTopmost = ^uintptr(1) // (HWND)-2
 
 // offscreenX / offscreenY: where the windows are shown for the capture.
 const offscreenX, offscreenY = -20000, -20000
@@ -70,10 +73,28 @@ func screenshot(hwnd uintptr, path string) error {
 		PumpPending()
 	}
 	w, h, bgra, ok := winapi.CaptureWindow(hwnd)
-	if ok && blackClient(bgra, w, h) {
-		// DWM content not composed: classic WM_PRINT capture
-		w, h, bgra, ok = winapi.CaptureWindowFlags(hwnd, 0)
+	suffix := ""
+	if !ok || blackClient(bgra, w, h) {
+		// phase 11: DWM has not composed the off-screen window — bring it
+		// on screen, on top, wait for a composition and print it again
+		// (no classic WM_PRINT: that draws the Windows 7 Basic frame)
+		work := workArea()
+		winapi.SetWindowPos(hwnd, winapi.HWND_TOPMOST, work.Left, work.Top, 0, 0,
+			winapi.SWP_NOSIZE|winapi.SWP_NOACTIVATE|winapi.SWP_SHOWWINDOW)
+		defer winapi.SetWindowPos(hwnd, hwndNoTopmost, 0, 0, 0, 0, winapi.SWP_NOSIZE|winapi.SWP_NOMOVE|winapi.SWP_NOACTIVATE)
+		winapi.RedrawWindow(hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW|winapi.RDW_FRAME)
+		for i := 0; i < 3; i++ {
+			PumpPending()
+			winapi.DwmFlush()
+		}
+		w, h, bgra, ok = winapi.CaptureWindow(hwnd)
+		if !ok || blackClient(bgra, w, h) {
+			// the screen copy, marked in the file name
+			w, h, bgra, ok = winapi.CaptureScreen(hwnd)
+			suffix = "_bitblt"
+		}
 	}
+	path += suffix + ".png"
 	if !ok {
 		return fmt.Errorf("capture failed (%dx%d)", w, h)
 	}

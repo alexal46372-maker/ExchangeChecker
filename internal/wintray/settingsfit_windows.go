@@ -200,12 +200,12 @@ func (w *settingsWindow) layoutFit() {
 	}
 	var left, right []btn
 	for _, b := range w.barLeft {
-		if h := w.ctl[b.id]; h != 0 {
+		if h := w.ctl[b.id]; h != 0 && winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
 			left = append(left, btn{h, px(b.width)})
 		}
 	}
 	for _, b := range w.barRight {
-		if h := w.ctl[b.id]; h != 0 {
+		if h := w.ctl[b.id]; h != 0 && winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
 			right = append(right, btn{h, px(b.width)})
 		}
 	}
@@ -290,6 +290,7 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 	area := &ui.Ctl{Kind: ui.Box, W: unpx(pw), Hgt: unpx(ph)}
 	root := &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P16, Bottom: ui.P8,
 		Child: &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, area}}}
+	w.left, w.leftM, w.leftX, w.leftY = left, m, m.Px(ui.P12), m.Px(ui.P4)+m.Px(6)
 	w.pageW, w.pageH = ui.Layout(root, m, 0, 0, 0)
 	ui.Walk(root, w.placeCtl)
 	for _, n := range pages {
@@ -314,4 +315,23 @@ func (w *settingsWindow) placeCtl(c *ui.Ctl) {
 	}
 	w.hostRect[c.H] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + h}
 	winapi.MoveWindow(c.H, r.X, r.Y, r.W, h)
+}
+
+// relayoutLeft lays the left column out again without its hidden
+// controls (phase 11, CHK-TRAY-47: no gaps for the navigation buttons
+// hidden in «Простой» / without Viber, nor for the profile list on the
+// other pages).
+func (w *settingsWindow) relayoutLeft() {
+	if w.left == nil {
+		return
+	}
+	ui.Walk(w.left, func(c *ui.Ctl) {
+		if c.H != 0 {
+			c.Hidden = winapi.WindowStyle(c.H)&winapi.WS_VISIBLE == 0
+		}
+	})
+	ui.Layout(w.left, w.leftM, w.leftX, w.leftY, 0)
+	ui.Walk(w.left, w.placeCtl)
+	w.scrollSet = false
+	w.scrollTo(w.scrollX, w.scrollY)
 }

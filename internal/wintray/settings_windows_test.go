@@ -832,8 +832,8 @@ func TestCHK_TRAY_09_SettingsGeneralPage(t *testing.T) {
 		t.Fatal("initial page")
 	}
 	w.click(t, idSetPage)
-	if w.page != 1 || winapi.GetWindowText(w.ctl[idSetPage]) != "Базы данных…" {
-		t.Fatalf("page %d %q", w.page, winapi.GetWindowText(w.ctl[idSetPage]))
+	if w.page != 1 || winapi.IsWindowEnabled(w.ctl[idSetPage]) || !winapi.IsWindowEnabled(w.ctl[idSetNavProfiles]) {
+		t.Fatalf("page %d: the navigation must mark «Общие настройки»", w.page)
 	}
 	if w.text(idGenPoll) != "60" || !w.check(idGenBeep) || !w.check(idGenAutostart) || !winapi.IsWindowEnabled(w.ctl[idGenBeep]) {
 		t.Errorf("general page: poll %q beep %v autostart %v", w.text(idGenPoll), w.check(idGenBeep), w.check(idGenAutostart))

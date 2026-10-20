@@ -67,6 +67,7 @@ func (w *settingsWindow) applyUIMode() {
 	if w.tips != nil {
 		w.tips.set(w.ctl[idSetUIMode], w.t(i18n.KeyTipSetUIMode))
 	}
+	w.relayoutLeft() // no gap for the hidden navigation buttons
 }
 
 func (w *settingsWindow) toggleUIMode() {

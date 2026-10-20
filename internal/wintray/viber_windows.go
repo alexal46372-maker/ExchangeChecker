@@ -20,6 +20,7 @@ import (
 const (
 	idVbBase = 600 + iota
 	idSetViber
+	idSetNavProfiles // navigation: «Базы данных» (phase 11)
 	idVbEnabled
 	idVbToken
 	idVbClearToken
@@ -84,7 +85,7 @@ func (w *settingsWindow) viberAvailable() bool {
 }
 
 // buildViber creates page 2 (hidden) and the button opening it.
-func (w *settingsWindow) buildViber() (button, page ui.Node) {
+func (w *settingsWindow) buildViber() (page ui.Node) {
 	// phase 11 (CHK-TRAY-45): laid out by the framework (layoutPages)
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
 	add := func(class, text string, ex, style uint32, id int32, kind ui.Kind, wd, hg int32) *ui.Ctl {
@@ -101,8 +102,6 @@ func (w *settingsWindow) buildViber() (button, page ui.Node) {
 	check := func(key string, id int32) *ui.Ctl {
 		return add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, id, ui.Check, 0, 0)
 	}
-	w.cur = nil
-	button = add("BUTTON", w.t(i18n.KeyVbPage), 0, winapi.WS_TABSTOP, idSetViber, ui.Button, 205, 0)
 	w.cur = &w.pageCtl[pageViber]
 	box := add("BUTTON", w.t(i18n.KeyVbGroup), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
 	w.groups[i18n.KeyVbGroup] = box.H
@@ -156,8 +155,7 @@ func (w *settingsWindow) buildViber() (button, page ui.Node) {
 	for _, h := range w.pageCtl[pageViber] {
 		winapi.ShowWindow(h, winapi.SW_HIDE)
 	}
-	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE)
-	return button, page
+	return page
 }
 
 // fillViber shows the editor's page state.
@@ -262,6 +260,7 @@ func (w *settingsWindow) updateViber() {
 			cmd = winapi.SW_SHOW
 		}
 		winapi.ShowWindow(b, cmd)
+		w.relayoutLeft()
 	}
 	winapi.EnableWindow(w.ctl[idSetViber], avail && w.page != pageViber)
 	can := w.ed.CanEditViber()

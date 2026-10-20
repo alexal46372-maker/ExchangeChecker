@@ -59,7 +59,7 @@ const (
 	idSetPoll
 	idSetReload
 	idSetElevate
-	idSetPage // «Общие настройки…» / «Базы данных…»
+	idSetPage // navigation: «Общие настройки» (phase 11)
 	idGenPoll
 	idGenWarn
 	idGenError
@@ -190,7 +190,10 @@ type settingsWindow struct {
 	hostRect                       map[uintptr]winapi.RECT
 	scrollX, scrollY, viewW, viewH int32
 	contentW, contentH             int32
-	pageW, pageH                   int32 // laid out page content (px, phase 11)
+	pageW, pageH                   int32   // laid out page content (px, phase 11)
+	left                           ui.Node // the left column (relayoutLeft)
+	leftM                          *ui.Metrics
+	leftX, leftY                   int32
 	scrollSet, inBar               bool
 	barLeft, barRight              []barButton
 	// expertShown: the expert-only controls are shown (test hook)
@@ -256,7 +259,7 @@ var settingsTips = map[int32]string{
 	idSetClearPw: i18n.KeyTipSetClearPw, idSetUIMode: i18n.KeyTipSetUIMode, idSetEncrypt: i18n.KeyTipSetEncrypt, idSetPreset: i18n.KeyTipSetPreset,
 	idSetTLS10: i18n.KeyTipSetTLS10, idSetTrust: i18n.KeyTipSetTrust, idSetEnabled: i18n.KeyTipSetEnabled,
 	idSetWarn: i18n.KeyTipSetWarn, idSetError: i18n.KeyTipSetError, idSetConnTO: i18n.KeyTipSetConnTimeout,
-	idSetQueryTO: i18n.KeyTipSetQueryTimeout, idSetPage: i18n.KeyTipSetPage, idSetStatus: i18n.KeyTipSetStatus,
+	idSetQueryTO: i18n.KeyTipSetQueryTimeout, idSetPage: i18n.KeyTipSetPage, idSetNavProfiles: i18n.KeyTipSetNavProfiles, idSetStatus: i18n.KeyTipSetStatus,
 	idSetTest: i18n.KeyTipSetTest, idSetCancelTest: i18n.KeyTipSetCancelTest, idSetSave: i18n.KeyTipSetSave,
 	idSetPoll: i18n.KeyTipSetPoll, idSetReload: i18n.KeyTipSetReload, idSetElevate: i18n.KeyTipSetElevate,
 	idSetClose: i18n.KeyTipSetClose,
@@ -444,6 +447,18 @@ func (w *settingsWindow) build() {
 		return &ui.GroupBox{Box: g, Child: child}
 	}
 	const cw = 390 // edit / combo boxes
+	// left navigation (phase 11, CHK-TRAY-47): one button per page, the
+	// current one disabled; then the mode switch; then the profile list
+	// column of the databases page
+	w.cur = nil
+	nav := &ui.Col{Gap: ui.P4, Items: []ui.Node{
+		add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP, idSetNavProfiles, ui.Button, 205, 0),
+		add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP, idSetPage, ui.Button, 205, 0),
+		add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP, idSetViber, ui.Button, 205, 0),
+		add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0),
+	}}
+	winapi.SetWindowText(w.ctl[idSetUIMode], "")         // applyUIMode names it
+	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it
 	w.cur = &w.pageCtl[0]
 	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0),
 		add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idSetList, ui.Box, 205, 340),
@@ -515,9 +530,6 @@ func (w *settingsWindow) build() {
 	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
 	w.cur = nil
 
-	left = append(left, add("BUTTON", w.t(i18n.KeyGenPage), 0, winapi.WS_TABSTOP, idSetPage, ui.Button, 205, 0),
-		add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 205, 0))
-	winapi.SetWindowText(w.ctl[idSetUIMode], "") // applyUIMode names it
 	// the bar: children of the window, pinned to the bottom (layoutFit)
 	w.inBar = true
 	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
@@ -547,12 +559,12 @@ func (w *settingsWindow) build() {
 	}
 	button(idSetClose, i18n.KeySetClose, 90, true)
 	w.inBar = false
-	vbButton, viberPage := w.buildViber()
-	left = append(left, vbButton)
+	viberPage := w.buildViber()
 	if xfer != nil {
 		left = append(left, xfer)
 	}
-	w.layoutPages(m, &ui.Col{Gap: ui.P8 - 2, Items: left}, []ui.Node{profilePage, generalPage, viberPage})
+	w.layoutPages(m, &ui.Col{Gap: ui.P12, Items: []ui.Node{nav, &ui.Col{Gap: ui.P8 - 2, Items: left}}},
+		[]ui.Node{profilePage, generalPage, viberPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
@@ -660,7 +672,13 @@ func (w *settingsWindow) command(id int32, code uint32) {
 			w.readGeneral()
 		}
 	case idSetPage:
-		w.setPage(map[bool]int{true: 1, false: 0}[w.page == 0])
+		if w.page != 1 {
+			w.setPage(1)
+		}
+	case idSetNavProfiles:
+		if w.page != 0 {
+			w.setPage(0)
+		}
 	case idSetUIMode:
 		w.toggleUIMode()
 	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetWarn, idSetError, idSetConnTO, idSetQueryTO:
@@ -1034,13 +1052,11 @@ func (w *settingsWindow) setPage(p int) {
 			winapi.ShowWindow(h, cmd)
 		}
 	}
-	key := i18n.KeyGenPage
-	if p != 0 {
-		key = i18n.KeyGenProfilesPage
-	}
-	winapi.SetWindowText(w.ctl[idSetPage], w.t(key))
+	// the navigation marks the current page (phase 11, CHK-TRAY-47)
+	winapi.EnableWindow(w.ctl[idSetNavProfiles], p != 0)
+	winapi.EnableWindow(w.ctl[idSetPage], p != 1)
 	if w.host != 0 {
-		w.scrollTo(0, 0)
+		w.layoutFit() // the bar without the hidden buttons of the page
 	}
 	w.applyUIMode()
 	w.update()

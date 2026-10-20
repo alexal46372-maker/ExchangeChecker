@@ -202,49 +202,54 @@ const (
 	KeyAutostartErrUnknown  = "autostart.err_unknown"
 	KeyGenPage              = "gen.page"
 	KeyGenProfilesPage      = "gen.profiles_page"
-	KeyGenPoll              = "gen.poll"
-	KeyGenWarn              = "gen.warn"
-	KeyGenError             = "gen.error"
-	KeyGenBeepEnabled       = "gen.beep_enabled"
-	KeyGenWarnFreq          = "gen.warn_freq"
-	KeyGenWarnDur           = "gen.warn_dur"
-	KeyGenErrorFreq         = "gen.error_freq"
-	KeyGenErrorDur          = "gen.error_dur"
-	KeyGenGap               = "gen.gap"
-	KeyGenLanguage          = "gen.language"
-	KeyGenLangAuto          = "gen.lang_auto"
-	KeyGenLangRU            = "gen.lang_ru"
-	KeyGenLangEN            = "gen.lang_en"
-	KeyGenAutostart         = "gen.autostart"
-	KeyGenNote              = "gen.note"
-	KeyGenSaved             = "gen.saved"
-	KeyMenuLanguage         = "menu.language"
-	KeyMenuLangAuto         = "menu.lang_auto"
-	KeyMenuLangRU           = "menu.lang_ru"
-	KeyMenuLangEN           = "menu.lang_en"
-	KeySetTesting           = "set.testing"
-	KeySetTestCanceled      = "set.test_canceled"
-	KeySetTestOK            = "set.test_ok"
-	KeySetTestFailed        = "set.test_failed"
-	KeySetTestVersion       = "set.test_version"
-	KeySetTestCompat        = "set.test_compat"
-	KeySetTestEncrypt       = "set.test_encrypt"
-	KeySetTestNoReply       = "set.test_no_reply"
-	KeySetPolled            = "set.polled"
-	KeySetPollCoalesced     = "set.poll_coalesced"
-	KeySetNotConnected      = "set.not_connected"
-	KeySetChangedOffline    = "set.changed_offline"
-	KeySetUnsupported       = "set.unsupported"
-	KeySetTooLarge          = "set.too_large"
-	KeySetNoRevision        = "set.no_revision"
-	KeySetConflictHint      = "set.conflict_hint"
-	KeySetOtherInvalid      = "set.other_invalid"
-	KeySetAccessHint        = "set.access_hint"
-	KeySetRateHint          = "set.rate_hint"
-	KeySetTimeoutHint       = "set.timeout_hint"
-	KeySetFailed            = "set.failed"
-	KeySetElevateCanceled   = "set.elevate_canceled"
-	KeySetElevateFailed     = "set.elevate_failed"
+	// phase 11 (CHK-TRAY-47): left navigation of the settings window
+	KeySetNavProfiles     = "set.nav_profiles"
+	KeySetNavGeneral      = "set.nav_general"
+	KeySetNavViber        = "set.nav_viber"
+	KeyTipSetNavProfiles  = "tip.set.nav_profiles"
+	KeyGenPoll            = "gen.poll"
+	KeyGenWarn            = "gen.warn"
+	KeyGenError           = "gen.error"
+	KeyGenBeepEnabled     = "gen.beep_enabled"
+	KeyGenWarnFreq        = "gen.warn_freq"
+	KeyGenWarnDur         = "gen.warn_dur"
+	KeyGenErrorFreq       = "gen.error_freq"
+	KeyGenErrorDur        = "gen.error_dur"
+	KeyGenGap             = "gen.gap"
+	KeyGenLanguage        = "gen.language"
+	KeyGenLangAuto        = "gen.lang_auto"
+	KeyGenLangRU          = "gen.lang_ru"
+	KeyGenLangEN          = "gen.lang_en"
+	KeyGenAutostart       = "gen.autostart"
+	KeyGenNote            = "gen.note"
+	KeyGenSaved           = "gen.saved"
+	KeyMenuLanguage       = "menu.language"
+	KeyMenuLangAuto       = "menu.lang_auto"
+	KeyMenuLangRU         = "menu.lang_ru"
+	KeyMenuLangEN         = "menu.lang_en"
+	KeySetTesting         = "set.testing"
+	KeySetTestCanceled    = "set.test_canceled"
+	KeySetTestOK          = "set.test_ok"
+	KeySetTestFailed      = "set.test_failed"
+	KeySetTestVersion     = "set.test_version"
+	KeySetTestCompat      = "set.test_compat"
+	KeySetTestEncrypt     = "set.test_encrypt"
+	KeySetTestNoReply     = "set.test_no_reply"
+	KeySetPolled          = "set.polled"
+	KeySetPollCoalesced   = "set.poll_coalesced"
+	KeySetNotConnected    = "set.not_connected"
+	KeySetChangedOffline  = "set.changed_offline"
+	KeySetUnsupported     = "set.unsupported"
+	KeySetTooLarge        = "set.too_large"
+	KeySetNoRevision      = "set.no_revision"
+	KeySetConflictHint    = "set.conflict_hint"
+	KeySetOtherInvalid    = "set.other_invalid"
+	KeySetAccessHint      = "set.access_hint"
+	KeySetRateHint        = "set.rate_hint"
+	KeySetTimeoutHint     = "set.timeout_hint"
+	KeySetFailed          = "set.failed"
+	KeySetElevateCanceled = "set.elevate_canceled"
+	KeySetElevateFailed   = "set.elevate_failed"
 
 	KeyUnknownMessage = "msg.unknown"
 )
@@ -987,6 +992,10 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAutostartErrUnknown:    {"Служба не смогла изменить автозапуск трея.", "The service could not change the tray autostart."},
 	KeyGenPage:                {"Общие настройки…", "General settings…"},
 	KeyGenProfilesPage:        {"Базы данных…", "Databases…"},
+	KeySetNavProfiles:         {"Базы данных", "Databases"},
+	KeySetNavGeneral:          {"Общие настройки", "General settings"},
+	KeySetNavViber:            {"Уведомления Viber", "Viber notifications"},
+	KeyTipSetNavProfiles:      {"Базы данных: подключение, вход, шифрование, опрос и пороги каждой базы.", "Databases: connection, sign-in, encryption, polling and thresholds of each database."},
 	KeyGenPoll:                {"Интервал опроса, с:", "Poll interval, s:"},
 	KeyGenWarn:                {"Предупреждение через, мин:", "Warning after, min:"},
 	KeyGenError:               {"Ошибка через, мин:", "Error after, min:"},
@@ -1082,7 +1091,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipSetError:         {"Через сколько минут без обмена показать ошибку. Должно быть больше предупреждения. Значение, равное унаследованному из общих настроек, не фиксируется: профиль следует общим настройкам.", "Minutes without exchange before an error. Must be greater than the warning. A value equal to the one inherited from the general settings is not fixed: the profile follows the general settings."},
 	KeyTipSetConnTimeout:   {"Сколько секунд ждать подключения к SQL Server (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for the connection to SQL Server (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
 	KeyTipSetQueryTimeout:  {"Сколько секунд ждать ответа на запрос (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for a query result (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
-	KeyTipSetPage:          {"Переключиться между базами и общими настройками.", "Switch between the databases and the general settings."},
+	KeyTipSetPage:          {"Общие настройки компьютера: опрос, пороги, звук, язык журнала службы, автозапуск.", "Computer-wide settings: polling, thresholds, sound, service log language, autostart."},
 	KeyTipSetStatus:        {"Результат последнего действия и ошибки.", "Result of the last action and errors."},
 	KeyTipSetTest:          {"Проверить подключение и чтение таблиц с текущими значениями формы.", "Test the connection and table reading with the current form values."},
 	KeyTipSetCancelTest:    {"Прервать идущую проверку подключения.", "Stop the running connection test."},

@@ -50,11 +50,11 @@ func init() {
 // SQLWizardMessageKeys lists the phase 9 sql.* keys (auto-pick reasons,
 // candidate reasons, diagnosis titles sql.diag_*).
 func SQLWizardMessageKeys() []string {
-	return append(append(SQLDiagnosisKeys(), SQLCandidateReasonKeys()...), MsgSQLAutoPickOK, MsgSQLAutoPickNone, MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters,
+	return append(append(append(SQLDiagnosisKeys(), SQLCandidateReasonKeys()...), SQLBrowseAdviceKeys()...), MsgSQLAutoPickOK, MsgSQLAutoPickNone, MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters,
 		MsgSQLAutoPickIncomplete, MsgSQLAutoPickLowScore, MsgSQLAutoPickAmbiguous)
 }
 
 // SQLWizardValidationKeys lists the phase 9 validation.sql_* keys.
 func SQLWizardValidationKeys() []string {
-	return []string{ValSQLBrowseHost, ValSQLInstanceName, ValSQLPrincipal, ValSQLGrantPassword}
+	return []string{ValSQLBrowseHost, ValSQLInstanceName, ValSQLPrincipal, ValSQLGrantPassword, ValSQLBrowseCIDR}
 }

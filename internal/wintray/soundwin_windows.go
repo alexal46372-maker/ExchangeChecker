@@ -101,12 +101,11 @@ func newSoundWindow(a *App) (*soundWindow, error) {
 	w.save = child(hwnd, "BUTTON", i18n.T(i18n.KeySoundSave, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idSndSave, 0, 0, 0, 0)
 	w.canc = child(hwnd, "BUTTON", i18n.T(i18n.KeySoundCancel, lang), winapi.WS_TABSTOP, idSndCancel, 0, 0, 0, 0)
 	// phase 11 (CHK-TRAY-45): two profiles, the info line, the buttons
-	f := newForm(&ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P16, Items: []ui.Node{
-		warnN, errN,
-		&ui.Ctl{H: w.info, Kind: ui.Box, W: 540, Hgt: 36, Grow: true},
-		&ui.Row{Right: true, Items: []ui.Node{uiCtl(w.save, ui.Button, ""), uiCtl(w.canc, ui.Button, "")}},
-	}}}, 0)
-	fitToContent(hwnd, f.W, f.H)
+	fitForm(hwnd, &ui.Pad{Left: ui.P16, Top: ui.P16, Right: ui.P16, Child: &ui.Col{Gap: ui.P16, Items: []ui.Node{warnN, errN}}},
+		&ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+			&ui.Ctl{H: w.info, Kind: ui.Box, W: 540, Hgt: 36, Grow: true},
+			&ui.Row{Right: true, Items: []ui.Node{uiCtl(w.save, ui.Button, ""), uiCtl(w.canc, ui.Button, "")}},
+		}}}, 0, false)
 	w.tips.set(w.save, i18n.T(i18n.KeyTipSoundSave, lang))
 	w.load(a.soundPrefs)
 	if !a.opt.HiddenPanel {

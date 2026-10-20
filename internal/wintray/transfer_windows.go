@@ -239,11 +239,9 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 	do := add("BUTTON", w.t(i18n.KeyXferDo), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, idImpDo, ui.Button)
 	cl := add("BUTTON", w.t(i18n.KeyStClose), winapi.WS_TABSTOP, idImpCancel, ui.Button)
 	// phase 11 (CHK-TRAY-45): file, mode, tray block, preview, buttons
-	form := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
-		file, &ui.Col{Gap: ui.P4, Items: []ui.Node{merge, repl}}, tray, pv,
-		&ui.Row{Right: true, Items: []ui.Node{do, cl}},
-	}}}, 0)
-	fitToContent(hwnd, form.W, form.H)
+	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		file, &ui.Col{Gap: ui.P4, Items: []ui.Node{merge, repl}}, tray, pv}}},
+		&ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{do, cl}}}, 0, false)
 	winapi.SendMessage(d.ctl[idImpMerge], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
 	if f.Tray != nil && !w.cfg.otherUser {
 		winapi.SendMessage(d.ctl[idImpTray], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)

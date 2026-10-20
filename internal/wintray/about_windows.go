@@ -47,11 +47,8 @@ func newAboutWindow(owner uintptr, title, text, okText, okTip string, show bool,
 	// phase 11 (CHK-TRAY-45): laid out by the ui framework
 	label := child(hwnd, "STATIC", text, winapi.SS_LEFT, idAboutText, 0, 0, 0, 0)
 	ok := child(hwnd, "BUTTON", okText, winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, winapi.IDOK, 0, 0, 0, 0)
-	f := newForm(&ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P16, Items: []ui.Node{
-		uiCtl(label, ui.Label, text),
-		&ui.Row{Right: true, Items: []ui.Node{uiCtl(ok, ui.Button, okText)}},
-	}}}, 340)
-	fitToContent(hwnd, f.W, f.H)
+	fitForm(hwnd, &ui.Pad{Left: ui.P16, Top: ui.P16, Right: ui.P16, Child: uiCtl(label, ui.Label, text)},
+		&ui.Pad{All: ui.P16, Child: &ui.Row{Right: true, Items: []ui.Node{uiCtl(ok, ui.Button, okText)}}}, 340, false)
 	aboutTips = newTooltips(hwnd) // CHK-TRAY-15
 	aboutTips.set(ok, okTip)
 	if show {

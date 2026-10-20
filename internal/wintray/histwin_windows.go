@@ -158,15 +158,14 @@ func newHistWindow(a *App, row trayui.StatusRow, show bool) (*histWindow, error)
 	hw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, hw.lang), winapi.WS_TABSTOP, idHistHTML, 0, 0, 0, 0)
 	hw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose, hw.lang), winapi.WS_TABSTOP, idHistClose, 0, 0, 0, 0)
 	// phase 11 (CHK-TRAY-45): span radios, the chart, info | exports, close
-	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+	// phase 11 (CHK-TRAY-47): bar pinned, never wider than the work area
+	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
 		&ui.Row{Gap: ui.P16, Items: []ui.Node{uiCtl(hw.day, ui.Check, ""), uiCtl(hw.week, ui.Check, "")}},
 		&ui.Ctl{H: hw.chart, Kind: ui.Box, W: w - 36, Hgt: h - 130, Grow: true},
-		&ui.Row{Grow: true, Items: []ui.Node{
-			&ui.Ctl{H: hw.info, Kind: ui.Box, W: 470, Hgt: 22},
-			&ui.Row{Right: true, Items: []ui.Node{uiCtl(hw.csv, ui.Button, ""), uiCtl(hw.html, ui.Button, ""), uiCtl(hw.close, ui.Button, "")}},
-		}},
-	}}}, 0)
-	fitToContent(hwnd, f.W, f.H)
+	}}}, &ui.Pad{All: ui.P12, Child: &ui.Row{Grow: true, Items: []ui.Node{
+		&ui.Ctl{H: hw.info, Kind: ui.Box, W: 470, Hgt: 22},
+		&ui.Row{Right: true, Items: []ui.Node{uiCtl(hw.csv, ui.Button, ""), uiCtl(hw.html, ui.Button, ""), uiCtl(hw.close, ui.Button, "")}},
+	}}}, 0, false)
 	for c, k := range map[uintptr]string{hw.day: i18n.KeyTipHistDay, hw.week: i18n.KeyTipHistWeek, hw.chart: i18n.KeyTipHistChart,
 		hw.info: i18n.KeyTipHistInfo, hw.csv: i18n.KeyTipHistExportCSV, hw.html: i18n.KeyTipHistExportHTML, hw.close: i18n.KeyTipHistClose} {
 		hw.tips.set(c, i18n.T(k, hw.lang))

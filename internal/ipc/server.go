@@ -121,6 +121,14 @@ type SQLWizard interface {
 	SQLDatabases(ctx context.Context, req model.IPCRequest) (model.SQLDatabasesResult, error)
 }
 
+// SQLWizardV2 (phase 11, CHK-IPC-12/13): sql_browse with modes and
+// progress, sql_test_steps with stage pushes. Capabilities browse_subnet,
+// browse_local, test_steps.
+type SQLWizardV2 interface {
+	SQLBrowseProgress(ctx context.Context, req model.IPCRequest, progress func(model.SQLBrowseProgress)) (model.SQLBrowseResult, error)
+	SQLTestSteps(ctx context.Context, req model.IPCRequest, step func(model.SQLCheckStep)) (model.SQLServerCheckResult, error)
+}
+
 // interactiveCommand reports whether cmd is one of the Discoverer
 // commands.
 func interactiveCommand(cmd string) bool {
@@ -363,6 +371,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if wiz {
 		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
+		if _, ok := s.H.(SQLWizardV2); ok { // phase 11 (CHK-IPC-12/13)
+			caps = append(caps, model.CapBrowseSubnet, model.CapBrowseLocal, model.CapTestSteps)
+		}
 	}
 	if s.Viber != nil {
 		caps = append(caps, model.CapViber) // phase 10 (CHK-SVC-06)
@@ -801,8 +812,26 @@ func (s *Server) startSQL(c *conn, w SQLWizard, req model.IPCRequest) bool {
 	s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
 		m := model.IPCMessage{ID: req.ID}
 		switch req.Cmd {
+		case model.CmdSQLTestSteps:
+			w2, ok := w.(SQLWizardV2)
+			if !ok {
+				return m, &model.IPCError{Code: model.ErrCodeUnknownCommand, Message: "ipc: sql_test_steps is not supported"}
+			}
+			res, err := w2.SQLTestSteps(ctx, req, func(st model.SQLCheckStep) {
+				c.send(model.IPCMessage{Type: model.MsgSQLTestStepsProgress, Ref: req.ID, TestStep: &st}) // dropped when the client is slow
+			})
+			if err != nil {
+				return m, err
+			}
+			m.Type, m.SQLTestSteps = model.MsgSQLTestSteps, &res
 		case model.CmdSQLBrowse:
-			res, err := w.SQLBrowse(ctx, req)
+			var res model.SQLBrowseResult
+			var err error
+			if w2, ok := w.(SQLWizardV2); ok {
+				res, err = w2.SQLBrowseProgress(ctx, req, browseProgress(c, req.ID, time.Now))
+			} else {
+				res, err = w.SQLBrowse(ctx, req)
+			}
 			if err != nil {
 				return m, err
 			}
@@ -1435,4 +1464,27 @@ func (s *Server) eventsSince(req model.IPCRequest) model.IPCMessage {
 		}
 	}
 	return m
+}
+
+// browseProgress pushes sql_browse_progress {ref, phase, done, total,
+// found} (CHK-IPC-12): at most one per model.SQLBrowseProgressEvery, but
+// always the first event, a phase change and the "done" phase. A push
+// the slow client cannot take is dropped (never a disconnect).
+func browseProgress(c *conn, ref uint64, now func() time.Time) func(model.SQLBrowseProgress) {
+	var mu sync.Mutex
+	var last time.Time
+	var phase string
+	sent := false
+	return func(p model.SQLBrowseProgress) {
+		mu.Lock()
+		t := now()
+		ok := !sent || p.Phase != phase || p.Phase == "done" || t.Sub(last) >= model.SQLBrowseProgressEvery
+		if ok {
+			sent, last, phase = true, t, p.Phase
+		}
+		mu.Unlock()
+		if ok {
+			c.send(model.IPCMessage{Type: model.MsgSQLBrowseProgress, Ref: ref, BrowseProgress: &p})
+		}
+	}
 }

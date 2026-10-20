@@ -194,6 +194,11 @@ type IPCRequest struct {
 	Viber bool   `json:"viber,omitempty"`
 	// Hours / Buckets: summary (phase 11, CHK-SVC-07).
 	Hours   int `json:"hours,omitempty"`
+	// Phase 11 (CHK-IPC-12/13): sql_browse v2 Port / CIDR (Mode shared
+	// with import_config), sql_test_steps Server (+ ProfileID).
+	Port   int    `json:"port,omitempty"`
+	CIDR   string `json:"cidr,omitempty"`
+	Server string `json:"server,omitempty"`
 	Buckets int `json:"buckets,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
@@ -336,6 +341,12 @@ type IPCMessage struct {
 	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
 	// Summary: summary reply (phase 11, CHK-SVC-07).
 	Summary *Summary `json:"summary,omitempty"`
+	// Phase 11 (CHK-IPC-12/13): progress pushes (written flat, see
+	// MarshalJSON) and the sql_test_steps reply.
+	Ref            uint64                `json:"-"`
+	BrowseProgress *SQLBrowseProgress    `json:"-"`
+	TestStep       *SQLCheckStep         `json:"-"`
+	SQLTestSteps   *SQLServerCheckResult `json:"sqlTestSteps,omitempty"`
 
 	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
 	// node_points, check_mapping; CHK-IPC-08/09):

@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -48,9 +49,20 @@ func fieldRequestError(err error, field string) error {
 // clamped to model.IPCSQLBrowseMin/MaxTimeoutMs, instances capped to the
 // limit and model.MaxSQLWizardJSONBytes (Truncated).
 func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQLBrowseResult, error) {
+	return m.SQLBrowseProgress(ctx, req, nil)
+}
+
+// SQLBrowseProgress is SQLBrowse with the phase 11 request fields (mode,
+// port, cidr; CHK-IPC-12) and sqlcheck.Browse progress events. Limits per
+// mode (rate_limited + retryAfterMs): broadcast / auto 15 s, local 3 s,
+// subnet 15 s, host 3 s (+ any host 1 s); a running browse: busy +
+// retryAfterMs. Subnet: the whole request ends after
+// model.IPCSQLBrowseSubnetTimeout.
+func (m *Monitor) SQLBrowseProgress(ctx context.Context, req model.IPCRequest, progress func(model.SQLBrowseProgress)) (model.SQLBrowseResult, error) {
 	var res model.SQLBrowseResult
 	br := model.SQLBrowseRequest{Host: strings.TrimSpace(req.Host), Instance: strings.TrimSpace(req.Instance),
-		TimeoutMs: model.ClampSQLBrowseTimeoutMs(req.TimeoutMs), Limit: req.Limit}
+		TimeoutMs: model.ClampSQLBrowseTimeoutMs(req.TimeoutMs), Limit: req.Limit,
+		Mode: req.Mode, Port: req.Port, CIDR: strings.TrimSpace(req.CIDR)}
 	if br.Host != "" {
 		if err := model.ValidateSQLServerAddr(br.Host); err != nil {
 			return res, fieldRequestError(err, "host")
@@ -62,9 +74,16 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 	x := m.explorer
 	now := m.opt.Now()
 	key, every := "", model.SQLBrowseBroadcastInterval
-	if br.Host != "" {
+	mode := br.EffectiveMode()
+	switch mode {
+	case model.SQLBrowseLocal:
+		key, every = "l", model.SQLBrowseLocalInterval
+	case model.SQLBrowseSubnet:
+		key, every = "s", model.SQLBrowseSubnetInterval
+	case model.SQLBrowseHost:
 		key, every = "h:"+strings.ToLower(br.Host), model.SQLBrowseHostInterval
 	}
+	targeted := mode == model.SQLBrowseHost
 	x.mu.Lock()
 	x.defaults()
 	var wait time.Duration
@@ -76,7 +95,7 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 		}
 	}
 	hold(key, every)
-	if br.Host != "" { // aliases (FQDN / IP) of one host: service-wide limit
+	if targeted { // aliases (FQDN / IP) of one host: service-wide limit
 		hold(browseKeyAnyHost, model.SQLBrowseAnyHostInterval)
 	}
 	if wait > 0 {
@@ -85,13 +104,23 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 		return res, &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgBrowseRateLimited,
 			Message: "monitor: sql_browse rate limited, retry after " + strconv.FormatInt(ms, 10) + " ms", RetryAfterMs: ms}
 	}
+	total := time.Duration(br.TimeoutMs)*time.Millisecond + model.IPCSQLBrowseGrace
+	if mode == model.SQLBrowseSubnet {
+		total = model.IPCSQLBrowseSubnetTimeout
+	}
 	if x.browsing {
+		ms := int64(x.browseEnd.Sub(now) / time.Millisecond)
+		if ms < 1 {
+			ms = 1
+		}
 		x.mu.Unlock()
-		return res, ErrDiscoverBusy
+		return res, &model.IPCError{Code: model.ErrCodeBusy, Key: model.MsgDiscoverBusy, RetryAfterMs: ms,
+			Message: "monitor: a sql_browse is running, retry after " + strconv.FormatInt(ms, 10) + " ms"}
 	}
 	x.browsing = true
+	x.browseEnd = now.Add(total)
 	x.browseAt[key] = now
-	if br.Host != "" {
+	if targeted {
 		x.browseAt[browseKeyAnyHost] = now
 	}
 	for k, t := range x.browseAt { // forget old hosts
@@ -100,13 +129,19 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 		}
 	}
 	browse := x.Browse
+	if browse == nil {
+		with := x.BrowseWith
+		browse = func(ctx context.Context, r model.SQLBrowseRequest) (model.SQLBrowseResult, error) {
+			return with(ctx, r, sqlcheck.BrowseOptions{Progress: progress})
+		}
+	}
 	x.mu.Unlock()
 	defer func() {
 		x.mu.Lock()
 		x.browsing = false
 		x.mu.Unlock()
 	}()
-	cctx, cancel := context.WithTimeout(ctx, time.Duration(br.TimeoutMs)*time.Millisecond+model.IPCSQLBrowseGrace)
+	cctx, cancel := context.WithTimeout(ctx, total)
 	defer cancel()
 	start := time.Now()
 	res, err := browse(cctx, br)
@@ -115,7 +150,7 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 			return model.SQLBrowseResult{}, ctx.Err()
 		}
 		err = interactiveError(err, "")
-		m.opt.Log.Printf("sql_browse %q: %v in %d ms", br.Host, err, time.Since(start).Milliseconds())
+		m.opt.Log.Printf("sql_browse %s %q: %v in %d ms", mode, br.Host, err, time.Since(start).Milliseconds())
 		return model.SQLBrowseResult{}, err
 	}
 	limit := br.Limit
@@ -128,8 +163,13 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 	if res.Instances == nil {
 		res.Instances = []model.SQLServerInstance{}
 	}
-	m.opt.Log.Printf("sql_browse %q: %d instances, %d responders, truncated %v in %d ms", br.Host, len(res.Instances),
-		res.Responders, res.Truncated, time.Since(start).Milliseconds())
+	if len(res.SendErrors) > model.MaxSQLBrowseSendErrors {
+		res.SendErrors = res.SendErrors[:model.MaxSQLBrowseSendErrors]
+	}
+	// diagnostics: addresses / ports / counts only (no credentials exist here)
+	m.opt.Log.Printf("sql_browse %s %q cidr %q: %d instances, %d responders, sent %d, send errors %d, responded %d, advice %v, truncated %v in %d ms",
+		mode, br.Host, br.CIDR, len(res.Instances), res.Responders, res.Sent, res.SendErrorCount, res.Responded, res.Advice,
+		res.Truncated, time.Since(start).Milliseconds())
 	return res, nil
 }
 
@@ -199,5 +239,86 @@ func (m *Monitor) SQLDatabases(ctx context.Context, req model.IPCRequest) (model
 		res.Databases = []model.SQLDatabaseInfo{}
 	}
 	m.logInteractive(model.CmdSQLDatabases, p, start, nil, pw, "%d databases, truncated %v", len(res.Databases), res.Truncated)
+	return res, nil
+}
+
+// SQLTestSteps runs IPC sql_test_steps (phase 11, CHK-IPC-13): the
+// step-by-step check of req.Server (sqlcheck.CheckServer), with the saved
+// profile req.ProfileID (auth, database, encryption and its saved
+// password, loaded here — a password never travels over IPC) when given.
+// One check per service (busy + retryAfterMs), the whole request ends
+// after model.IPCSQLTestStepsTimeout. step is called after every stage.
+// The log gets the server, the profile id and per stage id / ok / ms /
+// code only (never the login, the password, a connection string or the
+// stage detail, which may carry server error text).
+func (m *Monitor) SQLTestSteps(ctx context.Context, req model.IPCRequest, step func(model.SQLCheckStep)) (model.SQLServerCheckResult, error) {
+	server := strings.TrimSpace(req.Server)
+	if server == "" {
+		return model.SQLServerCheckResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+			Message: "sql_test_steps: server is required", Args: []string{"server", model.ValRequired}}
+	}
+	if err := model.ValidateSQLServerAddr(server); err != nil {
+		return model.SQLServerCheckResult{}, fieldRequestError(err, "server")
+	}
+	opt := sqlcheck.ServerCheckOptions{Step: step}
+	if req.ProfileID != "" {
+		m.mu.Lock()
+		e := m.entries[req.ProfileID]
+		var p model.Profile
+		var pw string
+		if e != nil {
+			p, pw = e.profile, e.password
+		}
+		m.mu.Unlock()
+		if e == nil {
+			return model.SQLServerCheckResult{}, ErrUnknownProfile
+		}
+		opt.Profile, opt.Password = &p, pw
+	}
+	x := m.explorer
+	now := m.opt.Now()
+	x.mu.Lock()
+	x.defaults()
+	if x.checking {
+		ms := int64(x.checkEnd.Sub(now) / time.Millisecond)
+		if ms < 1 {
+			ms = 1
+		}
+		x.mu.Unlock()
+		return model.SQLServerCheckResult{}, &model.IPCError{Code: model.ErrCodeBusy, Key: model.MsgDiscoverBusy, RetryAfterMs: ms,
+			Message: "monitor: a sql_test_steps is running, retry after " + strconv.FormatInt(ms, 10) + " ms"}
+	}
+	x.checking, x.checkEnd = true, now.Add(model.IPCSQLTestStepsTimeout)
+	check := x.CheckServer
+	x.mu.Unlock()
+	defer func() {
+		x.mu.Lock()
+		x.checking = false
+		x.mu.Unlock()
+	}()
+	cctx, cancel := context.WithTimeout(ctx, model.IPCSQLTestStepsTimeout)
+	defer cancel()
+	start := time.Now()
+	res, err := check(cctx, server, opt)
+	if err != nil {
+		if ctx.Err() != nil {
+			return model.SQLServerCheckResult{}, ctx.Err()
+		}
+		err = interactiveError(err, opt.Password)
+		m.opt.Log.Printf("sql_test_steps %q profile %q: %v in %d ms", server, req.ProfileID, err, time.Since(start).Milliseconds())
+		return model.SQLServerCheckResult{}, err
+	}
+	if res.Steps == nil {
+		res.Steps = []model.SQLCheckStep{}
+	}
+	var b strings.Builder
+	for _, s := range res.Steps {
+		fmt.Fprintf(&b, " %s:%v:%dms", s.ID, s.OK, s.Ms)
+		if s.Code != "" {
+			b.WriteString(":" + s.Code)
+		}
+	}
+	m.opt.Log.Printf("sql_test_steps %q profile %q: ok %v, port %d, version %q, encryption %q, steps%s in %d ms", server, req.ProfileID,
+		res.OK, res.Port, res.Version, res.Encryption, b.String(), time.Since(start).Milliseconds())
 	return res, nil
 }

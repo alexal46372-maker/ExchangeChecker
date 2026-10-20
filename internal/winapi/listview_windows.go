@@ -235,3 +235,11 @@ func utf16Multi(s string) []uint16 {
 	}
 	return append(out, 0)
 }
+
+// LVM_SETCOLUMNWIDTH sets the width of a report column (phase 11).
+const LVM_SETCOLUMNWIDTH = 0x101E
+
+// ListViewSetColumnWidth sets the width (pixels) of column i.
+func ListViewSetColumnWidth(lv uintptr, i int, width int32) {
+	SendMessage(lv, LVM_SETCOLUMNWIDTH, uintptr(i), uintptr(width))
+}

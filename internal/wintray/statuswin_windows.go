@@ -117,16 +117,16 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	sw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV, lang), winapi.WS_TABSTOP, idStExportCSV, 0, 0, 0, 0)
 	sw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, lang), winapi.WS_TABSTOP, idStExportHTML, 0, 0, 0, 0)
 	sw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose, lang), winapi.WS_TABSTOP, idStClose, 0, 0, 0, 0)
-	// phase 11 (CHK-TRAY-45): the list, info | buttons on the right
-	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
-		&ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: h - 110, Grow: true},
-		&ui.Row{Grow: true, Items: []ui.Node{
-			&ui.Ctl{H: sw.info, Kind: ui.Box, W: 320, Hgt: 22},
+	// phase 11 (CHK-TRAY-45/47): the list, then the pinned bar (info line
+	// above the buttons); never wider than the work area, the columns
+	// share the width of the list
+	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Ctl{H: sw.list, Kind: ui.Box, W: w - 36, Hgt: h - 120, Grow: true}},
+		&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+			&ui.Ctl{H: sw.info, Kind: ui.Box, W: 320, Hgt: 22, Grow: true},
 			&ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
 				uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}},
-		}},
-	}}}, 0)
-	fitToContent(hwnd, f.W, f.H)
+		}}}, 0, false)
+	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, lang)
 	sw.tips.set(sw.list, i18n.T(i18n.KeyTipStList, lang))
 	sw.tips.set(sw.check, i18n.T(i18n.KeyTipCheckNow, lang))
 	sw.tips.set(sw.csv, i18n.T(i18n.KeyTipExportCSV, lang))
@@ -256,5 +256,28 @@ func (sw *statusWindow) openHistory() {
 	}
 	if sw.onHistory != nil {
 		sw.onHistory(r)
+	}
+}
+
+// fitColumns spreads the column widths (96-dpi units) over the client
+// width of the list view, each at least as wide as its header text.
+func fitColumns(lv uintptr, widths []int32, keys []string, lang string) {
+	r := winapi.GetClientRect(lv)
+	avail := r.Right - r.Left - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
+	m := uiMetrics()
+	var total int32
+	for _, w := range widths {
+		total += px(w)
+	}
+	if avail <= 0 || total <= 0 {
+		return
+	}
+	for i, w := range widths {
+		cw := px(w) * avail / total
+		if i < len(keys) {
+			tw, _ := m.Text(i18n.T(keys[i], lang))
+			cw = max32(cw, tw+px(ui.P12))
+		}
+		winapi.ListViewSetColumnWidth(lv, i, cw)
 	}
 }

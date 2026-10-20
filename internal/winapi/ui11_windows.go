@@ -12,6 +12,7 @@ import "unsafe"
 var (
 	procGetTextMetricsW        = modgdi32.NewProc("GetTextMetricsW")
 	procRedrawWindow           = moduser32.NewProc("RedrawWindow")
+	procSetParent              = moduser32.NewProc("SetParent")
 	moddwmapi                  = newSystemDLL("dwmapi.dll")
 	procDwmGetWindowAttribute  = moddwmapi.NewProc("DwmGetWindowAttribute")
 	procCreateCompatibleDC     = modgdi32.NewProc("CreateCompatibleDC")
@@ -161,4 +162,17 @@ func VisibleFrame(hwnd uintptr) (r RECT, ok bool) {
 		}
 	}
 	return GetWindowRect(hwnd), false
+}
+
+// Notifications a scroll host forwards to its window (phase 11).
+const (
+	WM_DRAWITEM        = 0x002B
+	WM_CTLCOLORLISTBOX = 0x0134
+	WM_CTLCOLORBTN     = 0x0135
+	WM_CTLCOLORSTATIC  = 0x0138
+)
+
+// SetParent moves a control into another parent window.
+func SetParent(child, parent uintptr) {
+	callProc(procSetParent, child, parent)
 }

@@ -204,6 +204,9 @@ const (
 	KeyGenProfilesPage      = "gen.profiles_page"
 	// phase 11 (CHK-TRAY-47): left navigation of the settings window
 	KeySetNavProfiles     = "set.nav_profiles"
+	KeyDiscCandidates     = "disc.candidates"
+	KeyDiscDetails        = "disc.details"
+	KeyDiscResultLabel    = "disc.result_label"
 	KeySetNavGeneral      = "set.nav_general"
 	KeySetNavViber        = "set.nav_viber"
 	KeyTipSetNavProfiles  = "tip.set.nav_profiles"
@@ -993,6 +996,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyGenPage:                {"Общие настройки…", "General settings…"},
 	KeyGenProfilesPage:        {"Базы данных…", "Databases…"},
 	KeySetNavProfiles:         {"Базы данных", "Databases"},
+	KeyDiscCandidates:         {"Найденные таблицы:", "Found tables:"},
+	KeyDiscDetails:            {"Подробности:", "Details:"},
+	KeyDiscResultLabel:        {"Результат проверки:", "Check result:"},
 	KeySetNavGeneral:          {"Общие настройки", "General settings"},
 	KeySetNavViber:            {"Уведомления Viber", "Viber notifications"},
 	KeyTipSetNavProfiles:      {"Базы данных: подключение, вход, шифрование, опрос и пороги каждой базы.", "Databases: connection, sign-in, encryption, polling and thresholds of each database."},

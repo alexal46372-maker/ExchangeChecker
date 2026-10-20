@@ -252,13 +252,19 @@ func (dd *discoveryDialog) build() {
 	tm := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idDiscTime, ui.Edit, 100, 0)
 	tolL := label(i18n.KeyDiscTolerance)
 	tol := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idDiscTol, ui.Edit, 45, 0)
-	byValue := &ui.Row{Grow: true, Items: []ui.Node{pointL, point, timeL, tm, tolL, tol, &ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscByValue, idDiscByValue)}}}}
-	hint := &ui.Row{Right: true, Items: []ui.Node{label(i18n.KeyDiscToleranceHint)}}
+	// the hint «0 или пусто…» under its own field (phase 11)
+	tolG := &ui.Grid{ColGap: ui.P8, Rows: []ui.GridRow{{Label: tolL, Field: &ui.Col{Gap: 2, Items: []ui.Node{tol, label(i18n.KeyDiscToleranceHint)}}}}}
+	byValue := &ui.Row{Grow: true, Items: []ui.Node{pointL, point, timeL, tm, tolG, &ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscByValue, idDiscByValue)}}}}
 	// candidates and the details of the selected one (no horizontal
 	// scrolling: the details box shows the whole candidate)
+	// every multi-line box has its label (phase 11)
+	candL := label(i18n.KeyDiscCandidates)
+	cand := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idDiscList, ui.Box, 520, 132)
+	detL := label(i18n.KeyDiscDetails)
+	det := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscDetails, ui.Box, 308, 132)
+	det.Grow = true
 	lists := &ui.Row{Align: ui.Top, Grow: true, Items: []ui.Node{
-		c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idDiscList, ui.Box, 520, 150),
-		c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscDetails, ui.Box, 308, 150)}}
+		&ui.Col{Gap: 2, Items: []ui.Node{candL, cand}}, &ui.Col{Gap: 2, Items: []ui.Node{detL, det}}}}
 	// mapping editor: the kind, its source label, two columns of boxes
 	modeL := label(i18n.KeyDiscMode)
 	mode := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, idDiscMode, ui.Combo, 290, 0)
@@ -282,14 +288,18 @@ func (dd *discoveryDialog) build() {
 	sql := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_WANTRETURN|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idDiscSQL, ui.Box, 836, 64)
 	sql.Grow = true
-	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscResult, ui.Box, 836, 60)
+	sql.Hgt = 64
+	resL := label(i18n.KeyDiscResultLabel)
+	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscResult, ui.Box, 836, 56)
 	res.Grow = true
 	buttons := &ui.Row{Grow: true, Items: []ui.Node{btn(i18n.KeyDiscCheck, idDiscCheck), btn(i18n.KeyDiscApply, idDiscApply),
 		&ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscClose, idDiscClose)}}}}
-	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: 6, Items: []ui.Node{
-		top, &ui.Col{Gap: ui.P4, Items: []ui.Node{byValue, hint}}, lists, modeRow, maps, checks, sqlHead, sql, res, buttons,
-	}}}, 0)
-	fitToContent(dd.hwnd, f.W, f.H)
+	// phase 11: the buttons pinned to the bottom, the rest scrolls when
+	// the work area is too small (1024×768 at 144 dpi)
+	content := &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: 6, Items: []ui.Node{
+		top, byValue, lists, modeRow, maps, checks, sqlHead, sql, &ui.Col{Gap: 2, Items: []ui.Node{resL, res}},
+	}}}
+	fitForm(dd.hwnd, content, &ui.Pad{All: ui.P12, Child: buttons}, 0, false)
 	for _, k := range []string{i18n.KeyDiscModeAuto, i18n.KeyDiscModeManual, i18n.KeyDiscModeCounters} {
 		winapi.SendMessageString(dd.ctl[idDiscMode], winapi.CB_ADDSTRING, 0, dd.t(k))
 	}

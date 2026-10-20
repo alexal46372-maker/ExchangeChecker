@@ -175,3 +175,21 @@ func TestCHK_RES_01_TrayTarget(t *testing.T) {
 		t.Errorf("tray VERSIONINFO %+v", pv)
 	}
 }
+
+// TestCHK_TRAY_49_CommittedIconsFresh — the committed tray .ico files
+// are what mkres generates (phase 11, PLAN §12 p.144).
+func TestCHK_TRAY_49_CommittedIconsFresh(t *testing.T) {
+	ics, err := icons()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ics) < 11 {
+		t.Fatalf("%d icons", len(ics))
+	}
+	for _, rel := range sortedKeys(ics) {
+		old, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil || !bytes.Equal(old, ics[rel]) {
+			t.Errorf("%s is stale: run go run ./tools/mkres", rel)
+		}
+	}
+}

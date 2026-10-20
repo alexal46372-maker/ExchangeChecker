@@ -133,12 +133,13 @@ jobs:
         run: |
           go run ./tools/mkres -check
           go run ./tools/mkres
-          sha256sum cmd/*/*.syso > "$RUNNER_TEMP/syso1.txt"
+          sha256sum cmd/*/*.syso internal/wintray/icons/*.ico > "$RUNNER_TEMP/syso1.txt"
           go run ./tools/mkres
-          sha256sum cmd/*/*.syso > "$RUNNER_TEMP/syso2.txt"
+          sha256sum cmd/*/*.syso internal/wintray/icons/*.ico > "$RUNNER_TEMP/syso2.txt"
           diff "$RUNNER_TEMP/syso1.txt" "$RUNNER_TEMP/syso2.txt"
           go run ./tools/mkres -check
-          git diff --exit-code -- cmd
+          git diff --exit-code -- cmd internal/wintray/icons
+          git status --porcelain -- internal/wintray/icons | (! grep .)
       - name: go build (windows/amd64)
         env:
           GOOS: windows

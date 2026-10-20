@@ -254,7 +254,9 @@ func (dd *discoveryDialog) build() {
 	tol := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idDiscTol, ui.Edit, 45, 0)
 	// the hint «0 или пусто…» under its own field (phase 11)
 	tolG := &ui.Grid{ColGap: ui.P8, Rows: []ui.GridRow{{Label: tolL, Field: &ui.Col{Gap: 2, Items: []ui.Node{tol, label(i18n.KeyDiscToleranceHint)}}}}}
-	byValue := &ui.Row{Grow: true, Items: []ui.Node{pointL, point, timeL, tm, tolG, &ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscByValue, idDiscByValue)}}}}
+	// two rows so that the window fits 1024 px at 144 dpi (phase 11)
+	byValue := &ui.Col{Gap: 6, Items: []ui.Node{&ui.Row{Items: []ui.Node{pointL, point, timeL, tm}},
+		&ui.Row{Grow: true, Align: ui.Top, Items: []ui.Node{tolG, &ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscByValue, idDiscByValue)}}}}}}
 	// candidates and the details of the selected one (no horizontal
 	// scrolling: the details box shows the whole candidate)
 	// every multi-line box has its label (phase 11)

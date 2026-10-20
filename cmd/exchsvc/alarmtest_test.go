@@ -37,6 +37,11 @@ func TestCHK_IPC_11_AlarmTest(t *testing.T) {
 	if r, _ := s.c.Do(ctx, model.IPCRequest{Cmd: model.CmdAlarmTest, Level: "critical"}); r.Code != model.ErrCodeInvalidRequest || r.ErrorKey != model.MsgAlarmTestLevel {
 		t.Fatalf("bad level %+v", r)
 	}
+	// only clients that declared alarm_test get the test push (CHK-IPC-11)
+	h, err := s.c.Do(ctx, model.IPCRequest{Cmd: model.CmdClientHello, Capabilities: []string{"alarm_test", "future_x"}})
+	if err != nil || h.Type != model.MsgClientHello || len(h.Capabilities) != 1 || h.Capabilities[0] != "alarm_test" {
+		t.Fatalf("client_hello %+v %v", h, err)
+	}
 	r, err := s.c.Do(ctx, model.IPCRequest{Cmd: model.CmdAlarmTest, Level: model.AlarmLevelError, Viber: true})
 	if err != nil || r.Type != model.MsgAlarmTest || r.AlarmTest == nil {
 		t.Fatalf("alarm_test %+v %v", r, err)

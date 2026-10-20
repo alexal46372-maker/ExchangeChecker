@@ -196,10 +196,14 @@ type IPCRequest struct {
 	Hours int `json:"hours,omitempty"`
 	// Phase 11 (CHK-IPC-12/13): sql_browse v2 Port / CIDR (Mode shared
 	// with import_config), sql_test_steps Server (+ ProfileID).
-	Port    int    `json:"port,omitempty"`
-	CIDR    string `json:"cidr,omitempty"`
-	Server  string `json:"server,omitempty"`
-	Buckets int    `json:"buckets,omitempty"`
+	Port int `json:"port,omitempty"`
+	// Capabilities of client_hello; EventID of ack_alert by event
+	// (phase 11, CHK-IPC-11 / CHK-MON-18).
+	Capabilities []string `json:"capabilities,omitempty"`
+	EventID      uint64   `json:"eventId,omitempty"`
+	CIDR         string   `json:"cidr,omitempty"`
+	Server       string   `json:"server,omitempty"`
+	Buckets      int      `json:"buckets,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
 	// Query of discover_by_value (phase 6, G2).

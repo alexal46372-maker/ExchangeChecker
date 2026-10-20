@@ -51,7 +51,7 @@ func (s *Server) startAlarmTest(c *conn, req model.IPCRequest) bool {
 	s.mu.Unlock()
 	e := TestAlert(level, now)
 	s.Log.Printf("ipc: alarm_test %s by %q (viber %t)", req.Level, cl.Account, req.Viber)
-	s.broadcast(model.IPCMessage{Type: model.MsgAlert, Alert: &e})
+	s.broadcastTo(model.IPCMessage{Type: model.MsgAlert, Alert: &e}, model.ClientCapAlarmTest)
 	s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
 		res, err := s.AlarmTest.AlarmTest(ctx, e, req.Viber, cl.Account)
 		if err != nil {

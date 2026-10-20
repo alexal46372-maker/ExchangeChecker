@@ -123,3 +123,61 @@ func TestCHK_MON_18_NodeStatePoints(t *testing.T) {
 		t.Error("no counters")
 	}
 }
+
+// TestCHK_MON_18_AckEvent — a point with a lag alert and a stall alert:
+// ack_alert {eventId} acknowledges only that alert; the legacy
+// {profileId, pointKey} (tray 0.10) acknowledges both; unknown id.
+func TestCHK_MON_18_AckEvent(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	p := model.NewProfile("db1")
+	p.Name, p.Server, p.Database, p.AuthMode = "Склад", "srv", "db", model.AuthWindows
+	p.Mapping = model.Mapping{Mode: model.MappingCounters, Table: "_Node1", PointNameColumn: "_Description"}
+	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 10, 20, 40
+	var mu sync.Mutex
+	last := t0.Add(-5 * time.Hour)
+	opt := baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{p}}), clk)
+	opt.NewReader = func(model.Profile, string, sqlcheck.Options) (sqlcheck.ReadCloser, error) {
+		return stallReader{mu: &mu, last: &last}, nil
+	}
+	m := New(opt)
+	m.reloadConfig(true)
+	var s model.StatusSnapshot
+	for i := 0; i < 5 && len(s.Problems) < 2; i++ {
+		m.pollAll(context.Background())
+		s = m.Snapshot()
+		clk.Add(time.Minute)
+	}
+	if len(s.Problems) != 2 {
+		t.Fatalf("problems %+v", s.Problems)
+	}
+	byKind := map[string]model.Problem{}
+	for _, pr := range s.Problems {
+		byKind[pr.Kind] = pr
+	}
+	st, lag := byKind[model.ProblemStalled], byKind[model.ProblemError]
+	if st.EventID == 0 || lag.EventID == 0 || st.EventID == lag.EventID || st.PointKey != lag.PointKey {
+		t.Fatalf("problems %+v", s.Problems)
+	}
+	if _, err := m.AckEvent(999999); err != ErrNoActiveAlert {
+		t.Errorf("unknown id %v", err)
+	}
+	if n, err := m.AckEvent(st.EventID); n != 1 || err != nil {
+		t.Fatal(n, err)
+	}
+	acked := func() map[string]bool {
+		out := map[string]bool{}
+		for _, pr := range m.Snapshot().Problems {
+			out[pr.Kind] = pr.Acknowledged
+		}
+		return out
+	}
+	if a := acked(); !a[model.ProblemStalled] || a[model.ProblemError] {
+		t.Fatalf("after ack by event %v", a)
+	}
+	if n, err := m.AckAlert("db1", st.PointKey); n != 2 || err != nil {
+		t.Fatal(n, err)
+	}
+	if a := acked(); !a[model.ProblemStalled] || !a[model.ProblemError] {
+		t.Fatalf("after legacy ack %v", a)
+	}
+}

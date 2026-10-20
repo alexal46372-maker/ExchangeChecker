@@ -18,7 +18,11 @@ import (
 // stall is its own warning alert (problems kind "stalled", transitions
 // in events_since / history / Event Log / Viber "warning" + "recovered").
 const (
-	CapStalled            = "stalled"
+	CapStalled = "stalled"
+	// CapAckEvent: ack_alert {eventId} acknowledges only that alert; the
+	// legacy {profileId, pointKey} acks every alert of the point (lag +
+	// stalled).
+	CapAckEvent           = "ack_event"
 	ProblemStalled        = "stalled"
 	DefaultStalledMinutes = 120
 	MinStalledMinutes     = 10

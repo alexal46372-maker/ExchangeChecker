@@ -29,6 +29,26 @@ const (
 	MsgAlarmTestLevel = "monitor.alarm_test_level" // level not warning / error
 )
 
+// client_hello (phase 11, CHK-IPC-11, architect): a client declares
+// what it supports, {"cmd":"client_hello","capabilities":[...]} (any
+// client; at most ClientCapsMax items of at most ClientCapMaxLen chars,
+// else invalid_request; unknown ones ignored). Reply {"type":"client_hello",
+// "capabilities":[accepted known ones]}. Stored per connection; the test
+// alarm push (test:true) goes only to connections that declared
+// ClientCapAlarmTest (clients without client_hello, e.g. tray 0.10, never
+// get it).
+const (
+	CmdClientHello     = "client_hello"
+	MsgClientHello     = "client_hello"
+	CapClientHello     = "client_hello"
+	ClientCapAlarmTest = "alarm_test"
+	ClientCapsMax      = 64
+	ClientCapMaxLen    = 64
+)
+
+// KnownClientCaps lists the client capabilities the service acts on.
+var KnownClientCaps = map[string]bool{ClientCapAlarmTest: true}
+
 // AlarmTestResult is the reply of alarm_test (contract with EC Tray):
 // OK = the test alert was pushed; Viber (viber:true only) per recipient,
 // {"ok":false,"results":[],"errorKey":"notify.viber_no_token" |

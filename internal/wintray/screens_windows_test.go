@@ -64,8 +64,16 @@ func screenshot(hwnd uintptr, path string) error {
 		winapi.ShowWindow(hwnd, winapi.SW_HIDE)
 		winapi.SetWindowPos(hwnd, 0, r.Left, r.Top, 0, 0, winapi.SWP_NOSIZE|winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 	}()
-	PumpPending()
+	// paint now: windows shown off-screen may not have been composed yet
+	winapi.RedrawWindow(hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW|winapi.RDW_FRAME)
+	for i := 0; i < 3; i++ {
+		PumpPending()
+	}
 	w, h, bgra, ok := winapi.CaptureWindow(hwnd)
+	if ok && blackClient(bgra, w, h) {
+		// DWM content not composed: classic WM_PRINT capture
+		w, h, bgra, ok = winapi.CaptureWindowFlags(hwnd, 0)
+	}
 	if !ok {
 		return fmt.Errorf("capture failed (%dx%d)", w, h)
 	}
@@ -82,4 +90,16 @@ func screenshot(hwnd uintptr, path string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// blackClient reports a capture whose middle row is all black (an
+// uncomposed client area).
+func blackClient(bgra []byte, w, h int32) bool {
+	row := int(h/2) * int(w) * 4
+	for x := 0; x < int(w)*4 && row+x+2 < len(bgra); x += 4 {
+		if bgra[row+x]|bgra[row+x+1]|bgra[row+x+2] != 0 {
+			return false
+		}
+	}
+	return true
 }

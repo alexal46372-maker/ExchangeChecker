@@ -11,6 +11,7 @@ import "unsafe"
 
 var (
 	procGetTextMetricsW        = modgdi32.NewProc("GetTextMetricsW")
+	procRedrawWindow           = moduser32.NewProc("RedrawWindow")
 	procCreateCompatibleDC     = modgdi32.NewProc("CreateCompatibleDC")
 	procCreateCompatibleBitmap = modgdi32.NewProc("CreateCompatibleBitmap")
 	procGetDIBits              = modgdi32.NewProc("GetDIBits")
@@ -65,7 +66,13 @@ type bitmapInfoHeader struct {
 // CaptureWindow renders the whole window (also off-screen) with
 // PrintWindow into a 32-bit top-down BGRA buffer; the screen copy
 // (BitBlt of the window DC) is used when PrintWindow fails.
-func CaptureWindow(hwnd uintptr) (w, h int32, bgra []byte, ok bool) {
+func CaptureWindow(hwnd uintptr) (int32, int32, []byte, bool) {
+	return CaptureWindowFlags(hwnd, PW_RENDERFULLCONTENT)
+}
+
+// CaptureWindowFlags is CaptureWindow with explicit PrintWindow flags (0:
+// classic WM_PRINT, for windows DWM has not composed off-screen).
+func CaptureWindowFlags(hwnd uintptr, flags uintptr) (w, h int32, bgra []byte, ok bool) {
 	r := GetWindowRect(hwnd)
 	w, h = r.Right-r.Left, r.Bottom-r.Top
 	if w <= 0 || h <= 0 {
@@ -87,7 +94,7 @@ func CaptureWindow(hwnd uintptr) (w, h int32, bgra []byte, ok bool) {
 	}
 	defer DeleteObject(bmp)
 	old := SelectObject(mdc, bmp)
-	pr, _, _ := callProc(procPrintWindow, hwnd, mdc, PW_RENDERFULLCONTENT)
+	pr, _, _ := callProc(procPrintWindow, hwnd, mdc, flags)
 	if pr == 0 {
 		wdc, _, _ := callProc(procGetWindowDC, hwnd)
 		if wdc != 0 {
@@ -121,4 +128,18 @@ func WindowExStyle(hwnd uintptr) uint32 {
 // SetWindowLong sets a 32-bit window value (GWL_STYLE / GWL_EXSTYLE).
 func SetWindowLong(hwnd uintptr, index int32, v uint32) {
 	callProc(procSetWindowLongW, hwnd, uintptr(int(index)), uintptr(v))
+}
+
+// RedrawWindow flags.
+const (
+	RDW_INVALIDATE  = 0x0001
+	RDW_ERASE       = 0x0004
+	RDW_ALLCHILDREN = 0x0080
+	RDW_UPDATENOW   = 0x0100
+	RDW_FRAME       = 0x0400
+)
+
+// RedrawWindow repaints hwnd (and its children) at once.
+func RedrawWindow(hwnd uintptr, flags uint32) {
+	callProc(procRedrawWindow, hwnd, 0, 0, uintptr(flags))
 }

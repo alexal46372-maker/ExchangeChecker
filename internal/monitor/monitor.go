@@ -383,7 +383,7 @@ type Monitor struct {
 // New returns a Monitor; call Run to start it.
 func New(opt Options) *Monitor {
 	if opt.NewReader == nil {
-		opt.NewReader = sqlcheck.NewReader
+		opt.NewReader = NewNodeStateReader // phase 11 (CHK-MON-18): ReadNodeStates for counters mappings
 	}
 	if opt.Counters == nil {
 		opt.Counters = model.NewMemCounterStore()
@@ -1290,7 +1290,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		ps.MappingSummary = model.MappingSummaryOf(p)
 		profiles = append(profiles, ps)
 		if ok && p.Enabled && polled[p.ID] {
-			evs, reps := m.observe(ps, now)
+			evs, reps := m.observe(ps, now, p.StalledAfter(cfg.Settings))
 			events = append(events, evs...)
 			repeats = append(repeats, reps...)
 		}
@@ -1381,6 +1381,9 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 // ReportsProblems: hasProblems / problems and repeat pushes (CHK-MON-17).
 func (m *Monitor) ReportsProblems() bool { return true }
 
+// ReportsStalled: stalled detector (CHK-MON-18).
+func (m *Monitor) ReportsStalled() bool { return true }
+
 func (m *Monitor) intervalLocked() time.Duration {
 	if m.opt.PollInterval > 0 {
 		return m.opt.PollInterval
@@ -1398,7 +1401,7 @@ func (m *Monitor) intervalLocked() time.Duration {
 // Phase 10 (CHK-MON-17): reps are the repeat pushes of active alerts whose
 // check failed again without a transition (the alarm persists until the
 // error is resolved; acknowledging does not stop checks or repeats).
-func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) (out, reps []model.AlertEvent) {
+func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time, stalledAfter time.Duration) (out, reps []model.AlertEvent) {
 	obs := func(o alert.Observation) {
 		if ev, ok := m.tracker.Observe(o, now); ok {
 			out = append(out, ev)
@@ -1426,6 +1429,16 @@ func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time) (out, reps []
 		}
 		obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)),
 			Level: pt.Level, Event: tmpl})
+		if pt.Source == model.PointSourceCounters { // stall alert (phase 11, CHK-MON-18)
+			st := tmpl
+			st.Stalled, st.StalledMinutes, st.ErrorKey, st.Error = true, int(stalledAfter/time.Minute), model.MsgMonitorStalled, ""
+			lvl := model.LevelOK
+			if pt.Stalled {
+				lvl = model.LevelWarning
+			}
+			obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix),
+				Level: lvl, Event: st})
+		}
 	}
 	return out, reps
 }
@@ -1446,6 +1459,9 @@ func (m *Monitor) keepKeys(profiles []model.ProfileSnapshot) func(string) bool {
 		}
 		for _, pt := range ps.Points {
 			keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint))] = true
+			if pt.Source == model.PointSourceCounters {
+				keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix)] = true
+			}
 		}
 	}
 	return func(k string) bool { return keep[k] || whole[alert.KeyProfile(k)] }

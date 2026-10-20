@@ -457,10 +457,16 @@ func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken 
 	if err := m.checkRevisionLocked(w, expectedRevision); err != nil {
 		return "", err
 	}
-	if st.Viber == nil {
-		// a client that does not know settings.viber: keep the stored one
+	if st.Viber == nil || st.StalledMinutes == nil {
+		// a client that does not know settings.viber / stalledMinutes:
+		// keep the stored one
 		cur, _ := w.LoadSettings()
-		st.Viber = cur.Normalized().Viber
+		if st.Viber == nil {
+			st.Viber = cur.Normalized().Viber
+		}
+		if st.StalledMinutes == nil {
+			st.StalledMinutes = cur.StalledMinutes
+		}
 	}
 	if st.Viber != nil {
 		v := st.Viber.Stored()

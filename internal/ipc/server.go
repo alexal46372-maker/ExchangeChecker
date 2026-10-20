@@ -369,6 +369,9 @@ func (s *Server) Capabilities() []string {
 	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
 		caps = append(caps, model.CapProblems, model.CapAlertRepeat) // phase 10 (CHK-MON-17)
 	}
+	if sr, ok := s.H.(StalledReporter); ok && sr.ReportsStalled() {
+		caps = append(caps, model.CapStalled) // phase 11 (CHK-MON-18)
+	}
 	if wiz {
 		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
 		if _, ok := s.H.(SQLWizardV2); ok { // phase 11 (CHK-IPC-12/13)
@@ -390,6 +393,10 @@ func (s *Server) Capabilities() []string {
 // ProblemsReporter: the handler sends hasProblems / problems and repeat
 // alert pushes (phase 10, CHK-MON-17).
 type ProblemsReporter interface{ ReportsProblems() bool }
+
+// StalledReporter: the handler fills status stalled / problems kind
+// "stalled" (phase 11, CHK-MON-18).
+type StalledReporter interface{ ReportsStalled() bool }
 
 func (s *Server) heartbeat() *model.Heartbeat {
 	if h, ok := s.H.(HeartbeatSource); ok {

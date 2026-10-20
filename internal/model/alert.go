@@ -45,6 +45,10 @@ type AlertEvent struct {
 	// AlertKindAlert; DurationMin: recovered events, minutes since the
 	// point / profile left ok in this run (phase 9, CHK-SVC-05).
 	Kind string `json:"kind,omitempty"`
+	// Stalled / StalledMinutes: a stall alert of the point (phase 11,
+	// CHK-MON-18; level warning, recovered on leave).
+	Stalled        bool `json:"stalled,omitempty"`
+	StalledMinutes int  `json:"stalledMinutes,omitempty"`
 	// Test marks the test alarm of alarm_test (phase 11, CHK-IPC-11).
 	Test        bool   `json:"test,omitempty"`
 	DurationMin *int64 `json:"durationMin,omitempty"`

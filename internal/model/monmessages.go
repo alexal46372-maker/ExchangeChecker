@@ -128,6 +128,7 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgMonitorMapping:          {"Для базы не настроены таблицы обмена (выполните «Найти таблицы»).", "The exchange tables are not configured (run \"Find tables\")."},
 	MsgMonitorConfig:           {"Ошибка настроек профиля или пароля.", "Profile settings or password error."},
 	MsgMonitorPanic:            {"Внутренняя ошибка при опросе базы.", "Internal error while polling the database."},
+	MsgMonitorStalled:          {"Обмен идёт, но номера сообщений узла не меняются дольше порога «застоя».", "The exchange runs but the node's message numbers have not changed for longer than the stalled threshold."},
 	MsgMonitorBusy:             {"Предыдущий опрос базы ещё выполняется.", "The previous poll of the database is still running."},
 	MsgMonitorBaseline:         {"Не раньше запуска наблюдения службой.", "Not earlier than the service started observing."},
 	MsgMonitorHung:             {"Опрос базы завис; соединение закрыто и будет открыто заново.", "The database poll hung; the connection was closed and will be reopened."},
@@ -242,5 +243,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled}
 }

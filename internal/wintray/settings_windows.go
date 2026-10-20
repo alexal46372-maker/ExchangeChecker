@@ -479,15 +479,17 @@ func (w *settingsWindow) build() {
 	}
 	// profile page: four group boxes (phase 10 D3)
 	// phase 11 (CHK-TRAY-47): one field column for the whole page
-	// (ui.Share), «Порт» beside «Экземпляр», the TLS boxes in one row,
+	// (ui.Share), «Порт» on its own row, the TLS boxes in one row,
 	// hints and info under the groups, full width (the text wraps)
 	nameRow := field(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw)
 	hostRow := field(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw)
 	instRow := field(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200)
 	portL := label(w.t(i18n.KeySetPort), idSetPort)
-	port := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idSetPort, ui.Edit, 80, 0)
-	instRow.Field = &ui.Row{Items: []ui.Node{instRow.Field, &ui.Space{W: ui.P4}, portL, port}}
-	connG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{nameRow, hostRow, instRow,
+	// phase 11: the port on its own row, wide enough for its whole cue
+	// «1433 или пусто для SQL Browser» at 144 dpi (CHK-TRAY-17 wording)
+	port := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idSetPort, ui.Edit, 200, 0)
+	port.NoShrink = true
+	connG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{nameRow, hostRow, instRow, {Label: portL, Field: port},
 		field(w.t(i18n.KeySetDatabase), idSetDatabase, "EDIT", edit, cw)}}
 	conn := group(i18n.KeySetGroupConn, connG)
 	loginRows := []ui.GridRow{

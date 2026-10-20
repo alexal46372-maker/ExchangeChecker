@@ -85,16 +85,22 @@ type wizardDialog struct {
 	tips *tooltips
 	z    *traysettings.Wizard
 
-	prevSel  int
-	stepCtl  [3][]uintptr
-	cur      *[]uintptr
-	cancel   context.CancelFunc
-	seq      int
-	loading  bool
-	closed   bool
-	pwTyped  bool
-	result   string
-	lastCmds []string
+	prevSel int
+	stepCtl [3][]uintptr
+	// phase 11: the laid out steps (one visible), the bar, the layout of
+	// the shown step (-1 = none yet)
+	steps        [3]ui.Node
+	content, bar ui.Node
+	grantCtl     *ui.Ctl
+	laidStep     int
+	cur          *[]uintptr
+	cancel       context.CancelFunc
+	seq          int
+	loading      bool
+	closed       bool
+	pwTyped      bool
+	result       string
+	lastCmds     []string
 	// lastField: the last highlighted field (test hook)
 	lastField traysettings.Field
 }
@@ -174,7 +180,10 @@ func (wd *wizardDialog) build() {
 	wd.cur = &wd.stepCtl[traysettings.WizServer]
 	srvL := label(i18n.KeyWizServer)
 	srv := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizServer, ui.Edit, 450, 0)
-	find := c("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, ui.Button, 0, 0)
+	// «Найти» as tall as the server box beside it (phase 11)
+	m := uiMetrics()
+	tw, _ := m.Text(wd.t(i18n.KeyWizFind))
+	find := c("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, ui.Box, max32(unpx(tw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
 	inst := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, ui.Box, 590, 120)
 	inst.Grow = true
 	portL := label(i18n.KeyWizPort)
@@ -188,7 +197,7 @@ func (wd *wizardDialog) build() {
 	encL := label(i18n.KeyWizEncrypt)
 	enc := c("COMBOBOX", "", 0, combo, idWizEncrypt, ui.Combo, 450, 0)
 	step1 := &ui.Grid{Rows: []ui.GridRow{
-		{Label: srvL, Field: &ui.Row{Grow: true, Items: []ui.Node{srv, &ui.Row{Right: true, Items: []ui.Node{find}}}}},
+		{Label: srvL, Field: &ui.Row{Align: ui.Center, Items: []ui.Node{srv, find}}},
 		{Field: inst}, {Label: portL, Field: port}, {Label: authL, Field: auth},
 		{Label: loginL, Field: login}, {Label: pwL, Field: pw}, {Label: encL, Field: enc},
 	}}
@@ -207,31 +216,33 @@ func (wd *wizardDialog) build() {
 	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idWizResult, ui.Box, 736, 140)
 	res.Grow = true
-	var btns []ui.Node
-	for _, b := range []struct {
-		id  int32
-		key string
-	}{{idWizBack, i18n.KeyWizBack}, {idWizNext, i18n.KeyWizNext}, {idWizSave, i18n.KeyWizSave},
-		{idWizGrant, i18n.KeyWizGrant}, {idWizAdvanced, i18n.KeyWizAdvanced}} {
-		btns = append(btns, c("BUTTON", wd.t(b.key), 0, winapi.WS_TABSTOP, b.id, ui.Button, 0, 0))
+	// phase 11: two button rows, the buttons of a row equally wide;
+	// «Скопировать SQL-скрипт прав» not on step 1
+	row := func(ids []int32, keys []string) []*ui.Ctl {
+		var cs []*ui.Ctl
+		var bw int32
+		for i, id := range ids {
+			x := c("BUTTON", wd.t(keys[i]), 0, winapi.WS_TABSTOP, id, ui.Button, 0, 0)
+			w, _ := ui.Layout(x, m, 0, 0, 0)
+			bw = max32(bw, unpx(w))
+			cs = append(cs, x)
+		}
+		for _, x := range cs {
+			x.W = bw
+		}
+		return cs
 	}
-	btns = append(btns, &ui.Row{Right: true, Items: []ui.Node{c("BUTTON", wd.t(i18n.KeyWizCancel), 0, winapi.WS_TABSTOP, idWizCancel, ui.Button, 0, 0)}})
-	// the step area: as large as the largest step
-	m := uiMetrics()
-	var sw, sh int32
-	for _, n := range []ui.Node{step1, step2, step3} {
-		w, h := ui.Layout(n, m, 0, 0, 0)
-		sw, sh = max32(sw, w), max32(sh, h)
-	}
-	area := &ui.Ctl{Kind: ui.Box, W: unpx(sw), Hgt: unpx(sh), Grow: true}
-	f := newForm(&ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
-		stepLine, area, res, &ui.Row{Gap: ui.P4 + 2, Grow: true, Items: btns},
-	}}}, 0)
-	for _, n := range []ui.Node{step1, step2, step3} {
-		ui.Layout(n, m, area.Rect.X, area.Rect.Y, area.Rect.W)
-		ui.Walk(n, applyCtl)
-	}
-	fitToContent(wd.hwnd, f.W, f.H)
+	nav := row([]int32{idWizBack, idWizNext, idWizSave, idWizCancel}, []string{i18n.KeyWizBack, i18n.KeyWizNext, i18n.KeyWizSave, i18n.KeyWizCancel})
+	tools := row([]int32{idWizGrant, idWizAdvanced}, []string{i18n.KeyWizGrant, i18n.KeyWizAdvanced})
+	wd.grantCtl = tools[0]
+	wd.steps = [3]ui.Node{step1, step2, step3}
+	wd.content = &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		stepLine, step1, step2, step3, res}}}
+	wd.bar = &ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		&ui.Row{Items: []ui.Node{tools[0], tools[1]}},
+		&ui.Row{Grow: true, Items: []ui.Node{nav[0], nav[1], nav[2], &ui.Row{Right: true, Items: []ui.Node{nav[3]}}}},
+	}}}
+	wd.laidStep = -1
 	for _, k := range []string{i18n.KeyWizAuthSQL, i18n.KeyWizAuthWindows} {
 		winapi.SendMessageString(wd.ctl[idWizAuth], winapi.CB_ADDSTRING, 0, wd.t(k))
 	}
@@ -355,14 +366,15 @@ func (wd *wizardDialog) form() string {
 // show refreshes the step: visible controls, header, enabled buttons.
 func (wd *wizardDialog) show() {
 	z := wd.z
-	for i, hs := range wd.stepCtl {
-		cmd := int32(winapi.SW_HIDE)
-		if traysettings.WizardStep(i) == z.Step {
-			cmd = winapi.SW_SHOW
+	if int(z.Step) != wd.laidStep && wd.content != nil {
+		// phase 11 (CHK-TRAY-47): only the current step is laid out (no
+		// hole for the others), the window keeps its position
+		for i, n := range wd.steps {
+			ui.SetHidden(n, traysettings.WizardStep(i) != z.Step)
 		}
-		for _, h := range hs {
-			winapi.ShowWindow(h, cmd)
-		}
+		wd.grantCtl.Hidden = z.Step == traysettings.WizServer
+		fitForm(wd.hwnd, wd.content, wd.bar, 0, wd.laidStep >= 0)
+		wd.laidStep = int(z.Step)
 	}
 	names := []string{i18n.KeyWizStepServer, i18n.KeyWizStepDB, i18n.KeyWizStepFinish}
 	winapi.SetWindowText(wd.ctl[idWizStep], fmt.Sprintf(wd.t(i18n.KeyWizStep), int(z.Step)+1, wd.t(names[z.Step])))

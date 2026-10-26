@@ -60,6 +60,33 @@ const (
 	KeyAlertAckFailed      = "alert.ack_failed"
 	KeyAlertCloseHint      = "alert.close_hint"
 
+	KeyPanelStalled        = "panel.stalled"
+	KeyPtStalled           = "pt.stalled"
+	KeyAlertTestBadge      = "alert.test_badge"
+	KeyMenuSummary         = "menu.summary"
+	KeySumTitle            = "sum.title"
+	KeySumHours            = "sum.hours"
+	KeySumTruncated        = "sum.truncated"
+	KeySumBusy             = "sum.busy"
+	KeySumEmpty            = "sum.empty"
+	KeySumClose            = "sum.close"
+	KeyAlarmTest           = "alarm.test"
+	KeyAlarmTestTip        = "alarm.test_tip"
+	KeyAlarmTestTipDenied  = "alarm.test_tip_denied"
+	KeyAlarmTestTitle      = "alarm.test_title"
+	KeyAlarmTestWarning    = "alarm.test_warning"
+	KeyAlarmTestError      = "alarm.test_error"
+	KeyAlarmTestViber      = "alarm.test_viber"
+	KeyAlarmTestRun        = "alarm.test_run"
+	KeyAlarmTestClose      = "alarm.test_close"
+	KeyAlarmTestNoViber    = "alarm.test_no_viber"
+	KeyAlarmTestRetry      = "alarm.test_retry"
+	KeyAlarmTestAccess     = "alarm.test_access"
+	KeySetStalledMin       = "set.stalled_min"
+	KeyTipSetStalled       = "tip.set_stalled"
+	KeyGenStalled          = "gen.stalled"
+	KeyCueStalled          = "cue.stalled"
+
 	// settings window (phase 6c, CHK-TRAY-04/05/06)
 	KeyMenuSettings         = "menu.settings"
 	KeySetTitleRead         = "set.title_read"
@@ -882,6 +909,32 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAlertAckUnsupported: {"Эта версия службы не поддерживает подтверждение тревог.", "This service version cannot acknowledge alarms."},
 	KeyAlertAckFailed:      {"Не удалось подтвердить: %s", "Could not acknowledge: %s"},
 	KeyAlertCloseHint:      {"«Закрыть» выключает звук до следующего изменения; «Подтвердить» снимает тревогу.", "Close mutes the sound until the next change; Acknowledge clears the alarm."},
+	KeyPanelStalled:        {"%s — %s: застой обмена (номера сообщений не меняются)", "%s — %s: stalled exchange (message numbers unchanged)"},
+	KeyPtStalled:           {"застой обмена", "stalled exchange"},
+	KeyAlertTestBadge:      {"ТЕСТ", "TEST"},
+	KeyMenuSummary:         {"Сводка…", "Summary…"},
+	KeySumTitle:            {"Сводка обмена", "Exchange summary"},
+	KeySumHours:            {"За %d ч", "Last %d h"},
+	KeySumTruncated:        {"Показаны не все базы", "Not all databases are shown"},
+	KeySumBusy:             {"Служба занята, повтор через 5 с…", "Service busy, retrying in 5 s…"},
+	KeySumEmpty:            {"Нет данных", "No data"},
+	KeySumClose:            {"Закрыть", "Close"},
+	KeyAlarmTest:           {"Тест тревоги…", "Test alarm…"},
+	KeyAlarmTestTip:        {"Отправить тестовую тревогу (и при желании в Viber).", "Send a test alarm (and optionally to Viber)."},
+	KeyAlarmTestTipDenied:  {"Только администратор может отправить тестовую тревогу.", "Only an administrator can send a test alarm."},
+	KeyAlarmTestTitle:      {"Тест тревоги", "Test alarm"},
+	KeyAlarmTestWarning:    {"Предупреждение", "Warning"},
+	KeyAlarmTestError:      {"Ошибка", "Error"},
+	KeyAlarmTestViber:      {"Также в Viber", "Also to Viber"},
+	KeyAlarmTestRun:        {"Отправить", "Send"},
+	KeyAlarmTestClose:      {"Закрыть", "Close"},
+	KeyAlarmTestNoViber:    {"Viber не настроен", "Viber is not configured"},
+	KeyAlarmTestRetry:      {"Повтор через %d с", "Retry in %d s"},
+	KeyAlarmTestAccess:     {"Нет прав администратора для теста тревоги.", "Administrator rights are required for the test alarm."},
+	KeySetStalledMin:       {"Застой, мин", "Stalled, min"},
+	KeyTipSetStalled:       {"Порог застоя обмена (номера _SentNo/_ReceivedNo). 0 = как в общих настройках; пусто в общих = 120; 0 в общих = выкл.", "Stalled-exchange threshold (message numbers). 0 = use general settings; empty general = 120; 0 general = off."},
+	KeyGenStalled:          {"Застой обмена, мин", "Stalled exchange, min"},
+	KeyCueStalled:          {"0 = выкл., пусто = 120", "0 = off, empty = 120"},
 
 	KeyMenuSettings:           {"Настройки…", "Settings…"},
 	KeySetTitleRead:           {"Exchange Checker — настройки баз (только чтение)", "Exchange Checker — database settings (read only)"},

@@ -32,6 +32,12 @@ type ExchangePoint struct {
 	PlanTable string `json:"planTable,omitempty"`
 	PlanNo    int    `json:"planNo,omitempty"`
 	PlanLabel string `json:"planLabel,omitempty"`
+	// SentNo / ReceivedNo: 1C message numbers of a counters-mode point
+	// (sqlcheck.ReadNodeStates, phase 11, CHK-MON-18).
+	SentNo     *int64 `json:"sentNo,omitempty"`
+	ReceivedNo *int64 `json:"receivedNo,omitempty"`
+	// NodeKey identifies the 1C exchange-plan node of the point (phase 11).
+	NodeKey string `json:"nodeKey,omitempty"`
 }
 
 // FreshAt returns the later of LastSend / LastRecv in DBZone; NULLs are ignored.

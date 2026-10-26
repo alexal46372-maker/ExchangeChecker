@@ -198,12 +198,14 @@ func (wd *wizardDialog) build() {
 	tw, _ := m.Text(wd.t(i18n.KeyWizFind))
 	find := c("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, ui.Box, max32(unpx(tw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
 	wd.findLabel = wd.t(i18n.KeyWizFind)
-	// subnet: only with capability browse_subnet (CHK-TRAY-52)
-	stw, _ := m.Text(wd.t(i18n.KeyWizSubnet))
-	subnet := c("BUTTON", wd.t(i18n.KeyWizSubnet), 0, winapi.WS_TABSTOP, idWizSubnet, ui.Box, max32(unpx(stw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
-	wd.subnetCtl = subnet
-	if !traysettings.HasBrowseSubnet(wd.capHas) {
-		subnet.Hidden = true
+	srvRow := []ui.Node{srv, find}
+	// subnet: only create with capability browse_subnet (CHK-TRAY-52 note /
+	// CHK-TRAY-53 fix: Hidden alone is cleared by show()/layout)
+	if traysettings.HasBrowseSubnet(wd.capHas) {
+		stw, _ := m.Text(wd.t(i18n.KeyWizSubnet))
+		subnet := c("BUTTON", wd.t(i18n.KeyWizSubnet), 0, winapi.WS_TABSTOP, idWizSubnet, ui.Box, max32(unpx(stw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
+		wd.subnetCtl = subnet
+		srvRow = append(srvRow, subnet)
 	}
 	inst := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, ui.Box, 590, 120)
 	inst.Grow = true
@@ -218,7 +220,7 @@ func (wd *wizardDialog) build() {
 	encL := label(i18n.KeyWizEncrypt)
 	enc := c("COMBOBOX", "", 0, combo, idWizEncrypt, ui.Combo, 450, 0)
 	step1 := &ui.Grid{Rows: []ui.GridRow{
-		{Label: srvL, Field: &ui.Row{Align: ui.Center, Items: []ui.Node{srv, find, subnet}}},
+		{Label: srvL, Field: &ui.Row{Align: ui.Center, Items: srvRow}},
 		{Field: inst}, {Label: portL, Field: port}, {Label: authL, Field: auth},
 		{Label: loginL, Field: login}, {Label: pwL, Field: pw}, {Label: encL, Field: enc},
 	}}

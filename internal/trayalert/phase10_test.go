@@ -308,3 +308,16 @@ func TestCHK_TRAY_39_PanelLines(t *testing.T) {
 		t.Error("empty")
 	}
 }
+
+func TestCHK_TRAY_53_TestBadge(t *testing.T) {
+	v := View{Level: model.LevelWarning, Alerts: []model.AlertEvent{{ProfileID: model.AlarmTestProfileID, To: model.LevelWarning, Test: true}}}
+	if title := Title(v, i18n.RU); !strings.Contains(title, "ТЕСТ") {
+		t.Fatalf("title %q", title)
+	}
+	if body := Text(v, i18n.RU); !strings.Contains(body, "ТЕСТ") {
+		t.Fatalf("body %q", body)
+	}
+	if titleEN := Title(v, i18n.EN); !strings.Contains(titleEN, "TEST") {
+		t.Fatalf("en title %q", titleEN)
+	}
+}

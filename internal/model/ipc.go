@@ -189,6 +189,16 @@ type IPCRequest struct {
 	ViberToken      string `json:"viberToken,omitempty"`
 	ClearViberToken bool   `json:"clearViberToken,omitempty"`
 	RecipientID     string `json:"recipientId,omitempty"`
+	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
+	Level string `json:"level,omitempty"`
+	Viber bool   `json:"viber,omitempty"`
+	// Hours / Buckets: summary (phase 11, CHK-SVC-07).
+	Hours int `json:"hours,omitempty"`
+	// Capabilities of client_hello; EventID of ack_alert by event
+	// (phase 11, CHK-IPC-11 / CHK-MON-18).
+	Capabilities []string `json:"capabilities,omitempty"`
+	EventID      uint64   `json:"eventId,omitempty"`
+	Buckets      int      `json:"buckets,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
 	// Query of discover_by_value (phase 6, G2).
@@ -331,6 +341,10 @@ type IPCMessage struct {
 	Import *ImportResult `json:"import,omitempty"`
 	// ViberTest: viber_test reply (phase 10, CHK-SVC-06).
 	ViberTest *ViberTestResult `json:"viberTest,omitempty"`
+	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
+	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
+	// Summary: summary reply (phase 11, CHK-SVC-07).
+	Summary *Summary `json:"summary,omitempty"`
 
 	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
 	// node_points, check_mapping; CHK-IPC-08/09):

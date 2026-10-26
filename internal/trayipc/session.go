@@ -272,6 +272,10 @@ var commandCapability = map[string]string{
 	model.CmdSQLDiagnose:  model.CapSQLDiagnose,
 	model.CmdSQLGrantScript: model.CapSQLGrantScript,
 	model.CmdSQLTestSteps: model.CapTestSteps,
+	// phase 11 (CHK-TRAY-53)
+	model.CmdAlarmTest:   model.CapAlarmTest,
+	model.CmdSummary:     model.CapSummary,
+	model.CmdClientHello: model.CapClientHello,
 }
 
 var v1Commands = map[string]bool{
@@ -518,6 +522,7 @@ func (s *Session) connectOnce(ctx context.Context) bool {
 		return false
 	}
 	s.onHello(c, h)
+	s.sendClientHello(ctx, c)
 
 	// snapshot right after hello
 	if !s.refreshStatus(ctx, c) {
@@ -535,6 +540,20 @@ func (s *Session) connectOnce(ctx context.Context) bool {
 				return true
 			}
 		}
+	}
+}
+
+// sendClientHello declares tray capabilities (alarm_test) so the service
+// can push test alerts only to us (CHK-TRAY-53 / CHK-IPC-11). Skipped on
+// version 1 or when the service has no client_hello / alarm_test.
+func (s *Session) sendClientHello(ctx context.Context, c *ipc.Client) {
+	st := s.Status()
+	if st.Version < 2 || !(st.Has(model.CapClientHello) || st.Has(model.CapAlarmTest)) {
+		return
+	}
+	m, err := c.Do(ctx, model.IPCRequest{Cmd: model.CmdClientHello, Capabilities: []string{model.ClientCapAlarmTest, model.CapSummary, model.CapAckEvent}})
+	if err != nil || m.Type == model.MsgError {
+		return // older service / unknown_command: stay silent
 	}
 }
 

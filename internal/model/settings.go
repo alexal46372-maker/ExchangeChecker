@@ -115,11 +115,17 @@ type Settings struct {
 	// Viber (phase 10, CHK-SVC-06): nil in save_settings = keep the
 	// stored value; always set in views; never in export_config.
 	Viber *ViberSettings `json:"viber,omitempty"`
+	// StalledMinutes (phase 11, CHK-MON-18): stalled-exchange threshold;
+	// absent = DefaultStalledMinutes (120), 0 = off, else 10..1440. A
+	// save_settings without it keeps the stored value.
+	StalledMinutes *int `json:"stalledMinutes,omitempty"`
 }
 
 // DefaultSettings returns the settings used when settings.json is missing.
 func DefaultSettings() Settings {
+	stalled := DefaultStalledMinutes
 	return Settings{
+		StalledMinutes:  &stalled,
 		PollIntervalSec: DefaultPollIntervalSec,
 		WarnMinutes:     DefaultWarnMinutes,
 		ErrorMinutes:    DefaultErrorMinutes,
@@ -145,6 +151,13 @@ func (b BeepSettings) BeepEnabled() bool { return b.Enabled.Or(true) }
 func (s Settings) Normalized() Settings {
 	if s.Beep.Enabled == OptUnset {
 		s.Beep.Enabled = OptTrue
+	}
+	if s.StalledMinutes == nil { // phase 11 (CHK-MON-18)
+		v := DefaultStalledMinutes
+		s.StalledMinutes = &v
+	} else {
+		v := *s.StalledMinutes
+		s.StalledMinutes = &v
 	}
 	if s.Viber == nil {
 		s.Viber = defaultViberPtr()
@@ -212,6 +225,9 @@ func (s Settings) Validate() error {
 			"2", itoa(MaxThresholdMinutes), itoa(s.ErrorMinutes)))
 	}
 	errs = append(errs, s.Beep.validate()...)
+	if s.StalledMinutes != nil && !validStalled(*s.StalledMinutes) {
+		errs = append(errs, stalledErr("stalledMinutes", *s.StalledMinutes))
+	}
 	if s.Viber != nil {
 		if err := s.Viber.Validate(); err != nil {
 			errs = append(errs, err)

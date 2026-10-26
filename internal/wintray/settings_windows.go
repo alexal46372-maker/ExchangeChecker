@@ -70,6 +70,7 @@ const (
 	idGenErrFreq
 	idGenErrDur
 	idGenGap
+	idGenStalled // phase 11 CHK-TRAY-53
 	idGenLang
 	idGenAutostart
 	idGenNote
@@ -81,6 +82,8 @@ const (
 	idSetError
 	idSetConnTO
 	idSetQueryTO
+	idSetStalled // profile stalledMinutes (CHK-TRAY-53)
+	idSetAlarmTest // «Тест тревоги…» (CHK-TRAY-53)
 	idSetUIMode // «Экспертный режим» / «Простой режим» (phase 10 D)
 	idSetExport // «Экспорт…» (phase 10 E, administrator)
 	idSetImport // «Импорт…»
@@ -293,6 +296,7 @@ var settingsTips = map[int32]string{
 	idGenPoll:  i18n.KeyTipGenPoll, idGenWarn: i18n.KeyTipGenWarn, idGenError: i18n.KeyTipGenError,
 	idGenBeep: i18n.KeyTipGenBeep, idGenWarnFreq: i18n.KeyTipGenWarnFreq, idGenWarnDur: i18n.KeyTipGenWarnDur,
 	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
+	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
 	idGenLang: i18n.KeyTipGenLang, idGenAutostart: i18n.KeyTipGenAutostart,
 }
 
@@ -300,7 +304,7 @@ var settingsTips = map[int32]string{
 var settingsOutputs = map[int32]bool{idSetPwHint: true, idSetHints: true, idSetInfo: true, idGenNote: true, idGenAutostartErr: true}
 
 // profNumbers are the phase 8 number boxes of the profile form.
-var profNumbers = []int32{idSetWarn, idSetError, idSetConnTO, idSetQueryTO}
+var profNumbers = []int32{idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idSetStalled}
 
 // profText returns the address of the Form string of a phase 8 box.
 func profText(f *traysettings.Form, id int32) *string {
@@ -313,6 +317,8 @@ func profText(f *traysettings.Form, id int32) *string {
 		return &f.ConnTimeout
 	case idSetQueryTO:
 		return &f.QueryTimeout
+	case idSetStalled:
+		return &f.StalledMin
 	}
 	return nil
 }
@@ -408,6 +414,7 @@ var genEdits = []struct {
 	{idGenErrFreq, traysettings.FieldErrorFreq, i18n.KeyGenErrorFreq},
 	{idGenErrDur, traysettings.FieldErrorDur, i18n.KeyGenErrorDur},
 	{idGenGap, traysettings.FieldGap, i18n.KeyGenGap},
+	{idGenStalled, traysettings.FieldStalledMinutes, i18n.KeyGenStalled},
 }
 
 // genText returns the address of the GeneralForm string of an edit box.
@@ -429,6 +436,8 @@ func genText(g *traysettings.GeneralForm, id int32) *string {
 		return &g.ErrorDur
 	case idGenGap:
 		return &g.Gap
+	case idGenStalled:
+		return &g.StalledMin
 	}
 	return nil
 }
@@ -563,6 +572,7 @@ func (w *settingsWindow) build() {
 	checksG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Span: true, Field: enabled},
 		pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError),
 		pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO),
+		field(w.t(i18n.KeySetStalledMin), idSetStalled, "EDIT", edit|winapi.ES_NUMBER, 100),
 	}}
 	w.checksG, w.stackedRows = checksG, append([]ui.GridRow{checksG.Rows[0]}, stacked...)
 	checks := group(i18n.KeySetGroupChecks, checksG)
@@ -619,6 +629,7 @@ func (w *settingsWindow) build() {
 	w.cur = &w.pageCtl[0]
 	button(idSetTest, i18n.KeySetTest, 150, false)
 	button(idSetCancelTest, i18n.KeySetCancelTest, 120, false)
+	button(idSetAlarmTest, i18n.KeyAlarmTest, 150, false)
 	button(idSetPoll, i18n.KeySetPoll, 110, false)
 	w.cur = nil
 	button(idSetReload, i18n.KeySetReload, 90, false)
@@ -729,7 +740,7 @@ func (w *settingsWindow) command(id int32, code uint32) {
 			w.ed.Form.PasswordTyped = winapi.GetWindowTextLength(w.ctl[idSetPassword]) > 0
 			w.update()
 		}
-	case idGenPoll, idGenWarn, idGenError, idGenWarnFreq, idGenWarnDur, idGenErrFreq, idGenErrDur, idGenGap:
+	case idGenPoll, idGenWarn, idGenError, idGenWarnFreq, idGenWarnDur, idGenErrFreq, idGenErrDur, idGenGap, idGenStalled:
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readGeneral()
 		}
@@ -751,7 +762,7 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idSetUIMode:
 		w.toggleUIMode()
-	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetWarn, idSetError, idSetConnTO, idSetQueryTO:
+	case idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idSetStalled:
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readForm()
 			w.update()
@@ -784,6 +795,8 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		w.importConfig()
 	case idSetSave:
 		w.save()
+	case idSetAlarmTest:
+		w.openAlarmTest()
 	case idSetTest:
 		w.test()
 	case idSetCancelTest:
@@ -885,7 +898,7 @@ func (w *settingsWindow) fill() {
 	f := w.ed.Form
 	for id, s := range map[int32]string{idSetName: f.Name, idSetHost: f.Host, idSetInstance: f.Instance, idSetPort: f.Port,
 		idSetDatabase: f.Database, idSetLogin: f.Login, idSetWarn: f.WarnMin, idSetError: f.ErrorMin,
-		idSetConnTO: f.ConnTimeout, idSetQueryTO: f.QueryTimeout} {
+		idSetConnTO: f.ConnTimeout, idSetQueryTO: f.QueryTimeout, idSetStalled: f.StalledMin} {
 		if w.text(id) != s {
 			winapi.SetWindowText(w.ctl[id], s)
 		}
@@ -929,7 +942,7 @@ func (w *settingsWindow) update() {
 	sql := ed.Form.Auth != model.AuthWindows
 	encrypted := ed.Form.Encrypt.Effective() != model.EncryptDisable
 	for _, id := range []int32{idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetPassword,
-		idSetWarn, idSetError, idSetConnTO, idSetQueryTO} {
+		idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idSetStalled} {
 		winapi.SendMessage(w.ctl[id], winapi.EM_SETREADONLY, boolPtr(!edit), 0)
 	}
 	winapi.EnableWindow(w.ctl[idSetLogin], has && sql)
@@ -962,6 +975,23 @@ func (w *settingsWindow) update() {
 	sess := w.cfg.session
 	winapi.EnableWindow(w.ctl[idSetTest], has && !testing && sess.Supported(model.CmdTestProfile))
 	winapi.EnableWindow(w.ctl[idSetCancelTest], testing)
+	if h := w.ctl[idSetAlarmTest]; h != 0 {
+		hasAlarm := sess.Supported(model.CmdAlarmTest) || sess.Status().Has(model.CapAlarmTest)
+		if hasAlarm {
+			winapi.ShowWindow(h, winapi.SW_SHOW)
+			admin := w.cfg.mode == traysettings.Admin
+			winapi.EnableWindow(h, admin && !w.busy)
+			tip := i18n.KeyAlarmTestTip
+			if !admin {
+				tip = i18n.KeyAlarmTestTipDenied
+			}
+			if w.tips != nil {
+				w.tips.set(h, w.t(tip))
+			}
+		} else {
+			winapi.ShowWindow(h, winapi.SW_HIDE)
+		}
+	}
 	saved := has && !ed.IsNew
 	winapi.EnableWindow(w.ctl[idSetPoll], saved && !w.busy)
 	winapi.EnableWindow(w.ctl[idSetReload], !w.busy)
@@ -1054,11 +1084,13 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldEncrypt: idSetEncrypt, traysettings.FieldTLS10: idSetTLS10, traysettings.FieldTrust: idSetTrust,
 	traysettings.FieldEnabled:      idSetEnabled,
 	traysettings.FieldPollInterval: idGenPoll, traysettings.FieldWarnMinutes: idGenWarn, traysettings.FieldErrorMinutes: idGenError,
+	traysettings.FieldStalledMinutes: idGenStalled,
 	traysettings.FieldBeepEnabled: idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
 	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
 	traysettings.FieldLanguage: idGenLang, traysettings.FieldAutostart: idGenAutostart,
 	traysettings.FieldDiscoverButton: idSetDiscover, // mapping.* / mappings[i].*
 	traysettings.FieldPreset:         idSetPreset, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
+	traysettings.FieldProfStalled:    idSetStalled,
 	traysettings.FieldConnTimeout: idSetConnTO, traysettings.FieldQueryTimeout: idSetQueryTO,
 }
 

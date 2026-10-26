@@ -158,6 +158,9 @@ type Profile struct {
 	// value (defaults 30 / 60 min). See EffectiveSettings.
 	WarnMinutes  int `json:"warnMinutes,omitempty"`
 	ErrorMinutes int `json:"errorMinutes,omitempty"`
+	// StalledMinutes (phase 11, CHK-MON-18): 0 = settings.stalledMinutes,
+	// else 10..1440.
+	StalledMinutes int `json:"stalledMinutes,omitempty"`
 }
 
 // DisplayName returns Name, or "Server/Database" when Name is empty.

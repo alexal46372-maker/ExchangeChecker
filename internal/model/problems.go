@@ -34,6 +34,7 @@ const (
 	ProblemNoConnection = "no_connection" // profile: connection / login / timeout / hung
 	ProblemError        = "error"         // profile: other error (query, mapping...), point: error level
 	ProblemWarning      = "warning"       // point: warning level
+	// ProblemStalled (stalled.go): point, message numbers unchanged
 )
 
 // ProblemsMax caps StatusSnapshot.Problems (ProblemsTruncated then set).
@@ -55,6 +56,8 @@ type Problem struct {
 	Repeat       uint32     `json:"repeat,omitempty"`
 	// EventID of the transition that raised the current level.
 	EventID uint64 `json:"eventId,omitempty"`
+	// StalledMinutes: threshold of a "stalled" problem (phase 11).
+	StalledMinutes int `json:"stalledMinutes,omitempty"`
 }
 
 // connProblemKeys: profile errors reported as no_connection.
@@ -67,6 +70,8 @@ var connProblemKeys = map[string]bool{
 // ProblemKind classifies an active alert.
 func ProblemKind(e AlertEvent) string {
 	switch {
+	case e.Stalled:
+		return ProblemStalled
 	case e.ProfileLevel() && e.Key == "":
 		if connProblemKeys[e.ErrorKey] {
 			return ProblemNoConnection
@@ -84,6 +89,8 @@ func problemRank(k string) int {
 		return 0
 	case ProblemError:
 		return 1
+	case ProblemStalled:
+		return 3
 	}
 	return 2
 }
@@ -98,7 +105,7 @@ func ProblemsOf(alerts []AlertEvent) (out []Problem, truncated bool) {
 		}
 		p := Problem{Kind: ProblemKind(a), ProfileID: a.ProfileID, ProfileName: a.ProfileName,
 			PointKey: a.Key, PointName: a.PointName, Since: a.Since, ErrorKey: a.ErrorKey,
-			LagMinutes: a.LagMinutes, Acknowledged: a.Acknowledged, Repeat: a.Repeat, EventID: a.ID}
+			LagMinutes: a.LagMinutes, Acknowledged: a.Acknowledged, Repeat: a.Repeat, EventID: a.ID, StalledMinutes: a.StalledMinutes}
 		if p.Since == nil {
 			at := a.At
 			p.Since = &at

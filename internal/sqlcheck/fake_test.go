@@ -353,6 +353,9 @@ func (f *fakeStore) Points(ctx context.Context, m model.Mapping, limit int) ([]R
 		for _, r := range pt.rows {
 			name, id := cell(pt, r, m.PointNameColumn), cell(pt, r, m.PointIDColumn)
 			g := get(valueString(name)+"\x00"+valueString(id), name, id)
+			if kb, ok := cell(pt, r, m.PointKeyColumn).([]byte); ok && (g.p.Key == nil || string(kb) < string(g.p.Key)) {
+				g.p.Key = kb // MIN(t.k)
+			}
 			g.seen = true
 			g.p.Send = maxTime(g.p.Send, cell(pt, r, m.LastSendColumn))
 			g.p.Recv = maxTime(g.p.Recv, cell(pt, r, m.LastRecvColumn))
@@ -365,6 +368,9 @@ func (f *fakeStore) Points(ctx context.Context, m model.Mapping, limit int) ([]R
 		for _, r := range pt.rows {
 			k, _ := keyOf(cell(pt, r, m.PointKeyColumn))
 			g := get(k, cell(pt, r, m.PointNameColumn), cell(pt, r, m.PointIDColumn))
+			if kb, ok := cell(pt, r, m.PointKeyColumn).([]byte); ok {
+				g.p.Key = kb
+			}
 			g.seen = g.seen || m.KeepUnlinkedPoints
 			for _, tr := range tt.rows {
 				if m.Composite() && !compositeMatch(cell(tt, tr, m.TimesLinkTypeColumn), cell(tt, tr, m.TimesLinkRTRefColumn), m.TimesLinkRTRef) {

@@ -50,12 +50,17 @@ type AckRecord struct {
 	PointKey string           `json:"pointKey,omitempty"`
 	Level    model.AlertLevel `json:"level"`
 	At       time.Time        `json:"at"`
+	// Stalled: the stall alert of the point (phase 11, CHK-MON-18).
+	Stalled bool `json:"stalled,omitempty"`
 }
 
 // trackerKey is the alert tracker key of the record.
 func (r AckRecord) trackerKey() string {
 	if r.PointKey == "" {
 		return alert.ProfileKey(r.ProfileID)
+	}
+	if r.Stalled {
+		return alert.PointKey(r.ProfileID, r.PointKey+model.StalledKeySuffix)
 	}
 	return alert.PointKey(r.ProfileID, r.PointKey)
 }
@@ -64,6 +69,9 @@ func (r AckRecord) trackerKey() string {
 func eventKey(ev model.AlertEvent) string {
 	if ev.ProfileLevel() {
 		return alert.ProfileKey(ev.ProfileID)
+	}
+	if ev.Stalled {
+		return alert.PointKey(ev.ProfileID, ev.Key+model.StalledKeySuffix)
 	}
 	return alert.PointKey(ev.ProfileID, ev.Key)
 }
@@ -275,6 +283,29 @@ func (m *Monitor) markEventLocked(ev *model.AlertEvent) {
 // acknowledged ones included). Errors: ErrUnknownProfile (deleted /
 // unknown profile), ErrUnknownPoint, ErrNoActiveAlert.
 func (m *Monitor) AckAlert(profileID, pointKey string) (int, error) {
+	return m.ack(profileID, pointKey, 0)
+}
+
+// AckEvent acknowledges only the active alert with ID eventID (IPC
+// ack_alert {eventId}, phase 11, CHK-MON-18; e.g. the stall alert without
+// the lag alert of the same point). ErrNoActiveAlert when no active alert
+// has this id.
+func (m *Monitor) AckEvent(eventID uint64) (int, error) {
+	m.mu.Lock()
+	pid := ""
+	for _, ev := range m.tracker.Active() {
+		if ev.ID == eventID && ev.To != model.LevelOK {
+			pid = ev.ProfileID
+		}
+	}
+	m.mu.Unlock()
+	if pid == "" {
+		return 0, ErrNoActiveAlert
+	}
+	return m.ack(pid, "", eventID)
+}
+
+func (m *Monitor) ack(profileID, pointKey string, eventID uint64) (int, error) {
 	now := m.opt.Now().In(model.DBZone)
 	m.mu.Lock()
 	if _, ok := m.entries[profileID]; !ok || profileID == "" {
@@ -298,6 +329,9 @@ func (m *Monitor) AckAlert(profileID, pointKey string) (int, error) {
 		if pointKey != "" && (ev.ProfileLevel() || ev.Key != pointKey) {
 			continue
 		}
+		if eventID != 0 && ev.ID != eventID {
+			continue
+		}
 		pointKnown = true
 		n++
 		k := eventKey(ev)
@@ -308,7 +342,7 @@ func (m *Monitor) AckAlert(profileID, pointKey string) (int, error) {
 		if ev.ProfileLevel() {
 			pk = ""
 		}
-		m.acks[k] = AckRecord{ProfileID: profileID, PointKey: pk, Level: ev.To, At: now}
+		m.acks[k] = AckRecord{ProfileID: profileID, PointKey: pk, Level: ev.To, At: now, Stalled: ev.Stalled}
 		ev.Acknowledged, ev.AckedAt = true, &now
 		fresh = append(fresh, ev)
 	}

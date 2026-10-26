@@ -491,3 +491,48 @@ func TestCHK_SVC_06_NoRawErrorText(t *testing.T) {
 		t.Fatalf("en %q", en)
 	}
 }
+
+// TestCHK_IPC_11_ViberTestMessage — alarm_test's Viber message goes to
+// every saved recipient outside the window and while disabled; no token /
+// no recipients are reported by key.
+func TestCHK_IPC_11_ViberTestMessage(t *testing.T) {
+	f := newFake(t)
+	ck := &clock{t: at(20, 0)} // outside 08:30-17:00
+	n, st := newN(t, f, ck, true)
+	v := viberOn()
+	v.Enabled = false
+	n.Snapshot(snapV(v, true, false))
+	res, key := n.TestMessage(context.Background(), "ExchangeChecker: Тест")
+	got := f.sent()
+	if key != "" || res == nil || !res.OK || len(res.Results) != 2 || len(got) != 2 || got[0].Text != "ExchangeChecker: Тест" || got[1].Receiver != "r2" {
+		t.Fatalf("test message %+v %q %+v", res, key, got)
+	}
+	// canceled / timed out before sending: every recipient listed
+	cctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, _ = n.TestMessage(cctx, "x")
+	if res.OK || len(res.Results) != 2 || res.Results[0].ErrorKey != model.MsgViberCanceled || res.Results[1].ErrorKey != model.MsgViberCanceled {
+		t.Fatalf("canceled %+v", res)
+	}
+	dctx, cancel2 := context.WithTimeout(context.Background(), -time.Second)
+	defer cancel2()
+	if res, _ = n.TestMessage(dctx, "x"); len(res.Results) != 2 || res.Results[1].ErrorKey != model.MsgViberTimeout {
+		t.Fatalf("timeout %+v", res)
+	}
+	st.mu.Lock()
+	st.tok = ""
+	st.mu.Unlock()
+	n.ReloadToken()
+	if _, key := n.TestMessage(context.Background(), "x"); key != model.MsgViberNoToken {
+		t.Fatalf("no token %q", key)
+	}
+	st.mu.Lock()
+	st.tok = "t"
+	st.mu.Unlock()
+	n.ReloadToken()
+	v.Recipients = nil
+	n.Snapshot(snapV(v, true, false))
+	if _, key := n.TestMessage(context.Background(), "x"); key != model.MsgViberNoRecipients {
+		t.Fatalf("no recipients %q", key)
+	}
+}

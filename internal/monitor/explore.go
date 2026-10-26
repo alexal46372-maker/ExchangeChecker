@@ -112,10 +112,19 @@ type Explorer struct {
 	// Browse lists SQL Server instances (sql_browse; nil =
 	// sqlcheck.ListServers; tests pass fakes).
 	Browse func(ctx context.Context, req model.SQLBrowseRequest) (model.SQLBrowseResult, error)
+	// BrowseWith (phase 11, CHK-IPC-12): sqlcheck.Browse with options
+	// (Progress, default sqlcheck.Browse); Browse, when set (tests), wins.
+	BrowseWith func(ctx context.Context, req model.SQLBrowseRequest, opt sqlcheck.BrowseOptions) (model.SQLBrowseResult, error)
+	// CheckServer (phase 11, CHK-IPC-13): sql_test_steps (nil =
+	// sqlcheck.CheckServer).
+	CheckServer func(ctx context.Context, server string, opt sqlcheck.ServerCheckOptions) (model.SQLServerCheckResult, error)
 
 	mu        sync.Mutex
 	browsing  bool                 // a sql_browse is running (one per service)
 	browseAt  map[string]time.Time // sql_browse rate limiter ("" = broadcast)
+	browseEnd time.Time            // deadline of the running browse (busy retryAfterMs)
+	checking  bool                 // a sql_test_steps is running (one per service)
+	checkEnd  time.Time
 	heavy     int
 	light     int
 	abandoned int
@@ -150,8 +159,11 @@ func (x *Explorer) defaults() {
 	if x.profiles == nil {
 		x.profiles = map[string]bool{}
 	}
-	if x.Browse == nil {
-		x.Browse = sqlcheck.ListServers
+	if x.BrowseWith == nil {
+		x.BrowseWith = sqlcheck.Browse
+	}
+	if x.CheckServer == nil {
+		x.CheckServer = sqlcheck.CheckServer
 	}
 	if x.browseAt == nil {
 		x.browseAt = map[string]time.Time{}

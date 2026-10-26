@@ -10,5 +10,5 @@
 // WinAPI only through internal/winapi: SCM, registry, security API, files.
 // No sc.exe / PowerShell / reg.exe and no helper processes (POLICY §4).
 //
-// Check IDs: CHK-SETUP-01 … CHK-SETUP-07, CHK-SETUP-12 (gated E2E).
+// Check IDs: CHK-SETUP-01 … CHK-SETUP-07, CHK-SETUP-08…13, CHK-SETUP-12 (gated E2E).
 package wininstall

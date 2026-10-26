@@ -158,7 +158,7 @@ func CounterPoints(profileID string, times []CounterTimes, s Settings, now time.
 	for _, t := range times {
 		send, recv := t.LastSend, t.LastRecv
 		p := ExchangePoint{
-			ProfileID: profileID, Name: t.Name, LastSend: &send, LastRecv: &recv,
+			ProfileID: profileID, Name: t.Name, NodeKey: t.Key, LastSend: &send, LastRecv: &recv,
 			Source: PointSourceCounters, SendBaseline: t.SendBaseline, RecvBaseline: t.RecvBaseline,
 		}
 		p.Refresh(s, now)

@@ -69,7 +69,7 @@ const (
 
 // comCall invokes vtable slot idx of the COM object obj (exception to
 // callProc, see the package comment above).
-type comObject struct{ vtbl *[32]uintptr }
+type comObject struct{ vtbl *[64]uintptr } // 64: INetFwRule needs slot 42 (phase 11)
 
 // uintptrescapes: callers convert pointers (UTF16Ptr, &GUID, &pf, buffers)
 // to uintptr in comCall's own argument list; the directive keeps those

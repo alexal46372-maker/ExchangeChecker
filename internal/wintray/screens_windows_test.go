@@ -20,6 +20,7 @@ import (
 // uiScenes, RU and EN, at 96 and 144 dpi, as PNG into $EC_UI_SCREENS
 // (the ui-screens artifact of the windows job, 7 days). The windows are
 // shown off-screen (not hidden) and rendered with PrintWindow.
+// Includes summary* and alarm_test* (CHK-TRAY-54).
 func TestCHK_TRAY_46_Screens(t *testing.T) {
 	dir := os.Getenv("EC_UI_SCREENS")
 	if dir == "" {

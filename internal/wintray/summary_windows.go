@@ -50,19 +50,32 @@ func (a *App) openSummary() {
 		winapi.SetForegroundWindow(a.summaryWin.hwnd)
 		return
 	}
-	sw := &summaryWindow{a: a, lang: a.opt.Lang, session: a.session}
-	hwnd, err := createWindow(summaryClass, i18n.T(i18n.KeySumTitle, a.opt.Lang), 0,
-		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU|winapi.WS_MINIMIZEBOX, 0, 0, 720, 480, a.hwnd, sw.wndProc)
+	sw, err := createSummary(a, a.opt.Lang, a.session)
 	if err != nil {
 		return
 	}
-	sw.hwnd = hwnd
-	sw.build()
 	a.summaryWin = sw
 	if !a.opt.HiddenStatus {
-		winapi.ShowWindow(hwnd, winapi.SW_SHOWNORMAL)
+		winapi.ShowWindow(sw.hwnd, winapi.SW_SHOWNORMAL)
 	}
 	sw.load()
+}
+
+// createSummary builds the summary window (session may be nil for demo screenshots).
+func createSummary(a *App, lang string, session *trayipc.Session) (*summaryWindow, error) {
+	sw := &summaryWindow{a: a, lang: lang, session: session}
+	var parent uintptr
+	if a != nil {
+		parent = a.hwnd
+	}
+	hwnd, err := createWindow(summaryClass, i18n.T(i18n.KeySumTitle, lang), 0,
+		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU|winapi.WS_MINIMIZEBOX, 0, 0, 720, 480, parent, sw.wndProc)
+	if err != nil {
+		return nil, err
+	}
+	sw.hwnd = hwnd
+	sw.build()
+	return sw, nil
 }
 
 func (sw *summaryWindow) t(k string) string { return i18n.T(k, sw.lang) }
@@ -219,8 +232,13 @@ func (sw *summaryWindow) onApply() {
 		winapi.SetWindowText(sw.info, errText)
 		return
 	}
-	sw.chartModel = trayui.BuildSummaryChart(*sum)
-	cards := trayui.BuildSummaryCards(*sum)
+	sw.apply(*sum)
+}
+
+// apply paints a Summary reply (also used for demo screenshots, CHK-TRAY-54).
+func (sw *summaryWindow) apply(sum model.Summary) {
+	sw.chartModel = trayui.BuildSummaryChart(sum)
+	cards := trayui.BuildSummaryCards(sum)
 	info := fmt.Sprintf(sw.t(i18n.KeySumHours), 24)
 	if sum.Truncated {
 		info += " — " + sw.t(i18n.KeySumTruncated)

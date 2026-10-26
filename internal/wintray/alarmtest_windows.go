@@ -16,7 +16,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
-// Alarm-test dialog (CHK-TRAY-53): admin-only; does not write events/problems.
+// Alarm-test dialog (CHK-TRAY-53/54): admin-only; does not write events/problems.
 const (
 	alarmClass    = "ExchangeCheckerTrayAlarmTest"
 	idAlarmWarn   = 901
@@ -31,15 +31,15 @@ const (
 )
 
 type alarmTestWindow struct {
-	owner  *settingsWindow
-	hwnd   uintptr
-	ctl    map[int32]uintptr
-	lang   string
-	mu     sync.Mutex
-	pend   *model.AlarmTestResult
+	owner   *settingsWindow
+	hwnd    uintptr
+	ctl     map[int32]uintptr
+	lang    string
+	mu      sync.Mutex
+	pend    *model.AlarmTestResult
 	pendErr string
-	retryS int
-	busy   bool
+	retryS  int
+	busy    bool
 }
 
 func (w *settingsWindow) openAlarmTest() {
@@ -50,41 +50,61 @@ func (w *settingsWindow) openAlarmTest() {
 	if sess == nil || !(sess.Supported(model.CmdAlarmTest) || sess.Status().Has(model.CapAlarmTest)) {
 		return
 	}
-	aw := &alarmTestWindow{owner: w, lang: w.cfg.lang, ctl: map[int32]uintptr{}}
-	hwnd, err := createWindow(alarmClass, i18n.T(i18n.KeyAlarmTestTitle, w.cfg.lang), 0,
-		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU, 0, 0, 440, 340, w.hwnd, aw.wndProc)
+	aw, err := createAlarmTest(w, w.cfg.lang)
 	if err != nil {
 		return
 	}
+	winapi.ShowWindow(aw.hwnd, winapi.SW_SHOWNORMAL)
+	winapi.SetForegroundWindow(aw.hwnd)
+}
+
+// createAlarmTest builds the dialog (owner may be nil for screenshots).
+func createAlarmTest(owner *settingsWindow, lang string) (*alarmTestWindow, error) {
+	aw := &alarmTestWindow{owner: owner, lang: lang, ctl: map[int32]uintptr{}}
+	var parent uintptr
+	if owner != nil {
+		parent = owner.hwnd
+	}
+	hwnd, err := createWindow(alarmClass, i18n.T(i18n.KeyAlarmTestTitle, lang), 0,
+		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU, 0, 0, 440, 340, parent, aw.wndProc)
+	if err != nil {
+		return nil, err
+	}
 	aw.hwnd = hwnd
 	aw.build()
-	winapi.ShowWindow(hwnd, winapi.SW_SHOWNORMAL)
-	winapi.SetForegroundWindow(hwnd)
+	return aw, nil
 }
 
 func (aw *alarmTestWindow) t(k string) string { return i18n.T(k, aw.lang) }
 
 func (aw *alarmTestWindow) build() {
-	add := func(class, text string, style uint32, id int32, x, y, wd, hg int32) uintptr {
-		h, _ := winapi.CreateWindowEx(0, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style,
-			x, y, wd, hg, aw.hwnd, uintptr(id), winapi.GetModuleHandle())
+	add := func(class, text string, ex, style uint32, id int32, kind ui.Kind, wd, hg int32) *ui.Ctl {
+		h, _ := winapi.CreateWindowEx(ex, class, text, winapi.WS_CHILD|winapi.WS_VISIBLE|style,
+			0, 0, 0, 0, aw.hwnd, uintptr(id), winapi.GetModuleHandle())
 		winapi.SendMessage(h, winapi.WM_SETFONT, uiFont(), 1)
 		aw.ctl[id] = h
-		return h
+		c := &ui.Ctl{H: h, Kind: kind, Text: text, W: wd, Hgt: hg}
+		return c
 	}
-	add("STATIC", "["+aw.t(i18n.KeyAlertTestBadge)+"]", winapi.SS_LEFT, idAlarmBadge, 12, 12, 80, 24)
-	add("BUTTON", aw.t(i18n.KeyAlarmTestWarning), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idAlarmWarn, 12, 48, 180, 24)
-	add("BUTTON", aw.t(i18n.KeyAlarmTestError), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idAlarmErr, 200, 48, 180, 24)
+	badge := add("STATIC", "["+aw.t(i18n.KeyAlertTestBadge)+"]", 0, winapi.SS_LEFT, idAlarmBadge, ui.Label, 0, 0)
+	warn := add("BUTTON", aw.t(i18n.KeyAlarmTestWarning), 0, winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idAlarmWarn, ui.Check, 0, 0)
+	errB := add("BUTTON", aw.t(i18n.KeyAlarmTestError), 0, winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idAlarmErr, ui.Check, 0, 0)
 	winapi.SendMessage(aw.ctl[idAlarmWarn], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
-	add("BUTTON", aw.t(i18n.KeyAlarmTestViber), winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idAlarmViber, 12, 84, 280, 24)
-	add("BUTTON", aw.t(i18n.KeyAlarmTestRun), winapi.WS_TABSTOP, idAlarmRun, 12, 120, 160, 28)
-	add("BUTTON", aw.t(i18n.KeyAlarmTestClose), winapi.WS_TABSTOP, idAlarmClose, 300, 120, 100, 28)
-	h, _ := winapi.CreateWindowEx(winapi.WS_EX_CLIENTEDGE, "EDIT", "",
-		winapi.WS_CHILD|winapi.WS_VISIBLE|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
-		12, 160, 400, 120, aw.hwnd, uintptr(idAlarmResult), winapi.GetModuleHandle())
-	winapi.SendMessage(h, winapi.WM_SETFONT, uiFont(), 1)
-	aw.ctl[idAlarmResult] = h
-	_ = ui.P8
+	viber := add("BUTTON", aw.t(i18n.KeyAlarmTestViber), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idAlarmViber, ui.Check, 0, 0)
+	run := add("BUTTON", aw.t(i18n.KeyAlarmTestRun), 0, winapi.WS_TABSTOP, idAlarmRun, ui.Button, 160, 0)
+	closeB := add("BUTTON", aw.t(i18n.KeyAlarmTestClose), 0, winapi.WS_TABSTOP, idAlarmClose, ui.Button, 100, 0)
+	res := add("EDIT", "", winapi.WS_EX_CLIENTEDGE,
+		winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
+		idAlarmResult, ui.Box, 0, 120)
+	res.Grow = true
+	content := &ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		badge,
+		&ui.Row{Gap: ui.P16, Items: []ui.Node{warn, errB}},
+		viber,
+		res,
+	}}}
+	bar := &ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Gap: ui.P8, Items: []ui.Node{run, closeB}}}
+	fitForm(aw.hwnd, content, bar, 360, false)
 }
 
 func (aw *alarmTestWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
@@ -129,6 +149,9 @@ func (aw *alarmTestWindow) viber() bool {
 }
 
 func (aw *alarmTestWindow) run() {
+	if aw.owner == nil || aw.owner.cfg.session == nil {
+		return
+	}
 	aw.mu.Lock()
 	if aw.busy || aw.retryS > 0 {
 		aw.mu.Unlock()
@@ -195,6 +218,12 @@ func (aw *alarmTestWindow) onApply() {
 	winapi.SetWindowText(aw.ctl[idAlarmResult], formatAlarmViber(res, aw.lang))
 	winapi.EnableWindow(aw.ctl[idAlarmRun], true)
 	winapi.SetWindowText(aw.ctl[idAlarmRun], aw.t(i18n.KeyAlarmTestRun))
+}
+
+func (aw *alarmTestWindow) setResult(text string) {
+	if h := aw.ctl[idAlarmResult]; h != 0 {
+		winapi.SetWindowText(h, text)
+	}
 }
 
 func (aw *alarmTestWindow) tickRetry() {

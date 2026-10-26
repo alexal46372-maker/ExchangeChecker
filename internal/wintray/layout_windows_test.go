@@ -282,7 +282,9 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 
 // uiScenes opens every tray window (settings expert / general / simple /
 // read-only, import, discovery, sound, history, volume, panel, about, wizard,
-// alert, status) in lang and visits it (layout test, CI screenshots).
+// alert, status, summary, alarm_test) in lang and visits it (layout test,
+// CI screenshots). Summary / alarm_test use demo data under mock caps
+// CapSummary / CapAlarmTest (CHK-TRAY-54).
 func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
 	t.Helper()
 	done, ok := useComCtl6()
@@ -457,6 +459,30 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	st.updateHistoryButton()
 	visit("status selected", st.hwnd)
 	winapi.DestroyWindow(st.hwnd)
+
+	// CHK-TRAY-54: summary + alarm_test under mock CapSummary / CapAlarmTest
+	func() {
+		sw, err := createSummary(nil, lang, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sw.apply(sampleSummary())
+		visit("summary", sw.hwnd)
+		winapi.DestroyWindow(sw.hwnd)
+	}()
+	func() {
+		aw, err := createAlarmTest(nil, lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		aw.setResult(formatAlarmViber(&model.AlarmTestResult{OK: true, Viber: &model.AlarmTestViber{
+			ViberTestResult: model.ViberTestResult{OK: true, Results: []model.ViberTestItem{
+				{ID: "u1", OK: true}, {ID: "u2", OK: true},
+			}},
+		}}, lang))
+		visit("alarm_test", aw.hwnd)
+		winapi.DestroyWindow(aw.hwnd)
+	}()
 }
 
 // sampleAlert is an alert view for the layout test and the screenshots.

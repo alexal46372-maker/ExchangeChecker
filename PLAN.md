@@ -834,6 +834,8 @@ Wizard Win32 (страницы):
 
 148. **Сводка + тест тревоги + застой (фаза 11, `CHK-TRAY-53`):** клиент только против принятого IPC phase11-svc (протокол не меняется). `client_hello` с capabilities `alarm_test` / `summary` / `ack_event`. Окно «Сводка…»: `summary` hours/buckets, 24h GDI-график (пустые бакеты серые), карточки профилей; `busy` — повтор через 5 с; `truncated` — «показаны не все базы». Кнопка «Тест тревоги…» (админ): `alarm_test`, badge «ТЕСТ»/«TEST», `rate_limited` countdown на кнопке, пустой Viber → «Viber не настроен» (не ошибка); non-admin — disabled + tooltip / `access_denied`; в events/problems не пишется. Застой: problems kind `stalled`, status `point.stalled`, `settings.stalledMinutes` / `profile.stalledMinutes` по протоколу. `ack_alert` по `eventId` (cap `ack_event`) + старый путь `pointKey`. Кнопка subnet без `browse_subnet` не создаётся (как check-steps).
 
+149. **Скриншоты сводки/теста тревоги + layout v2 (фаза 11, `CHK-TRAY-54`):** в `uiScenes` / CI artifact `ui-screens` — окна «Сводка» (`summary*`) и «Тест тревоги» (`alarm_test*`), RU+EN, 96 и 144 dpi, с демо-данными при mock-capabilities `summary` / `alarm_test`. Layout test v2: каждое окно вписывается в work area, без горизонтального скролла, видима кнопочная полоса, ширина поля ≥ cue, вертикальные зазоры ≤ 16×DPI, на 96 и 144 dpi. Опционально: в derived `Problems()` отфильтровать `a.Test` и `a.Stalled` → kind `stalled`. Тесты: `TestCHK_TRAY_54_LayoutV2`, `TestCHK_TRAY_54_ProblemsFilter` (+ `TestCHK_TRAY_46_Screens`).
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.

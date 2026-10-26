@@ -321,3 +321,23 @@ func TestCHK_TRAY_53_TestBadge(t *testing.T) {
 		t.Fatalf("en title %q", titleEN)
 	}
 }
+
+
+func TestCHK_TRAY_54_ProblemsFilter(t *testing.T) {
+	at := time.Now()
+	st := trayipc.Status{State: trayipc.StateConnected, Snapshot: &model.StatusSnapshot{
+		Alerts: []model.AlertEvent{
+			{ProfileID: "p1", ProfileName: "A", To: model.LevelWarning, At: at, Test: true},
+			{ProfileID: "p2", ProfileName: "B", Key: "k", To: model.LevelWarning, At: at, Stalled: true},
+			{ProfileID: "p3", ProfileName: "C", To: model.LevelError, At: at},
+		},
+		Profiles: []model.ProfileSnapshot{{ProfileID: "p1", Name: "A"}, {ProfileID: "p2", Name: "B"}, {ProfileID: "p3", Name: "C"}},
+	}}
+	ps := Problems(st, StatusExt{}, i18n.RU)
+	if len(ps) != 2 {
+		t.Fatalf("want 2 problems (test filtered), got %d %+v", len(ps), ps)
+	}
+	if ps[0].Kind != ProblemStalled || ps[1].Kind != ProblemError {
+		t.Fatalf("kinds %q %q", ps[0].Kind, ps[1].Kind)
+	}
+}

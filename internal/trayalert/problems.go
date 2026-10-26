@@ -135,11 +135,17 @@ func Problems(st trayipc.Status, ext StatusExt, lang string) []Problem {
 	}
 	seen := map[string]bool{}
 	for _, a := range snap.Alerts {
-		if a.To <= model.LevelOK {
+		if a.Test { // alarm_test push: never in problems (CHK-TRAY-54)
+			continue
+		}
+		if a.To <= model.LevelOK && !a.Stalled {
 			continue
 		}
 		k := ProblemWarning
-		if a.To >= model.LevelError {
+		switch {
+		case a.Stalled:
+			k = ProblemStalled
+		case a.To >= model.LevelError:
 			k = ProblemError
 		}
 		if a.ProfileLevel() {

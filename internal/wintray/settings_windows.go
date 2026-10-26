@@ -630,6 +630,9 @@ func (w *settingsWindow) build() {
 	if w.ctl[idVbToken] != 0 {
 		w.setCue(idVbToken, w.t(i18n.KeyCueVbToken))
 	}
+	if w.ctl[idVbReminder] != 0 {
+		w.setCue(idVbReminder, w.t(i18n.KeyVbReminderHint))
+	}
 	w.setCue(idSetWarn, w.t(i18n.KeySetThreshCue))
 	w.setCue(idSetError, w.t(i18n.KeySetThreshCue))
 	w.setCue(idSetConnTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultConnectTimeoutSec))

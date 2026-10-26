@@ -1,8 +1,10 @@
 package traysettings
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
@@ -51,6 +53,11 @@ type UIField struct {
 	Simple bool
 	// HasDefault: an empty value means the default (never highlighted).
 	HasDefault bool
+	// Cue: i18n key of the EM_SETCUEBANNER of an edit box ("" = no cue:
+	// not an edit, or the default is shown as the filled value).
+	Cue string
+	// CueDefault, when > 0, is sprintf'd into Cue («по умолчанию %d»).
+	CueDefault int
 	// Capability: shown only when the service has it ("" = always).
 	Capability string
 }
@@ -81,32 +88,32 @@ const CapViber = "viber"
 // UIFields is the inventory of every field (a test checks each one is on
 // a page of its mode).
 var UIFields = []UIField{
-	{ID: FieldName, Section: SecDatabases, Simple: true, HasDefault: true},
-	{ID: FieldHost, Section: SecDatabases, Simple: true},
-	{ID: FieldInstance, Section: SecDatabases, Simple: true, HasDefault: true},
-	{ID: FieldPort, Section: SecDatabases, HasDefault: true},
-	{ID: FieldDatabase, Section: SecDatabases, Simple: true},
+	{ID: FieldName, Section: SecDatabases, Simple: true, HasDefault: true, Cue: i18n.KeyCueName},
+	{ID: FieldHost, Section: SecDatabases, Simple: true, Cue: i18n.KeyCueHost},
+	{ID: FieldInstance, Section: SecDatabases, Simple: true, HasDefault: true, Cue: i18n.KeyCueInstance},
+	{ID: FieldPort, Section: SecDatabases, HasDefault: true, Cue: i18n.KeySetPortCue},
+	{ID: FieldDatabase, Section: SecDatabases, Simple: true, Cue: i18n.KeyCueDatabase},
 	{ID: FieldAuth, Section: SecDatabases, Simple: true},
-	{ID: FieldLogin, Section: SecDatabases, Simple: true},
-	{ID: FieldPassword, Section: SecDatabases, Simple: true},
+	{ID: FieldLogin, Section: SecDatabases, Simple: true, Cue: i18n.KeyCueLogin},
+	{ID: FieldPassword, Section: SecDatabases, Simple: true, Cue: i18n.KeyCuePassword},
 	{ID: FieldClearPassword, Section: SecDatabases},
 	{ID: FieldEncrypt, Section: SecDatabases, HasDefault: true},
 	{ID: FieldTLS10, Section: SecDatabases, HasDefault: true},
 	{ID: FieldTrust, Section: SecDatabases, HasDefault: true},
 	{ID: FieldEnabled, Section: SecDatabases, Simple: true, HasDefault: true},
 	{ID: FieldPreset, Section: SecDatabases, HasDefault: true},
-	{ID: FieldConnTimeout, Section: SecDatabases, HasDefault: true},
-	{ID: FieldQueryTimeout, Section: SecDatabases, HasDefault: true},
+	{ID: FieldConnTimeout, Section: SecDatabases, HasDefault: true, Cue: i18n.KeySetTimeoutCue, CueDefault: model.DefaultConnectTimeoutSec},
+	{ID: FieldQueryTimeout, Section: SecDatabases, HasDefault: true, Cue: i18n.KeySetTimeoutCue, CueDefault: model.DefaultQueryTimeoutSec},
 	{ID: FieldMappings, Section: SecTables},
 	{ID: FieldDiscPoint, Section: SecTables},
-	{ID: FieldDiscTime, Section: SecTables, HasDefault: true},
-	{ID: FieldDiscTolerance, Section: SecTables, HasDefault: true},
+	{ID: FieldDiscTime, Section: SecTables, HasDefault: true, Cue: i18n.KeyCueDiscTime},
+	{ID: FieldDiscTolerance, Section: SecTables, HasDefault: true, Cue: i18n.KeySetTimeoutCue, CueDefault: 1440},
 	{ID: FieldDiscLimit, Section: SecTables, HasDefault: true},
 	{ID: FieldPollInterval, Section: SecChecks, HasDefault: true},
 	{ID: FieldWarnMinutes, Section: SecChecks, Simple: true, HasDefault: true},
 	{ID: FieldErrorMinutes, Section: SecChecks, Simple: true, HasDefault: true},
-	{ID: FieldProfWarn, Section: SecChecks, HasDefault: true},
-	{ID: FieldProfError, Section: SecChecks, HasDefault: true},
+	{ID: FieldProfWarn, Section: SecChecks, HasDefault: true, Cue: i18n.KeySetThreshCue},
+	{ID: FieldProfError, Section: SecChecks, HasDefault: true, Cue: i18n.KeySetThreshCue},
 	{ID: FieldBeepEnabled, Section: SecAlarms, Simple: true, HasDefault: true},
 	{ID: FieldWarnFreq, Section: SecAlarms, HasDefault: true},
 	{ID: FieldWarnDur, Section: SecAlarms, HasDefault: true},
@@ -116,13 +123,13 @@ var UIFields = []UIField{
 	{ID: FieldSoundProfiles, Section: SecAlarms, HasDefault: true},
 	{ID: FieldMasterVolume, Section: SecAlarms, Simple: true, HasDefault: true},
 	{ID: FieldBalloons, Section: SecNotifications, Simple: true, HasDefault: true},
-	{ID: FieldViberToken, Section: SecNotifications, Capability: CapViber},
+	{ID: FieldViberToken, Section: SecNotifications, Capability: CapViber, Cue: i18n.KeyCueVbToken},
 	{ID: FieldViberRecipients, Section: SecNotifications, Capability: CapViber},
 	{ID: FieldViberDays, Section: SecNotifications, Capability: CapViber, HasDefault: true},
 	{ID: FieldViberFrom, Section: SecNotifications, Capability: CapViber, HasDefault: true},
 	{ID: FieldViberTo, Section: SecNotifications, Capability: CapViber, HasDefault: true},
 	{ID: FieldViberEvents, Section: SecNotifications, Capability: CapViber, HasDefault: true},
-	{ID: FieldViberReminder, Section: SecNotifications, Capability: CapViber, HasDefault: true},
+	{ID: FieldViberReminder, Section: SecNotifications, Capability: CapViber, HasDefault: true, Cue: i18n.KeyVbReminderHint},
 	{ID: FieldViberTest, Section: SecNotifications, Capability: CapViber},
 	{ID: FieldHistoryWindow, Section: SecHistory},
 	{ID: FieldLanguage, Section: SecService, HasDefault: true},
@@ -145,6 +152,18 @@ func FieldsOf(mode UIMode, caps []string) []UIField {
 		}
 	}
 	return out
+}
+
+// CueText is the cue banner of f in lang ("" if none).
+func (f UIField) CueText(lang string) string {
+	if f.Cue == "" {
+		return ""
+	}
+	t := i18n.T(f.Cue, lang)
+	if f.CueDefault > 0 {
+		return fmt.Sprintf(t, f.CueDefault)
+	}
+	return t
 }
 
 // RequiredFields of the profile form in mode. Simple: server, database

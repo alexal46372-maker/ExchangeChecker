@@ -74,4 +74,3 @@ func setWindowIcons(hwnd uintptr) {
 	winapi.SendMessage(hwnd, winapi.WM_SETICON, winapi.ICON_SMALL, uiIcons.ico(trayui.IcoApp, px(icoSmall)))
 	winapi.SendMessage(hwnd, winapi.WM_SETICON, winapi.ICON_BIG, uiIcons.ico(trayui.IcoApp, px(icoLarge)))
 }
-

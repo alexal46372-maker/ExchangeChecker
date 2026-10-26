@@ -569,12 +569,13 @@ func (w *settingsWindow) build() {
 		stacked = append(stacked, ui.GridRow{Label: l1, Field: e1}, ui.GridRow{Label: l2, Field: e2})
 		return ui.GridRow{Label: l1, Field: &ui.Row{Items: []ui.Node{e1, &ui.Space{W: ui.P8}, l2, e2}}}
 	}
+	stalledRow := field(w.t(i18n.KeySetStalledMin), idSetStalled, "EDIT", edit|winapi.ES_NUMBER, 200)
 	checksG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Span: true, Field: enabled},
 		pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError),
 		pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO),
-		field(w.t(i18n.KeySetStalledMin), idSetStalled, "EDIT", edit|winapi.ES_NUMBER, 100),
+		stalledRow,
 	}}
-	w.checksG, w.stackedRows = checksG, append([]ui.GridRow{checksG.Rows[0]}, stacked...)
+	w.checksG, w.stackedRows = checksG, append([]ui.GridRow{checksG.Rows[0]}, append(stacked, stalledRow)...)
 	checks := group(i18n.KeySetGroupChecks, checksG)
 	ui.Share(connG, loginG, tlsG, checksG)
 	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 120, 30)
@@ -595,7 +596,11 @@ func (w *settingsWindow) build() {
 		if i == 3 {
 			gRows = append(gRows, ui.GridRow{Span: true, Field: check(idGenBeep, i18n.KeyGenBeepEnabled)})
 		}
-		gRows = append(gRows, field(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, 100))
+		gw := int32(100)
+		if g.id == idGenStalled {
+			gw = 200 // cue «0 = выкл., пусто = 120»
+		}
+		gRows = append(gRows, field(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, gw))
 	}
 	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Box, 260, 34)

@@ -17,6 +17,7 @@ var settingsCueID = map[traysettings.Field]int32{
 	traysettings.FieldPort: idSetPort, traysettings.FieldDatabase: idSetDatabase, traysettings.FieldLogin: idSetLogin,
 	traysettings.FieldPassword: idSetPassword, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
 	traysettings.FieldConnTimeout: idSetConnTO, traysettings.FieldQueryTimeout: idSetQueryTO,
+	traysettings.FieldProfStalled: idSetStalled, traysettings.FieldStalledMinutes: idGenStalled,
 	traysettings.FieldViberToken: idVbToken,
 }
 

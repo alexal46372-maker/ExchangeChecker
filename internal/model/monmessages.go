@@ -121,13 +121,16 @@ const (
 )
 
 var monitorMessages = map[string][2]string{ // key -> {ru, en}
-	MsgMonitorPollError:        {"Ошибка опроса базы.", "Database poll failed."},
-	MsgMonitorConnError:        {"Нет соединения с SQL Server (сеть, имя сервера, логин или пароль).", "Cannot connect to SQL Server (network, server name, login or password)."},
-	MsgMonitorTimeout:          {"Опрос базы не уложился в отведённое время.", "The database poll timed out."},
-	MsgMonitorQueryError:       {"Ошибка запроса к базе.", "A database query failed."},
-	MsgMonitorMapping:          {"Для базы не настроены таблицы обмена (выполните «Найти таблицы»).", "The exchange tables are not configured (run \"Find tables\")."},
-	MsgMonitorConfig:           {"Ошибка настроек профиля или пароля.", "Profile settings or password error."},
-	MsgMonitorPanic:            {"Внутренняя ошибка при опросе базы.", "Internal error while polling the database."},
+	MsgMonitorPollError:  {"Ошибка опроса базы.", "Database poll failed."},
+	MsgMonitorConnError:  {"Нет соединения с SQL Server (сеть, имя сервера, логин или пароль).", "Cannot connect to SQL Server (network, server name, login or password)."},
+	MsgMonitorTimeout:    {"Опрос базы не уложился в отведённое время.", "The database poll timed out."},
+	MsgMonitorQueryError: {"Ошибка запроса к базе.", "A database query failed."},
+	MsgMonitorMapping:    {"Для базы не настроены таблицы обмена (выполните «Найти таблицы»).", "The exchange tables are not configured (run \"Find tables\")."},
+	MsgMonitorConfig:     {"Ошибка настроек профиля или пароля.", "Profile settings or password error."},
+	MsgMonitorPanic:      {"Внутренняя ошибка при опросе базы.", "Internal error while polling the database."},
+	MsgTestStepsServerMismatch: {"Сервер не совпадает с сервером профиля: сохранённый пароль профиля используется только для его сервера (имя, экземпляр, порт). Проверьте сервер или выполните проверку без профиля.",
+		"The server does not match the profile's server: the profile's saved password is used only for its own server (host, instance, port). Check the server or run the check without the profile."},
+	MsgMonitorStalled:          {"Обмен идёт, но номера сообщений узла не меняются дольше порога «застоя».", "The exchange runs but the node's message numbers have not changed for longer than the stalled threshold."},
 	MsgMonitorBusy:             {"Предыдущий опрос базы ещё выполняется.", "The previous poll of the database is still running."},
 	MsgMonitorBaseline:         {"Не раньше запуска наблюдения службой.", "Not earlier than the service started observing."},
 	MsgMonitorHung:             {"Опрос базы завис; соединение закрыто и будет открыто заново.", "The database poll hung; the connection was closed and will be reopened."},
@@ -166,12 +169,15 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgImportNoConfig:          {"Не передана конфигурация для импорта.", "No configuration to import."},
 	MsgViberNoToken:            {"Не задан токен бота Viber.", "The Viber bot token is not set."},
 	MsgViberNoRecipients:       {"Не заданы получатели Viber.", "No Viber recipients are set."},
+	MsgViberCanceled:           {"Отправка в Viber отменена.", "Sending to Viber was canceled."},
+	MsgViberTimeout:            {"Время отправки в Viber истекло.", "Sending to Viber timed out."},
 	MsgViberAuthFailed:         {"Viber отклонил токен бота.", "Viber rejected the bot token."},
 	MsgViberReceiverInvalid:    {"Получатель Viber не найден или не подписан на бота.", "The Viber receiver is unknown or not subscribed to the bot."},
 	MsgViberRateLimited:        {"Слишком много запросов к Viber; повторите позже.", "Too many Viber requests; try again later."},
 	MsgViberNetwork:            {"Нет связи с сервером Viber (сеть, прокси).", "Cannot reach the Viber server (network, proxy)."},
 	MsgViberTLS:                {"Ошибка TLS при подключении к Viber: обновите корневые сертификаты Windows.", "TLS error connecting to Viber: update the Windows root certificates."},
 	MsgViberFailed:             {"Viber не принял сообщение.", "Viber did not accept the message."},
+	MsgAlarmTestLevel:          {"Уровень тестовой тревоги: warning или error.", "Test alarm level must be warning or error."},
 	MsgViberNotChecked:         {"ещё не проверена", "not checked yet"},
 	MsgViberErrorUnknown:       {"ошибка подключения или запроса", "connection or query error"},
 	MsgViberInvalid:            {"Неверные настройки Viber.", "Invalid Viber settings."},
@@ -239,5 +245,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch}
 }

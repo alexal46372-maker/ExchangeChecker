@@ -189,6 +189,21 @@ type IPCRequest struct {
 	ViberToken      string `json:"viberToken,omitempty"`
 	ClearViberToken bool   `json:"clearViberToken,omitempty"`
 	RecipientID     string `json:"recipientId,omitempty"`
+	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
+	Level string `json:"level,omitempty"`
+	Viber bool   `json:"viber,omitempty"`
+	// Hours / Buckets: summary (phase 11, CHK-SVC-07).
+	Hours int `json:"hours,omitempty"`
+	// Phase 11 (CHK-IPC-12/13): sql_browse v2 Port / CIDR (Mode shared
+	// with import_config), sql_test_steps Server (+ ProfileID).
+	Port int `json:"port,omitempty"`
+	// Capabilities of client_hello; EventID of ack_alert by event
+	// (phase 11, CHK-IPC-11 / CHK-MON-18).
+	Capabilities []string `json:"capabilities,omitempty"`
+	EventID      uint64   `json:"eventId,omitempty"`
+	CIDR         string   `json:"cidr,omitempty"`
+	Server       string   `json:"server,omitempty"`
+	Buckets      int      `json:"buckets,omitempty"`
 	// Ref is the request ID canceled by cancel (phase 6, G6).
 	Ref uint64 `json:"ref,omitempty"`
 	// Query of discover_by_value (phase 6, G2).
@@ -326,6 +341,16 @@ type IPCMessage struct {
 	Import *ImportResult `json:"import,omitempty"`
 	// ViberTest: viber_test reply (phase 10, CHK-SVC-06).
 	ViberTest *ViberTestResult `json:"viberTest,omitempty"`
+	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
+	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
+	// Summary: summary reply (phase 11, CHK-SVC-07).
+	Summary *Summary `json:"summary,omitempty"`
+	// Phase 11 (CHK-IPC-12/13): progress pushes (written flat, see
+	// MarshalJSON) and the sql_test_steps reply.
+	Ref            uint64                `json:"-"`
+	BrowseProgress *SQLBrowseProgress    `json:"-"`
+	TestStep       *SQLCheckStep         `json:"-"`
+	SQLTestSteps   *SQLServerCheckResult `json:"sqlTestSteps,omitempty"`
 
 	// Phase 6, G2/G3 (capabilities discover, discover_by_value,
 	// node_points, check_mapping; CHK-IPC-08/09):

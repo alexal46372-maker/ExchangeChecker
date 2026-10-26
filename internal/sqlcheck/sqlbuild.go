@@ -302,8 +302,14 @@ func buildPointsSQL(m model.Mapping) (string, error) {
 		return "", err
 	}
 	if !m.Linked() {
-		return "SELECT TOP (@p1) t.n, t.i, MAX(t.s), MAX(t.r)" +
-			"\nFROM (SELECT " + n + ", " + i + ", " + s + ", " + r + " FROM " + pt + noLock + ") AS t" +
+		// the 5th column: the point key (MIN over the group; NULL without
+		// PointKeyColumn), for model.ExchangePoint.NodeKey
+		k, err := colOrNull(m.PointKeyColumn, "binary(16)", "k")
+		if err != nil {
+			return "", err
+		}
+		return "SELECT TOP (@p1) t.n, t.i, MAX(t.s), MAX(t.r), MIN(t.k)" +
+			"\nFROM (SELECT " + n + ", " + i + ", " + s + ", " + r + ", " + k + " FROM " + pt + noLock + ") AS t" +
 			"\nGROUP BY t.n, t.i\nORDER BY t.n, t.i", nil
 	}
 	tt, err := TableRef{Schema: m.TimesSchema, Name: m.TimesTable}.SQL()
@@ -329,7 +335,7 @@ func buildPointsSQL(m model.Mapping) (string, error) {
 			return "", err
 		}
 	}
-	return "SELECT TOP (@p1) p.n, p.i, MAX(t.s), MAX(t.r)" +
+	return "SELECT TOP (@p1) p.n, p.i, MAX(t.s), MAX(t.r), p.k" +
 		"\nFROM (SELECT " + k + " AS k, " + n + ", " + i + " FROM " + pt + noLock + ") AS p" +
 		"\n" + join + " (SELECT " + l + " AS l, " + s + ", " + r + " FROM " + tt + noLock + where + ") AS t ON t.l = p.k" +
 		"\nGROUP BY p.k, p.n, p.i\nORDER BY p.n, p.i", nil

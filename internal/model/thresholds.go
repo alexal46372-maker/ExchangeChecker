@@ -16,6 +16,9 @@ func (p Profile) validateThresholds() error {
 		return fieldErr("errorMinutes", ValRange, fmt.Sprintf("errorMinutes must be in [0..%d], got %d", MaxThresholdMinutes, p.ErrorMinutes),
 			"0", itoa(MaxThresholdMinutes), itoa(p.ErrorMinutes))
 	}
+	if !validStalled(p.StalledMinutes) {
+		return stalledErr("stalledMinutes", p.StalledMinutes)
+	}
 	if p.WarnMinutes > 0 && p.ErrorMinutes > 0 && p.ErrorMinutes <= p.WarnMinutes {
 		return fieldErr("errorMinutes", ValGreaterThan, fmt.Sprintf("errorMinutes (%d) must be greater than warnMinutes (%d)", p.ErrorMinutes, p.WarnMinutes),
 			"warnMinutes", itoa(p.WarnMinutes))

@@ -28,6 +28,10 @@ type PointStatus struct {
 	// Acknowledged: the active alert of the point was acknowledged
 	// (ack_alert); the level stays as it is (CHK-IPC-02).
 	Acknowledged bool `json:"acknowledged,omitempty"`
+	// Phase 11 (CHK-MON-18): Stalled since StalledSince (MarkStalled);
+	// SentNo / ReceivedNo: the 1C message numbers (counters mode).
+	Stalled      bool       `json:"stalled"`
+	StalledSince *time.Time `json:"stalledSince,omitempty"`
 }
 
 // ProfileSnapshot is one database (profile) in a snapshot.
@@ -59,6 +63,8 @@ type ProfileSnapshot struct {
 	// is included in this profile's data; 0 = none / not polled. Always
 	// sent.
 	LastCheckSeq uint64 `json:"lastCheckSeq"`
+	// Stalled: any point is stalled (phase 11, CHK-MON-18). Always sent.
+	Stalled bool `json:"stalled"`
 	// Polled is false until the first poll of the profile finished.
 	Polled bool `json:"polled"`
 	// Acknowledged: the profile-level alert (connection / query error)
@@ -229,6 +235,7 @@ func NewProfileSnapshot(p Profile, st ProfileStatus, global Settings, now time.T
 		}
 	}
 	out.Level = Worst(levels...)
+	MarkStalled(&out, p.StalledAfter(global), now)
 	return out
 }
 

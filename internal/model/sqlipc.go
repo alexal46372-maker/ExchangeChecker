@@ -45,7 +45,7 @@ const (
 // SQLCommand reports whether cmd is one of the wizard commands.
 func SQLCommand(cmd string) bool {
 	switch cmd {
-	case CmdSQLBrowse, CmdSQLDatabases, CmdSQLDiagnose, CmdSQLGrantScript:
+	case CmdSQLBrowse, CmdSQLDatabases, CmdSQLDiagnose, CmdSQLGrantScript, CmdSQLTestSteps:
 		return true
 	}
 	return false

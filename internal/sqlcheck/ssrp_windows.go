@@ -32,6 +32,19 @@ func findCall(p *syscall.LazyProc, a ...uintptr) uintptr {
 	return r
 }
 
+// findCallErr is findCall that also returns the Win32 error of a failed
+// call (GetLastError, captured by syscall).
+//
+//go:uintptrescapes
+func findCallErr(p *syscall.LazyProc, a ...uintptr) (uintptr, syscall.Errno) {
+	if p.Find() != nil {
+		return 0, syscall.Errno(127) // ERROR_PROC_NOT_FOUND
+	}
+	r, _, e := p.Call(a...)
+	en, _ := e.(syscall.Errno)
+	return r, en
+}
+
 // ssrpDecode converts SSRP bytes to UTF-8 (ASCII unchanged; invalid
 // input is dropped later by ssrpValue).
 func ssrpDecode(b []byte) string {

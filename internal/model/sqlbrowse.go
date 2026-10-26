@@ -14,11 +14,17 @@ import (
 
 // SQL Browser limits.
 const (
-	// DefaultSQLBrowseTimeoutMs: how long responses are collected.
-	DefaultSQLBrowseTimeoutMs = 2000
+	// DefaultSQLBrowseTimeoutMs: how long responses are collected (phase
+	// 11: 3 s, the SSRP request is sent 3 times 300 ms apart).
+	DefaultSQLBrowseTimeoutMs = 3000
 	// MinSQLBrowseTimeoutMs / MaxSQLBrowseTimeoutMs bound TimeoutMs.
 	MinSQLBrowseTimeoutMs = 500
 	MaxSQLBrowseTimeoutMs = 5000
+	// MaxSQLSubnetTimeoutMs / DefaultSQLSubnetTimeoutMs: subnet mode (TCP
+	// scan of up to 254 addresses) may run up to 15 s (architect, phase 11);
+	// subnet runs only when requested explicitly, never for mode "".
+	MaxSQLSubnetTimeoutMs     = 15000
+	DefaultSQLSubnetTimeoutMs = 15000
 	// MaxSQLBrowseInstances caps the instances of one result (Truncated).
 	MaxSQLBrowseInstances = 256
 	// MaxSQLBrowseHostLen: host name / IP literal length.
@@ -37,6 +43,45 @@ type SQLBrowseRequest struct {
 	TimeoutMs int    `json:"timeoutMs,omitempty"` // 0 = DefaultSQLBrowseTimeoutMs
 	// Limit caps the instances (0 = MaxSQLBrowseInstances; 1..256).
 	Limit int `json:"limit,omitempty"`
+	// Mode (phase 11, PLAN §12 p. 160): local | broadcast | subnet | host;
+	// "" = host when Host is set, else broadcast + local.
+	Mode string `json:"mode,omitempty"`
+	// Port: TCP port probed in host / subnet mode (0 = 1433).
+	Port int `json:"port,omitempty"`
+	// CIDR: subnet mode network ("" = the /24 of the first IPv4
+	// interface); IPv4 /24../30 only; sqlcheck also requires it to
+	// overlap a local interface network.
+	CIDR string `json:"cidr,omitempty"`
+}
+
+// ValidSQLBrowseCIDR reports whether c is an IPv4 network /24../30.
+func ValidSQLBrowseCIDR(c string) bool {
+	ip, n, err := net.ParseCIDR(c)
+	if err != nil || ip.To4() == nil {
+		return false
+	}
+	ones, bits := n.Mask.Size()
+	return bits == 32 && ones >= 24 && ones <= 30
+}
+
+// Browse modes (SQLBrowseRequest.Mode).
+const (
+	SQLBrowseAuto      = ""
+	SQLBrowseLocal     = "local"     // this computer: registry, SQLBrowser service, 127.0.0.1:1434
+	SQLBrowseBroadcast = "broadcast" // SSRP broadcast on every IPv4 interface + local
+	SQLBrowseSubnet    = "subnet"    // TDS PRELOGIN to TCP port on every /24 address of each interface
+	SQLBrowseHost      = "host"      // SSRP unicast + TCP PRELOGIN probe of Host
+)
+
+// EffectiveMode resolves SQLBrowseAuto.
+func (r SQLBrowseRequest) EffectiveMode() string {
+	if r.Mode != SQLBrowseAuto {
+		return r.Mode
+	}
+	if r.Host != "" {
+		return SQLBrowseHost
+	}
+	return SQLBrowseBroadcast
 }
 
 // SQLServerInstance is one instance announced by a SQL Server Browser.
@@ -48,6 +93,8 @@ type SQLServerInstance struct {
 	// Instance is the instance name (MSSQLSERVER = default instance).
 	Instance string `json:"instance"`
 	Version  string `json:"version,omitempty"`
+	// Source: browser (SSRP) | local (registry) | tcp (PRELOGIN probe).
+	Source string `json:"source,omitempty"`
 	// TCPPort is the TCP port (0: TCP disabled or not announced).
 	TCPPort     int    `json:"tcpPort,omitempty"`
 	IsClustered bool   `json:"isClustered,omitempty"`
@@ -86,25 +133,79 @@ type SQLBrowseResult struct {
 	Malformed int  `json:"malformed,omitempty"`
 	// Ignored: answers from addresses no request went to (addressed mode).
 	Ignored int `json:"ignored,omitempty"`
+	// Phase 11 diagnostics (PLAN §12 p. 162): SSRP datagrams sent, send
+	// errors (count + at most MaxSQLBrowseSendErrors details), answers
+	// accepted, local computer, TCP probe and advice keys (sql.browse_*).
+	Mode           string              `json:"mode,omitempty"`
+	Sent           int                 `json:"sent"`
+	SendErrorCount int                 `json:"sendErrorCount"`
+	SendErrors     []SQLBrowseSendErr  `json:"sendErrors,omitempty"`
+	Responded      int                 `json:"responded"`
+	Local          *SQLBrowseLocalInfo `json:"local,omitempty"`
+	TCPProbe       *SQLBrowseTCPInfo   `json:"tcpProbe,omitempty"`
+	Advice         []string            `json:"advice,omitempty"`
 }
 
 // Timeout returns TimeoutMs or the default.
 func (r SQLBrowseRequest) Timeout() int {
 	if r.TimeoutMs == 0 {
+		if r.EffectiveMode() == SQLBrowseSubnet {
+			return DefaultSQLSubnetTimeoutMs
+		}
 		return DefaultSQLBrowseTimeoutMs
 	}
 	return r.TimeoutMs
 }
 
+// MaxTimeoutMs is the upper TimeoutMs bound of the request's mode.
+func (r SQLBrowseRequest) MaxTimeoutMs() int {
+	if r.EffectiveMode() == SQLBrowseSubnet {
+		return MaxSQLSubnetTimeoutMs
+	}
+	return MaxSQLBrowseTimeoutMs
+}
+
+// ClampSQLBrowseTimeoutMsFor is ClampSQLBrowseTimeoutMs with the subnet
+// bound (15 s) for mode subnet (proposal for the IPC layer).
+func ClampSQLBrowseTimeoutMsFor(mode string, ms int) int {
+	if mode != SQLBrowseSubnet {
+		return ClampSQLBrowseTimeoutMs(ms)
+	}
+	switch {
+	case ms <= 0:
+		return DefaultSQLSubnetTimeoutMs
+	case ms < IPCSQLBrowseMinTimeoutMs:
+		return IPCSQLBrowseMinTimeoutMs
+	case ms > MaxSQLSubnetTimeoutMs:
+		return MaxSQLSubnetTimeoutMs
+	}
+	return ms
+}
+
 // Validate checks the request; errors are *FieldError (host, instance,
 // timeoutMs).
 func (r SQLBrowseRequest) Validate() error {
-	if r.TimeoutMs != 0 && (r.TimeoutMs < MinSQLBrowseTimeoutMs || r.TimeoutMs > MaxSQLBrowseTimeoutMs) {
+	if r.TimeoutMs != 0 && (r.TimeoutMs < MinSQLBrowseTimeoutMs || r.TimeoutMs > r.MaxTimeoutMs()) {
 		return fieldErr("timeoutMs", ValRange, "timeoutMs out of range", strconv.Itoa(MinSQLBrowseTimeoutMs),
-			strconv.Itoa(MaxSQLBrowseTimeoutMs), strconv.Itoa(r.TimeoutMs))
+			strconv.Itoa(r.MaxTimeoutMs()), strconv.Itoa(r.TimeoutMs))
 	}
 	if r.Limit < 0 || r.Limit > MaxSQLBrowseInstances {
 		return fieldErr("limit", ValRange, "limit out of range", "0", strconv.Itoa(MaxSQLBrowseInstances), strconv.Itoa(r.Limit))
+	}
+	switch r.Mode {
+	case SQLBrowseAuto, SQLBrowseLocal, SQLBrowseBroadcast, SQLBrowseSubnet:
+	case SQLBrowseHost:
+		if r.Host == "" {
+			return fieldErr("host", ValRequired, "host is required in host mode")
+		}
+	default:
+		return fieldErr("mode", ValEnum, "mode: local, broadcast, subnet or host", "local, broadcast, subnet, host")
+	}
+	if r.CIDR != "" && (r.EffectiveMode() != SQLBrowseSubnet || !ValidSQLBrowseCIDR(r.CIDR)) {
+		return fieldErr("cidr", ValSQLBrowseCIDR, "cidr: IPv4 /24../30 network, subnet mode only")
+	}
+	if r.Port < 0 || r.Port > 65535 {
+		return fieldErr("port", ValRange, "port out of range", "0", "65535", strconv.Itoa(r.Port))
 	}
 	if r.Host != "" && !ValidSQLBrowseHost(r.Host) {
 		return fieldErr("host", ValSQLBrowseHost, "host must be a host name or an IPv4/IPv6 address")

@@ -142,7 +142,7 @@ func TestCHK_IPC_02_ServiceAckAndTest(t *testing.T) {
 	// check_mapping; phase 9 (CHK-SVC-03/04/05) history, check_now,
 	// events_since; CHK-IPC-10 sql_browse, sql_databases, sql_diagnose,
 	// sql_grant_script
-	if hello.Version != 2 || len(hello.Capabilities) != 22 || hello.Heartbeat == nil {
+	if hello.Version != 2 || len(hello.Capabilities) != 30 || hello.Heartbeat == nil {
 		t.Fatalf("hello %+v", hello)
 	}
 	snap := s.polled(t)

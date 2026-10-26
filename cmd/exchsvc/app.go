@@ -238,7 +238,9 @@ func runService(ctx context.Context, ac appConfig) error {
 	srv = ipc.NewServer(mon, log)
 	srv.Authorize = ac.Authorize
 	srv.History = historySource{h: hist, mon: mon}
+	srv.Summary = summarySource{historySource: historySource{h: hist, mon: mon}, now: ac.Now}
 	srv.Viber = viber
+	srv.AlarmTest = alarmTester{viber: viber, lang: lang} // alarm_test (CHK-IPC-11)
 	if autostart != nil {
 		// get_status.trayAutostartError + capability tray_autostart_status
 		srv.TrayAutostartError = autostart.ErrorCode

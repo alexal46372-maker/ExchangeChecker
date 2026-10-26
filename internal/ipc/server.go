@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -51,6 +52,12 @@ type Tester interface {
 // Acker runs ack_alert (CHK-IPC-02).
 type Acker interface {
 	AckAlert(profileID, pointKey string) (int, error)
+}
+
+// EventAcker runs ack_alert {eventId} (phase 11, CHK-MON-18, capability
+// ack_event): only that alert.
+type EventAcker interface {
+	AckEvent(eventID uint64) (int, error)
 }
 
 // Checker runs check_now (phase 9, CHK-SVC-04). Errors of type
@@ -119,6 +126,14 @@ type Discoverer interface {
 type SQLWizard interface {
 	SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQLBrowseResult, error)
 	SQLDatabases(ctx context.Context, req model.IPCRequest) (model.SQLDatabasesResult, error)
+}
+
+// SQLWizardV2 (phase 11, CHK-IPC-12/13): sql_browse with modes and
+// progress, sql_test_steps with stage pushes. Capabilities browse_subnet,
+// browse_local, test_steps.
+type SQLWizardV2 interface {
+	SQLBrowseProgress(ctx context.Context, req model.IPCRequest, progress func(model.SQLBrowseProgress)) (model.SQLBrowseResult, error)
+	SQLTestSteps(ctx context.Context, req model.IPCRequest, step func(model.SQLCheckStep)) (model.SQLServerCheckResult, error)
 }
 
 // interactiveCommand reports whether cmd is one of the Discoverer
@@ -211,6 +226,13 @@ type Server struct {
 	// Viber (phase 10, CHK-SVC-06): viber_test and capability viber; nil
 	// = not offered.
 	Viber ViberTester
+	// AlarmTest (phase 11, CHK-IPC-11): alarm_test and capability
+	// alarm_test; nil = not offered.
+	AlarmTest AlarmTester
+	// Summary (phase 11, CHK-SVC-07): summary and capability summary;
+	// nil = not offered.
+	Summary     SummarySource
+	alarmTestAt time.Time // last accepted alarm_test (s.mu)
 
 	histN int // running history requests (s.mu)
 }
@@ -236,6 +258,10 @@ type conn struct {
 	// last check_now accepted from it (read loop only)
 	histN     int
 	lastCheck time.Time
+	// clientCaps: client_hello capabilities (phase 11, CHK-IPC-11; read
+	// loop writes, broadcasts read: capMu)
+	capMu      sync.Mutex
+	clientCaps map[string]bool
 }
 
 type asyncOp struct {
@@ -354,11 +380,29 @@ func (s *Server) Capabilities() []string {
 	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
 		caps = append(caps, model.CapProblems, model.CapAlertRepeat) // phase 10 (CHK-MON-17)
 	}
+	if sr, ok := s.H.(StalledReporter); ok && sr.ReportsStalled() {
+		caps = append(caps, model.CapStalled) // phase 11 (CHK-MON-18)
+	}
 	if wiz {
 		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
+		if _, ok := s.H.(SQLWizardV2); ok { // phase 11 (CHK-IPC-12/13)
+			caps = append(caps, model.CapBrowseSubnet, model.CapBrowseLocal, model.CapTestSteps)
+		}
 	}
 	if s.Viber != nil {
 		caps = append(caps, model.CapViber) // phase 10 (CHK-SVC-06)
+	}
+	if s.AlarmTest != nil {
+		caps = append(caps, model.CapAlarmTest) // phase 11 (CHK-IPC-11)
+	}
+	if s.Summary != nil {
+		caps = append(caps, model.CapSummary) // phase 11 (CHK-SVC-07)
+	}
+	if s.AlarmTest != nil { // phase 11 (CHK-IPC-11): the only client capability used so far
+		caps = append(caps, model.CapClientHello)
+	}
+	if _, ok := s.H.(EventAcker); ok {
+		caps = append(caps, model.CapAckEvent) // phase 11 (CHK-MON-18)
 	}
 	return caps
 }
@@ -366,6 +410,10 @@ func (s *Server) Capabilities() []string {
 // ProblemsReporter: the handler sends hasProblems / problems and repeat
 // alert pushes (phase 10, CHK-MON-17).
 type ProblemsReporter interface{ ReportsProblems() bool }
+
+// StalledReporter: the handler fills status stalled / problems kind
+// "stalled" (phase 11, CHK-MON-18).
+type StalledReporter interface{ ReportsStalled() bool }
 
 func (s *Server) heartbeat() *model.Heartbeat {
 	if h, ok := s.H.(HeartbeatSource); ok {
@@ -707,6 +755,23 @@ func (s *Server) readLoop(c *conn) {
 			reply = s.checkNow(c, req)
 		case req.Cmd == model.CmdEventsSince:
 			reply = s.eventsSince(req)
+		case req.Cmd == model.CmdClientHello:
+			if !c.send(s.clientHello(c, req)) {
+				return
+			}
+			continue
+		case s.Summary != nil && req.Cmd == model.CmdSummary:
+			if !s.startSummary(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
+		case s.AlarmTest != nil && req.Cmd == model.CmdAlarmTest:
+			if !s.startAlarmTest(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
 		case s.Viber != nil && viberCommand(req.Cmd):
 			if !s.startViber(c, req) {
 				s.Log.Printf("ipc: client too slow, disconnected")
@@ -776,8 +841,26 @@ func (s *Server) startSQL(c *conn, w SQLWizard, req model.IPCRequest) bool {
 	s.startAsync(c, req, func(ctx context.Context) (model.IPCMessage, error) {
 		m := model.IPCMessage{ID: req.ID}
 		switch req.Cmd {
+		case model.CmdSQLTestSteps:
+			w2, ok := w.(SQLWizardV2)
+			if !ok {
+				return m, &model.IPCError{Code: model.ErrCodeUnknownCommand, Message: "ipc: sql_test_steps is not supported"}
+			}
+			res, err := w2.SQLTestSteps(ctx, req, func(st model.SQLCheckStep) {
+				c.send(model.IPCMessage{Type: model.MsgSQLTestStepsProgress, Ref: req.ID, TestStep: &st}) // dropped when the client is slow
+			})
+			if err != nil {
+				return m, err
+			}
+			m.Type, m.SQLTestSteps = model.MsgSQLTestSteps, &res
 		case model.CmdSQLBrowse:
-			res, err := w.SQLBrowse(ctx, req)
+			var res model.SQLBrowseResult
+			var err error
+			if w2, ok := w.(SQLWizardV2); ok {
+				res, err = w2.SQLBrowseProgress(ctx, req, browseProgress(c, req.ID, time.Now))
+			} else {
+				res, err = w.SQLBrowse(ctx, req)
+			}
 			if err != nil {
 				return m, err
 			}
@@ -1213,7 +1296,13 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: result(coalesced)}
 	case model.CmdAckAlert:
 		if a, ok := s.H.(Acker); ok {
-			n, err := a.AckAlert(req.ProfileID, req.PointKey)
+			var n int
+			var err error
+			if ea, ok := s.H.(EventAcker); ok && req.EventID != 0 {
+				n, err = ea.AckEvent(req.EventID)
+			} else {
+				n, err = a.AckAlert(req.ProfileID, req.PointKey)
+			}
 			if err != nil {
 				return errorReply(req.ID, err, "")
 			}
@@ -1231,10 +1320,17 @@ func result(coalesced bool) string {
 }
 
 // broadcast queues m for every client; slow clients are disconnected.
-func (s *Server) broadcast(m model.IPCMessage) {
+func (s *Server) broadcast(m model.IPCMessage) { s.broadcastTo(m, "") }
+
+// broadcastTo queues m for every client, or only those that declared
+// clientCap in client_hello (clientCap != "").
+func (s *Server) broadcastTo(m model.IPCMessage, clientCap string) {
 	s.mu.Lock()
 	cs := make([]*conn, 0, len(s.conns))
 	for c := range s.conns {
+		if clientCap != "" && !c.hasClientCap(clientCap) {
+			continue
+		}
 		cs = append(cs, c)
 	}
 	s.mu.Unlock()
@@ -1410,4 +1506,61 @@ func (s *Server) eventsSince(req model.IPCRequest) model.IPCMessage {
 		}
 	}
 	return m
+}
+
+// browseProgress pushes sql_browse_progress {ref, phase, done, total,
+// found} (CHK-IPC-12): at most one per model.SQLBrowseProgressEvery, but
+// always the first event, a phase change and the "done" phase. A push
+// the slow client cannot take is dropped (never a disconnect).
+func browseProgress(c *conn, ref uint64, now func() time.Time) func(model.SQLBrowseProgress) {
+	var mu sync.Mutex
+	var last time.Time
+	var phase string
+	sent := false
+	return func(p model.SQLBrowseProgress) {
+		mu.Lock()
+		t := now()
+		ok := !sent || p.Phase != phase || p.Phase == "done" || t.Sub(last) >= model.SQLBrowseProgressEvery
+		if ok {
+			sent, last, phase = true, t, p.Phase
+		}
+		mu.Unlock()
+		if ok {
+			c.send(model.IPCMessage{Type: model.MsgSQLBrowseProgress, Ref: ref, BrowseProgress: &p})
+		}
+	}
+}
+
+// clientHello stores the client's capabilities (phase 11, CHK-IPC-11):
+// at most model.ClientCapsMax items of at most model.ClientCapMaxLen
+// chars (else invalid_request + monitor.bad_request), unknown ones
+// ignored; a repeated client_hello replaces the set. The reply echoes the
+// accepted ones.
+func (s *Server) clientHello(c *conn, req model.IPCRequest) model.IPCMessage {
+	if len(req.Capabilities) > model.ClientCapsMax {
+		return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+			Message: "client_hello: too many capabilities", Args: []string{"capabilities", model.ValTooMany, strconv.Itoa(model.ClientCapsMax)}}, "")
+	}
+	caps := map[string]bool{}
+	acc := []string{}
+	for _, k := range req.Capabilities {
+		if len(k) > model.ClientCapMaxLen {
+			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+				Message: "client_hello: capability too long", Args: []string{"capabilities", model.ValRange, "1", strconv.Itoa(model.ClientCapMaxLen)}}, "")
+		}
+		if model.KnownClientCaps[k] && !caps[k] {
+			caps[k] = true
+			acc = append(acc, k)
+		}
+	}
+	c.capMu.Lock()
+	c.clientCaps = caps
+	c.capMu.Unlock()
+	return model.IPCMessage{ID: req.ID, Type: model.MsgClientHello, Capabilities: acc}
+}
+
+func (c *conn) hasClientCap(k string) bool {
+	c.capMu.Lock()
+	defer c.capMu.Unlock()
+	return c.clientCaps[k]
 }

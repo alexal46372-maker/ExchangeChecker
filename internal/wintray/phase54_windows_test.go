@@ -52,7 +52,8 @@ func TestCHK_TRAY_54_LayoutV2(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer func() { testDPI = 0; testWorkArea = nil }()
-	work := winapi.RECT{Right: 1280, Bottom: 720}
+	// Typical full-HD work area: every window must fit (fitForm / placeWindow).
+	work := winapi.RECT{Right: 1920, Bottom: 1080}
 	for _, dpi := range []int32{96, 144} {
 		for _, lang := range []string{i18n.RU, i18n.EN} {
 			testDPI = dpi

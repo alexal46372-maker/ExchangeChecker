@@ -11,7 +11,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// settingsCueID: UIField → settings/Viber edit control (Discovery below).
+// settingsCueID: UIField → settings/Viber edit control.
 var settingsCueID = map[traysettings.Field]int32{
 	traysettings.FieldName: idSetName, traysettings.FieldHost: idSetHost, traysettings.FieldInstance: idSetInstance,
 	traysettings.FieldPort: idSetPort, traysettings.FieldDatabase: idSetDatabase, traysettings.FieldLogin: idSetLogin,
@@ -20,10 +20,9 @@ var settingsCueID = map[traysettings.Field]int32{
 	traysettings.FieldViberToken: idVbToken, traysettings.FieldViberReminder: idVbReminder,
 }
 
-// TestCHK_TRAY_50_Cues — every UIField with Cue that belongs to the
-// settings window is set on its edit box, RU+EN (PLAN §12 p.145);
-// Discovery cues of FieldDiscTime / FieldDiscTolerance are on the dialog;
-// red highlight only for Missing required fields.
+// TestCHK_TRAY_50_Cues — every UIField with Cue is set on its edit box,
+// RU+EN (PLAN §12 p.145): settings + Viber via newViberCfg, Discovery via
+// newDiscService; red highlight only for Missing required fields.
 func TestCHK_TRAY_50_Cues(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -41,12 +40,8 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 		pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() && w.ctl[idVbToken] != 0 })
 		for _, f := range traysettings.UIFields {
 			want := f.CueText(lang)
-			if want == "" {
+			if want == "" || f.ID == traysettings.FieldDiscTime || f.ID == traysettings.FieldDiscTolerance {
 				continue
-			}
-			switch f.ID {
-			case traysettings.FieldDiscTime, traysettings.FieldDiscTolerance:
-				continue // checked after Discovery opens
 			}
 			id, ok := settingsCueID[f.ID]
 			if !ok {
@@ -57,24 +52,6 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 				t.Errorf("%s: %s cue %q, want %q", lang, f.ID, got, want)
 			}
 		}
-		// Discovery
-		if !w.discoveryAvailable() {
-			t.Fatalf("%s: discovery unavailable", lang)
-		}
-		w.click(t, idSetDiscover)
-		pumpUntil(t, "discovery", func() bool { return w.disc != nil })
-		for _, f := range []traysettings.UIField{
-			{ID: traysettings.FieldDiscTime, Cue: i18n.KeyCueDiscTime},
-			{ID: traysettings.FieldDiscTolerance, Cue: i18n.KeySetTimeoutCue, CueDefault: 1440},
-		} {
-			want := f.CueText(lang)
-			id := map[traysettings.Field]int32{traysettings.FieldDiscTime: idDiscTime, traysettings.FieldDiscTolerance: idDiscTol}[f.ID]
-			if got := winapi.CueBanner(w.disc.ctl[id]); got != want {
-				t.Errorf("%s: discovery %s cue %q, want %q", lang, f.ID, got, want)
-			}
-		}
-		w.disc.close()
-		// required highlight
 		w.click(t, idSetAdd)
 		PumpPending()
 		w.updateRequired()
@@ -99,5 +76,35 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 		}
 		w.close()
 		app.Exit()
+
+		ds := newDiscService()
+		app2 := startCfgApp(t, ds.cfgService, true, nil)
+		w2, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app2.session, hidden: true,
+			uiMode: traysettings.UIExpert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w2.Reload()
+		pumpUntil(t, "disc-ready", func() bool {
+			w2.update()
+			return !w2.busy && w2.ed.HasProfile() && winapi.IsWindowEnabled(w2.ctl[idSetDiscover])
+		})
+		w2.click(t, idSetDiscover)
+		if w2.disc == nil {
+			t.Fatalf("%s: discovery not opened", lang)
+		}
+		for _, f := range []traysettings.UIField{
+			{ID: traysettings.FieldDiscTime, Cue: i18n.KeyCueDiscTime},
+			{ID: traysettings.FieldDiscTolerance, Cue: i18n.KeySetTimeoutCue, CueDefault: 1440},
+		} {
+			want := f.CueText(lang)
+			id := map[traysettings.Field]int32{traysettings.FieldDiscTime: idDiscTime, traysettings.FieldDiscTolerance: idDiscTol}[f.ID]
+			if got := winapi.CueBanner(w2.disc.ctl[id]); got != want {
+				t.Errorf("%s: discovery %s cue %q, want %q", lang, f.ID, got, want)
+			}
+		}
+		w2.disc.close()
+		w2.close()
+		app2.Exit()
 	}
 }

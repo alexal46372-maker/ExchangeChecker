@@ -235,7 +235,7 @@ func (sw *summaryWindow) onApply() {
 	for _, c := range cards {
 		line := c.Name
 		if c.FreshnessMin != nil {
-			line += fmt.Sprintf(" · %d мин", *c.FreshnessMin)
+			line += fmt.Sprintf(" · %d min", *c.FreshnessMin)
 		}
 		lines = append(lines, line)
 	}

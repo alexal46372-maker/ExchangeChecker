@@ -57,7 +57,7 @@ var wizardTips = map[int32]string{
 }
 
 // wizardOutputs are the static texts (no tooltip).
-var wizardOutputs = map[int32]bool{idWizStep: true}
+var wizardOutputs = map[int32]bool{idWizStep: true, idWizSteps: true}
 
 // wizField: the wizard control and step of a form field of an error.
 var wizField = map[traysettings.Field]struct {
@@ -230,17 +230,15 @@ func (wd *wizardDialog) build() {
 		c("BUTTON", wd.t(i18n.KeyWizRefresh), 0, winapi.WS_TABSTOP, idWizRefresh, ui.Button, 0, 0)}}
 	// step 3: test, exchange tables, save
 	wd.cur = &wd.stepCtl[traysettings.WizFinish]
-	stepsLb := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizSteps, ui.Box, 736, 140)
-	stepsLb.Grow = true
-	wd.stepsCtl = stepsLb
-	if !traysettings.HasTestSteps(wd.capHas) {
-		stepsLb.Hidden = true
-	}
-	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 220)
+	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 300)
 	cands.Grow = true
-	step3Items := []ui.Node{label(i18n.KeyWizCheckSteps), stepsLb, label(i18n.KeyWizCands), cands}
-	if stepsLb.Hidden {
-		step3Items = []ui.Node{label(i18n.KeyWizCands), cands}
+	step3Items := []ui.Node{label(i18n.KeyWizCands), cands}
+	if traysettings.HasTestSteps(wd.capHas) {
+		stepsLb := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizSteps, ui.Box, 736, 140)
+		stepsLb.Grow = true
+		wd.stepsCtl = stepsLb
+		cands.Hgt = 220
+		step3Items = []ui.Node{label(i18n.KeyWizCheckSteps), stepsLb, label(i18n.KeyWizCands), cands}
 	}
 	step3 := &ui.Col{Items: step3Items}
 	wd.cur = nil

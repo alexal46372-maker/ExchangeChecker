@@ -75,9 +75,3 @@ func setWindowIcons(hwnd uintptr) {
 	winapi.SendMessage(hwnd, winapi.WM_SETICON, winapi.ICON_BIG, uiIcons.ico(trayui.IcoApp, px(icoLarge)))
 }
 
-// setButtonIcon puts a small icon left of a button's text.
-func setButtonIcon(btn uintptr, name string) {
-	if btn != 0 {
-		winapi.SendMessage(btn, winapi.BM_SETIMAGE, winapi.IMAGE_ICON, uiIcons.ico(name, px(icoSmall)))
-	}
-}

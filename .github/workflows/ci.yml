@@ -1,7 +1,7 @@
 # CHK-CI-01 — Go 1.20.14, Windows amd64, CGO off. No build artifacts are uploaded; the one
 # exception (CHK-TRAY-46, POLICY) is the ui-screens artifact of the windows job (tray
 # screenshots PNG, 7 days). GUI tests (internal/wintray) run with a timeout and up to 3
-# attempts; mkres is checked for determinism by a double run.
+# attempts; mkres is checked for determinism by a double run (sha256 of .syso and internal/wintray/icons/*.ico, then mkres -check and git diff -- cmd internal/wintray/icons).
 # CHK-SQL-01 — windows job: no os/exec in the windows/amd64 dependency graph.
 # CHK-SQL-01..05, CHK-MON-09 — linux job: SQL Server integration tests against a
 # throwaway mssql container (EC_SQL_TEST_*); without these env vars the tests skip.

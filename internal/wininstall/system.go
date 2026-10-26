@@ -83,6 +83,16 @@ type System interface {
 	CreateStartShortcut(trayExe, workDir, description string) (lnk string, err error)
 	// DeleteStartShortcut removes the .lnk and its folder (missing = ok).
 	DeleteStartShortcut() error
+	// AddSQLBrowserFirewallRule adds (or replaces) the inbound UDP rule for
+	// SSRP replies to the service exe (CHK-SETUP-13). Missing firewall
+	// service / COM failure is returned to the caller (plan logs WARNING).
+	AddSQLBrowserFirewallRule(serviceExe string) error
+	// RemoveSQLBrowserFirewallRule removes every rule named
+	// "Exchange Checker (SQL Browser)" (missing = ok).
+	RemoveSQLBrowserFirewallRule() error
+	// FirewallCurrentProfiles returns the active firewall profile mask
+	// (NET_FW_PROFILE2_*: Domain=1, Private=2, Public=4).
+	FirewallCurrentProfiles() (int32, error)
 	// LongPath expands 8.3 components (identity on non-Windows / fakes).
 	LongPath(p string) string
 	DeleteService(name string) error

@@ -83,6 +83,65 @@ func TestCHK_SVC_01_RealSCM(t *testing.T) {
 	}
 }
 
+// countSQLBrowserFirewallRules returns how many inbound rules share the
+// CHK-SETUP-13 name (via the same COM path the installer uses).
+func countSQLBrowserFirewallRules(t *testing.T) []winapi.FirewallRuleInfo {
+	t.Helper()
+	var list []winapi.FirewallRuleInfo
+	err := winapi.WithCOM(func() error {
+		var e error
+		list, e = winapi.ListFirewallRulesNamed(winapi.FirewallRuleName)
+		return e
+	})
+	if err != nil {
+		t.Fatalf("list firewall rules: %v", err)
+	}
+	return list
+}
+
+func checkSQLBrowserFirewall(t *testing.T, wantApp string, wantCount int) {
+	t.Helper()
+	running, err := winapi.FirewallServiceRunning()
+	if err != nil {
+		t.Fatalf("query MpsSvc: %v", err)
+	}
+	if !running {
+		t.Skip("MpsSvc (Windows Firewall) is not SERVICE_RUNNING; skipping CHK-SETUP-13 e2e asserts")
+	}
+	list := countSQLBrowserFirewallRules(t)
+	if len(list) != wantCount {
+		t.Fatalf("firewall rules named %q: got %d want %d", winapi.FirewallRuleName, len(list), wantCount)
+	}
+	if wantCount == 0 {
+		t.Logf("firewall ok: zero rules named %q after uninstall", winapi.FirewallRuleName)
+		return
+	}
+	r := list[0]
+	if !winapi.SameImage(r.Application, wantApp) {
+		t.Fatalf("firewall application %q want %q", r.Application, wantApp)
+	}
+	if r.Protocol != winapi.FirewallProtocolUDP || r.RemotePorts != winapi.FirewallRemotePorts {
+		t.Fatalf("firewall proto/ports %d/%q", r.Protocol, r.RemotePorts)
+	}
+	if r.LocalPorts != "" && r.LocalPorts != "*" {
+		t.Fatalf("firewall localPorts %q (want empty/any)", r.LocalPorts)
+	}
+	if !strings.EqualFold(r.RemoteAddresses, winapi.FirewallRemoteAddresses) {
+		t.Fatalf("firewall remoteAddresses %q want %q", r.RemoteAddresses, winapi.FirewallRemoteAddresses)
+	}
+	if r.Grouping != winapi.FirewallGrouping {
+		t.Fatalf("firewall grouping %q", r.Grouping)
+	}
+	if r.Profiles != int32(winapi.FirewallProfiles) {
+		t.Fatalf("firewall profiles %#x want Domain|Private", uint32(r.Profiles))
+	}
+	if r.Direction != 1 || r.Action != 1 || !r.Enabled || r.EdgeTraversal {
+		t.Fatalf("firewall dir/action/enabled/edge %d/%d/%v/%v", r.Direction, r.Action, r.Enabled, r.EdgeTraversal)
+	}
+	t.Logf("firewall ok: count=%d name=%q app=%s UDP remote=%s local=%s addrs=%s profiles=%#x grouping=%q enabled=%v",
+		len(list), r.Name, r.Application, r.RemotePorts, r.LocalPorts, r.RemoteAddresses, uint32(r.Profiles), r.Grouping, r.Enabled)
+}
+
 // TestCHK_SETUP_12_E2E — gated EC_SETUP_E2E=1; needs EC_SETUP_EXE.
 func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if os.Getenv("EC_SETUP_E2E") != "1" {
@@ -264,6 +323,10 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 	t.Logf("shortcut ok: %s -> %s", lnk, sc.Target)
 
+	// Windows Firewall SQL Browser rule (CHK-SETUP-13)
+	svcPath := filepath.Join(dir, config.ServiceExeName)
+	checkSQLBrowserFirewall(t, svcPath, 1)
+
 	// --- upgrade / rollback E2E (CHK-SETUP-12 / 7c) ---
 	setupV2 := os.Getenv("EC_SETUP_EXE_V2")
 	if setupV2 == "" {
@@ -439,6 +502,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if inst2.Version != "1.1.0" {
 		t.Fatalf("DisplayVersion after V2=%q want exactly 1.1.0", inst2.Version)
 	}
+	checkSQLBrowserFirewall(t, filepath.Join(dir, config.ServiceExeName), 1) // still exactly one after upgrade
 	info2, err := sys.QueryService(model.ServiceName)
 	if err != nil || !info2.Exists || !info2.Running {
 		t.Fatalf("service after upgrade: %+v err=%v", info2, err)
@@ -472,6 +536,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	if _, err := os.Stat(lnk); !os.IsNotExist(err) {
 		t.Fatalf("shortcut still present after uninstall: %v", err)
 	}
+	checkSQLBrowserFirewall(t, "", 0) // uninstall leaves zero rules
 	// final (7e): Uninstall key, Event Log source and product files are gone
 	// (the uninstaller exe itself may be pending delete on reboot after 3010)
 	if inst3, err := sys.ReadInstalled(); err != nil || inst3.Present {

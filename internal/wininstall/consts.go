@@ -47,6 +47,13 @@ var (
 // SetupMutexName keeps one setup / uninstaller per machine.
 const SetupMutexName = `Global\ExchangeCheckerSetup`
 
+// FirewallRuleName must match winapi.FirewallRuleName (inbound UDP
+// SQL Browser / SSRP replies for the service exe, CHK-SETUP-13).
+const FirewallRuleName = "Exchange Checker (SQL Browser)"
+
+// FirewallProfilePublic is NET_FW_PROFILE2_PUBLIC (must match winapi).
+const FirewallProfilePublic = 0x4
+
 // ServiceDescription is the SCM description in the installer language.
 func ServiceDescription(lang string) string {
 	if lang == "en" {

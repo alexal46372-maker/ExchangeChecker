@@ -34,7 +34,9 @@ type recordingSystem struct {
 	Specs       []ServiceSpec
 	Long        map[string]string
 	TrayWarn    []string
-	Shortcut    string // target of the start-menu shortcut ("" = none) // LongPath mapping (8.3 → long)
+	Shortcut    string // target of the start-menu shortcut ("" = none)
+	Firewall    string // service exe of the SQL Browser firewall rule ("" = none)
+	FwProfiles  int32  // active firewall profiles (FirewallCurrentProfiles)
 }
 
 func newFake() *recordingSystem {
@@ -287,6 +289,35 @@ func (f *recordingSystem) DeleteStartShortcut() error {
 	}
 	f.Shortcut = ""
 	return nil
+}
+
+func (f *recordingSystem) AddSQLBrowserFirewallRule(serviceExe string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("AddSQLBrowserFirewallRule|%s", serviceExe); err != nil {
+		return err
+	}
+	f.Firewall = serviceExe
+	return nil
+}
+
+func (f *recordingSystem) RemoveSQLBrowserFirewallRule() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("RemoveSQLBrowserFirewallRule"); err != nil {
+		return err
+	}
+	f.Firewall = ""
+	return nil
+}
+
+func (f *recordingSystem) FirewallCurrentProfiles() (int32, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("FirewallCurrentProfiles"); err != nil {
+		return 0, err
+	}
+	return f.FwProfiles, nil
 }
 
 func (f *recordingSystem) LongPath(p string) string {

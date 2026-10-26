@@ -41,6 +41,17 @@ func PaleColorRef(c Color) uint32 {
 	return ColorRef(v[0], v[1], v[2])
 }
 
+// ChromeHTML is the CSS #rrggbb of a chrome COLORREF (Border, HeaderRow…).
+func ChromeHTML(c uint32) string {
+	r, g, b := byte(c), byte(c>>8), byte(c>>16)
+	return sprintfHTML(r, g, b)
+}
+
+func sprintfHTML(r, g, b byte) string {
+	const hex = "0123456789abcdef"
+	return string([]byte{'#', hex[r>>4], hex[r&15], hex[g>>4], hex[g&15], hex[b>>4], hex[b&15]})
+}
+
 // PaleHTML is the CSS #rrggbb of a pale state background.
 func PaleHTML(c Color) string {
 	v, ok := paleRGB[c]

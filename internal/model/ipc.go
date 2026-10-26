@@ -225,6 +225,11 @@ type IPCRequest struct {
 	Auth      string   `json:"auth,omitempty"`
 	Database  string   `json:"database,omitempty"`
 	Tables    []string `json:"tables,omitempty"`
+	// Phase 11 (CHK-IPC-12/13): sql_browse v2 Port / CIDR (Mode shared
+	// with import_config), sql_test_steps Server (+ ProfileID).
+	Port   int    `json:"port,omitempty"`
+	CIDR   string `json:"cidr,omitempty"`
+	Server string `json:"server,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -374,4 +379,10 @@ type IPCMessage struct {
 	SQLGrantScript *SQLGrantScript     `json:"sqlGrantScript,omitempty"`
 	AutoPick       *SQLAutoPick        `json:"autoPick,omitempty"`
 	ErrorInfo      *SQLErrorInfo       `json:"errorInfo,omitempty"`
+	// Phase 11 (CHK-IPC-12/13): progress pushes (written flat, see
+	// MarshalJSON / UnmarshalJSON in sqlprogress.go) and sql_test_steps.
+	Ref            uint64                `json:"-"`
+	BrowseProgress *SQLBrowseProgress    `json:"-"`
+	TestStep       *SQLCheckStep         `json:"-"`
+	SQLTestSteps   *SQLServerCheckResult `json:"sqlTestSteps,omitempty"`
 }

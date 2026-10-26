@@ -830,6 +830,8 @@ Wizard Win32 (страницы):
 
 146. **Единая светлая тема оформления (фаза 11, `CHK-TRAY-51`):** один набор в `internal/trayui` — цвета состояний normal/warning/error/disabled (насыщенные `State*` / `ColorRefOf` и бледные `PaleColorRef` / `PaleHTML` для строк, карточек и HTML-экспорта), хром (текст, белый, оси/сетка графика, фон панели, рамка и «пустая» карточка, подсветка обязательного поля), шрифт Segoe UI 9 и шаги сетки 4/8/12/16. Окна трея (статус, карточки, история, обязательные поля настроек, шрифт раскладки) берут COLORREF оттуда, без локальных RGB; тёмной темы нет. Обычных ui-screens достаточно.
 
+147. **Мастер «Добавить базу» на IPC sql_browse v2 / sql_test_steps (фаза 11, `CHK-TRAY-52`):** протокол phase11-svc (CHK-IPC-12/13) не меняется. `sql_browse`: режимы local/broadcast/host (+ subnet только по кнопке), пуши `sql_browse_progress` (плоские `{type,ref,…}`), advice keys, `local.browserState` включая `disabled`; поиск по умолчанию — local+broadcast (пустой `mode`); subnet — отдельная кнопка с прогрессом и «Отменить поиск» (`cancel {ref}`). `sql_test_steps`: список этапов с ✓/✗, совет под первым провалом, RU/EN названия этапов; пароль на IPC не передаётся (только `profileId` для сохранённого). Capabilities `browse_subnet` / `browse_local` / `test_steps` — UI скрыт, пока служба их не объявила. Админ-only; `busy` / `rate_limited` с обратным отсчётом `retryAfterMs`. Подсказка «общедоступная сеть», если служба вернула её (FirewallCurrentProfiles). Тесты: `TestCHK_TRAY_52_*`.
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.

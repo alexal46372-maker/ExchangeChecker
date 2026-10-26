@@ -26,6 +26,8 @@ const (
 	idWizStep = 700 + iota
 	idWizServer
 	idWizFind
+	idWizSubnet
+	idWizSteps
 	idWizInstances
 	idWizPort
 	idWizAuth
@@ -46,7 +48,7 @@ const (
 
 // wizardTips: a tooltip on every input and button (CHK-TRAY-15 rule).
 var wizardTips = map[int32]string{
-	idWizServer: i18n.KeyTipWizServer, idWizFind: i18n.KeyTipWizFind, idWizInstances: i18n.KeyTipWizInstances,
+	idWizServer: i18n.KeyTipWizServer, idWizFind: i18n.KeyTipWizFind, idWizSubnet: i18n.KeyTipWizSubnet, idWizInstances: i18n.KeyTipWizInstances,
 	idWizPort: i18n.KeyTipWizPort, idWizAuth: i18n.KeyTipWizAuth, idWizLogin: i18n.KeyTipWizLogin,
 	idWizPassword: i18n.KeyTipWizPassword, idWizEncrypt: i18n.KeyTipWizEncrypt, idWizDBs: i18n.KeyTipWizDBs,
 	idWizRefresh: i18n.KeyTipWizRefresh, idWizCands: i18n.KeyTipWizCands, idWizResult: i18n.KeyTipWizResult,
@@ -98,6 +100,13 @@ type wizardDialog struct {
 	cancel       context.CancelFunc
 	seq          int
 	loading      bool
+	// phase 11 (CHK-TRAY-52)
+	subnetCtl    *ui.Ctl
+	stepsCtl     *ui.Ctl
+	findLabel    string // Find vs Cancel search
+	retryLeft    int64  // busy / rate_limited countdown seconds
+	retryCode    string
+	retryTimer   bool
 	closed       bool
 	pwTyped      bool
 	result       string
@@ -188,6 +197,14 @@ func (wd *wizardDialog) build() {
 	m := uiMetrics()
 	tw, _ := m.Text(wd.t(i18n.KeyWizFind))
 	find := c("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, ui.Box, max32(unpx(tw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
+	wd.findLabel = wd.t(i18n.KeyWizFind)
+	// subnet: only with capability browse_subnet (CHK-TRAY-52)
+	stw, _ := m.Text(wd.t(i18n.KeyWizSubnet))
+	subnet := c("BUTTON", wd.t(i18n.KeyWizSubnet), 0, winapi.WS_TABSTOP, idWizSubnet, ui.Box, max32(unpx(stw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
+	wd.subnetCtl = subnet
+	if !traysettings.HasBrowseSubnet(wd.capHas) {
+		subnet.Hidden = true
+	}
 	inst := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, ui.Box, 590, 120)
 	inst.Grow = true
 	portL := label(i18n.KeyWizPort)
@@ -201,7 +218,7 @@ func (wd *wizardDialog) build() {
 	encL := label(i18n.KeyWizEncrypt)
 	enc := c("COMBOBOX", "", 0, combo, idWizEncrypt, ui.Combo, 450, 0)
 	step1 := &ui.Grid{Rows: []ui.GridRow{
-		{Label: srvL, Field: &ui.Row{Align: ui.Center, Items: []ui.Node{srv, find}}},
+		{Label: srvL, Field: &ui.Row{Align: ui.Center, Items: []ui.Node{srv, find, subnet}}},
 		{Field: inst}, {Label: portL, Field: port}, {Label: authL, Field: auth},
 		{Label: loginL, Field: login}, {Label: pwL, Field: pw}, {Label: encL, Field: enc},
 	}}
@@ -213,9 +230,19 @@ func (wd *wizardDialog) build() {
 		c("BUTTON", wd.t(i18n.KeyWizRefresh), 0, winapi.WS_TABSTOP, idWizRefresh, ui.Button, 0, 0)}}
 	// step 3: test, exchange tables, save
 	wd.cur = &wd.stepCtl[traysettings.WizFinish]
-	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 300)
+	stepsLb := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizSteps, ui.Box, 736, 140)
+	stepsLb.Grow = true
+	wd.stepsCtl = stepsLb
+	if !traysettings.HasTestSteps(wd.capHas) {
+		stepsLb.Hidden = true
+	}
+	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 220)
 	cands.Grow = true
-	step3 := &ui.Col{Items: []ui.Node{label(i18n.KeyWizCands), cands}}
+	step3Items := []ui.Node{label(i18n.KeyWizCheckSteps), stepsLb, label(i18n.KeyWizCands), cands}
+	if stepsLb.Hidden {
+		step3Items = []ui.Node{label(i18n.KeyWizCands), cands}
+	}
+	step3 := &ui.Col{Items: step3Items}
 	wd.cur = nil
 	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idWizResult, ui.Box, 736, 140)
@@ -275,6 +302,11 @@ func (wd *wizardDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintp
 	case winapi.WM_COMMAND:
 		wd.command(int32(wp&0xFFFF), uint32(wp>>16&0xFFFF))
 		return 0, true
+	case winapi.WM_TIMER:
+		if wp == wizRetryTimerID {
+			wd.tickRetry()
+			return 0, true
+		}
 	case winapi.WM_CLOSE:
 		wd.abort()
 		return 0, true
@@ -314,7 +346,15 @@ func (wd *wizardDialog) command(id int32, code uint32) {
 			}
 		}
 	case idWizFind:
-		wd.browse()
+		if wd.cancel != nil {
+			wd.cancelBrowse()
+		} else {
+			wd.browseMode(model.SQLBrowseAuto)
+		}
+	case idWizSubnet:
+		if wd.cancel == nil {
+			wd.browseMode(model.SQLBrowseSubnet)
+		}
 	case idWizRefresh:
 		wd.loadDatabases()
 	case idWizBack:
@@ -393,7 +433,19 @@ func (wd *wizardDialog) show() {
 	sess := wd.w.cfg.session
 	winapi.EnableWindow(wd.ctl[idWizLogin], !z.Windows)
 	winapi.EnableWindow(wd.ctl[idWizPassword], !z.Windows)
-	winapi.EnableWindow(wd.ctl[idWizFind], !running)
+	// Find toggles to «Cancel search» while a browse/check runs (CHK-TRAY-52)
+	wantFind := wd.t(i18n.KeyWizFind)
+	if running {
+		wantFind = wd.t(i18n.KeyWizCancelBrowse)
+	}
+	if wd.findLabel != wantFind {
+		wd.findLabel = wantFind
+		winapi.SetWindowText(wd.ctl[idWizFind], wantFind)
+	}
+	winapi.EnableWindow(wd.ctl[idWizFind], true) // always: Find or Cancel
+	if h := wd.ctl[idWizSubnet]; h != 0 {
+		winapi.EnableWindow(h, !running && traysettings.HasBrowseSubnet(wd.capHas))
+	}
 	winapi.EnableWindow(wd.ctl[idWizRefresh], !running)
 	winapi.EnableWindow(wd.ctl[idWizBack], z.Step > traysettings.WizServer)
 	winapi.EnableWindow(wd.ctl[idWizNext], z.Step < traysettings.WizFinish && !running)
@@ -507,13 +559,19 @@ func (wd *wizardDialog) diagnose(req model.IPCRequest, code, detail, prefix stri
 	})
 }
 
-// browse: «Найти» (sql_browse).
-func (wd *wizardDialog) browse() {
+// browseMode: «Найти» (mode "") or «Сканировать подсеть» (mode subnet).
+func (wd *wizardDialog) browseMode(mode string) {
 	wd.read()
+	wd.stopRetry()
 	wd.setResult(wd.t(i18n.KeyWizBrowsing))
-	wd.run(wd.z.BrowseRequest(), traysettings.WizardTimeout, func(m model.IPCMessage, err error) {
+	timeout := traysettings.WizardTimeout
+	if mode == model.SQLBrowseSubnet {
+		timeout = time.Duration(model.DefaultSQLSubnetTimeoutMs)*time.Millisecond + model.IPCSQLBrowseGrace + 5*time.Second
+	}
+	req := wd.z.BrowseRequestMode(mode)
+	wd.runProgress(req, timeout, wd.onBrowseProgress, func(m model.IPCMessage, err error) {
 		if err != nil || m.Type != model.MsgSQLBrowse || m.SQLBrowse == nil {
-			wd.fail(m, err, "")
+			wd.failRetry(m, err, "")
 			return
 		}
 		text := wd.z.BrowseDone(*m.SQLBrowse)
@@ -584,11 +642,36 @@ func (wd *wizardDialog) loadDatabases() {
 	})
 }
 
-// finish: test_profile, then discover; autoPick decides (autoApply or a
-// single candidate ≥ autoPickMin), else the user picks.
+// finish: optional sql_test_steps (CHK-TRAY-52), then test_profile, then
+// discover; autoPick decides (autoApply or a single candidate ≥ autoPickMin),
+// else the user picks. Password never travels with sql_test_steps.
 func (wd *wizardDialog) finish() {
 	pw := wd.form()
 	winapi.SendMessage(wd.ctl[idWizCands], winapi.LB_RESETCONTENT, 0, 0)
+	if h := wd.ctl[idWizSteps]; h != 0 {
+		winapi.SendMessage(h, winapi.LB_RESETCONTENT, 0, 0)
+	}
+	wd.z.CheckSteps = nil
+	if traysettings.HasTestSteps(wd.capHas) {
+		wd.setResult(wd.t(i18n.KeyWizChecking))
+		req := wd.z.TestStepsRequest("") // new profile: no password over IPC
+		wd.runProgress(req, model.IPCSQLTestStepsTimeout+5*time.Second, wd.onTestStepProgress, func(m model.IPCMessage, err error) {
+			if err != nil || m.Type != model.MsgSQLTestSteps || m.SQLTestSteps == nil {
+				wd.failRetry(m, err, "")
+				return
+			}
+			wd.applyTestSteps(*m.SQLTestSteps)
+			if !m.SQLTestSteps.OK {
+				return // advice already under the failed step
+			}
+			wd.finishTest(pw)
+		})
+		return
+	}
+	wd.finishTest(pw)
+}
+
+func (wd *wizardDialog) finishTest(pw string) {
 	req, pr := wd.w.ed.TestRequest(pw)
 	if pr != nil {
 		wd.problem(pr)
@@ -597,7 +680,7 @@ func (wd *wizardDialog) finish() {
 	wd.setResult(wd.t(i18n.KeyWizTesting))
 	wd.run(req, traysettings.TestTimeout, func(m model.IPCMessage, err error) {
 		if err != nil || m.Type != model.MsgTestResult || m.Test == nil || !m.Test.OK {
-			wd.fail(m, err, "")
+			wd.failRetry(m, err, "")
 			return
 		}
 		wd.z.Tested = true
@@ -707,6 +790,8 @@ func (wd *wizardDialog) close() {
 		return
 	}
 	wd.closed = true
+	wd.stopRetry()
+	wd.w.cfg.session.SetProgress(nil)
 	if wd.cancel != nil {
 		wd.cancel()
 		wd.cancel = nil

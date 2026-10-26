@@ -128,6 +128,8 @@ type settingsSession interface {
 	Refresh(ctx context.Context) error
 	Status() trayipc.Status
 	Supported(cmd string) bool
+	// SetProgress: sql_browse / sql_test_steps progress pushes (CHK-TRAY-52).
+	SetProgress(fn func(model.IPCMessage))
 }
 
 // settingsConfig configures a settings window.

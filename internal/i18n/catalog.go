@@ -525,6 +525,22 @@ const (
 	KeyWizGrantPlaceholder = "wiz.grant_placeholder"
 	KeyWizClipFailed       = "wiz.clip_failed"
 	KeyWizAccessDenied     = "wiz.access_denied"
+	KeyWizSubnet           = "wiz.subnet"
+	KeyWizCancelBrowse     = "wiz.cancel_browse"
+	KeyWizBrowseProgress   = "wiz.browse_progress"
+	KeyWizBusyRetry        = "wiz.busy_retry"
+	KeyWizPublicNetwork    = "wiz.public_network"
+	KeyWizCheckSteps       = "wiz.check_steps"
+	KeyWizCheckParse       = "wiz.check_parse"
+	KeyWizCheckDNS         = "wiz.check_dns"
+	KeyWizCheckBrowser     = "wiz.check_browser"
+	KeyWizCheckTCP         = "wiz.check_tcp"
+	KeyWizCheckPrelogin    = "wiz.check_prelogin"
+	KeyWizCheckTLS         = "wiz.check_tls"
+	KeyWizCheckLogin       = "wiz.check_login"
+	KeyWizCheckDB          = "wiz.check_db"
+	KeyWizCheckTables      = "wiz.check_tables"
+	KeyWizChecking         = "wiz.checking"
 	KeyWizErrCode          = "wiz.err_code"
 	KeyWizWhatToDo         = "wiz.what_to_do"
 	KeyWizFBLogin          = "wiz.fb_login"
@@ -540,6 +556,8 @@ const (
 	KeyWizFBOther          = "wiz.fb_other"
 	KeyTipWizServer        = "tip.wiz_server"
 	KeyTipWizFind          = "tip.wiz_find"
+	KeyTipWizSubnet        = "tip.wiz_subnet"
+	KeyTipWizCancelBrowse  = "tip.wiz_cancel_browse"
 	KeyTipWizInstances     = "tip.wiz_instances"
 	KeyTipWizPort          = "tip.wiz_port"
 	KeyTipWizAuth          = "tip.wiz_auth"
@@ -1231,6 +1249,22 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyWizGrantPlaceholder: {"Замените %s на пароль логина.", "Replace %s with the login password."},
 	KeyWizClipFailed:       {"Не удалось скопировать в буфер обмена: %s", "Could not copy to the clipboard: %s"},
 	KeyWizAccessDenied:     {"Нет прав администратора для этой команды. Закройте окно и откройте настройки снова через «Изменить (администратор)» с подтверждением UAC.", "Administrator rights are required for this command. Close the window and open the settings again with \"Edit (administrator)\" and confirm the UAC prompt."},
+	KeyWizSubnet:           {"Сканировать подсеть…", "Scan subnet…"},
+	KeyWizCancelBrowse:     {"Отменить поиск", "Cancel search"},
+	KeyWizBrowseProgress:   {"Поиск: %s %d/%d, найдено %d", "Search: %s %d/%d, found %d"},
+	KeyWizBusyRetry:        {"Служба занята. Повтор через %d с…", "The service is busy. Retry in %d s…"},
+	KeyWizPublicNetwork:    {"Активен профиль сети «Общедоступная»: поиск SQL Server в ней ограничен правилами брандмауэра. Переключите сеть на «Частная» (домашняя/рабочая) или «Домен».", "The active network profile is Public: SQL Server discovery is limited by the firewall. Switch the network to Private (Home/Work) or Domain."},
+	KeyWizCheckSteps:       {"Проверка подключения", "Connection check"},
+	KeyWizCheckParse:       {"Разбор адреса", "Parse address"},
+	KeyWizCheckDNS:         {"DNS", "DNS"},
+	KeyWizCheckBrowser:     {"SQL Server Browser", "SQL Server Browser"},
+	KeyWizCheckTCP:         {"TCP", "TCP"},
+	KeyWizCheckPrelogin:    {"PRELOGIN", "PRELOGIN"},
+	KeyWizCheckTLS:         {"Шифрование", "Encryption"},
+	KeyWizCheckLogin:       {"Вход", "Login"},
+	KeyWizCheckDB:          {"База данных", "Database"},
+	KeyWizCheckTables:      {"Таблицы обмена", "Exchange tables"},
+	KeyWizChecking:         {"Проверка сервера…", "Checking the server…"},
 	KeyWizErrCode:          {"Код ошибки: %s", "Error code: %s"},
 	KeyWizWhatToDo:         {"Что делать:", "What to do:"},
 	KeyWizFBLogin:          {"Проверьте логин и пароль; для учётной записи компьютера — что у неё есть логин на SQL Server (кнопка «Скопировать SQL-скрипт прав»).", "Check the login and the password; for the computer account, check that it has a SQL Server login (\"Copy the permissions SQL script\")."},
@@ -1245,7 +1279,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyWizFBConfig:         {"Параметры подключения заданы неверно: проверьте поля шага «Сервер».", "The connection settings are wrong: check the fields of the Server step."},
 	KeyWizFBOther:          {"Проверьте параметры подключения и журнал службы EC.", "Check the connection settings and the EC service log."},
 	KeyTipWizServer:        {"Имя или IP-адрес SQL Server, для именованного экземпляра — «компьютер\\экземпляр». Без «tcp:», «np:» и UNC-путей.", "Name or IP address of the SQL Server, \"computer\\instance\" for a named instance. No \"tcp:\", \"np:\" or UNC paths."},
-	KeyTipWizFind:          {"Найти серверы через SQL Server Browser: пустое поле «Сервер» — в локальной сети, иначе — на указанном компьютере.", "Find servers with the SQL Server Browser: an empty Server box searches the local network, otherwise the given computer."},
+	KeyTipWizFind:          {"Найти серверы через SQL Server Browser: по умолчанию — этот компьютер и локальная сеть; подсеть — отдельной кнопкой.", "Find servers with the SQL Server Browser: by default this computer and the local network; subnet scan is a separate button."},
+	KeyTipWizSubnet:        {"Сканировать TCP-порты SQL в подсети этого компьютера (дольше; только по явному запросу).", "Scan SQL TCP ports on this computer's subnet (slower; only on explicit request)."},
+	KeyTipWizCancelBrowse:  {"Отменить текущий поиск серверов.", "Cancel the current server search."},
 	KeyTipWizInstances:     {"Найденные экземпляры SQL Server; выбор подставляет адрес в поле «Сервер».", "SQL Server instances found; picking one fills the Server box."},
 	KeyTipWizPort:          {"TCP-порт; пусто — порт по умолчанию или через SQL Server Browser.", "TCP port; empty = the default port or via the SQL Server Browser."},
 	KeyTipWizAuth:          {"Логин SQL Server или учётная запись компьютера, от имени которой работает служба EC.", "A SQL Server login or the computer account the EC service runs as."},

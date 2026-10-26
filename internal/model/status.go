@@ -235,6 +235,7 @@ func NewProfileSnapshot(p Profile, st ProfileStatus, global Settings, now time.T
 		}
 	}
 	out.Level = Worst(levels...)
+	MarkStalled(&out, p.StalledAfter(global), now)
 	return out
 }
 

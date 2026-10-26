@@ -36,6 +36,7 @@
 - Только `syscall` и стандартная библиотека Go (`golang.org/x/sys` не используется, CHK-TRAY-10).
 - Сеть — через `internal/hcwinnet` (или согласованный внутренний сетевой пакет проекта; helper-процессы запрещены).
 - Только штатный UI: допустимы Win32 installer и Win32 GUI-трей.
+- Брандмауэр Windows — только через COM `INetFwPolicy2`/`INetFwRule` (фаза 11, CHK-SETUP-13); `netsh` и helper-процессы запрещены (как и для SCM/реестра).
 
 ## 5. Автотесты и merge
 

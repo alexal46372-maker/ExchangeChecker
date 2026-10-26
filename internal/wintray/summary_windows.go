@@ -97,16 +97,21 @@ func (sw *summaryWindow) build() {
 	if err != nil {
 		sw.chart = 0
 	}
+	const sumW int32 = 640
 	info := uiCtl(sw.info, ui.Box, "")
-	info.Grow, info.Hgt = true, 36
+	info.Grow, info.Hgt, info.W = true, 40, sumW
 	ch := uiCtl(sw.chart, ui.Box, "")
-	ch.Grow, ch.Hgt = true, 240
+	ch.Grow, ch.Hgt, ch.W = true, 240, sumW
 	cd := uiCtl(sw.cards, ui.Box, "")
-	cd.Grow, cd.Hgt = true, 72
+	cd.Grow, cd.Hgt, cd.W = true, 72, sumW
 	btn := uiCtl(sw.close, ui.Button, sw.t(i18n.KeySumClose))
-	content := &ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{info, ch, cd}}}
-	bar := &ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{btn}}}
-	fitForm(sw.hwnd, content, bar, 0, false)
+	// no Bottom pad (hist pattern): gap to the bar ≤ 16 units
+	content := &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{info, ch, cd}}}
+	bar := &ui.Pad{All: ui.P12, Child: &ui.Row{Grow: true, Items: []ui.Node{
+		&ui.Ctl{Kind: ui.Box, Grow: true, Hgt: 28},
+		btn,
+	}}}
+	fitForm(sw.hwnd, content, bar, sumW, false)
 }
 
 func (sw *summaryWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {

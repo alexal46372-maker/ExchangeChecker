@@ -96,14 +96,19 @@ func (aw *alarmTestWindow) build() {
 	res := add("EDIT", "", winapi.WS_EX_CLIENTEDGE,
 		winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idAlarmResult, ui.Box, 0, 120)
-	res.Grow = true
-	content := &ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+	res.Grow, res.W, res.Hgt = true, 360, 120
+	badge.W = 360
+	// content without Bottom pad — gap to bar ≤ 16
+	content := &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
 		badge,
 		&ui.Row{Gap: ui.P16, Items: []ui.Node{warn, errB}},
 		viber,
 		res,
 	}}}
-	bar := &ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Gap: ui.P8, Items: []ui.Node{run, closeB}}}
+	bar := &ui.Pad{All: ui.P12, Child: &ui.Row{Grow: true, Gap: ui.P8, Items: []ui.Node{
+		&ui.Ctl{Kind: ui.Box, Grow: true, Hgt: 28},
+		run, closeB,
+	}}}
 	fitForm(aw.hwnd, content, bar, 360, false)
 }
 

@@ -5,6 +5,7 @@ package wintray
 import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -22,7 +23,7 @@ var reqFields = map[int32]traysettings.Field{
 }
 
 // requiredBk is the background of an empty required box.
-const requiredBk = 0x00D0D0FF // COLORREF 0x00BBGGRR: light red
+const requiredBk = trayui.RequiredField // empty required edit (CHK-TRAY-51)
 
 // UIMode is the window mode (test hook).
 func (w *settingsWindow) UIMode() traysettings.UIMode { return w.uiMode }

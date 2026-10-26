@@ -56,11 +56,12 @@ type statusWindow struct {
 
 var statusColWidths = []int32{130, 140, 110, 95, 110, 80, 95, 95, 160}
 
-var rowBk = map[trayui.Color]uint32{ // pale COLORREF (0x00BBGGRR)
-	trayui.ColorGreen:  0xDFF3DF,
-	trayui.ColorYellow: 0xC4F3FF,
-	trayui.ColorRed:    0xD0D0F8,
-	trayui.ColorGrey:   0xE6E6E6,
+// rowBk: pale state backgrounds of the theme (CHK-TRAY-51).
+var rowBk = map[trayui.Color]uint32{
+	trayui.ColorGreen:  trayui.PaleColorRef(trayui.ColorGreen),
+	trayui.ColorYellow: trayui.PaleColorRef(trayui.ColorYellow),
+	trayui.ColorRed:    trayui.PaleColorRef(trayui.ColorRed),
+	trayui.ColorGrey:   trayui.PaleColorRef(trayui.ColorGrey),
 }
 
 func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, error) {
@@ -241,7 +242,7 @@ func (sw *statusWindow) onNotify(lp uintptr) (uintptr, bool) {
 		i := int(cd.ItemSpec)
 		if i >= 0 && i < len(sw.rows) {
 			if bk, ok := rowBk[sw.rows[i].Color]; ok {
-				winapi.WriteCustomDrawColors(lp, 0x000000, bk)
+				winapi.WriteCustomDrawColors(lp, trayui.Black, bk)
 				return winapi.CDRF_NEWFONT, true
 			}
 		}

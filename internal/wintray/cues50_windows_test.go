@@ -17,7 +17,7 @@ var settingsCueID = map[traysettings.Field]int32{
 	traysettings.FieldPort: idSetPort, traysettings.FieldDatabase: idSetDatabase, traysettings.FieldLogin: idSetLogin,
 	traysettings.FieldPassword: idSetPassword, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
 	traysettings.FieldConnTimeout: idSetConnTO, traysettings.FieldQueryTimeout: idSetQueryTO,
-	traysettings.FieldViberToken: idVbToken, traysettings.FieldViberReminder: idVbReminder,
+	traysettings.FieldViberToken: idVbToken,
 }
 
 // TestCHK_TRAY_50_Cues — every UIField with Cue is set on its edit box,

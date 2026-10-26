@@ -305,8 +305,14 @@ func (dd *discoveryDialog) build() {
 		top, byValue, lists, modeRow, maps, checks, sqlHead, sql, &ui.Col{Gap: 2, Items: []ui.Node{resL, res}},
 	}}}
 	// cues of the edit boxes (phase 11, PLAN §12 p.50), before the layout: the boxes are as wide as their cues (CHK-TRAY-48)
-	winapi.SetCueBanner(dd.ctl[idDiscTime], dd.t(i18n.KeyCueDiscTime))
-	winapi.SetCueBanner(dd.ctl[idDiscTol], fmt.Sprintf(dd.t(i18n.KeySetTimeoutCue), 1440))
+	for _, f := range traysettings.UIFields {
+		switch f.ID {
+		case traysettings.FieldDiscTime:
+			winapi.SetCueBanner(dd.ctl[idDiscTime], f.CueText(dd.w.cfg.lang))
+		case traysettings.FieldDiscTolerance:
+			winapi.SetCueBanner(dd.ctl[idDiscTol], f.CueText(dd.w.cfg.lang))
+		}
+	}
 	for _, e := range discMapEdits {
 		cue := i18n.KeyCueDiscColumn
 		if e.id == idDiscSchema {

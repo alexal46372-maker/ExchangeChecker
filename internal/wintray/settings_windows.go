@@ -259,6 +259,21 @@ func (w *settingsWindow) setCue(id int32, text string) {
 	winapi.SetCueBanner(w.ctl[id], text)
 }
 
+// applyFieldCues sets EM_SETCUEBANNER from UIField.CueText (CHK-TRAY-50 note).
+func (w *settingsWindow) applyFieldCues() {
+	for _, f := range traysettings.UIFields {
+		text := f.CueText(w.cfg.lang)
+		if text == "" {
+			continue
+		}
+		id, ok := fieldControl[f.ID]
+		if !ok || w.ctl[id] == 0 {
+			continue
+		}
+		w.setCue(id, text)
+	}
+}
+
 // settingsTips are the tooltips of the settings window controls (phase 8,
 // CHK-TRAY-15): every edit box, button, check box, combo and list box.
 var settingsTips = map[int32]string{
@@ -617,26 +632,10 @@ func (w *settingsWindow) build() {
 	if xfer != nil {
 		left = append(left, xfer)
 	}
-	// grey hints of empty boxes (phase 8, CHK-TRAY-12); before the layout:
-	// the boxes are at least as wide as their cues (phase 11, CHK-TRAY-48)
-	w.setCue(idSetPort, w.t(i18n.KeySetPortCue))
-	// phase 11 (PLAN §12 p.50): every edit box shows its cue
-	w.setCue(idSetName, w.t(i18n.KeyCueName))
-	w.setCue(idSetHost, w.t(i18n.KeyCueHost))
-	w.setCue(idSetInstance, w.t(i18n.KeyCueInstance))
-	w.setCue(idSetDatabase, w.t(i18n.KeyCueDatabase))
-	w.setCue(idSetLogin, w.t(i18n.KeyCueLogin))
-	w.setCue(idSetPassword, w.t(i18n.KeyCuePassword))
-	if w.ctl[idVbToken] != 0 {
-		w.setCue(idVbToken, w.t(i18n.KeyCueVbToken))
-	}
-	if w.ctl[idVbReminder] != 0 {
-		w.setCue(idVbReminder, w.t(i18n.KeyVbReminderHint))
-	}
-	w.setCue(idSetWarn, w.t(i18n.KeySetThreshCue))
-	w.setCue(idSetError, w.t(i18n.KeySetThreshCue))
-	w.setCue(idSetConnTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultConnectTimeoutSec))
-	w.setCue(idSetQueryTO, fmt.Sprintf(w.t(i18n.KeySetTimeoutCue), model.DefaultQueryTimeoutSec))
+	// cues from traysettings.UIFields (phase 11, CHK-TRAY-50/51): before
+	// the layout so boxes are at least as wide as their cues; Viber
+	// reminder keeps the STATIC hint only (no duplicate cue banner)
+	w.applyFieldCues()
 	w.layoutPages(m, &ui.Col{Gap: ui.P12, Items: []ui.Node{nav, &ui.Col{Gap: ui.P8 - 2, Items: left}}},
 		[]ui.Node{profilePage, generalPage, viberPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {

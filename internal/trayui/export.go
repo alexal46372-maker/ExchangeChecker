@@ -55,7 +55,8 @@ func ExportCSV(rows []StatusRow, lang string) []byte {
 	return b.Bytes()
 }
 
-var htmlColors = map[Color]string{ColorGreen: "#dff3df", ColorYellow: "#fff3c4", ColorRed: "#f8d0d0", ColorGrey: "#e6e6e6"}
+// htmlColors: pale state backgrounds of the theme (CHK-TRAY-51).
+var htmlColors = map[Color]string{ColorGreen: PaleHTML(ColorGreen), ColorYellow: PaleHTML(ColorYellow), ColorRed: PaleHTML(ColorRed), ColorGrey: PaleHTML(ColorGrey)}
 
 // ExportHTML renders rows as an HTML page; at is the export time (UTC+3).
 func ExportHTML(rows []StatusRow, lang string, at time.Time) []byte {

@@ -25,12 +25,12 @@ const (
 	cardSlots  = 12
 )
 
-// cardStripe: the strong colour of the stripe (COLORREF 0x00BBGGRR).
+// cardStripe: strong state colours of the theme (CHK-TRAY-51).
 var cardStripe = map[trayui.Color]uint32{
-	trayui.ColorGreen:  0x3CA03C,
-	trayui.ColorYellow: 0x00B8F0,
-	trayui.ColorRed:    0x3030D0,
-	trayui.ColorGrey:   0x909090,
+	trayui.ColorGreen:  trayui.ColorRefOf(trayui.ColorGreen),
+	trayui.ColorYellow: trayui.ColorRefOf(trayui.ColorYellow),
+	trayui.ColorRed:    trayui.ColorRefOf(trayui.ColorRed),
+	trayui.ColorGrey:   trayui.ColorRefOf(trayui.ColorGrey),
 }
 
 type cardPanel struct {
@@ -57,7 +57,7 @@ func newCardPanel(parent uintptr, tips *tooltips, lang string, rows int32) (*car
 			case winapi.WM_PAINT:
 				var ps winapi.PAINTSTRUCT
 				dc := winapi.BeginPaint(hw, &ps)
-				bg := winapi.CreateSolidBrush(0xF0F0F0)
+				bg := winapi.CreateSolidBrush(trayui.Panel)
 				winapi.FillRect(dc, winapi.GetClientRect(hw), bg)
 				winapi.DeleteObject(bg)
 				winapi.EndPaint(hw, &ps)
@@ -159,18 +159,18 @@ func (p *cardPanel) paint(hw uintptr, i int) {
 	}
 	bk, ok := rowBk[c.Color]
 	if !ok {
-		bk = 0xF8F8F8
+		bk = trayui.CardFace
 	}
-	fill(rc, 0xA0A0A0) // frame
+	fill(rc, trayui.CardFrame) // frame
 	fill(winapi.RECT{Left: rc.Left + 1, Top: rc.Top + 1, Right: rc.Right - 1, Bottom: rc.Bottom - 1}, bk)
 	stripe, ok := cardStripe[c.Color]
 	if !ok {
-		stripe = 0xC0C0C0
+		stripe = trayui.CardStripeOff
 	}
 	sw := px(6)
 	fill(winapi.RECT{Left: rc.Left + 1, Top: rc.Top + 1, Right: rc.Left + 1 + sw, Bottom: rc.Bottom - 1}, stripe)
 	winapi.SetBkMode(dc, winapi.TRANSPARENT)
-	winapi.SetTextColor(dc, clrText)
+	winapi.SetTextColor(dc, trayui.Text)
 	old := winapi.SelectObject(dc, uiFont())
 	defer winapi.SelectObject(dc, old)
 	_, lh := winapi.TextSize(uiFont(), "Ag", 0)

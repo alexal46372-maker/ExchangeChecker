@@ -287,17 +287,17 @@ func (hw *histWindow) load() {
 	}()
 }
 
-// colours (COLORREF 0x00BBGGRR)
+// colours from the tray theme (CHK-TRAY-51).
 const (
-	clrWhite  = 0xFFFFFF
-	clrAxis   = 0x808080
-	clrGrid   = 0xE0E0E0
-	clrAvg    = 0xB05A1E // blue
-	clrMinMax = 0xE0B48C // light blue
-	clrWarn   = 0x00C2F2 // yellow (#F2C200)
-	clrErr    = 0x2530D9 // red (#D93025)
-	clrOK     = 0x43A02E // green (#2EA043)
-	clrText   = 0x404040
+	clrWhite  = trayui.White
+	clrAxis   = trayui.Axis
+	clrGrid   = trayui.Grid
+	clrAvg    = trayui.ChartAvg
+	clrMinMax = trayui.ChartBand
+	clrWarn   = trayui.StateWarning
+	clrErr    = trayui.StateError
+	clrOK     = trayui.StateOK
+	clrText   = trayui.Text
 )
 
 func toGDI(ps []trayui.Pt) []winapi.GDIPoint {

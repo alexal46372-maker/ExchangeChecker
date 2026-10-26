@@ -129,7 +129,7 @@ var UIFields = []UIField{
 	{ID: FieldViberFrom, Section: SecNotifications, Capability: CapViber, HasDefault: true},
 	{ID: FieldViberTo, Section: SecNotifications, Capability: CapViber, HasDefault: true},
 	{ID: FieldViberEvents, Section: SecNotifications, Capability: CapViber, HasDefault: true},
-	{ID: FieldViberReminder, Section: SecNotifications, Capability: CapViber, HasDefault: true, Cue: i18n.KeyVbReminderHint},
+	{ID: FieldViberReminder, Section: SecNotifications, Capability: CapViber, HasDefault: true}, // hint: STATIC idVbReminderHint (CHK-TRAY-50 note)
 	{ID: FieldViberTest, Section: SecNotifications, Capability: CapViber},
 	{ID: FieldHistoryWindow, Section: SecHistory},
 	{ID: FieldLanguage, Section: SecService, HasDefault: true},

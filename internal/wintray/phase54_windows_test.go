@@ -45,27 +45,57 @@ func sampleSummary() model.Summary {
 	}
 }
 
-// TestCHK_TRAY_54_LayoutV2 — every tray window (incl. summary + alarm_test)
-// fits the work area at 96 and 144 dpi: no horizontal scroll, button bar
-// visible, field width ≥ cue, gaps ≤ 16×DPI (PLAN §12 p.149).
+// TestCHK_TRAY_54_LayoutV2 — every tray window at 96 and 144 dpi: no
+// horizontal scroll, button bar visible, field width ≥ cue, gaps ≤ 16×DPI;
+// summary / alarm_test also fit a 1024×768 work area (PLAN §12 p.149).
 func TestCHK_TRAY_54_LayoutV2(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	defer func() { testDPI = 0; testWorkArea = nil }()
-	// Typical full-HD work area: every window must fit (fitForm / placeWindow).
-	work := winapi.RECT{Right: 1920, Bottom: 1080}
+
+	for _, dpi := range []int32{96, 144} {
+		for _, lang := range []string{i18n.RU, i18n.EN} {
+			testDPI = dpi
+			testWorkArea = nil
+			tag := fmt.Sprintf("%s %d dpi", lang, dpi)
+			uiScenes(t, lang, func(name string, hwnd uintptr) {
+				checkLayout(t, name+" "+tag, hwnd)
+			})
+		}
+	}
+
+	// summary + alarm_test under a constrained work area (demo screenshots)
+	work := winapi.RECT{Right: 1024, Bottom: 768}
 	for _, dpi := range []int32{96, 144} {
 		for _, lang := range []string{i18n.RU, i18n.EN} {
 			testDPI = dpi
 			testWorkArea = &work
-			tag := fmt.Sprintf("%s %d dpi", lang, dpi)
-			uiScenes(t, lang, func(name string, hwnd uintptr) {
-				r := winapi.GetWindowRect(hwnd)
-				if !contains(work, r) {
-					t.Errorf("%s %s: window %+v outside work area %+v", name, tag, r, work)
-				}
-				checkLayout(t, name+" "+tag, hwnd)
-			})
+			tag := fmt.Sprintf("workarea %s %d dpi", lang, dpi)
+			sw, err := createSummary(nil, lang, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sw.apply(sampleSummary())
+			if r := winapi.GetWindowRect(sw.hwnd); !contains(work, r) {
+				t.Errorf("summary %s: window %+v outside work area %+v", tag, r, work)
+			}
+			checkLayout(t, "summary "+tag, sw.hwnd)
+			winapi.DestroyWindow(sw.hwnd)
+
+			aw, err := createAlarmTest(nil, lang)
+			if err != nil {
+				t.Fatal(err)
+			}
+			aw.setResult(formatAlarmViber(&model.AlarmTestResult{OK: true, Viber: &model.AlarmTestViber{
+				ViberTestResult: model.ViberTestResult{OK: true, Results: []model.ViberTestItem{
+					{ID: "u1", OK: true}, {ID: "u2", OK: true},
+				}},
+			}}, lang))
+			if r := winapi.GetWindowRect(aw.hwnd); !contains(work, r) {
+				t.Errorf("alarm_test %s: window %+v outside work area %+v", tag, r, work)
+			}
+			checkLayout(t, "alarm_test "+tag, aw.hwnd)
+			winapi.DestroyWindow(aw.hwnd)
 		}
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // DiscoveryClass is the window class of the Discovery dialog (phase 6d,
@@ -228,60 +229,98 @@ func (dd *discoveryDialog) add(class, text string, ex, style uint32, id, x, y, c
 func (dd *discoveryDialog) build() {
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
 	ro := uint32(winapi.WS_TABSTOP | winapi.ES_MULTILINE | winapi.ES_READONLY | winapi.ES_AUTOVSCROLL | winapi.WS_VSCROLL)
-	label := func(key string, x, y, cw int32) { dd.add("STATIC", dd.t(key), 0, winapi.SS_LEFT, 0, x, y+3, cw, 18) }
+	// phase 11 (CHK-TRAY-45): controls created at 0,0 and laid out by
+	// the framework (labels measured, rows on a common baseline)
+	label := func(key string) *ui.Ctl {
+		return uiCtl(dd.add("STATIC", dd.t(key), 0, winapi.SS_LEFT, 0, 0, 0, 0, 0), ui.Label, dd.t(key))
+	}
+	c := func(class, text string, ex, style uint32, id int32, kind ui.Kind, w, h int32) *ui.Ctl {
+		x := uiCtl(dd.add(class, text, ex, style, id, 0, 0, 0, 0), kind, text)
+		x.W, x.Hgt = w, h
+		return x
+	}
+	btn := func(key string, id int32) *ui.Ctl {
+		return c("BUTTON", dd.t(key), 0, winapi.WS_TABSTOP, id, ui.Button, 0, 0)
+	}
+	grow := func(x *ui.Ctl) *ui.Ctl { x.Grow = true; return x }
 	// search buttons and the short state line (count / «Поиск… N с»)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscFind), 0, winapi.WS_TABSTOP, idDiscFind, 12, 10, 150, 26)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscListPoints), 0, winapi.WS_TABSTOP, idDiscPoints, 168, 10, 150, 26)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscCancel), 0, winapi.WS_TABSTOP, idDiscCancel, 324, 10, 100, 26)
-	dd.add("STATIC", "", 0, winapi.SS_LEFT, idDiscState, 432, 15, 416, 18)
+	top := &ui.Row{Grow: true, Items: []ui.Node{btn(i18n.KeyDiscFind, idDiscFind), btn(i18n.KeyDiscListPoints, idDiscPoints),
+		btn(i18n.KeyDiscCancel, idDiscCancel), grow(c("STATIC", "", 0, winapi.SS_LEFT, idDiscState, ui.Box, 200, 18))}}
 	// search by a known point and time (discover_by_value)
-	row := int32(46)
-	label(i18n.KeyDiscPoint, 12, row, 60)
-	dd.add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWN|winapi.CBS_AUTOHSCROLL, idDiscPoint, 75, row, 230, 220)
-	label(i18n.KeyDiscTime, 313, row, 147)
-	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idDiscTime, 462, row, 100, 23)
-	label(i18n.KeyDiscTolerance, 568, row, 92)
-	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idDiscTol, 662, row, 45, 23)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscByValue), 0, winapi.WS_TABSTOP, idDiscByValue, 714, row-1, 134, 26)
-	dd.add("STATIC", dd.t(i18n.KeyDiscToleranceHint), 0, winapi.SS_LEFT, 0, 462, row+26, 386, 18)
+	pointL := label(i18n.KeyDiscPoint)
+	point := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWN|winapi.CBS_AUTOHSCROLL, idDiscPoint, ui.Combo, 230, 0)
+	point.NoShrink = true // phase 11 (CHK-TRAY-49): not narrowed at 144 dpi
+	timeL := label(i18n.KeyDiscTime)
+	tm := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idDiscTime, ui.Edit, 100, 0)
+	tolL := label(i18n.KeyDiscTolerance)
+	tol := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idDiscTol, ui.Edit, 45, 0)
+	// the hint «0 или пусто…» under its own field (phase 11)
+	tolG := &ui.Grid{ColGap: ui.P8, Rows: []ui.GridRow{{Label: tolL, Field: &ui.Col{Gap: 2, Items: []ui.Node{tol, label(i18n.KeyDiscToleranceHint)}}}}}
+	// two rows so that the window fits 1024 px at 144 dpi (phase 11)
+	byValue := &ui.Col{Gap: 6, Items: []ui.Node{&ui.Row{Items: []ui.Node{pointL, point, timeL, tm}},
+		&ui.Row{Grow: true, Align: ui.Top, Items: []ui.Node{tolG, &ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscByValue, idDiscByValue)}}}}}}
 	// candidates and the details of the selected one (no horizontal
 	// scrolling: the details box shows the whole candidate)
-	row = 92
-	dd.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY, idDiscList, 12, row, 520, 160)
-	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscDetails, 540, row, 308, 156)
+	// every multi-line box has its label (phase 11)
+	candL := label(i18n.KeyDiscCandidates)
+	cand := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idDiscList, ui.Box, 520, 132)
+	detL := label(i18n.KeyDiscDetails)
+	det := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscDetails, ui.Box, 308, 132)
+	det.Grow = true
+	lists := &ui.Row{Align: ui.Top, Grow: true, Items: []ui.Node{
+		&ui.Col{Gap: 2, Items: []ui.Node{candL, cand}}, &ui.Col{Gap: 2, Items: []ui.Node{detL, det}}}}
 	// mapping editor: the kind, its source label, two columns of boxes
-	row = 258
-	label(i18n.KeyDiscMode, 12, row, 110)
-	dd.add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, idDiscMode, 125, row, 290, 120)
-	dd.add("STATIC", "", 0, winapi.SS_LEFT, idDiscSource, discCol2, row+3, 413, 18)
-	row += 28
+	modeL := label(i18n.KeyDiscMode)
+	mode := c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, idDiscMode, ui.Combo, 290, 0)
+	modeRow := &ui.Row{Grow: true, Items: []ui.Node{modeL, mode, &ui.Space{W: ui.P8}, grow(c("STATIC", "", 0, winapi.SS_LEFT, idDiscSource, ui.Box, 240, 18))}}
+	g1, g2 := ui.Grid{Gap: ui.P4}, ui.Grid{Gap: ui.P4}
 	for i, e := range discMapEdits {
-		x, ex, cw := int32(12), int32(125), int32(290)
+		l := label(e.key)
+		g, cw := &g1, int32(290)
 		if i >= 5 {
-			x, ex, cw = discCol2, discEdit, 300
+			g, cw = &g2, 300
 		}
-		r := row + int32(i%5)*27
-		label(e.key, x, r, 110)
-		dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, e.id, ex, r, cw, 23)
+		g.Rows = append(g.Rows, ui.GridRow{Label: l, Field: c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, e.id, ui.Edit, cw, 0)})
 	}
-	row += 5*27 + 2
+	maps := &ui.Row{Align: ui.Top, Gap: ui.P16, Items: []ui.Node{&g1, &g2}}
 	cb := uint32(winapi.WS_TABSTOP | winapi.BS_AUTOCHECKBOX)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscYearOffset), 0, cb, idDiscYear, 12, row, 270, 20)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscKeepUnlinked), 0, cb, idDiscKeep, 290, row, 270, 20)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscAllPlans), 0, cb, idDiscAllPlans, 568, row, 280, 20)
-	row += 26
-	label(i18n.KeyDiscManualSQL, 12, row, 300)
-	label(i18n.KeyDiscTemplate, discCol2, row, 110)
-	dd.add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idDiscTemplate, discEdit, row, 300, 220)
-	row += 27
-	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_WANTRETURN|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
-		idDiscSQL, 12, row, 836, 80)
-	row += 86
-	dd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscResult, 12, row, 836, 76)
-	row += 84
-	dd.add("BUTTON", dd.t(i18n.KeyDiscCheck), 0, winapi.WS_TABSTOP, idDiscCheck, 12, row, 160, 28)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscApply), 0, winapi.WS_TABSTOP, idDiscApply, 178, row, 220, 28)
-	dd.add("BUTTON", dd.t(i18n.KeyDiscClose), 0, winapi.WS_TABSTOP, idDiscClose, 758, row, 90, 28)
+	// two rows: the window fits 1024 px at 144 dpi (phase 11)
+	checks := &ui.Col{Gap: ui.P4, Items: []ui.Node{&ui.Row{Gap: ui.P16, Items: []ui.Node{c("BUTTON", dd.t(i18n.KeyDiscYearOffset), 0, cb, idDiscYear, ui.Check, 0, 0),
+		c("BUTTON", dd.t(i18n.KeyDiscKeepUnlinked), 0, cb, idDiscKeep, ui.Check, 0, 0)}},
+		c("BUTTON", dd.t(i18n.KeyDiscAllPlans), 0, cb, idDiscAllPlans, ui.Check, 0, 0)}}
+	sqlHead := &ui.Row{Grow: true, Items: []ui.Node{label(i18n.KeyDiscManualSQL), &ui.Row{Right: true, Items: []ui.Node{label(i18n.KeyDiscTemplate),
+		c("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idDiscTemplate, ui.Combo, 300, 0)}}}}
+	sql := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_WANTRETURN|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
+		idDiscSQL, ui.Box, 836, 64)
+	sql.Grow = true
+	sql.Hgt = 64
+	resL := label(i18n.KeyDiscResultLabel)
+	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, ro, idDiscResult, ui.Box, 836, 56)
+	res.Grow = true
+	buttons := &ui.Row{Grow: true, Items: []ui.Node{btn(i18n.KeyDiscCheck, idDiscCheck), btn(i18n.KeyDiscApply, idDiscApply),
+		&ui.Row{Right: true, Items: []ui.Node{btn(i18n.KeyDiscClose, idDiscClose)}}}}
+	// phase 11: the buttons pinned to the bottom, the rest scrolls when
+	// the work area is too small (1024×768 at 144 dpi)
+	content := &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: 6, Items: []ui.Node{
+		top, byValue, lists, modeRow, maps, checks, sqlHead, sql, &ui.Col{Gap: 2, Items: []ui.Node{resL, res}},
+	}}}
+	// cues of the edit boxes (phase 11, PLAN §12 p.50), before the layout: the boxes are as wide as their cues (CHK-TRAY-48)
+	for _, f := range traysettings.UIFields {
+		switch f.ID {
+		case traysettings.FieldDiscTime:
+			winapi.SetCueBanner(dd.ctl[idDiscTime], f.CueText(dd.w.cfg.lang))
+		case traysettings.FieldDiscTolerance:
+			winapi.SetCueBanner(dd.ctl[idDiscTol], f.CueText(dd.w.cfg.lang))
+		}
+	}
+	for _, e := range discMapEdits {
+		cue := i18n.KeyCueDiscColumn
+		if e.id == idDiscSchema {
+			cue = i18n.KeyCueDiscSchema
+		}
+		winapi.SetCueBanner(dd.ctl[e.id], dd.t(cue))
+	}
+	fitForm(dd.hwnd, content, &ui.Pad{All: ui.P12, Child: buttons}, 0, false)
 	for _, k := range []string{i18n.KeyDiscModeAuto, i18n.KeyDiscModeManual, i18n.KeyDiscModeCounters} {
 		winapi.SendMessageString(dd.ctl[idDiscMode], winapi.CB_ADDSTRING, 0, dd.t(k))
 	}

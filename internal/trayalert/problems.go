@@ -17,6 +17,7 @@ const (
 	ProblemNoConnection = "no_connection"
 	ProblemError        = "error"
 	ProblemWarning      = "warning"
+	ProblemStalled      = "stalled" // phase 11, CHK-MON-18
 )
 
 // Problem is one entry of the panel.
@@ -134,11 +135,17 @@ func Problems(st trayipc.Status, ext StatusExt, lang string) []Problem {
 	}
 	seen := map[string]bool{}
 	for _, a := range snap.Alerts {
-		if a.To <= model.LevelOK {
+		if a.Test { // alarm_test push: never in problems (CHK-TRAY-54)
+			continue
+		}
+		if a.To <= model.LevelOK && !a.Stalled {
 			continue
 		}
 		k := ProblemWarning
-		if a.To >= model.LevelError {
+		switch {
+		case a.Stalled:
+			k = ProblemStalled
+		case a.To >= model.LevelError:
 			k = ProblemError
 		}
 		if a.ProfileLevel() {
@@ -173,6 +180,11 @@ func extLine(p Problem, names map[string]string, snap *model.StatusSnapshot, lan
 		return sprintf(i18n.T(i18n.KeyPanelNoSQL, lang), name)
 	case ProblemError:
 		return name + ": " + levelText(model.LevelError, lang)
+	case ProblemStalled:
+		if p.PointKey != "" {
+			return sprintf(i18n.T(i18n.KeyPanelStalled, lang), name, p.PointKey)
+		}
+		return name + ": " + levelText(model.LevelWarning, lang)
 	}
 	return name + ": " + levelText(model.LevelWarning, lang)
 }
@@ -194,7 +206,7 @@ func BlinkFor(ps []Problem) Blink {
 		switch p.Kind {
 		case ProblemNoConnection, ProblemError:
 			return BlinkRed
-		case ProblemWarning:
+		case ProblemWarning, ProblemStalled:
 			b = BlinkYellow
 		}
 	}
@@ -205,7 +217,7 @@ func BlinkFor(ps []Problem) Blink {
 func PanelLines(ps []Problem, lang string) []string {
 	var red, yellow []string
 	for _, p := range ps {
-		if p.Kind == ProblemWarning {
+		if p.Kind == ProblemWarning || p.Kind == ProblemStalled {
 			yellow = append(yellow, p.Text)
 		} else {
 			red = append(red, p.Text)

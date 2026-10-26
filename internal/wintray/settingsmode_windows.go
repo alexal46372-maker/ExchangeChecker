@@ -5,6 +5,7 @@ package wintray
 import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -22,7 +23,7 @@ var reqFields = map[int32]traysettings.Field{
 }
 
 // requiredBk is the background of an empty required box.
-const requiredBk = 0x00D0D0FF // COLORREF 0x00BBGGRR: light red
+const requiredBk = trayui.RequiredField // empty required edit (CHK-TRAY-51)
 
 // UIMode is the window mode (test hook).
 func (w *settingsWindow) UIMode() traysettings.UIMode { return w.uiMode }
@@ -45,10 +46,10 @@ func (w *settingsWindow) applyUIMode() {
 			continue
 		}
 		if h := w.ctl[id]; h != 0 {
-			winapi.ShowWindow(h, cmd)
+			w.show(h, cmd == winapi.SW_SHOW)
 		}
 		if h := w.labels[id]; h != 0 {
-			winapi.ShowWindow(h, cmd)
+			w.show(h, cmd == winapi.SW_SHOW)
 		}
 	}
 	if g := w.groups[i18n.KeySetGroupTLS]; g != 0 {
@@ -56,7 +57,7 @@ func (w *settingsWindow) applyUIMode() {
 		if simple || w.page != 0 {
 			cmd = winapi.SW_HIDE
 		}
-		winapi.ShowWindow(g, cmd)
+		w.show(g, cmd == winapi.SW_SHOW)
 	}
 	w.expertShown = !simple && w.page == 0
 	key := i18n.KeySetModeExpert
@@ -67,6 +68,9 @@ func (w *settingsWindow) applyUIMode() {
 	if w.tips != nil {
 		w.tips.set(w.ctl[idSetUIMode], w.t(i18n.KeyTipSetUIMode))
 	}
+	// the navigation marks the current page (phase 11, CHK-TRAY-47)
+	w.markNav()
+	w.relayoutAll() // Hidden controls take no room (no holes)
 }
 
 func (w *settingsWindow) toggleUIMode() {
@@ -128,4 +132,35 @@ func (w *settingsWindow) requiredColor(dc, ctl uintptr) (uintptr, bool) {
 		}
 	}
 	return 0, false
+}
+
+// navStyle: the navigation buttons are push-like check boxes; the one of
+// the current page is pressed (BM_SETCHECK), all stay enabled (phase 11,
+// CHK-TRAY-48: a grey disabled button read as «unavailable»).
+const navStyle = 0x0002 /* BS_CHECKBOX */ | 0x1000 /* BS_PUSHLIKE */
+
+// markNav presses the button of the current page.
+func (w *settingsWindow) markNav() {
+	for id, pg := range map[int32]int{idSetNavProfiles: 0, idSetPage: 1, idSetViber: pageViber} {
+		st := uintptr(winapi.BST_UNCHECKED)
+		if w.page == pg {
+			st = winapi.BST_CHECKED
+		}
+		if h := w.ctl[id]; h != 0 {
+			winapi.SendMessage(h, winapi.BM_SETCHECK, st, 0)
+		}
+	}
+}
+
+// navChecked reports a pressed navigation button.
+func navChecked(h uintptr) bool {
+	return winapi.SendMessage(h, winapi.BM_GETCHECK, 0, 0) == winapi.BST_CHECKED
+}
+
+// syncNavIcons gives every navigation icon the visibility of its button
+// (before a layout).
+func (w *settingsWindow) syncNavIcons() {
+	for _, p := range w.navIco {
+		p[1].Hidden = p[0].Hidden
+	}
 }

@@ -118,6 +118,15 @@ func StatusRows(st trayipc.Status, lang string, now time.Time) []StatusRow {
 				}
 				r.Note += i18n.T(i18n.KeyPtAcked, lang)
 			}
+			if pt.Stalled {
+				if r.Note != "" {
+					r.Note += "; "
+				}
+				r.Note += i18n.T(i18n.KeyPtStalled, lang)
+				if r.Level < model.LevelWarning {
+					r.Level, r.Color, r.State = model.LevelWarning, ColorYellow, levelText(model.LevelWarning, lang)
+				}
+			}
 			rows = append(rows, r)
 		}
 	}

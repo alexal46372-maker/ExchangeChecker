@@ -5,9 +5,13 @@ package wintray
 import (
 	"fmt"
 	"runtime"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
@@ -69,11 +73,27 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 	if len(cs) == 0 {
 		t.Errorf("%s: no visible controls", what)
 	}
+	// phase 11 (CHK-TRAY-47): never a horizontal scroll bar; a top-level
+	// window does not scroll at all (the button bar is pinned and visible,
+	// only a scroll host child scrolls, vertically)
+	if st := winapi.WindowStyle(hwnd); st&winapi.WS_HSCROLL != 0 {
+		t.Errorf("%s: horizontal scroll bar", what)
+	} else if !strings.HasSuffix(what, "(page)") && st&winapi.WS_VSCROLL != 0 {
+		t.Errorf("%s: the window scrolls (the bar must stay visible)", what)
+	}
+	if ext, ok := hostExtent[hwnd]; ok && ext[0] > cr.Right {
+		t.Errorf("%s: content %d px wider than the client %d px", what, ext[0], cr.Right)
+	}
+	// no vertical hole larger than the grid step (16 units): the bands
+	// covered by the controls leave no gap between the first and the last
+	if gap, at := maxGap(cs); gap > px(16) {
+		t.Errorf("%s: a vertical gap of %d px (> %d) above %v", what, gap, px(16), at)
+	}
 	for _, c := range cs {
 		if !contains(bounds, c.r) {
 			t.Errorf("%s: %v outside the window %+v", what, c, bounds)
 		}
-		if c.class == SettingsPageClass {
+		if c.class == SettingsPageClass || c.class == ScrollHostClass {
 			checkLayout(t, what+" (page)", c.h)
 		}
 	}
@@ -89,6 +109,21 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 				continue
 			}
 			t.Errorf("%s: %v overlaps %v", what, a, b)
+		}
+	}
+	// phase 11 (CHK-TRAY-48): every edit box is at least as wide as its
+	// cue (the whole hint is visible)
+	for _, c := range cs {
+		if c.class != "Edit" {
+			continue
+		}
+		cue := winapi.CueBanner(c.h)
+		if cue == "" {
+			continue
+		}
+		tw, _ := winapi.TextSize(winapi.SendMessage(c.h, wmGetFont, 0, 0), cue, 0)
+		if w := c.r.Right - c.r.Left; tw+px(10) > w {
+			t.Errorf("%s: cue %q (%d px) does not fit the edit box %d px", what, cue, tw, w)
 		}
 	}
 	for _, c := range cs {
@@ -130,6 +165,31 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 	}
 }
 
+// maxGap is the largest vertical band between the topmost and the
+// bottommost control that no control covers.
+func maxGap(cs []laidCtl) (int32, laidCtl) {
+	type band struct {
+		a, b int32
+		c    laidCtl
+	}
+	bs := make([]band, 0, len(cs))
+	for _, c := range cs {
+		bs = append(bs, band{c.r.Top, c.r.Bottom, c})
+	}
+	sort.Slice(bs, func(i, j int) bool { return bs[i].a < bs[j].a })
+	gap, end := int32(0), int32(0)
+	var at laidCtl
+	for i, b := range bs {
+		if i > 0 && b.a-end > gap {
+			gap, at = b.a-end, b.c
+		}
+		if i == 0 || b.b > end {
+			end = b.b
+		}
+	}
+	return gap, at
+}
+
 // TestCHK_TRAY_42_Font — Segoe UI 9 pt scaled to the DPI.
 func TestCHK_TRAY_42_Font(t *testing.T) {
 	defer func() { testDPI = 0 }()
@@ -166,96 +226,7 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 				defer func() { testWorkArea = nil }()
 				checkSettingsFit(t, "small "+tag, lang, small)
 			}()
-			func() {
-				ds := newDiscService()
-				app := startCfgApp(t, ds.cfgService, true, nil)
-				defer app.Exit()
-				w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
-					uiMode: traysettings.UIExpert})
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer w.close()
-				w.Reload()
-				pumpUntil(t, "loaded", func() bool { return !w.busy && w.ed.HasProfile() })
-				checkLayout(t, "settings expert "+tag, w.hwnd)
-				dd := openDisc(t, w)
-				checkLayout(t, "discovery "+tag, dd.hwnd)
-				dd.close()
-				w.setPage(1)
-				checkLayout(t, "settings general "+tag, w.hwnd)
-				w.setPage(0)
-				w.toggleUIMode()
-				checkLayout(t, "settings simple "+tag, w.hwnd)
-
-				ro, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.ReadOnly, session: app.session, hidden: true,
-					uiMode: traysettings.UIExpert, elevator: &fakeElevator{}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				checkLayout(t, "settings read-only "+tag, ro.hwnd)
-				ro.close()
-
-				app.opt.Lang = lang
-				sw, err := newSoundWindow(app)
-				if err != nil {
-					t.Fatal(err)
-				}
-				checkLayout(t, "sound "+tag, sw.hwnd)
-				winapi.DestroyWindow(sw.hwnd)
-				hw, err := newHistWindow(app, trayui.StatusRow{Database: "db1", Point: "ЦБ"}, false)
-				if err != nil {
-					t.Fatal(err)
-				}
-				checkLayout(t, "history "+tag, hw.hwnd)
-				winapi.DestroyWindow(hw.hwnd)
-				app.opt.HiddenPanel = true
-				if v := app.OpenVolume(); v != nil {
-					checkLayout(t, "volume "+tag, v.hwnd)
-					winapi.DestroyWindow(v.hwnd)
-				} else {
-					t.Error("volume window")
-				}
-				app.problems = []trayalert.Problem{{Kind: trayalert.ProblemError, Text: "Склад / Exchange — ЦБ: 45 мин без обмена"},
-					{Kind: trayalert.ProblemNoConnection, Text: "Магазин 12: нет подключения к SQL Server"},
-					{Kind: trayalert.ProblemWarning, Text: "Офис — Розница: 25 мин без обмена"}}
-				app.updatePanel()
-				if p := app.Panel(); p != nil {
-					checkLayout(t, "panel "+tag, p.hwnd)
-				} else {
-					t.Error("panel")
-				}
-				ab, err := newAboutWindow(0, trayui.AboutTitle(lang), trayui.AboutText(app.session.Status(), lang),
-					i18n.T(i18n.KeyAboutOK, lang), "", false, nil)
-				if err == nil {
-					checkLayout(t, "about "+tag, ab)
-					winapi.DestroyWindow(ab)
-				}
-			}()
-			func() {
-				ws := newWizService()
-				app := startCfgApp(t, ws.cfgService, true, nil)
-				defer app.Exit()
-				app.opt.Lang = lang
-				w := openAdmin(t, app)
-				w.click(t, idSetAdd)
-				if w.wiz == nil {
-					t.Fatal("wizard not opened")
-				}
-				checkLayout(t, "wizard "+tag, w.wiz.hwnd)
-			}()
-			aw, err := newAlertWindow(0, lang, nil, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			checkLayout(t, "alert "+tag, aw.hwnd)
-			winapi.DestroyWindow(aw.hwnd)
-			st, err := newStatusWindow(lang, false, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			checkLayout(t, "status "+tag, st.hwnd)
-			winapi.DestroyWindow(st.hwnd)
+			uiScenes(t, lang, func(name string, hwnd uintptr) { checkLayout(t, name+" "+tag, hwnd) })
 		}
 	}
 }
@@ -307,4 +278,223 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 		}
 		w.close()
 	}
+}
+
+// uiScenes opens every tray window (settings expert / general / simple /
+// read-only, import, discovery, sound, history, volume, panel, about, wizard,
+// alert, status, summary, alarm_test) in lang and visits it (layout test,
+// CI screenshots). Summary / alarm_test use demo data under mock caps
+// CapSummary / CapAlarmTest (CHK-TRAY-54).
+func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
+	t.Helper()
+	done, ok := useComCtl6()
+	defer done()
+	if !ok {
+		t.Log("Common Controls 6 activation context not available: cues are not drawn")
+	}
+	func() { // import dialog after a dry run (phase 11)
+		e := newXferEnv(t, lang)
+		writeImportFile(t, e.path, &traysettings.TrayBlock{Language: "ru"}, e.x.profiles[0])
+		e.w.click(t, idSetImport)
+		d := e.w.imp
+		if d == nil {
+			t.Fatalf("import dialog: %q", e.w.statusText())
+		}
+		pumpUntil(t, "dry run", func() bool { return d.res != nil })
+		visit("import", d.hwnd)
+		d.close()
+		e.w.close()
+	}()
+	func() {
+		ds := newDiscService()
+		app := startCfgApp(t, ds.cfgService, true, nil)
+		defer app.Exit()
+		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer w.close()
+		w.Reload()
+		pumpUntil(t, "loaded", func() bool { return !w.busy && w.ed.HasProfile() })
+		visit("settings expert", w.hwnd)
+		dd := openDisc(t, w)
+		visit("discovery", dd.hwnd)
+		dd.close()
+		w.setPage(1)
+		visit("settings general", w.hwnd)
+		w.setPage(0)
+		w.toggleUIMode()
+		visit("settings simple", w.hwnd)
+
+		ro, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.ReadOnly, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert, elevator: &fakeElevator{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		visit("settings read-only", ro.hwnd)
+		ro.close()
+
+		app.opt.Lang = lang
+		sw, err := newSoundWindow(app)
+		if err != nil {
+			t.Fatal(err)
+		}
+		visit("sound", sw.hwnd)
+		winapi.DestroyWindow(sw.hwnd)
+		hw, err := newHistWindow(app, trayui.StatusRow{Database: "db1", Point: "ЦБ"}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		visit("history", hw.hwnd)
+		winapi.DestroyWindow(hw.hwnd)
+		app.opt.HiddenPanel = true
+		if v := app.OpenVolume(); v != nil {
+			visit("volume", v.hwnd)
+			winapi.DestroyWindow(v.hwnd)
+		} else {
+			t.Error("volume window")
+		}
+		app.problems = []trayalert.Problem{{Kind: trayalert.ProblemError, Text: "Склад / Exchange — ЦБ: 45 мин без обмена"},
+			{Kind: trayalert.ProblemNoConnection, Text: "Магазин 12: нет подключения к SQL Server"},
+			{Kind: trayalert.ProblemWarning, Text: "Офис — Розница: 25 мин без обмена"}}
+		app.updatePanel()
+		if p := app.Panel(); p != nil {
+			visit("panel", p.hwnd)
+		} else {
+			t.Error("panel")
+		}
+		ab, err := newAboutWindow(0, trayui.AboutTitle(lang), trayui.AboutText(app.session.Status(), lang),
+			i18n.T(i18n.KeyAboutOK, lang), "", false, nil)
+		if err == nil {
+			visit("about", ab)
+			winapi.DestroyWindow(ab)
+		}
+	}()
+	func() {
+		ws := newWizService()
+		app := startCfgApp(t, ws.cfgService, true, nil)
+		defer app.Exit()
+		app.opt.Lang = lang
+		w := openAdmin(t, app)
+		w.click(t, idSetAdd)
+		if w.wiz == nil {
+			t.Fatal("wizard not opened")
+		}
+		// phase 11 (CHK-TRAY-48): demo data in the lists for the screenshots
+		wd := w.wiz
+		fill := func(id int32, lines []string) {
+			lb := wd.ctl[id]
+			winapi.SendMessage(lb, winapi.LB_RESETCONTENT, 0, 0)
+			for _, l := range lines {
+				winapi.SendMessageString(lb, winapi.LB_ADDSTRING, 0, l)
+			}
+		}
+		wd.z.Instances = []model.SQLServerInstance{{Host: "SRV-1C", Address: "10.0.0.5", Instance: "MSSQLSERVER", Version: "15.0.2000.5", TCPPort: 1433},
+			{Host: "SRV-1C", Address: "10.0.0.5", Instance: "SQL2019", Version: "15.0.2000.5", TCPPort: 49712}}
+		var inst []string
+		for _, in := range wd.z.Instances {
+			inst = append(inst, traysettings.InstanceLine(in))
+		}
+		fill(idWizInstances, inst)
+		visit("wizard", w.wiz.hwnd)
+		// phase 11: steps 2 and 3 too
+		wd.z.Server, wd.z.Login = "srv", "mon"
+		wd.z.Databases = []model.SQLDatabaseInfo{{Name: "ut", Is1C: true, HasNodeTables: true, Probed: true, SizeMB: 48210},
+			{Name: "retail", Is1C: true, HasNodeTables: true, Probed: true, SizeMB: 12544},
+			{Name: "zup", Is1C: true, Probed: true, SizeMB: 6120}, {Name: "reports", Probed: true, SizeMB: 830}}
+		wd.z.PickDatabase(0)
+		wd.z.Step = traysettings.WizDatabase
+		wd.show()
+		var dbs []string
+		for _, d := range wd.z.Databases {
+			dbs = append(dbs, wd.z.DatabaseLine(d))
+		}
+		fill(idWizDBs, dbs)
+		visit("wizard step2", wd.hwnd)
+		wd.z.Step = traysettings.WizFinish
+		wd.show()
+		wd.z.Candidates = []model.DiscoveryCandidate{
+			{Mode: model.CandidateSingle, Schema: "dbo", Table: "_Node123", PointCol: "_Description", SendCol: "_Fld456", RecvCol: "_Fld457"},
+			{Mode: model.CandidateLinked, Schema: "dbo", Table: "_Node124", PointCol: "_Description", PointKeyCol: "_IDRRef",
+				TimesSchema: "dbo", TimesTable: "_InfoRg789", LinkCol: "_Fld790RRef", SendCol: "_Fld791", RecvCol: "_Fld792"},
+		}
+		var cands []string
+		for i := range wd.z.Candidates {
+			cands = append(cands, wd.z.CandidateLine(i))
+		}
+		fill(idWizCands, cands)
+		visit("wizard step3", wd.hwnd)
+	}()
+	func() { // phase 11: the Viber page
+		svc := newViberCfg()
+		app := startCfgApp(t, svc.cfgService, true, nil)
+		defer app.Exit()
+		vw, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+			uiMode: traysettings.UIExpert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer vw.close()
+		vw.Reload()
+		pumpUntil(t, "loaded", func() bool { return !vw.busy && vw.ed.HasViber })
+		vw.setPage(pageViber)
+		visit("settings viber", vw.hwnd)
+	}()
+	aw, err := newAlertWindow(0, lang, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aw.apply(sampleAlert(lang), false) // a sample alert: text and status filled
+	visit("alert", aw.hwnd)
+	winapi.DestroyWindow(aw.hwnd)
+	st, err := newStatusWindow(lang, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.now = func() time.Time { return sampleNow }
+	st.update(sampleDemoStatus(), true) // phase 11: 14 databases, «Ещё баз: N» (CHK-TRAY-48/49)
+	visit("status", st.hwnd)
+	winapi.ListViewSelect(st.list, 1) // phase 11 (CHK-TRAY-49): a selected row
+	st.updateHistoryButton()
+	visit("status selected", st.hwnd)
+	winapi.DestroyWindow(st.hwnd)
+
+	// CHK-TRAY-54: summary + alarm_test under mock CapSummary / CapAlarmTest
+	func() {
+		sw, err := createSummary(nil, lang, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sw.apply(sampleSummary())
+		visit("summary", sw.hwnd)
+		winapi.DestroyWindow(sw.hwnd)
+	}()
+	func() {
+		aw, err := createAlarmTest(nil, lang)
+		if err != nil {
+			t.Fatal(err)
+		}
+		aw.setResult(formatAlarmViber(&model.AlarmTestResult{OK: true, Viber: &model.AlarmTestViber{
+			ViberTestResult: model.ViberTestResult{OK: true, Results: []model.ViberTestItem{
+				{ID: "u1", OK: true}, {ID: "u2", OK: true},
+			}},
+		}}, lang))
+		visit("alarm_test", aw.hwnd)
+		winapi.DestroyWindow(aw.hwnd)
+	}()
+}
+
+// sampleAlert is an alert view for the layout test and the screenshots.
+func sampleAlert(lang string) trayalert.View {
+	msg := "Служба: подтверждение отправлено"
+	if lang == i18n.EN {
+		msg = "Service: acknowledgement sent"
+	}
+	at := time.Date(2026, 10, 20, 9, 30, 0, 0, time.FixedZone("UTC+3", 3*3600))
+	return trayalert.View{Visible: true, Level: model.LevelError, CanAck: true, Message: msg,
+		Alerts: []model.AlertEvent{
+			{ID: 1, ProfileID: "p1", ProfileName: "Склад", PointName: "ЦБ", PlanTable: "_Node123", From: model.LevelWarning, To: model.LevelError, At: at, FreshAt: &at, LagMinutes: 45},
+			{ID: 2, ProfileID: "p2", ProfileName: "Магазин 12", From: model.LevelOK, To: model.LevelError, At: at},
+		}}
 }

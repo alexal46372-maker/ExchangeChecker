@@ -179,6 +179,7 @@ type App struct {
 	catchUps     int
 	caughtUp     []model.AlertEvent
 	histWin      *histWindow
+	summaryWin   *summaryWindow // CHK-TRAY-53
 }
 
 // NewApp creates the hidden owner window, the tray icon and starts the
@@ -396,6 +397,9 @@ func (a *App) Exit() {
 	if a.histWin != nil && a.histWin.alive() {
 		winapi.DestroyWindow(a.histWin.hwnd) // cancels its history request
 	}
+	if a.summaryWin != nil && winapi.IsWindow(a.summaryWin.hwnd) {
+		winapi.DestroyWindow(a.summaryWin.hwnd)
+	}
 	if a.dueTimer != nil {
 		a.dueTimer.Stop()
 	}
@@ -475,6 +479,9 @@ func (a *App) drain() {
 				a.alerts.Repeat(r.ProfileID)
 			}
 		}
+		if e.Kind == trayipc.EventAlert && e.Alert != nil && e.Alert.Test {
+			a.applyAlert(a.alerts.PushTest(*e.Alert))
+		}
 	}
 	a.statusExt = trayalert.ExtOf(a.status)
 	a.applyAlert(a.alerts.Update(a.status, a.session.Supported(model.CmdAckAlert)))
@@ -517,6 +524,7 @@ func (a *App) RightMenu() []trayui.Item {
 	// phase 9a items before the separator above «Выход»
 	ext := trayui.Phase9Items(a.opt.Lang, a.balloonsOn, a.connected() && !a.check.Busy)
 	ext = append(ext, trayui.Phase10Items(a.opt.Lang)...)
+	ext = append(ext, trayui.Phase11Items(a.opt.Lang, a.session != nil && (a.session.Supported(model.CmdSummary) || a.session.Status().Has(model.CapSummary)))...)
 	at := len(m) - 2
 	out := append(append(append([]trayui.Item(nil), m[:at]...), ext...), m[at:]...)
 	return out
@@ -547,6 +555,8 @@ func (a *App) Command(cmd int) {
 		a.SetLanguage(trayui.LangCommands[cmd])
 	case trayui.CmdSvcStart, trayui.CmdSvcStop:
 		a.serviceCommand(cmd == trayui.CmdSvcStart)
+	case trayui.CmdSummary:
+		a.openSummary()
 	case trayui.CmdStatusWin:
 		a.OpenStatus()
 	case trayui.CmdCheckNow:

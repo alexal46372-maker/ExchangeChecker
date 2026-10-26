@@ -2,7 +2,10 @@
 
 package wintray
 
-import "github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+import (
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+)
 
 // fitRect places a window of the outer size w×h in the work area: centered
 // horizontally, at a third from the top, never larger than the work area
@@ -88,8 +91,8 @@ func pxRect(x, y, w, h int32) (int32, int32, int32, int32) {
 
 // uiFontFace / uiFontPt: the font of every tray window.
 const (
-	uiFontFace = "Segoe UI"
-	uiFontPt   = 9
+	uiFontFace = trayui.FontFace
+	uiFontPt   = trayui.FontPt
 )
 
 // uiFont is Segoe UI 9 for the current DPI (cached per DPI, kept for the
@@ -123,4 +126,18 @@ const (
 // groupBox is a BS_GROUPBOX frame on the grid (caption text).
 func groupBox(parent uintptr, text string, x, y, w, h int32) uintptr {
 	return child(parent, "BUTTON", text, winapi.BS_GROUPBOX, -1, x, y, w, h)
+}
+
+// unpx converts pixels back to 96-dpi units, rounding up (a box of
+// unpx(p) units is at least p pixels).
+func unpx(p int32) int32 {
+	d := int64(uiDPI())
+	return int32((int64(p)*96 + d - 1) / d)
+}
+
+func max32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
 }

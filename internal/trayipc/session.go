@@ -121,6 +121,11 @@ const (
 	// alert_repeat; push only, never in events_since). Alert carries the
 	// repeat (Kind alert_repeat, RepeatOf, Level, CheckSeq, Acknowledged).
 	EventAlertRepeat
+	// EventBrowseProgress / EventTestStepProgress: flat progress pushes of
+	// sql_browse / sql_test_steps (phase 11, CHK-TRAY-52); Message carries
+	// Ref + BrowseProgress / TestStep.
+	EventBrowseProgress
+	EventTestStepProgress
 )
 
 // Event is delivered to Options.OnEvent.
@@ -128,6 +133,8 @@ type Event struct {
 	Kind   EventKind
 	Status Status
 	Alert  *model.AlertEvent
+	// Message: progress push (BrowseProgress / TestStep); nil otherwise.
+	Message *model.IPCMessage
 }
 
 // Dialer opens a connection to the service.
@@ -177,6 +184,11 @@ type Session struct {
 	evCond *sync.Cond
 	events []Event
 	closed bool
+
+	// progress: UI callback for in-flight sql_browse / sql_test_steps
+	// (CHK-TRAY-52); called from onPush on the reader path — must not block.
+	progMu   sync.Mutex
+	progress func(model.IPCMessage)
 }
 
 // New returns a session; call Run to connect.
@@ -254,6 +266,16 @@ var commandCapability = map[string]string{
 	model.CmdHistory:     model.CapHistory,
 	model.CmdCheckNow:    model.CapCheckNow,
 	model.CmdEventsSince: model.CapEventsSince,
+	// phase 11 wizard (CHK-TRAY-52 / CHK-IPC-12/13)
+	model.CmdSQLBrowse:    model.CapSQLBrowse,
+	model.CmdSQLDatabases: model.CapSQLDatabases,
+	model.CmdSQLDiagnose:  model.CapSQLDiagnose,
+	model.CmdSQLGrantScript: model.CapSQLGrantScript,
+	model.CmdSQLTestSteps: model.CapTestSteps,
+	// phase 11 (CHK-TRAY-53)
+	model.CmdAlarmTest:   model.CapAlarmTest,
+	model.CmdSummary:     model.CapSummary,
+	model.CmdClientHello: model.CapClientHello,
 }
 
 var v1Commands = map[string]bool{
@@ -388,6 +410,14 @@ func (s *Session) DoCancel(ctx context.Context, req model.IPCRequest) (model.IPC
 	return m, err
 }
 
+// SetProgress registers fn for sql_browse_progress / sql_test_steps_progress
+// pushes (CHK-TRAY-52). fn must not block (post to the UI thread). nil clears.
+func (s *Session) SetProgress(fn func(model.IPCMessage)) {
+	s.progMu.Lock()
+	s.progress = fn
+	s.progMu.Unlock()
+}
+
 // Run connects and keeps the session alive until ctx is done.
 func (s *Session) Run(ctx context.Context) {
 	done := make(chan struct{})
@@ -492,6 +522,7 @@ func (s *Session) connectOnce(ctx context.Context) bool {
 		return false
 	}
 	s.onHello(c, h)
+	s.sendClientHello(ctx, c)
 
 	// snapshot right after hello
 	if !s.refreshStatus(ctx, c) {
@@ -509,6 +540,20 @@ func (s *Session) connectOnce(ctx context.Context) bool {
 				return true
 			}
 		}
+	}
+}
+
+// sendClientHello declares tray capabilities (alarm_test) so the service
+// can push test alerts only to us (CHK-TRAY-53 / CHK-IPC-11). Skipped on
+// version 1 or when the service has no client_hello / alarm_test.
+func (s *Session) sendClientHello(ctx context.Context, c *ipc.Client) {
+	st := s.Status()
+	if st.Version < 2 || !(st.Has(model.CapClientHello) || st.Has(model.CapAlarmTest)) {
+		return
+	}
+	m, err := c.Do(ctx, model.IPCRequest{Cmd: model.CmdClientHello, Capabilities: []string{model.ClientCapAlarmTest, model.CapSummary, model.CapAckEvent}})
+	if err != nil || m.Type == model.MsgError {
+		return // older service / unknown_command: stay silent
 	}
 }
 
@@ -641,6 +686,19 @@ func (s *Session) onPush(m model.IPCMessage) {
 			a := *m.Alert
 			s.emit(Event{Kind: EventAlertRepeat, Status: st, Alert: &a})
 		}
+	case model.MsgSQLBrowseProgress, model.MsgSQLTestStepsProgress:
+		s.progMu.Lock()
+		cb := s.progress
+		s.progMu.Unlock()
+		if cb != nil {
+			cb(m)
+		}
+		cp := m
+		kind := EventBrowseProgress
+		if m.Type == model.MsgSQLTestStepsProgress {
+			kind = EventTestStepProgress
+		}
+		s.emit(Event{Kind: kind, Status: s.Status(), Message: &cp})
 	}
 }
 

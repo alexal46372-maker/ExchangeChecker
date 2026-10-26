@@ -19,14 +19,15 @@ const (
 	FieldWarnDur      Field = "beep.warningDurMs"
 	FieldErrorFreq    Field = "beep.errorFreqHz"
 	FieldErrorDur     Field = "beep.errorDurMs"
-	FieldGap          Field = "beep.gapMs"
-	FieldLanguage     Field = "language"
-	FieldAutostart    Field = "trayAutostart"
+	FieldGap             Field = "beep.gapMs"
+	FieldStalledMinutes  Field = "stalledMinutes"
+	FieldLanguage        Field = "language"
+	FieldAutostart       Field = "trayAutostart"
 )
 
 // GeneralFields are the fields of the general settings page.
 var GeneralFields = []Field{FieldPollInterval, FieldWarnMinutes, FieldErrorMinutes, FieldBeepEnabled, FieldWarnFreq,
-	FieldWarnDur, FieldErrorFreq, FieldErrorDur, FieldGap, FieldLanguage, FieldAutostart}
+	FieldWarnDur, FieldErrorFreq, FieldErrorDur, FieldGap, FieldStalledMinutes, FieldLanguage, FieldAutostart}
 
 // IsGeneral tells whether f is on the general settings page.
 func IsGeneral(f Field) bool {
@@ -58,7 +59,7 @@ func LanguageIndex(lang string) int {
 type GeneralForm struct {
 	PollSec, WarnMin, ErrorMin             string
 	WarnFreq, WarnDur, ErrorFreq, ErrorDur string
-	Gap                                    string
+	Gap, StalledMin                        string
 	BeepEnabled                            bool
 	Language                               string
 	Autostart                              bool
@@ -67,12 +68,16 @@ type GeneralForm struct {
 // FromSettings fills the general page from settings.
 func FromSettings(s model.Settings) GeneralForm {
 	it := strconv.Itoa
-	return GeneralForm{
+	g := GeneralForm{
 		PollSec: it(s.PollIntervalSec), WarnMin: it(s.WarnMinutes), ErrorMin: it(s.ErrorMinutes),
 		WarnFreq: it(s.Beep.WarningFreqHz), WarnDur: it(s.Beep.WarningDurMs),
 		ErrorFreq: it(s.Beep.ErrorFreqHz), ErrorDur: it(s.Beep.ErrorDurMs), Gap: it(s.Beep.GapMs),
 		BeepEnabled: s.Beep.BeepEnabled(), Language: s.Language, Autostart: s.TrayAutostart,
 	}
+	if s.StalledMinutes != nil {
+		g.StalledMin = it(*s.StalledMinutes)
+	}
+	return g
 }
 
 // Apply returns base with the page applied and validated (model rules);
@@ -102,6 +107,17 @@ func (g GeneralForm) Apply(base model.Settings) (model.Settings, *model.FieldErr
 			return s, fieldErr(string(n.f), model.ValRange, strconv.Itoa(n.min), strconv.Itoa(n.max), t)
 		}
 		*n.dst = v
+	}
+	// stalledMinutes: empty = absent (default 120), 0 = off, else 10..1440
+	if st := strings.TrimSpace(g.StalledMin); st == "" {
+		s.StalledMinutes = nil
+	} else {
+		v, err := strconv.Atoi(st)
+		if err != nil || !(v == 0 || (v >= model.MinStalledMinutes && v <= model.MaxStalledMinutes)) {
+			return s, fieldErr(string(FieldStalledMinutes), model.ValRange,
+				strconv.Itoa(model.MinStalledMinutes), strconv.Itoa(model.MaxStalledMinutes), st)
+		}
+		s.StalledMinutes = &v
 	}
 	s.Beep.Enabled = model.OptFalse
 	if g.BeepEnabled {

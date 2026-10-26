@@ -9,6 +9,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // Phase 10 D4 (CHK-TRAY-43, PLAN §12 p.123): the «Уведомления Viber»
@@ -19,6 +20,7 @@ import (
 const (
 	idVbBase = 600 + iota
 	idSetViber
+	idSetNavProfiles // navigation: «Базы данных» (phase 11)
 	idVbEnabled
 	idVbToken
 	idVbClearToken
@@ -83,70 +85,77 @@ func (w *settingsWindow) viberAvailable() bool {
 }
 
 // buildViber creates page 2 (hidden) and the button opening it.
-func (w *settingsWindow) buildViber() {
-	const (
-		lx, lw = 230, 130
-		cx, cw = 365, 390
-		rh     = gridRow
-	)
+func (w *settingsWindow) buildViber() (page ui.Node) {
+	// phase 11 (CHK-TRAY-45): laid out by the framework (layoutPages)
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
-	w.cur = nil
-	w.add("BUTTON", w.t(i18n.KeyVbPage), 0, winapi.WS_TABSTOP, idSetViber, 12, 504, 205, 26)
-	w.cur = &w.pageCtl[pageViber]
-	w.groups[i18n.KeyVbGroup] = w.add("BUTTON", w.t(i18n.KeyVbGroup), 0, winapi.BS_GROUPBOX, 0, lx-8, 4, 540, 580)
-	row := int32(24)
-	label := func(key string, id int32, x, y, width int32) {
-		w.labels[id] = w.add("STATIC", w.t(key), 0, winapi.SS_LEFT, 0, x, y+3, width, gridLabelH)
+	add := func(class, text string, ex, style uint32, id int32, kind ui.Kind, wd, hg int32) *ui.Ctl {
+		c := uiCtl(w.add(class, text, ex, style, id, 0, 0, 0, 0), kind, text)
+		c.W, c.Hgt = wd, hg
+		return c
+	}
+	label := func(key string, id int32) *ui.Ctl {
+		h := w.add("STATIC", w.t(key), 0, winapi.SS_LEFT, 0, 0, 0, 0, 0)
+		w.labels[id] = h
 		w.labelText[id] = w.t(key)
+		return uiCtl(h, ui.Label, w.t(key))
 	}
-	check := func(key string, id, x, y, width int32) {
-		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, id, x, y, width, gridCheckH)
+	check := func(key string, id int32) *ui.Ctl {
+		return add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, id, ui.Check, 0, 0)
 	}
-	check(i18n.KeyVbEnabled, idVbEnabled, lx, row, cx+cw-lx)
-	row += gridCheckH + 6
-	label(i18n.KeyVbToken, idVbToken, lx, row, lw)
-	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idVbToken, cx, row, cw, gridEditH)
-	row += rh
-	w.add("STATIC", "", 0, winapi.SS_LEFT, idVbTokenState, cx, row+2, cw, gridLabelH)
-	row += rh
-	check(i18n.KeyVbClearToken, idVbClearToken, cx, row, cw)
-	row += rh
-	label(i18n.KeyVbRecipients, idVbRecipients, lx, row, cx+cw-lx)
-	row += gridLabelH + 4
-	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL|winapi.ES_WANTRETURN,
-		idVbRecipients, lx, row, cx+cw-lx, 120)
-	row += 128
-	label(i18n.KeyVbDays, idVbDay1, lx, row, lw)
+	w.cur = &w.pageCtl[pageViber]
+	box := add("BUTTON", w.t(i18n.KeyVbGroup), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
+	w.groups[i18n.KeyVbGroup] = box.H
+	enabled := check(i18n.KeyVbEnabled, idVbEnabled)
+	tokenL := label(i18n.KeyVbToken, idVbToken)
+	token := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idVbToken, ui.Edit, 390, 0)
+	tokenState := add("STATIC", "", 0, winapi.SS_LEFT, idVbTokenState, ui.Box, 200, 18)
+	clear := check(i18n.KeyVbClearToken, idVbClearToken)
+	recL := label(i18n.KeyVbRecipients, idVbRecipients)
+	rec := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL|winapi.ES_WANTRETURN,
+		idVbRecipients, ui.Box, 525, 120)
+	rec.Grow = true
+	daysL := label(i18n.KeyVbDays, idVbDay1)
+	var days []ui.Node
 	for i := int32(0); i < 7; i++ {
-		check(vbDayKeys[i], idVbDay1+i, cx+i*55, row+2, 52)
+		days = append(days, check(vbDayKeys[i], idVbDay1+i))
 	}
-	row += rh
-	label(i18n.KeyVbFrom, idVbFrom, lx, row, lw)
-	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idVbFrom, cx, row, 60, gridEditH)
-	label(i18n.KeyVbTo, idVbTo, cx+70, row, 40)
-	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idVbTo, cx+115, row, 60, gridEditH)
-	row += rh + 4
-	label(i18n.KeyVbEvents, idVbEv1, lx, row, lw)
+	fromL := label(i18n.KeyVbFrom, idVbFrom)
+	from := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idVbFrom, ui.Edit, 60, 0)
+	toL := label(i18n.KeyVbTo, idVbTo)
+	to := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idVbTo, ui.Edit, 60, 0)
+	evL := label(i18n.KeyVbEvents, idVbEv1)
+	var ev [4]ui.Node
 	for i := int32(0); i < 4; i++ {
-		check(vbEventKeys[i], idVbEv1+i, cx+(i%2)*195, row+2+(i/2)*(gridCheckH+4), 190)
+		ev[i] = check(vbEventKeys[i], idVbEv1+i)
 	}
-	row += 2*(gridCheckH+4) + 6
-	label(i18n.KeyVbReminder, idVbReminder, lx, row, lw)
-	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idVbReminder, cx, row, 60, gridEditH)
-	w.add("STATIC", w.t(i18n.KeyVbReminderHint), 0, winapi.SS_LEFT, idVbReminderHint, cx+70, row+3, cw-70, gridLabelH)
-	row += rh + 8
-	label(i18n.KeyVbTestTo, idVbTestTo, lx, row, lw)
-	w.add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idVbTestTo, cx, row, 270, 200)
-	w.add("BUTTON", w.t(i18n.KeyVbTest), 0, winapi.WS_TABSTOP, idVbTest, cx+280, row-1, 110, 26)
-	row += rh + 8
-	w.add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, lx, row, cx+cw-lx, 64)
-	row += 70
-	w.add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, lx, row, cx+cw-lx, 54)
+	remL := label(i18n.KeyVbReminder, idVbReminder)
+	rem := add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idVbReminder, ui.Edit, 60, 0)
+	remHint := add("STATIC", w.t(i18n.KeyVbReminderHint), 0, winapi.SS_LEFT, idVbReminderHint, ui.Label, 0, 0)
+	testL := label(i18n.KeyVbTestTo, idVbTestTo)
+	testTo := add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.CBS_DROPDOWNLIST, idVbTestTo, ui.Combo, 270, 0)
+	test := add("BUTTON", w.t(i18n.KeyVbTest), 0, winapi.WS_TABSTOP, idVbTest, ui.Button, 110, 0)
+	result := add("STATIC", "", 0, winapi.SS_LEFT, idVbResult, ui.Box, 300, 64)
+	status := add("STATIC", "", 0, winapi.SS_LEFT, idVbStatus, ui.Box, 300, 54)
+	result.Grow, status.Grow = true, true
+	// phase 11 (CHK-TRAY-48): as high as their text (no gap after «Тест»)
+	w.wrap = append(w.wrap, result, status)
 	w.cur = nil
+	tokenG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: tokenL, Field: token}, {Field: tokenState}, {Field: clear}}}
+	mainG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
+		{Label: daysL, Field: &ui.Col{Gap: ui.P4, Items: []ui.Node{&ui.Row{Gap: ui.P4, Items: days[:4]}, &ui.Row{Gap: ui.P4, Items: days[4:]}}}},
+		{Label: fromL, Field: &ui.Row{Items: []ui.Node{from, toL, to}}},
+		{Label: evL, Field: &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Label: nil, Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[0], ev[1]}}},
+			{Field: &ui.Row{Gap: ui.P8, Items: []ui.Node{ev[2], ev[3]}}}}}},
+		{Label: remL, Field: &ui.Col{Gap: 2, Items: []ui.Node{rem, remHint}}},
+		{Label: testL, Field: &ui.Row{Items: []ui.Node{testTo, test}}},
+	}}
+	// phase 11 (CHK-TRAY-48): one field column for the whole page
+	ui.Share(tokenG, mainG)
+	page = &ui.GroupBox{Box: box, Child: &ui.Col{Items: []ui.Node{enabled, tokenG, recL, rec, mainG, result, status}}}
 	for _, h := range w.pageCtl[pageViber] {
 		winapi.ShowWindow(h, winapi.SW_HIDE)
 	}
-	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE)
+	return page
 }
 
 // fillViber shows the editor's page state.
@@ -250,9 +259,11 @@ func (w *settingsWindow) updateViber() {
 		if avail {
 			cmd = winapi.SW_SHOW
 		}
-		winapi.ShowWindow(b, cmd)
+		w.show(b, cmd == winapi.SW_SHOW)
+		w.relayoutAll()
 	}
-	winapi.EnableWindow(w.ctl[idSetViber], avail && w.page != pageViber)
+	winapi.EnableWindow(w.ctl[idSetViber], avail)
+	w.markNav()
 	can := w.ed.CanEditViber()
 	for _, id := range []int32{idVbToken, idVbRecipients, idVbFrom, idVbTo, idVbReminder} {
 		winapi.SendMessage(w.ctl[id], winapi.EM_SETREADONLY, boolPtr(!can), 0)
@@ -274,6 +285,7 @@ func (w *settingsWindow) updateViber() {
 	}
 	if t := w.viberStatusText(); w.text(idVbStatus) != t {
 		winapi.SetWindowText(w.ctl[idVbStatus], t)
+		w.relayoutAll()
 	}
 }
 
@@ -331,6 +343,7 @@ func (w *settingsWindow) testViber() {
 	}
 	w.vbTesting = &req
 	winapi.SetWindowText(w.ctl[idVbResult], w.t(i18n.KeyVbTesting))
+	w.relayoutAll()
 	w.call(req, func(m model.IPCMessage, err error) {
 		w.vbTesting = nil
 		var t string
@@ -347,6 +360,7 @@ func (w *settingsWindow) testViber() {
 			t = w.ed.ViberTestText(m.ViberTest)
 		}
 		winapi.SetWindowText(w.ctl[idVbResult], strings.TrimSpace(t))
+		w.relayoutAll()
 		w.update()
 	})
 }

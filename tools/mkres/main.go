@@ -22,12 +22,31 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/alert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/version"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winres"
 )
+
+// IconDir holds the generated .ico files of the tray (phase 11, PLAN §12
+// p.144, CHK-TRAY-49), embedded by internal/wintray.
+const IconDir = "internal/wintray/icons"
+
+// icons returns the generated .ico files by path relative to the root.
+func icons() (map[string][]byte, error) {
+	out := map[string][]byte{}
+	for _, n := range trayui.IconNames() {
+		b, err := trayui.IconICO(n)
+		if err != nil {
+			return nil, err
+		}
+		out[IconDir+"/"+n+".ico"] = b
+	}
+	return out, nil
+}
 
 // SysoName is the object the Go linker picks up for windows/amd64 only.
 const SysoName = "rsrc_windows_amd64.syso"
@@ -152,7 +171,42 @@ func main() {
 		}
 		fmt.Printf("mkres: %s (%d bytes, version %s)\n", path, len(out), *ver)
 	}
+	ics, err := icons()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mkres: icons: %v\n", err)
+		os.Exit(2)
+	}
+	if !*check {
+		if err := os.MkdirAll(filepath.Join(*root, filepath.FromSlash(IconDir)), 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "mkres: %v\n", err)
+			os.Exit(2)
+		}
+	}
+	for _, rel := range sortedKeys(ics) {
+		path := filepath.Join(*root, filepath.FromSlash(rel))
+		if *check {
+			if old, err := os.ReadFile(path); err != nil || !bytes.Equal(old, ics[rel]) {
+				fmt.Fprintf(os.Stderr, "mkres: %s is stale (run go run ./tools/mkres)\n", path)
+				stale = true
+			}
+			continue
+		}
+		if err := os.WriteFile(path, ics[rel], 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "mkres: %v\n", err)
+			os.Exit(2)
+		}
+		fmt.Printf("mkres: %s (%d bytes)\n", path, len(ics[rel]))
+	}
 	if stale {
 		os.Exit(1)
 	}
+}
+
+func sortedKeys(m map[string][]byte) []string {
+	var k []string
+	for s := range m {
+		k = append(k, s)
+	}
+	sort.Strings(k)
+	return k
 }

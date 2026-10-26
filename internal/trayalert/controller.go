@@ -60,6 +60,7 @@ type Controller struct {
 	lang      string
 	connected bool
 	ackable   bool // service supports ack_alert
+	ackByEvent bool // capability ack_event: ack by eventId
 	settings  *model.Settings
 
 	shown map[ID]model.AlertEvent // unacknowledged active alerts shown
@@ -94,6 +95,13 @@ func New(lang string) *Controller {
 func (c *Controller) Update(st trayipc.Status, ackable bool) View {
 	c.connected = st.State == trayipc.StateConnected
 	c.ackable = ackable
+	c.ackByEvent = false
+	for _, cap := range st.Capabilities {
+		if cap == model.CapAckEvent {
+			c.ackByEvent = true
+			break
+		}
+	}
 	snap := st.Snapshot
 	if !c.connected || snap == nil {
 		return c.View()
@@ -107,8 +115,8 @@ func (c *Controller) Update(st trayipc.Status, ackable bool) View {
 	}
 	cur := map[ID]model.AlertEvent{}
 	for _, a := range snap.Alerts {
-		if a.To <= model.LevelOK {
-			continue
+		if a.To <= model.LevelOK || a.Test {
+			continue // test alarms are push-only, not in status problems
 		}
 		id := idOf(a)
 		m, ours := c.acked[id]
@@ -184,37 +192,56 @@ func (c *Controller) BeginAck() []AckRequest {
 	if !c.canAck() || len(c.shown) == 0 {
 		return nil
 	}
-	whole := map[string]bool{}
-	for id := range c.shown {
-		if id.Key == "" {
-			whole[id.ProfileID] = true
-		}
-	}
-	byProfile := map[string]*AckRequest{}
 	var reqs []AckRequest
-	var points []AckRequest
-	for _, a := range c.sorted() {
-		id := idOf(a)
-		if whole[id.ProfileID] {
-			r := byProfile[id.ProfileID]
-			if r == nil {
-				r = &AckRequest{Req: model.IPCRequest{Cmd: model.CmdAckAlert, ProfileID: id.ProfileID}}
-				byProfile[id.ProfileID] = r
+	if c.ackByEvent {
+		for _, a := range c.sorted() {
+			if a.Test {
+				continue
 			}
-			r.IDs = append(r.IDs, id)
-			continue
+			eid := a.EventID
+			if eid == 0 {
+				eid = a.ID
+			}
+			if eid == 0 {
+				continue
+			}
+			reqs = append(reqs, AckRequest{Req: model.IPCRequest{Cmd: model.CmdAckAlert, EventID: eid}, IDs: []ID{idOf(a)}})
 		}
-		points = append(points, AckRequest{Req: model.IPCRequest{Cmd: model.CmdAckAlert, ProfileID: id.ProfileID, PointKey: id.Key}, IDs: []ID{id}})
+	} else {
+		whole := map[string]bool{}
+		for id := range c.shown {
+			if id.Key == "" {
+				whole[id.ProfileID] = true
+			}
+		}
+		byProfile := map[string]*AckRequest{}
+		var points []AckRequest
+		for _, a := range c.sorted() {
+			id := idOf(a)
+			if whole[id.ProfileID] {
+				r := byProfile[id.ProfileID]
+				if r == nil {
+					r = &AckRequest{Req: model.IPCRequest{Cmd: model.CmdAckAlert, ProfileID: id.ProfileID}}
+					byProfile[id.ProfileID] = r
+				}
+				r.IDs = append(r.IDs, id)
+				continue
+			}
+			points = append(points, AckRequest{Req: model.IPCRequest{Cmd: model.CmdAckAlert, ProfileID: id.ProfileID, PointKey: id.Key}, IDs: []ID{id}})
+		}
+		ps := make([]string, 0, len(byProfile))
+		for p := range byProfile {
+			ps = append(ps, p)
+		}
+		sort.Strings(ps)
+		for _, p := range ps {
+			reqs = append(reqs, *byProfile[p])
+		}
+		reqs = append(reqs, points...)
 	}
-	ps := make([]string, 0, len(byProfile))
-	for p := range byProfile {
-		ps = append(ps, p)
+	if len(reqs) == 0 {
+		return nil
 	}
-	sort.Strings(ps)
-	for _, p := range ps {
-		reqs = append(reqs, *byProfile[p])
-	}
-	reqs = append(reqs, points...)
 	c.pending = true
 	c.msg = i18n.T(i18n.KeyAlertAckPending, c.lang)
 	return reqs
@@ -375,3 +402,20 @@ func (c *Controller) ToggleMute() View {
 
 // Muted reports the window's mute toggle.
 func (c *Controller) Muted() bool { return c.muted }
+
+// PushTest shows a test alarm (alarm_test push, CHK-TRAY-53). Not acked.
+func (c *Controller) PushTest(a model.AlertEvent) View {
+	if !a.Test {
+		return c.View()
+	}
+	id := idOf(a)
+	if id.ProfileID == "" {
+		id.ProfileID = model.AlarmTestProfileID
+		a.ProfileID = id.ProfileID
+	}
+	c.shown[id] = a
+	c.visible, c.sound, c.msg, c.muted = true, true, "", false
+	v := c.View()
+	v.Raise = true
+	return v
+}

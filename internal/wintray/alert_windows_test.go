@@ -279,3 +279,20 @@ func TestCHK_TRAY_03_AckGone(t *testing.T) {
 		})
 	}
 }
+
+// TestCHK_TRAY_45_AlertKeepsPosition — switching the language re-lays the
+// alert window out without moving it back to the centre.
+func TestCHK_TRAY_45_AlertKeepsPosition(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	aw, err := newAlertWindow(0, "ru", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer winapi.DestroyWindow(aw.hwnd)
+	winapi.SetWindowPos(aw.hwnd, 0, 40, 50, 0, 0, winapi.SWP_NOSIZE|winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
+	aw.setLang("en")
+	if r := winapi.GetWindowRect(aw.hwnd); r.Left != 40 || r.Top != 50 {
+		t.Fatalf("alert moved to %d,%d after the language change, want 40,50", r.Left, r.Top)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // WizardClass is the window class of the «Добавить базу» wizard (phase 9b
@@ -25,6 +26,8 @@ const (
 	idWizStep = 700 + iota
 	idWizServer
 	idWizFind
+	idWizSubnet
+	idWizSteps
 	idWizInstances
 	idWizPort
 	idWizAuth
@@ -45,7 +48,7 @@ const (
 
 // wizardTips: a tooltip on every input and button (CHK-TRAY-15 rule).
 var wizardTips = map[int32]string{
-	idWizServer: i18n.KeyTipWizServer, idWizFind: i18n.KeyTipWizFind, idWizInstances: i18n.KeyTipWizInstances,
+	idWizServer: i18n.KeyTipWizServer, idWizFind: i18n.KeyTipWizFind, idWizSubnet: i18n.KeyTipWizSubnet, idWizInstances: i18n.KeyTipWizInstances,
 	idWizPort: i18n.KeyTipWizPort, idWizAuth: i18n.KeyTipWizAuth, idWizLogin: i18n.KeyTipWizLogin,
 	idWizPassword: i18n.KeyTipWizPassword, idWizEncrypt: i18n.KeyTipWizEncrypt, idWizDBs: i18n.KeyTipWizDBs,
 	idWizRefresh: i18n.KeyTipWizRefresh, idWizCands: i18n.KeyTipWizCands, idWizResult: i18n.KeyTipWizResult,
@@ -54,7 +57,7 @@ var wizardTips = map[int32]string{
 }
 
 // wizardOutputs are the static texts (no tooltip).
-var wizardOutputs = map[int32]bool{idWizStep: true}
+var wizardOutputs = map[int32]bool{idWizStep: true, idWizSteps: true}
 
 // wizField: the wizard control and step of a form field of an error.
 var wizField = map[traysettings.Field]struct {
@@ -84,16 +87,30 @@ type wizardDialog struct {
 	tips *tooltips
 	z    *traysettings.Wizard
 
-	prevSel  int
-	stepCtl  [3][]uintptr
-	cur      *[]uintptr
-	cancel   context.CancelFunc
-	seq      int
-	loading  bool
-	closed   bool
-	pwTyped  bool
-	result   string
-	lastCmds []string
+	prevSel int
+	stepCtl [3][]uintptr
+	// phase 11: the laid out steps (one visible), the bar, the layout of
+	// the shown step (-1 = none yet)
+	steps        [3]ui.Node
+	content, bar ui.Node
+	grantCtl     *ui.Ctl
+	resultCtl    *ui.Ctl // phase 11 (CHK-TRAY-49): hidden while empty
+	laidStep     int
+	cur          *[]uintptr
+	cancel       context.CancelFunc
+	seq          int
+	loading      bool
+	// phase 11 (CHK-TRAY-52)
+	subnetCtl    *ui.Ctl
+	stepsCtl     *ui.Ctl
+	findLabel    string // Find vs Cancel search
+	retryLeft    int64  // busy / rate_limited countdown seconds
+	retryCode    string
+	retryTimer   bool
+	closed       bool
+	pwTyped      bool
+	result       string
+	lastCmds     []string
 	// lastField: the last highlighted field (test hook)
 	lastField traysettings.Field
 }
@@ -155,56 +172,110 @@ func (wd *wizardDialog) add(class, text string, ex, style uint32, id, x, y, cw, 
 
 func (wd *wizardDialog) build() {
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
-	list := uint32(winapi.WS_TABSTOP | winapi.WS_VSCROLL | winapi.LBS_NOTIFY)
+	// LBS_NOINTEGRALHEIGHT (0x0100): the list keeps its laid out height (no
+	// gap under it, phase 11)
+	list := uint32(winapi.WS_TABSTOP | winapi.WS_VSCROLL | winapi.LBS_NOTIFY | 0x0100)
 	combo := uint32(winapi.WS_TABSTOP | winapi.CBS_DROPDOWNLIST)
-	label := func(key string, x, y, cw int32) { wd.add("STATIC", wd.t(key), 0, winapi.SS_LEFT, 0, x, y+3, cw, 18) }
-	wd.add("STATIC", "", 0, winapi.SS_LEFT, idWizStep, 12, 10, 736, 18)
+	// phase 11 (CHK-TRAY-45): controls created at 0,0 and laid out by
+	// the framework; the three steps share one area below the step line
+	label := func(key string) *ui.Ctl {
+		return uiCtl(wd.add("STATIC", wd.t(key), 0, winapi.SS_LEFT, 0, 0, 0, 0, 0), ui.Label, wd.t(key))
+	}
+	c := func(class, text string, ex, style uint32, id int32, kind ui.Kind, w, h int32) *ui.Ctl {
+		x := uiCtl(wd.add(class, text, ex, style, id, 0, 0, 0, 0), kind, text)
+		x.W, x.Hgt = w, h
+		return x
+	}
+	stepLine := c("STATIC", "", 0, winapi.SS_LEFT, idWizStep, ui.Box, 200, 18)
+	stepLine.Grow = true // the window width, never wider (phase 11)
+	stepLine.Grow = true
 	// step 1: server and login
 	wd.cur = &wd.stepCtl[traysettings.WizServer]
-	row := int32(40)
-	label(i18n.KeyWizServer, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizServer, 140, row, 450, 23)
-	wd.add("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, 598, row-1, 150, 26)
-	row += 30
-	wd.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, 140, row, 608, 120)
-	row += 126
-	label(i18n.KeyWizPort, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idWizPort, 140, row, 80, 23)
-	row += 28
-	label(i18n.KeyWizAuth, 12, row, 120)
-	wd.add("COMBOBOX", "", 0, combo, idWizAuth, 140, row, 450, 120)
-	row += 28
-	label(i18n.KeyWizLogin, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizLogin, 140, row, 450, 23)
-	row += 28
-	label(i18n.KeyWizPassword, 12, row, 120)
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idWizPassword, 140, row, 450, 23)
-	row += 28
-	label(i18n.KeyWizEncrypt, 12, row, 120)
-	wd.add("COMBOBOX", "", 0, combo, idWizEncrypt, 140, row, 450, 160)
+	srvL := label(i18n.KeyWizServer)
+	srv := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizServer, ui.Edit, 450, 0)
+	// «Найти» as tall as the server box beside it (phase 11)
+	m := uiMetrics()
+	tw, _ := m.Text(wd.t(i18n.KeyWizFind))
+	find := c("BUTTON", wd.t(i18n.KeyWizFind), 0, winapi.WS_TABSTOP, idWizFind, ui.Box, max32(unpx(tw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
+	wd.findLabel = wd.t(i18n.KeyWizFind)
+	srvRow := []ui.Node{srv, find}
+	// subnet: only create with capability browse_subnet (CHK-TRAY-52 note /
+	// CHK-TRAY-53 fix: Hidden alone is cleared by show()/layout)
+	if traysettings.HasBrowseSubnet(wd.capHas) {
+		stw, _ := m.Text(wd.t(i18n.KeyWizSubnet))
+		subnet := c("BUTTON", wd.t(i18n.KeyWizSubnet), 0, winapi.WS_TABSTOP, idWizSubnet, ui.Box, max32(unpx(stw)+ui.P16+ui.P8, ui.ButtonW), ui.EditH)
+		wd.subnetCtl = subnet
+		srvRow = append(srvRow, subnet)
+	}
+	inst := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizInstances, ui.Box, 590, 120)
+	inst.Grow = true
+	portL := label(i18n.KeyWizPort)
+	port := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_NUMBER, idWizPort, ui.Edit, 200, 0)
+	authL := label(i18n.KeyWizAuth)
+	auth := c("COMBOBOX", "", 0, combo, idWizAuth, ui.Combo, 450, 0)
+	loginL := label(i18n.KeyWizLogin)
+	login := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit, idWizLogin, ui.Edit, 450, 0)
+	pwL := label(i18n.KeyWizPassword)
+	pw := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, edit|winapi.ES_PASSWORD, idWizPassword, ui.Edit, 450, 0)
+	encL := label(i18n.KeyWizEncrypt)
+	enc := c("COMBOBOX", "", 0, combo, idWizEncrypt, ui.Combo, 450, 0)
+	step1 := &ui.Grid{Rows: []ui.GridRow{
+		{Label: srvL, Field: &ui.Row{Align: ui.Center, Items: srvRow}},
+		{Field: inst}, {Label: portL, Field: port}, {Label: authL, Field: auth},
+		{Label: loginL, Field: login}, {Label: pwL, Field: pw}, {Label: encL, Field: enc},
+	}}
 	// step 2: database
 	wd.cur = &wd.stepCtl[traysettings.WizDatabase]
-	label(i18n.KeyWizDBs, 12, 40, 400)
-	wd.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizDBs, 12, 64, 736, 270)
-	wd.add("BUTTON", wd.t(i18n.KeyWizRefresh), 0, winapi.WS_TABSTOP, idWizRefresh, 12, 338, 180, 26)
+	dbs := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizDBs, ui.Box, 736, 270)
+	dbs.Grow = true
+	step2 := &ui.Col{Items: []ui.Node{label(i18n.KeyWizDBs), dbs,
+		c("BUTTON", wd.t(i18n.KeyWizRefresh), 0, winapi.WS_TABSTOP, idWizRefresh, ui.Button, 0, 0)}}
 	// step 3: test, exchange tables, save
 	wd.cur = &wd.stepCtl[traysettings.WizFinish]
-	label(i18n.KeyWizCands, 12, 40, 400)
-	wd.add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, 12, 64, 736, 300)
-	wd.cur = nil
-	wd.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
-		idWizResult, 12, 372, 736, 140)
-	bx := int32(12)
-	button := func(id int32, key string, width int32) {
-		wd.add("BUTTON", wd.t(key), 0, winapi.WS_TABSTOP, id, bx, 522, width, 28)
-		bx += width + 6
+	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 300)
+	cands.Grow = true
+	step3Items := []ui.Node{label(i18n.KeyWizCands), cands}
+	if traysettings.HasTestSteps(wd.capHas) {
+		stepsLb := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizSteps, ui.Box, 736, 140)
+		stepsLb.Grow = true
+		wd.stepsCtl = stepsLb
+		cands.Hgt = 220
+		step3Items = []ui.Node{label(i18n.KeyWizCheckSteps), stepsLb, label(i18n.KeyWizCands), cands}
 	}
-	button(idWizBack, i18n.KeyWizBack, 85)
-	button(idWizNext, i18n.KeyWizNext, 85)
-	button(idWizSave, i18n.KeyWizSave, 100)
-	button(idWizGrant, i18n.KeyWizGrant, 210)
-	button(idWizAdvanced, i18n.KeyWizAdvanced, 160)
-	wd.add("BUTTON", wd.t(i18n.KeyWizCancel), 0, winapi.WS_TABSTOP, idWizCancel, 680, 522, 68, 28)
+	step3 := &ui.Col{Items: step3Items}
+	wd.cur = nil
+	res := c("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
+		idWizResult, ui.Box, 736, 140)
+	res.Grow = true
+	res.Hidden = true
+	wd.resultCtl = res
+	// phase 11: two button rows, the buttons of a row equally wide;
+	// «Скопировать SQL-скрипт прав» not on step 1
+	row := func(ids []int32, keys []string) []*ui.Ctl {
+		var cs []*ui.Ctl
+		var bw int32
+		for i, id := range ids {
+			x := c("BUTTON", wd.t(keys[i]), 0, winapi.WS_TABSTOP, id, ui.Button, 0, 0)
+			w, _ := ui.Layout(x, m, 0, 0, 0)
+			bw = max32(bw, unpx(w))
+			cs = append(cs, x)
+		}
+		for _, x := range cs {
+			x.W = bw
+		}
+		return cs
+	}
+	nav := row([]int32{idWizBack, idWizNext, idWizSave, idWizCancel}, []string{i18n.KeyWizBack, i18n.KeyWizNext, i18n.KeyWizSave, i18n.KeyWizCancel})
+	tools := row([]int32{idWizGrant, idWizAdvanced}, []string{i18n.KeyWizGrant, i18n.KeyWizAdvanced})
+	wd.grantCtl = tools[0]
+	wd.steps = [3]ui.Node{step1, step2, step3}
+	wd.content = &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		stepLine, step1, step2, step3, res}}}
+	wd.bar = &ui.Pad{All: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		&ui.Row{Items: []ui.Node{tools[0], tools[1]}},
+		&ui.Row{Grow: true, Items: []ui.Node{nav[0], nav[1], nav[2], &ui.Row{Right: true, Items: []ui.Node{nav[3]}}}},
+	}}}
+	wd.laidStep = -1
 	for _, k := range []string{i18n.KeyWizAuthSQL, i18n.KeyWizAuthWindows} {
 		winapi.SendMessageString(wd.ctl[idWizAuth], winapi.CB_ADDSTRING, 0, wd.t(k))
 	}
@@ -213,6 +284,11 @@ func (wd *wizardDialog) build() {
 	}
 	winapi.SendMessage(wd.ctl[idWizAuth], winapi.CB_SETCURSEL, 0, 0)
 	winapi.SendMessage(wd.ctl[idWizEncrypt], winapi.CB_SETCURSEL, uintptr(traysettings.EncryptIndex(wd.z.Encrypt)), 0)
+	// cues of the edit boxes (phase 11, PLAN §12 p.50)
+	winapi.SetCueBanner(wd.ctl[idWizServer], wd.t(i18n.KeyCueWizServer))
+	winapi.SetCueBanner(wd.ctl[idWizPort], wd.t(i18n.KeySetPortCue))
+	winapi.SetCueBanner(wd.ctl[idWizLogin], wd.t(i18n.KeyCueLogin))
+	winapi.SetCueBanner(wd.ctl[idWizPassword], wd.t(i18n.KeyCuePassword))
 	wd.tips = newTooltips(wd.hwnd)
 	for id, h := range wd.ctl {
 		if key, ok := wizardTips[id]; ok {
@@ -226,6 +302,11 @@ func (wd *wizardDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintp
 	case winapi.WM_COMMAND:
 		wd.command(int32(wp&0xFFFF), uint32(wp>>16&0xFFFF))
 		return 0, true
+	case winapi.WM_TIMER:
+		if wp == wizRetryTimerID {
+			wd.tickRetry()
+			return 0, true
+		}
 	case winapi.WM_CLOSE:
 		wd.abort()
 		return 0, true
@@ -265,7 +346,15 @@ func (wd *wizardDialog) command(id int32, code uint32) {
 			}
 		}
 	case idWizFind:
-		wd.browse()
+		if wd.cancel != nil {
+			wd.cancelBrowse()
+		} else {
+			wd.browseMode(model.SQLBrowseAuto)
+		}
+	case idWizSubnet:
+		if wd.cancel == nil {
+			wd.browseMode(model.SQLBrowseSubnet)
+		}
 	case idWizRefresh:
 		wd.loadDatabases()
 	case idWizBack:
@@ -328,14 +417,15 @@ func (wd *wizardDialog) form() string {
 // show refreshes the step: visible controls, header, enabled buttons.
 func (wd *wizardDialog) show() {
 	z := wd.z
-	for i, hs := range wd.stepCtl {
-		cmd := int32(winapi.SW_HIDE)
-		if traysettings.WizardStep(i) == z.Step {
-			cmd = winapi.SW_SHOW
+	if int(z.Step) != wd.laidStep && wd.content != nil {
+		// phase 11 (CHK-TRAY-47): only the current step is laid out (no
+		// hole for the others), the window keeps its position
+		for i, n := range wd.steps {
+			ui.SetHidden(n, traysettings.WizardStep(i) != z.Step)
 		}
-		for _, h := range hs {
-			winapi.ShowWindow(h, cmd)
-		}
+		wd.grantCtl.Hidden = z.Step == traysettings.WizServer
+		fitForm(wd.hwnd, wd.content, wd.bar, 0, wd.laidStep >= 0)
+		wd.laidStep = int(z.Step)
 	}
 	names := []string{i18n.KeyWizStepServer, i18n.KeyWizStepDB, i18n.KeyWizStepFinish}
 	winapi.SetWindowText(wd.ctl[idWizStep], fmt.Sprintf(wd.t(i18n.KeyWizStep), int(z.Step)+1, wd.t(names[z.Step])))
@@ -343,7 +433,19 @@ func (wd *wizardDialog) show() {
 	sess := wd.w.cfg.session
 	winapi.EnableWindow(wd.ctl[idWizLogin], !z.Windows)
 	winapi.EnableWindow(wd.ctl[idWizPassword], !z.Windows)
-	winapi.EnableWindow(wd.ctl[idWizFind], !running)
+	// Find toggles to «Cancel search» while a browse/check runs (CHK-TRAY-52)
+	wantFind := wd.t(i18n.KeyWizFind)
+	if running {
+		wantFind = wd.t(i18n.KeyWizCancelBrowse)
+	}
+	if wd.findLabel != wantFind {
+		wd.findLabel = wantFind
+		winapi.SetWindowText(wd.ctl[idWizFind], wantFind)
+	}
+	winapi.EnableWindow(wd.ctl[idWizFind], true) // always: Find or Cancel
+	if h := wd.ctl[idWizSubnet]; h != 0 {
+		winapi.EnableWindow(h, !running && traysettings.HasBrowseSubnet(wd.capHas))
+	}
 	winapi.EnableWindow(wd.ctl[idWizRefresh], !running)
 	winapi.EnableWindow(wd.ctl[idWizBack], z.Step > traysettings.WizServer)
 	winapi.EnableWindow(wd.ctl[idWizNext], z.Step < traysettings.WizFinish && !running)
@@ -351,6 +453,14 @@ func (wd *wizardDialog) show() {
 	winapi.EnableWindow(wd.ctl[idWizGrant], z.Database != "" && !running && sess.Supported(model.CmdSQLGrantScript))
 	if winapi.GetWindowText(wd.ctl[idWizResult]) != wd.result {
 		winapi.SetWindowText(wd.ctl[idWizResult], wd.result)
+	}
+	// phase 11 (CHK-TRAY-49): no empty result box (step 2 at 96 dpi)
+	if empty := wd.result == ""; wd.resultCtl != nil && wd.content != nil && wd.laidStep >= 0 && empty != wd.resultCtl.Hidden {
+		wd.resultCtl.Hidden = empty
+		if empty {
+			winapi.ShowWindow(wd.ctl[idWizResult], winapi.SW_HIDE)
+		}
+		fitForm(wd.hwnd, wd.content, wd.bar, 0, true)
 	}
 }
 
@@ -449,13 +559,19 @@ func (wd *wizardDialog) diagnose(req model.IPCRequest, code, detail, prefix stri
 	})
 }
 
-// browse: «Найти» (sql_browse).
-func (wd *wizardDialog) browse() {
+// browseMode: «Найти» (mode "") or «Сканировать подсеть» (mode subnet).
+func (wd *wizardDialog) browseMode(mode string) {
 	wd.read()
+	wd.stopRetry()
 	wd.setResult(wd.t(i18n.KeyWizBrowsing))
-	wd.run(wd.z.BrowseRequest(), traysettings.WizardTimeout, func(m model.IPCMessage, err error) {
+	timeout := traysettings.WizardTimeout
+	if mode == model.SQLBrowseSubnet {
+		timeout = time.Duration(model.DefaultSQLSubnetTimeoutMs)*time.Millisecond + model.IPCSQLBrowseGrace + 5*time.Second
+	}
+	req := wd.z.BrowseRequestMode(mode)
+	wd.runProgress(req, timeout, wd.onBrowseProgress, func(m model.IPCMessage, err error) {
 		if err != nil || m.Type != model.MsgSQLBrowse || m.SQLBrowse == nil {
-			wd.fail(m, err, "")
+			wd.failRetry(m, err, "")
 			return
 		}
 		text := wd.z.BrowseDone(*m.SQLBrowse)
@@ -526,11 +642,36 @@ func (wd *wizardDialog) loadDatabases() {
 	})
 }
 
-// finish: test_profile, then discover; autoPick decides (autoApply or a
-// single candidate ≥ autoPickMin), else the user picks.
+// finish: optional sql_test_steps (CHK-TRAY-52), then test_profile, then
+// discover; autoPick decides (autoApply or a single candidate ≥ autoPickMin),
+// else the user picks. Password never travels with sql_test_steps.
 func (wd *wizardDialog) finish() {
 	pw := wd.form()
 	winapi.SendMessage(wd.ctl[idWizCands], winapi.LB_RESETCONTENT, 0, 0)
+	if h := wd.ctl[idWizSteps]; h != 0 {
+		winapi.SendMessage(h, winapi.LB_RESETCONTENT, 0, 0)
+	}
+	wd.z.CheckSteps = nil
+	if traysettings.HasTestSteps(wd.capHas) {
+		wd.setResult(wd.t(i18n.KeyWizChecking))
+		req := wd.z.TestStepsRequest("") // new profile: no password over IPC
+		wd.runProgress(req, model.IPCSQLTestStepsTimeout+5*time.Second, wd.onTestStepProgress, func(m model.IPCMessage, err error) {
+			if err != nil || m.Type != model.MsgSQLTestSteps || m.SQLTestSteps == nil {
+				wd.failRetry(m, err, "")
+				return
+			}
+			wd.applyTestSteps(*m.SQLTestSteps)
+			if !m.SQLTestSteps.OK {
+				return // advice already under the failed step
+			}
+			wd.finishTest(pw)
+		})
+		return
+	}
+	wd.finishTest(pw)
+}
+
+func (wd *wizardDialog) finishTest(pw string) {
 	req, pr := wd.w.ed.TestRequest(pw)
 	if pr != nil {
 		wd.problem(pr)
@@ -539,7 +680,7 @@ func (wd *wizardDialog) finish() {
 	wd.setResult(wd.t(i18n.KeyWizTesting))
 	wd.run(req, traysettings.TestTimeout, func(m model.IPCMessage, err error) {
 		if err != nil || m.Type != model.MsgTestResult || m.Test == nil || !m.Test.OK {
-			wd.fail(m, err, "")
+			wd.failRetry(m, err, "")
 			return
 		}
 		wd.z.Tested = true
@@ -649,6 +790,8 @@ func (wd *wizardDialog) close() {
 		return
 	}
 	wd.closed = true
+	wd.stopRetry()
+	wd.w.cfg.session.SetProgress(nil)
 	if wd.cancel != nil {
 		wd.cancel()
 		wd.cancel = nil

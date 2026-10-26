@@ -4,6 +4,7 @@ package wintray
 
 import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // About window control IDs.
@@ -18,9 +19,8 @@ var aboutTips *tooltips
 // newAboutWindow creates the About window (hidden unless show). OK, Esc
 // via the system menu or the close box destroy it; onClose runs after.
 func newAboutWindow(owner uintptr, title, text, okText, okTip string, show bool, onClose func()) (uintptr, error) {
-	const w, h = 380, 190
-	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2
-	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 2
+	const w, h = 380, 190 // replaced by the size of the content
+	x, y := int32(0), int32(0)
 	var hwnd uintptr
 	handler := func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 		switch msg {
@@ -44,8 +44,11 @@ func newAboutWindow(owner uintptr, title, text, okText, okTip string, show bool,
 	if err != nil {
 		return 0, err
 	}
-	child(hwnd, "STATIC", text, winapi.SS_LEFT, idAboutText, 16, 14, w-40, h-90)
-	ok := child(hwnd, "BUTTON", okText, winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, winapi.IDOK, w-110, h-75, 80, 26)
+	// phase 11 (CHK-TRAY-45): laid out by the ui framework
+	label := child(hwnd, "STATIC", text, winapi.SS_LEFT, idAboutText, 0, 0, 0, 0)
+	ok := child(hwnd, "BUTTON", okText, winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, winapi.IDOK, 0, 0, 0, 0)
+	fitForm(hwnd, &ui.Pad{Left: ui.P16, Top: ui.P16, Right: ui.P16, Child: uiCtl(label, ui.Label, text)},
+		&ui.Pad{All: ui.P16, Child: &ui.Row{Right: true, Items: []ui.Node{uiCtl(ok, ui.Button, okText)}}}, 340, false)
 	aboutTips = newTooltips(hwnd) // CHK-TRAY-15
 	aboutTips.set(ok, okTip)
 	if show {

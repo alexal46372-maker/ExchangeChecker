@@ -190,6 +190,16 @@ var winAPIMinVersion = map[string]float64{
 	// phase 11: Windows Firewall COM for SQL Browser SSRP replies (CHK-SETUP-13)
 	"SysAllocString": 5.0, "SysFreeString": 5.0, "SysStringLen": 5.0, "VariantClear": 5.0,
 	"CLSIDFromProgID": 5.0,
+	// phase 11: font metrics of the layout framework (CHK-TRAY-45), window
+	// capture of the CI screenshots (CHK-TRAY-46)
+	"GetTextMetricsW": 5.0, "CreateCompatibleDC": 5.0, "CreateCompatibleBitmap": 5.0, "GetDIBits": 5.0,
+	"DeleteDC": 5.0, "BitBlt": 5.0, "GetWindowDC": 5.0, "PrintWindow": 5.1, "RedrawWindow": 5.0, "SetParent": 5.0,
+	// phase 11: visible frame for screenshots, falls back to GetWindowRect
+	"DwmGetWindowAttribute": 6.0, "DwmFlush": 6.0, "SetWindowLongW": 5.0,
+	// phase 11: Common Controls 6 for the GUI tests (cues in the screenshots, CHK-TRAY-47)
+	"CreateActCtxW": 5.1, "ActivateActCtx": 5.1, "DeactivateActCtx": 5.1, "ReleaseActCtx": 5.1,
+	// phase 11: the generated icons on the database cards (CHK-TRAY-49)
+	"DrawIconEx": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

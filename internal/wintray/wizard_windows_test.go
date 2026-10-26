@@ -269,7 +269,12 @@ func TestCHK_TRAY_32_WizardGrant(t *testing.T) {
 	wd.read()
 	wd.z.Databases = []model.SQLDatabaseInfo{{Name: "ut"}}
 	wd.z.PickDatabase(0)
+	// phase 11: the grant button is hidden on the server step (step 1)
+	wd.z.Step = traysettings.WizDatabase
 	wd.show()
+	if winapi.WindowStyle(wd.ctl[idWizGrant])&winapi.WS_VISIBLE == 0 {
+		t.Error("grant hidden on the database step")
+	}
 	wd.click(t, idWizGrant)
 	pumpUntil(t, "grant", func() bool { return wd.idle() && len(clip) == 1 })
 	if !strings.Contains(clip[0], "mon") || !strings.Contains(clip[0], "ut") {

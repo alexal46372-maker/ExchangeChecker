@@ -10,6 +10,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // Phase 10 A windows: «Звук тревог» (profiles, CHK-TRAY-33/34) and the
@@ -93,11 +94,18 @@ func newSoundWindow(a *App) (*soundWindow, error) {
 	}
 	w.hwnd = hwnd
 	w.tips = newTooltips(hwnd)
-	w.warn = w.buildProfile(idSndWarn, i18n.T(i18n.KeySoundWarning, lang), 12)
-	w.err = w.buildProfile(idSndErr, i18n.T(i18n.KeySoundError, lang), 200)
-	w.info = child(hwnd, "STATIC", "", winapi.SS_LEFT, idSndInfo, 16, H-110, W-48, 36)
-	w.save = child(hwnd, "BUTTON", i18n.T(i18n.KeySoundSave, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idSndSave, W-264, H-70, 120, 28)
-	w.canc = child(hwnd, "BUTTON", i18n.T(i18n.KeySoundCancel, lang), winapi.WS_TABSTOP, idSndCancel, W-136, H-70, 104, 28)
+	var warnN, errN ui.Node
+	w.warn, warnN = w.buildProfile(idSndWarn, i18n.T(i18n.KeySoundWarning, lang))
+	w.err, errN = w.buildProfile(idSndErr, i18n.T(i18n.KeySoundError, lang))
+	w.info = child(hwnd, "STATIC", "", winapi.SS_LEFT, idSndInfo, 0, 0, 0, 0)
+	w.save = child(hwnd, "BUTTON", i18n.T(i18n.KeySoundSave, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idSndSave, 0, 0, 0, 0)
+	w.canc = child(hwnd, "BUTTON", i18n.T(i18n.KeySoundCancel, lang), winapi.WS_TABSTOP, idSndCancel, 0, 0, 0, 0)
+	// phase 11 (CHK-TRAY-45): two profiles, the info line, the buttons
+	fitForm(hwnd, &ui.Pad{Left: ui.P16, Top: ui.P16, Right: ui.P16, Child: &ui.Col{Gap: ui.P16, Items: []ui.Node{warnN, errN}}},
+		&ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+			&ui.Ctl{H: w.info, Kind: ui.Box, W: 540, Hgt: 36, Grow: true},
+			&ui.Row{Right: true, Items: []ui.Node{uiCtl(w.save, ui.Button, ""), uiCtl(w.canc, ui.Button, "")}},
+		}}}, 0, false)
 	w.tips.set(w.save, i18n.T(i18n.KeyTipSoundSave, lang))
 	w.load(a.soundPrefs)
 	if !a.opt.HiddenPanel {
@@ -110,39 +118,57 @@ func centered(w, h int32) (int32, int32) {
 	return (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2, (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 3
 }
 
-func (w *soundWindow) buildProfile(base int32, title string, y int32) profileCtl {
+func (w *soundWindow) buildProfile(base int32, title string) (profileCtl, ui.Node) {
 	h, l := w.hwnd, w.lang
-	edit := func(id int32, x, y, cx int32, num bool) uintptr {
+	edit := func(id int32, cx int32, num bool) (uintptr, *ui.Ctl) {
 		st := uint32(winapi.WS_BORDER | winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
 		if num {
 			st |= winapi.ES_NUMBER
 		}
-		return child(h, "EDIT", "", st, id, x, y, cx, 22)
+		e := child(h, "EDIT", "", st, id, 0, 0, 0, 0)
+		return e, &ui.Ctl{H: e, Kind: ui.Edit, W: cx}
 	}
-	label := func(t string, x, y, cx int32) { child(h, "STATIC", t, winapi.SS_LEFT, -1, x, y+3, cx, 20) }
+	label := func(t string) *ui.Ctl {
+		return uiCtl(child(h, "STATIC", t, winapi.SS_LEFT, -1, 0, 0, 0, 0), ui.Label, t)
+	}
 	c := profileCtl{base: base}
-	c.head = child(h, "STATIC", title, winapi.SS_LEFT, -1, 16, y, 300, 20)
-	c.beep = child(h, "BUTTON", i18n.T(i18n.KeySoundBeep, l), winapi.BS_AUTORADIOBUTTON|winapi.WS_TABSTOP|wsGroup, base+idSndBeep, 32, y+24, 120, 22)
-	c.file = child(h, "BUTTON", i18n.T(i18n.KeySoundFile, l), winapi.BS_AUTORADIOBUTTON, base+idSndFile, 160, y+24, 120, 22)
-	label(i18n.T(i18n.KeySoundFreq, l), 32, y+52, 130)
-	c.freq = edit(base+idSndFreq, 166, y+52, 70, true)
-	label(i18n.T(i18n.KeySoundDur, l), 252, y+52, 150)
-	c.dur = edit(base+idSndDur, 406, y+52, 70, true)
-	c.path = edit(base+idSndPath, 32, y+80, 430, false)
-	c.browse = child(h, "BUTTON", i18n.T(i18n.KeySoundBrowse, l), winapi.WS_TABSTOP, base+idSndBrowse, 470, y+79, 100, 24)
-	label(i18n.T(i18n.KeySoundVolume, l), 32, y+108, 130)
-	c.vol = edit(base+idSndVol, 166, y+108, 50, true)
-	c.loop = child(h, "BUTTON", i18n.T(i18n.KeySoundLoop, l), winapi.BS_AUTOCHECKBOX|winapi.WS_TABSTOP, base+idSndLoop, 252, y+108, 300, 22)
-	label(i18n.T(i18n.KeySoundGap, l), 32, y+136, 200)
-	c.gap = edit(base+idSndGap, 236, y+136, 70, true)
-	c.test = child(h, "BUTTON", i18n.T(i18n.KeySoundTest, l), winapi.WS_TABSTOP, base+idSndTest, 450, y+134, 120, 26)
+	c.head = child(h, "STATIC", title, winapi.SS_LEFT, -1, 0, 0, 0, 0)
+	c.beep = child(h, "BUTTON", i18n.T(i18n.KeySoundBeep, l), winapi.BS_AUTORADIOBUTTON|winapi.WS_TABSTOP|wsGroup, base+idSndBeep, 0, 0, 0, 0)
+	c.file = child(h, "BUTTON", i18n.T(i18n.KeySoundFile, l), winapi.BS_AUTORADIOBUTTON, base+idSndFile, 0, 0, 0, 0)
+	freqL := label(i18n.T(i18n.KeySoundFreq, l))
+	var freq, dur, path, vol, gap *ui.Ctl
+	c.freq, freq = edit(base+idSndFreq, 70, true)
+	durL := label(i18n.T(i18n.KeySoundDur, l))
+	c.dur, dur = edit(base+idSndDur, 70, true)
+	c.path, path = edit(base+idSndPath, 430, false)
+	path.Grow = true
+	c.browse = child(h, "BUTTON", i18n.T(i18n.KeySoundBrowse, l), winapi.WS_TABSTOP, base+idSndBrowse, 0, 0, 0, 0)
+	volL := label(i18n.T(i18n.KeySoundVolume, l))
+	c.vol, vol = edit(base+idSndVol, 50, true)
+	c.loop = child(h, "BUTTON", i18n.T(i18n.KeySoundLoop, l), winapi.BS_AUTOCHECKBOX|winapi.WS_TABSTOP, base+idSndLoop, 0, 0, 0, 0)
+	gapL := label(i18n.T(i18n.KeySoundGap, l))
+	c.gap, gap = edit(base+idSndGap, 70, true)
+	c.test = child(h, "BUTTON", i18n.T(i18n.KeySoundTest, l), winapi.WS_TABSTOP, base+idSndTest, 0, 0, 0, 0)
+	node := &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		uiCtl(c.head, ui.Label, title),
+		&ui.Pad{Left: ui.P16, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+			&ui.Row{Gap: ui.P16, Items: []ui.Node{uiCtl(c.beep, ui.Check, ""), uiCtl(c.file, ui.Check, "")}},
+			&ui.Grid{Rows: []ui.GridRow{
+				{Label: freqL, Field: &ui.Row{Items: []ui.Node{freq, &ui.Space{W: ui.P8}, durL, dur}}},
+				{Label: volL, Field: &ui.Row{Items: []ui.Node{vol, &ui.Space{W: ui.P8}, uiCtl(c.loop, ui.Check, "")}}},
+				{Label: gapL, Field: gap},
+			}},
+			&ui.Row{Grow: true, Items: []ui.Node{path, uiCtl(c.browse, ui.Button, "")}},
+			&ui.Row{Right: true, Items: []ui.Node{uiCtl(c.test, ui.Button, "")}},
+		}}},
+	}}
 	for ctl, k := range map[uintptr]string{c.beep: i18n.KeyTipSoundKind, c.file: i18n.KeyTipSoundKind,
 		c.freq: i18n.KeyTipSoundFreq, c.dur: i18n.KeyTipSoundDur, c.path: i18n.KeyTipSoundFile,
 		c.browse: i18n.KeyTipSoundBrowse, c.vol: i18n.KeyTipSoundVolume, c.loop: i18n.KeyTipSoundLoop,
 		c.gap: i18n.KeyTipSoundGap, c.test: i18n.KeyTipSoundTest} {
 		w.tips.set(ctl, i18n.T(k, l))
 	}
-	return c
+	return c, node
 }
 
 func setCheck(h uintptr, on bool) {
@@ -295,10 +321,10 @@ func (a *App) OpenVolume() *volumeWindow {
 		return w
 	}
 	winapi.InitTooltips() // ICC_WIN95_CLASSES: msctls_trackbar32
-	const W, H = 260, 74
+	const W = 260
 	v := &volumeWindow{}
 	hwnd, err := createWindow(volumeClass, i18n.T(i18n.KeyVolumeTitle, a.opt.Lang), winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW,
-		winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, 0, 0, W, H, a.hwnd,
+		winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, 0, 0, W, 74, a.hwnd,
 		func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 			switch msg {
 			case winapi.WM_HSCROLL:
@@ -321,8 +347,13 @@ func (a *App) OpenVolume() *volumeWindow {
 		return nil
 	}
 	v.hwnd = hwnd
-	v.bar = child(hwnd, "msctls_trackbar32", "", winapi.WS_TABSTOP|winapi.TBS_AUTOTICKS, idVolBar, 8, 6, W-70, 30)
-	v.label = child(hwnd, "STATIC", "", winapi.SS_LEFT, -1, W-58, 12, 48, 20)
+	v.bar = child(hwnd, "msctls_trackbar32", "", winapi.WS_TABSTOP|winapi.TBS_AUTOTICKS, idVolBar, 0, 0, 0, 0)
+	v.label = child(hwnd, "STATIC", "", winapi.SS_LEFT, -1, 0, 0, 0, 0)
+	// phase 11 (CHK-TRAY-45): trackbar | «100 %», laid out by the framework
+	f := newForm(&ui.Pad{All: ui.P8, Child: &ui.Row{Align: ui.Center, Gap: ui.P8, Items: []ui.Node{
+		&ui.Ctl{H: v.bar, Kind: ui.Box, W: W - 70, Hgt: 30},
+		uiCtl(v.label, ui.Label, "100 %"),
+	}}}, 0)
 	winapi.SendMessage(v.bar, winapi.TBM_SETRANGE, 1, 100<<16)
 	winapi.SendMessage(v.bar, winapi.TBM_SETTICFREQ, 10, 0)
 	winapi.SendMessage(v.bar, winapi.TBM_SETPAGESIZE, 0, 10)
@@ -331,7 +362,7 @@ func (a *App) OpenVolume() *volumeWindow {
 	v.tips = newTooltips(hwnd)
 	v.tips.set(v.bar, i18n.T(i18n.KeyTipVolume, a.opt.Lang))
 	a.volWin = v
-	ow, oh := outerSize(px(W), px(H), winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW)
+	ow, oh := outerSize(f.W, f.H, winapi.WS_POPUP|winapi.WS_BORDER|winapi.WS_CAPTION|winapi.WS_SYSMENU, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW)
 	x, y := a.panelPos(ow, oh)
 	winapi.SetWindowPos(hwnd, winapi.HWND_TOPMOST, x, y, ow, oh, 0)
 	if !a.opt.HiddenPanel {

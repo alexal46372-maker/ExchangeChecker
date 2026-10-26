@@ -60,6 +60,33 @@ const (
 	KeyAlertAckFailed      = "alert.ack_failed"
 	KeyAlertCloseHint      = "alert.close_hint"
 
+	KeyPanelStalled        = "panel.stalled"
+	KeyPtStalled           = "pt.stalled"
+	KeyAlertTestBadge      = "alert.test_badge"
+	KeyMenuSummary         = "menu.summary"
+	KeySumTitle            = "sum.title"
+	KeySumHours            = "sum.hours"
+	KeySumTruncated        = "sum.truncated"
+	KeySumBusy             = "sum.busy"
+	KeySumEmpty            = "sum.empty"
+	KeySumClose            = "sum.close"
+	KeyAlarmTest           = "alarm.test"
+	KeyAlarmTestTip        = "alarm.test_tip"
+	KeyAlarmTestTipDenied  = "alarm.test_tip_denied"
+	KeyAlarmTestTitle      = "alarm.test_title"
+	KeyAlarmTestWarning    = "alarm.test_warning"
+	KeyAlarmTestError      = "alarm.test_error"
+	KeyAlarmTestViber      = "alarm.test_viber"
+	KeyAlarmTestRun        = "alarm.test_run"
+	KeyAlarmTestClose      = "alarm.test_close"
+	KeyAlarmTestNoViber    = "alarm.test_no_viber"
+	KeyAlarmTestRetry      = "alarm.test_retry"
+	KeyAlarmTestAccess     = "alarm.test_access"
+	KeySetStalledMin       = "set.stalled_min"
+	KeyTipSetStalled       = "tip.set_stalled"
+	KeyGenStalled          = "gen.stalled"
+	KeyCueStalled          = "cue.stalled"
+
 	// settings window (phase 6c, CHK-TRAY-04/05/06)
 	KeyMenuSettings         = "menu.settings"
 	KeySetTitleRead         = "set.title_read"
@@ -202,49 +229,57 @@ const (
 	KeyAutostartErrUnknown  = "autostart.err_unknown"
 	KeyGenPage              = "gen.page"
 	KeyGenProfilesPage      = "gen.profiles_page"
-	KeyGenPoll              = "gen.poll"
-	KeyGenWarn              = "gen.warn"
-	KeyGenError             = "gen.error"
-	KeyGenBeepEnabled       = "gen.beep_enabled"
-	KeyGenWarnFreq          = "gen.warn_freq"
-	KeyGenWarnDur           = "gen.warn_dur"
-	KeyGenErrorFreq         = "gen.error_freq"
-	KeyGenErrorDur          = "gen.error_dur"
-	KeyGenGap               = "gen.gap"
-	KeyGenLanguage          = "gen.language"
-	KeyGenLangAuto          = "gen.lang_auto"
-	KeyGenLangRU            = "gen.lang_ru"
-	KeyGenLangEN            = "gen.lang_en"
-	KeyGenAutostart         = "gen.autostart"
-	KeyGenNote              = "gen.note"
-	KeyGenSaved             = "gen.saved"
-	KeyMenuLanguage         = "menu.language"
-	KeyMenuLangAuto         = "menu.lang_auto"
-	KeyMenuLangRU           = "menu.lang_ru"
-	KeyMenuLangEN           = "menu.lang_en"
-	KeySetTesting           = "set.testing"
-	KeySetTestCanceled      = "set.test_canceled"
-	KeySetTestOK            = "set.test_ok"
-	KeySetTestFailed        = "set.test_failed"
-	KeySetTestVersion       = "set.test_version"
-	KeySetTestCompat        = "set.test_compat"
-	KeySetTestEncrypt       = "set.test_encrypt"
-	KeySetTestNoReply       = "set.test_no_reply"
-	KeySetPolled            = "set.polled"
-	KeySetPollCoalesced     = "set.poll_coalesced"
-	KeySetNotConnected      = "set.not_connected"
-	KeySetChangedOffline    = "set.changed_offline"
-	KeySetUnsupported       = "set.unsupported"
-	KeySetTooLarge          = "set.too_large"
-	KeySetNoRevision        = "set.no_revision"
-	KeySetConflictHint      = "set.conflict_hint"
-	KeySetOtherInvalid      = "set.other_invalid"
-	KeySetAccessHint        = "set.access_hint"
-	KeySetRateHint          = "set.rate_hint"
-	KeySetTimeoutHint       = "set.timeout_hint"
-	KeySetFailed            = "set.failed"
-	KeySetElevateCanceled   = "set.elevate_canceled"
-	KeySetElevateFailed     = "set.elevate_failed"
+	// phase 11 (CHK-TRAY-47): left navigation of the settings window
+	KeySetNavProfiles     = "set.nav_profiles"
+	KeyDiscCandidates     = "disc.candidates"
+	KeyDiscDetails        = "disc.details"
+	KeyDiscResultLabel    = "disc.result_label"
+	KeySetNavGeneral      = "set.nav_general"
+	KeySetNavViber        = "set.nav_viber"
+	KeyTipSetNavProfiles  = "tip.set.nav_profiles"
+	KeyGenPoll            = "gen.poll"
+	KeyGenWarn            = "gen.warn"
+	KeyGenError           = "gen.error"
+	KeyGenBeepEnabled     = "gen.beep_enabled"
+	KeyGenWarnFreq        = "gen.warn_freq"
+	KeyGenWarnDur         = "gen.warn_dur"
+	KeyGenErrorFreq       = "gen.error_freq"
+	KeyGenErrorDur        = "gen.error_dur"
+	KeyGenGap             = "gen.gap"
+	KeyGenLanguage        = "gen.language"
+	KeyGenLangAuto        = "gen.lang_auto"
+	KeyGenLangRU          = "gen.lang_ru"
+	KeyGenLangEN          = "gen.lang_en"
+	KeyGenAutostart       = "gen.autostart"
+	KeyGenNote            = "gen.note"
+	KeyGenSaved           = "gen.saved"
+	KeyMenuLanguage       = "menu.language"
+	KeyMenuLangAuto       = "menu.lang_auto"
+	KeyMenuLangRU         = "menu.lang_ru"
+	KeyMenuLangEN         = "menu.lang_en"
+	KeySetTesting         = "set.testing"
+	KeySetTestCanceled    = "set.test_canceled"
+	KeySetTestOK          = "set.test_ok"
+	KeySetTestFailed      = "set.test_failed"
+	KeySetTestVersion     = "set.test_version"
+	KeySetTestCompat      = "set.test_compat"
+	KeySetTestEncrypt     = "set.test_encrypt"
+	KeySetTestNoReply     = "set.test_no_reply"
+	KeySetPolled          = "set.polled"
+	KeySetPollCoalesced   = "set.poll_coalesced"
+	KeySetNotConnected    = "set.not_connected"
+	KeySetChangedOffline  = "set.changed_offline"
+	KeySetUnsupported     = "set.unsupported"
+	KeySetTooLarge        = "set.too_large"
+	KeySetNoRevision      = "set.no_revision"
+	KeySetConflictHint    = "set.conflict_hint"
+	KeySetOtherInvalid    = "set.other_invalid"
+	KeySetAccessHint      = "set.access_hint"
+	KeySetRateHint        = "set.rate_hint"
+	KeySetTimeoutHint     = "set.timeout_hint"
+	KeySetFailed          = "set.failed"
+	KeySetElevateCanceled = "set.elevate_canceled"
+	KeySetElevateFailed   = "set.elevate_failed"
 
 	KeyUnknownMessage = "msg.unknown"
 )
@@ -262,6 +297,17 @@ const (
 	KeySetPortCue         = "set.port_cue"
 	KeySetThreshCue       = "set.thresh_cue"
 	KeySetTimeoutCue      = "set.timeout_cue"
+	KeyCueName            = "cue.name"
+	KeyCueHost            = "cue.host"
+	KeyCueInstance        = "cue.instance"
+	KeyCueDatabase        = "cue.database"
+	KeyCueLogin           = "cue.login"
+	KeyCuePassword        = "cue.password"
+	KeyCueWizServer       = "cue.wiz_server"
+	KeyCueDiscTime        = "cue.disc_time"
+	KeyCueDiscSchema      = "cue.disc_schema"
+	KeyCueDiscColumn      = "cue.disc_column"
+	KeyCueVbToken         = "cue.vb_token"
 	KeyMenuService        = "menu.service"
 	KeyMenuSvcStart       = "menu.svc_start"
 	KeyMenuSvcStop        = "menu.svc_stop"
@@ -394,6 +440,18 @@ const (
 	KeyAgoDays               = "ago.days"
 )
 
+// Phase 11: database cards of the «Состояние» window (CHK-TRAY-48).
+const (
+	KeyCardFresh      = "card.fresh"
+	KeyCardNoData     = "card.no_data"
+	KeyCardPoints     = "card.points"
+	KeyCardTip        = "card.tip"
+	KeyCardMore       = "card.more"
+	KeyCardPollingOff = "card.polling_off"
+	KeyCardMoreHint   = "card.more_hint"
+	KeyTipCards       = "tip.cards"
+)
+
 // Phase 9b (CHK-TRAY-22..29).
 const (
 	KeyCheckRateLimited   = "check.rate_limited"
@@ -494,6 +552,22 @@ const (
 	KeyWizGrantPlaceholder = "wiz.grant_placeholder"
 	KeyWizClipFailed       = "wiz.clip_failed"
 	KeyWizAccessDenied     = "wiz.access_denied"
+	KeyWizSubnet           = "wiz.subnet"
+	KeyWizCancelBrowse     = "wiz.cancel_browse"
+	KeyWizBrowseProgress   = "wiz.browse_progress"
+	KeyWizBusyRetry        = "wiz.busy_retry"
+	KeyWizPublicNetwork    = "wiz.public_network"
+	KeyWizCheckSteps       = "wiz.check_steps"
+	KeyWizCheckParse       = "wiz.check_parse"
+	KeyWizCheckDNS         = "wiz.check_dns"
+	KeyWizCheckBrowser     = "wiz.check_browser"
+	KeyWizCheckTCP         = "wiz.check_tcp"
+	KeyWizCheckPrelogin    = "wiz.check_prelogin"
+	KeyWizCheckTLS         = "wiz.check_tls"
+	KeyWizCheckLogin       = "wiz.check_login"
+	KeyWizCheckDB          = "wiz.check_db"
+	KeyWizCheckTables      = "wiz.check_tables"
+	KeyWizChecking         = "wiz.checking"
 	KeyWizErrCode          = "wiz.err_code"
 	KeyWizWhatToDo         = "wiz.what_to_do"
 	KeyWizFBLogin          = "wiz.fb_login"
@@ -509,6 +583,8 @@ const (
 	KeyWizFBOther          = "wiz.fb_other"
 	KeyTipWizServer        = "tip.wiz_server"
 	KeyTipWizFind          = "tip.wiz_find"
+	KeyTipWizSubnet        = "tip.wiz_subnet"
+	KeyTipWizCancelBrowse  = "tip.wiz_cancel_browse"
 	KeyTipWizInstances     = "tip.wiz_instances"
 	KeyTipWizPort          = "tip.wiz_port"
 	KeyTipWizAuth          = "tip.wiz_auth"
@@ -738,6 +814,14 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyMenuStatusWin:         {"Состояние…", "Status…"},
 	KeyMenuCheckNow:          {"Проверить сейчас", "Check now"},
 	KeyStTitle:               {"Состояние", "Status"},
+	KeyCardFresh:             {"Свежесть: %s", "Freshness: %s"},
+	KeyCardNoData:            {"нет данных", "no data"},
+	KeyCardPoints:            {"Точек: %d, с проблемами: %d", "Points: %d, with problems: %d"},
+	KeyCardTip:               {"Цвет карточки — худшее состояние точек базы, свежесть — по самой давней точке. Подробности — в таблице ниже.", "The card colour is the worst state of the database points, freshness is that of the stalest point. Details are in the table below."},
+	KeyCardPollingOff:        {"Опрос выключен", "Polling disabled"},
+	KeyCardMore:              {"Ещё баз: %d", "%d more databases"},
+	KeyCardMoreHint:          {"Все базы — в таблице ниже", "All databases are in the table below"},
+	KeyTipCards:              {"Карточки баз: цвет — состояние, свежесть и число точек с проблемами. Наведите на карточку, чтобы увидеть точки.", "Database cards: colour is the state, freshness and the number of points with problems. Hover over a card to see its points."},
 	KeyStDatabase:            {"База", "Database"},
 	KeyStPoint:               {"Точка", "Point"},
 	KeyStPlan:                {"План обмена", "Exchange plan"},
@@ -825,6 +909,32 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAlertAckUnsupported: {"Эта версия службы не поддерживает подтверждение тревог.", "This service version cannot acknowledge alarms."},
 	KeyAlertAckFailed:      {"Не удалось подтвердить: %s", "Could not acknowledge: %s"},
 	KeyAlertCloseHint:      {"«Закрыть» выключает звук до следующего изменения; «Подтвердить» снимает тревогу.", "Close mutes the sound until the next change; Acknowledge clears the alarm."},
+	KeyPanelStalled:        {"%s — %s: застой обмена (номера сообщений не меняются)", "%s — %s: stalled exchange (message numbers unchanged)"},
+	KeyPtStalled:           {"застой обмена", "stalled exchange"},
+	KeyAlertTestBadge:      {"ТЕСТ", "TEST"},
+	KeyMenuSummary:         {"Сводка…", "Summary…"},
+	KeySumTitle:            {"Сводка обмена", "Exchange summary"},
+	KeySumHours:            {"За %d ч", "Last %d h"},
+	KeySumTruncated:        {"Показаны не все базы", "Not all databases are shown"},
+	KeySumBusy:             {"Служба занята, повтор через 5 с…", "Service busy, retrying in 5 s…"},
+	KeySumEmpty:            {"Нет данных", "No data"},
+	KeySumClose:            {"Закрыть", "Close"},
+	KeyAlarmTest:           {"Тест тревоги…", "Test alarm…"},
+	KeyAlarmTestTip:        {"Отправить тестовую тревогу (и при желании в Viber).", "Send a test alarm (and optionally to Viber)."},
+	KeyAlarmTestTipDenied:  {"Только администратор может отправить тестовую тревогу.", "Only an administrator can send a test alarm."},
+	KeyAlarmTestTitle:      {"Тест тревоги", "Test alarm"},
+	KeyAlarmTestWarning:    {"Предупреждение", "Warning"},
+	KeyAlarmTestError:      {"Ошибка", "Error"},
+	KeyAlarmTestViber:      {"Также в Viber", "Also to Viber"},
+	KeyAlarmTestRun:        {"Отправить", "Send"},
+	KeyAlarmTestClose:      {"Закрыть", "Close"},
+	KeyAlarmTestNoViber:    {"Viber не настроен", "Viber is not configured"},
+	KeyAlarmTestRetry:      {"Повтор через %d с", "Retry in %d s"},
+	KeyAlarmTestAccess:     {"Нет прав администратора для теста тревоги.", "Administrator rights are required for the test alarm."},
+	KeySetStalledMin:       {"Застой, мин", "Stalled, min"},
+	KeyTipSetStalled:       {"Порог застоя обмена (номера _SentNo/_ReceivedNo). 0 = как в общих настройках; пусто в общих = 120; 0 в общих = выкл.", "Stalled-exchange threshold (message numbers). 0 = use general settings; empty general = 120; 0 general = off."},
+	KeyGenStalled:          {"Застой обмена, мин", "Stalled exchange, min"},
+	KeyCueStalled:          {"0 = выкл., пусто = 120", "0 = off, empty = 120"},
 
 	KeyMenuSettings:           {"Настройки…", "Settings…"},
 	KeySetTitleRead:           {"Exchange Checker — настройки баз (только чтение)", "Exchange Checker — database settings (read only)"},
@@ -987,6 +1097,13 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAutostartErrUnknown:    {"Служба не смогла изменить автозапуск трея.", "The service could not change the tray autostart."},
 	KeyGenPage:                {"Общие настройки…", "General settings…"},
 	KeyGenProfilesPage:        {"Базы данных…", "Databases…"},
+	KeySetNavProfiles:         {"Базы данных", "Databases"},
+	KeyDiscCandidates:         {"Найденные таблицы:", "Found tables:"},
+	KeyDiscDetails:            {"Подробности:", "Details:"},
+	KeyDiscResultLabel:        {"Результат проверки:", "Check result:"},
+	KeySetNavGeneral:          {"Общие настройки", "General settings"},
+	KeySetNavViber:            {"Уведомления Viber", "Viber notifications"},
+	KeyTipSetNavProfiles:      {"Базы данных: подключение, вход, шифрование, опрос и пороги каждой базы.", "Databases: connection, sign-in, encryption, polling and thresholds of each database."},
 	KeyGenPoll:                {"Интервал опроса, с:", "Poll interval, s:"},
 	KeyGenWarn:                {"Предупреждение через, мин:", "Warning after, min:"},
 	KeyGenError:               {"Ошибка через, мин:", "Error after, min:"},
@@ -1042,6 +1159,17 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetPortCue:          {"1433 или пусто для SQL Browser", "1433 or empty for SQL Browser"},
 	KeySetThreshCue:        {"как в общих настройках", "as in the general settings"},
 	KeySetTimeoutCue:       {"по умолчанию %d", "default %d"},
+	KeyCueName:             {"например, Склад", "e.g. Warehouse"},
+	KeyCueHost:             {"имя или IP-адрес сервера", "server name or IP address"},
+	KeyCueInstance:         {"пусто — экземпляр по умолчанию", "empty = the default instance"},
+	KeyCueDatabase:         {"имя базы 1С на сервере", "the 1C database name on the server"},
+	KeyCueLogin:            {"SQL-логин, например ec_monitor", "SQL login, e.g. ec_monitor"},
+	KeyCuePassword:         {"пароль SQL-логина", "SQL login password"},
+	KeyCueWizServer:        {"имя, IP или сервер\\экземпляр", "name, IP or server\\instance"},
+	KeyCueDiscTime:         {"ДД.ММ.ГГГГ ЧЧ:ММ", "DD.MM.YYYY HH:MM"},
+	KeyCueDiscSchema:       {"dbo", "dbo"},
+	KeyCueDiscColumn:       {"из кандидата или вручную", "from the candidate or by hand"},
+	KeyCueVbToken:          {"токен бота из Viber Admin Panel", "the bot token from the Viber Admin Panel"},
 	KeyMenuService:         {"Служба", "Service"},
 	KeyMenuSvcStart:        {"Запустить", "Start"},
 	KeyMenuSvcStop:         {"Остановить", "Stop"},
@@ -1082,7 +1210,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipSetError:         {"Через сколько минут без обмена показать ошибку. Должно быть больше предупреждения. Значение, равное унаследованному из общих настроек, не фиксируется: профиль следует общим настройкам.", "Minutes without exchange before an error. Must be greater than the warning. A value equal to the one inherited from the general settings is not fixed: the profile follows the general settings."},
 	KeyTipSetConnTimeout:   {"Сколько секунд ждать подключения к SQL Server (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for the connection to SQL Server (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
 	KeyTipSetQueryTimeout:  {"Сколько секунд ждать ответа на запрос (1–600). Значение, равное унаследованному (по умолчанию), не фиксируется: профиль следует общим настройкам.", "Seconds to wait for a query result (1–600). A value equal to the inherited (default) one is not fixed: the profile follows the general settings."},
-	KeyTipSetPage:          {"Переключиться между базами и общими настройками.", "Switch between the databases and the general settings."},
+	KeyTipSetPage:          {"Общие настройки компьютера: опрос, пороги, звук, язык журнала службы, автозапуск.", "Computer-wide settings: polling, thresholds, sound, service log language, autostart."},
 	KeyTipSetStatus:        {"Результат последнего действия и ошибки.", "Result of the last action and errors."},
 	KeyTipSetTest:          {"Проверить подключение и чтение таблиц с текущими значениями формы.", "Test the connection and table reading with the current form values."},
 	KeyTipSetCancelTest:    {"Прервать идущую проверку подключения.", "Stop the running connection test."},
@@ -1174,6 +1302,22 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyWizGrantPlaceholder: {"Замените %s на пароль логина.", "Replace %s with the login password."},
 	KeyWizClipFailed:       {"Не удалось скопировать в буфер обмена: %s", "Could not copy to the clipboard: %s"},
 	KeyWizAccessDenied:     {"Нет прав администратора для этой команды. Закройте окно и откройте настройки снова через «Изменить (администратор)» с подтверждением UAC.", "Administrator rights are required for this command. Close the window and open the settings again with \"Edit (administrator)\" and confirm the UAC prompt."},
+	KeyWizSubnet:           {"Сканировать подсеть…", "Scan subnet…"},
+	KeyWizCancelBrowse:     {"Отменить поиск", "Cancel search"},
+	KeyWizBrowseProgress:   {"Поиск: %s %d/%d, найдено %d", "Search: %s %d/%d, found %d"},
+	KeyWizBusyRetry:        {"Служба занята. Повтор через %d с…", "The service is busy. Retry in %d s…"},
+	KeyWizPublicNetwork:    {"Активен профиль сети «Общедоступная»: поиск SQL Server в ней ограничен правилами брандмауэра. Переключите сеть на «Частная» (домашняя/рабочая) или «Домен».", "The active network profile is Public: SQL Server discovery is limited by the firewall. Switch the network to Private (Home/Work) or Domain."},
+	KeyWizCheckSteps:       {"Проверка подключения", "Connection check"},
+	KeyWizCheckParse:       {"Разбор адреса", "Parse address"},
+	KeyWizCheckDNS:         {"DNS", "DNS"},
+	KeyWizCheckBrowser:     {"SQL Server Browser", "SQL Server Browser"},
+	KeyWizCheckTCP:         {"TCP", "TCP"},
+	KeyWizCheckPrelogin:    {"PRELOGIN", "PRELOGIN"},
+	KeyWizCheckTLS:         {"Шифрование", "Encryption"},
+	KeyWizCheckLogin:       {"Вход", "Login"},
+	KeyWizCheckDB:          {"База данных", "Database"},
+	KeyWizCheckTables:      {"Таблицы обмена", "Exchange tables"},
+	KeyWizChecking:         {"Проверка сервера…", "Checking the server…"},
 	KeyWizErrCode:          {"Код ошибки: %s", "Error code: %s"},
 	KeyWizWhatToDo:         {"Что делать:", "What to do:"},
 	KeyWizFBLogin:          {"Проверьте логин и пароль; для учётной записи компьютера — что у неё есть логин на SQL Server (кнопка «Скопировать SQL-скрипт прав»).", "Check the login and the password; for the computer account, check that it has a SQL Server login (\"Copy the permissions SQL script\")."},
@@ -1188,7 +1332,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyWizFBConfig:         {"Параметры подключения заданы неверно: проверьте поля шага «Сервер».", "The connection settings are wrong: check the fields of the Server step."},
 	KeyWizFBOther:          {"Проверьте параметры подключения и журнал службы EC.", "Check the connection settings and the EC service log."},
 	KeyTipWizServer:        {"Имя или IP-адрес SQL Server, для именованного экземпляра — «компьютер\\экземпляр». Без «tcp:», «np:» и UNC-путей.", "Name or IP address of the SQL Server, \"computer\\instance\" for a named instance. No \"tcp:\", \"np:\" or UNC paths."},
-	KeyTipWizFind:          {"Найти серверы через SQL Server Browser: пустое поле «Сервер» — в локальной сети, иначе — на указанном компьютере.", "Find servers with the SQL Server Browser: an empty Server box searches the local network, otherwise the given computer."},
+	KeyTipWizFind:          {"Найти серверы через SQL Server Browser: по умолчанию — этот компьютер и локальная сеть; подсеть — отдельной кнопкой.", "Find servers with the SQL Server Browser: by default this computer and the local network; subnet scan is a separate button."},
+	KeyTipWizSubnet:        {"Сканировать TCP-порты SQL в подсети этого компьютера (дольше; только по явному запросу).", "Scan SQL TCP ports on this computer's subnet (slower; only on explicit request)."},
+	KeyTipWizCancelBrowse:  {"Отменить текущий поиск серверов.", "Cancel the current server search."},
 	KeyTipWizInstances:     {"Найденные экземпляры SQL Server; выбор подставляет адрес в поле «Сервер».", "SQL Server instances found; picking one fills the Server box."},
 	KeyTipWizPort:          {"TCP-порт; пусто — порт по умолчанию или через SQL Server Browser.", "TCP port; empty = the default port or via the SQL Server Browser."},
 	KeyTipWizAuth:          {"Логин SQL Server или учётная запись компьютера, от имени которой работает служба EC.", "A SQL Server login or the computer account the EC service runs as."},

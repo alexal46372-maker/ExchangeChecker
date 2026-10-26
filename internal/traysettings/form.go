@@ -32,6 +32,7 @@ const (
 	FieldPreset       Field = "serverPreset"
 	FieldProfWarn     Field = "profile.warnMinutes"
 	FieldProfError    Field = "profile.errorMinutes"
+	FieldProfStalled  Field = "profile.stalledMinutes"
 	FieldConnTimeout  Field = "connectTimeoutSec"
 	FieldQueryTimeout Field = "queryTimeoutSec"
 )
@@ -98,6 +99,7 @@ type Form struct {
 	Preset                    string
 	WarnMin, ErrorMin         string
 	ConnTimeout, QueryTimeout string
+	StalledMin                string // 0 = inherit settings.stalledMinutes
 	InhWarn, InhError         int
 }
 
@@ -140,6 +142,7 @@ func FromProfileIn(p model.Profile, global model.Settings) Form {
 	f.WarnMin, f.ErrorMin = pick(p.WarnMinutes, f.InhWarn), pick(p.ErrorMinutes, f.InhError)
 	f.ConnTimeout = pick(p.ConnectTimeoutSec, model.DefaultConnectTimeoutSec)
 	f.QueryTimeout = pick(p.QueryTimeoutSec, model.DefaultQueryTimeoutSec)
+	f.StalledMin = strconv.Itoa(p.StalledMinutes) // 0 = inherit
 	return f
 }
 
@@ -193,6 +196,18 @@ func (f Form) applyLimits(p *model.Profile) *model.FieldError {
 	}
 	if p.QueryTimeoutSec, fe = number("queryTimeoutSec", f.QueryTimeout, 1, model.MaxTimeoutSec, model.DefaultQueryTimeoutSec); fe != nil {
 		return fe
+	}
+	// stalledMinutes: 0 = inherit; else 10..1440 (empty → 0)
+	st := strings.TrimSpace(f.StalledMin)
+	if st == "" {
+		p.StalledMinutes = 0
+	} else {
+		v, err := strconv.Atoi(st)
+		if err != nil || !(v == 0 || (v >= model.MinStalledMinutes && v <= model.MaxStalledMinutes)) {
+			return fieldErr("stalledMinutes", model.ValRange,
+				strconv.Itoa(model.MinStalledMinutes), strconv.Itoa(model.MaxStalledMinutes), st)
+		}
+		p.StalledMinutes = v
 	}
 	p.ServerPreset = f.Preset
 	return nil
@@ -292,6 +307,8 @@ func FocusProfileField(path string, params []string) Field {
 		return FieldProfWarn
 	case "errorMinutes":
 		return FieldProfError
+	case "stalledMinutes":
+		return FieldProfStalled
 	case "connectTimeoutSec", "queryTimeoutSec", "serverPreset":
 		return Field(path)
 	}

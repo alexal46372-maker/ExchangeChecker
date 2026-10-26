@@ -3,10 +3,13 @@
 package wintray
 
 import (
+	"strings"
+
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // Alert window control IDs.
@@ -40,6 +43,45 @@ type alertWindow struct {
 	onAck, onClose           func()
 	onMute                   func()
 	style                    uint32 // window style (tests: only Minimize / Close)
+	laid                     bool   // laid out once: relayouts keep the position
+	textStr, statusStr       string // the shown texts (their size, phase 11)
+}
+
+// layout places the controls (phase 11, CHK-TRAY-45): icon | text and
+// status, the hint, «Звук» on the left, «Подтвердить» / «Закрыть» right.
+// The text and the status are dynamic: fixed boxes; the buttons are as
+// wide as their longest text in this language.
+func (aw *alertWindow) layout() {
+	mute := uiCtl(aw.mute, ui.Button, longest(i18n.T(i18n.KeyAlertMute, aw.lang), i18n.T(i18n.KeyAlertUnmute, aw.lang)))
+	root := &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: []ui.Node{
+		&ui.Row{Align: ui.Top, Gap: ui.P16, Grow: true, Items: []ui.Node{
+			&ui.Ctl{H: aw.icon, Kind: ui.Box, W: 32, Hgt: 32},
+			&ui.Col{Gap: ui.P8, Items: []ui.Node{
+				// phase 11: as tall as the alert text (no hole above the
+				// status line); the status only when there is one
+				&ui.Ctl{H: aw.text, Kind: ui.Label, W: 448, Text: aw.textStr, Lines: strings.Count(aw.textStr, "\n") + 1, Grow: true},
+				&ui.Ctl{H: aw.status, Kind: ui.Label, W: 448, Text: aw.statusStr, Lines: 1, Grow: true, Hidden: aw.statusStr == ""},
+			}},
+		}},
+		uiCtl(aw.hint, ui.Label, ""),
+		&ui.Row{Grow: true, Items: []ui.Node{mute, &ui.Row{Right: true, Items: []ui.Node{
+			uiCtl(aw.ack, ui.Button, ""), uiCtl(aw.close, ui.Button, "")}}}},
+	}}}
+	// a relayout (language change, new text) keeps the position
+	fitForm(aw.hwnd, &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: root.Child.(*ui.Col).Items[:2]}},
+		&ui.Pad{Left: ui.P16, Right: ui.P16, Bottom: ui.P16, Child: root.Child.(*ui.Col).Items[2]}, 0, aw.laid)
+	aw.laid = true
+}
+
+// longest is the longest of the texts (a control showing either).
+func longest(s ...string) string {
+	l := ""
+	for _, v := range s {
+		if len([]rune(v)) > len([]rune(l)) {
+			l = v
+		}
+	}
+	return l
 }
 
 func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWindow, error) {
@@ -83,13 +125,15 @@ func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWi
 		return nil, err
 	}
 	aw.hwnd = hwnd
-	aw.icon = child(hwnd, "STATIC", "", winapi.SS_ICON, idAlertIcon, 16, 16, 32, 32)
-	aw.text = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertText, 64, 16, w-96, h-150)
-	aw.status = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertStatus, 64, h-128, w-96, 20)
-	aw.hint = child(hwnd, "STATIC", i18n.T(i18n.KeyAlertCloseHint, lang), winapi.SS_LEFT, idAlertHint, 16, h-104, w-48, 32)
-	aw.mute = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertMute, lang), winapi.WS_TABSTOP, idAlertMute, 16, h-70, 120, 28)
-	aw.ack = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertAck, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idAlertAck, w-264, h-70, 120, 28)
-	aw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertClose, lang), winapi.WS_TABSTOP, idAlertClose, w-136, h-70, 104, 28)
+	// phase 11 (CHK-TRAY-45): laid out by the ui framework
+	aw.icon = child(hwnd, "STATIC", "", winapi.SS_ICON, idAlertIcon, 0, 0, 0, 0)
+	aw.text = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertText, 0, 0, 0, 0)
+	aw.status = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertStatus, 0, 0, 0, 0)
+	aw.hint = child(hwnd, "STATIC", i18n.T(i18n.KeyAlertCloseHint, lang), winapi.SS_LEFT, idAlertHint, 0, 0, 0, 0)
+	aw.mute = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertMute, lang), winapi.WS_TABSTOP, idAlertMute, 0, 0, 0, 0)
+	aw.ack = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertAck, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idAlertAck, 0, 0, 0, 0)
+	aw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertClose, lang), winapi.WS_TABSTOP, idAlertClose, 0, 0, 0, 0)
+	aw.layout()
 	aw.tips = newTooltips(hwnd) // CHK-TRAY-15
 	aw.setTips()
 	return aw, nil
@@ -106,8 +150,13 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 		winapi.SendMessage(aw.icon, winapi.STM_SETICON, winapi.LoadSystemIcon(icon), 0)
 	}
 	winapi.SetWindowText(aw.hwnd, trayalert.Title(v, aw.lang))
-	winapi.SetWindowText(aw.text, trayalert.Text(v, aw.lang))
+	text := trayalert.Text(v, aw.lang)
+	winapi.SetWindowText(aw.text, text)
 	winapi.SetWindowText(aw.status, v.Message)
+	if t := strings.ReplaceAll(text, "\r\n", "\n"); t != aw.textStr || v.Message != aw.statusStr {
+		aw.textStr, aw.statusStr = t, v.Message
+		aw.layout()
+	}
 	winapi.EnableWindow(aw.ack, v.CanAck)
 	aw.muted = v.Muted
 	winapi.SetWindowText(aw.mute, aw.muteText())
@@ -149,6 +198,7 @@ func (aw *alertWindow) setLang(lang string) {
 	winapi.SetWindowText(aw.close, i18n.T(i18n.KeyAlertClose, lang))
 	winapi.SetWindowText(aw.mute, aw.muteText())
 	aw.setTips()
+	aw.layout() // texts of the other language
 }
 
 // setTips sets the button tooltips in the current language.

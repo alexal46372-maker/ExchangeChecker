@@ -44,6 +44,10 @@ type Wizard struct {
 	Instances     []model.SQLServerInstance
 	BrowsePartial bool
 	Responders    int
+	BrowseAdvice  []string                 // sql_browse advice keys
+	BrowseLocal   *model.SQLBrowseLocalInfo // local.browserState etc.
+
+	CheckSteps []model.SQLCheckStep // sql_test_steps progress / result
 
 	Databases   []model.SQLDatabaseInfo
 	DBTruncated bool
@@ -119,25 +123,16 @@ func (z *Wizard) ServerProblem(e *Editor) *Problem {
 	return nil
 }
 
-// BrowseRequest is sql_browse: the host part of the server box (unicast)
-// or, with an empty box, the local network (broadcast).
+// BrowseRequest is sql_browse with empty Mode (local+broadcast, or host
+// when the server box is filled) — CHK-TRAY-52 default search.
 func (z *Wizard) BrowseRequest() model.IPCRequest {
-	host, _ := SplitServer(strings.TrimSpace(z.Server))
-	return model.IPCRequest{Cmd: model.CmdSQLBrowse, Host: strings.TrimSpace(host)}
+	return z.BrowseRequestMode(model.SQLBrowseAuto)
 }
 
-// BrowseDone takes a sql_browse reply; the text is the result line.
+// BrowseDone takes a sql_browse reply; the text is the result line plus
+// advice (CHK-TRAY-52).
 func (z *Wizard) BrowseDone(r model.SQLBrowseResult) string {
-	z.Instances = append([]model.SQLServerInstance(nil), r.Instances...)
-	z.BrowsePartial, z.Responders = r.Partial || r.Truncated, r.Responders
-	if len(z.Instances) == 0 {
-		return z.t(i18n.KeyWizNoneFound)
-	}
-	s := fmt.Sprintf(z.t(i18n.KeyWizFound), len(z.Instances), r.Responders)
-	if z.BrowsePartial {
-		s += " " + z.t(i18n.KeyWizFoundPartial)
-	}
-	return s
+	return FormatBrowseDone(z, r)
 }
 
 // InstanceLine is a row of the instance list.
@@ -421,12 +416,11 @@ func (e *Editor) WizardProblem(m model.IPCMessage, err error) *Problem {
 	case model.ErrCodeAccessDenied:
 		return &Problem{Text: e.t(i18n.KeyWizAccessDenied)}
 	case model.ErrCodeRateLimited:
-		sec := (m.RetryAfterMs + 999) / 1000
-		if sec < 1 {
-			sec = 1
-		}
-		return &Problem{Text: fmt.Sprintf(e.t(i18n.KeyWizRateLimited), sec)}
+		return &Problem{Text: fmt.Sprintf(e.t(i18n.KeyWizRateLimited), RetryAfterSeconds(m.RetryAfterMs))}
 	case model.ErrCodeBusy:
+		if m.RetryAfterMs > 0 {
+			return &Problem{Text: fmt.Sprintf(e.t(i18n.KeyWizBusyRetry), RetryAfterSeconds(m.RetryAfterMs))}
+		}
 		return &Problem{Text: e.t(i18n.KeyWizBusy)}
 	}
 	return e.InteractiveProblem(m, nil)

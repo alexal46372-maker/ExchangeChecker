@@ -55,7 +55,8 @@ func ExportCSV(rows []StatusRow, lang string) []byte {
 	return b.Bytes()
 }
 
-var htmlColors = map[Color]string{ColorGreen: "#dff3df", ColorYellow: "#fff3c4", ColorRed: "#f8d0d0", ColorGrey: "#e6e6e6"}
+// htmlColors: pale state backgrounds of the theme (CHK-TRAY-51).
+var htmlColors = map[Color]string{ColorGreen: PaleHTML(ColorGreen), ColorYellow: PaleHTML(ColorYellow), ColorRed: PaleHTML(ColorRed), ColorGrey: PaleHTML(ColorGrey)}
 
 // ExportHTML renders rows as an HTML page; at is the export time (UTC+3).
 func ExportHTML(rows []StatusRow, lang string, at time.Time) []byte {
@@ -64,7 +65,7 @@ func ExportHTML(rows []StatusRow, lang string, at time.Time) []byte {
 	title := i18n.T(i18n.KeyStTitle, lang) + " — " + i18n.T(i18n.KeyAppName, lang)
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + e(lang) + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
 	b.WriteString("<style>body{font-family:Segoe UI,Arial,sans-serif;font-size:13px}table{border-collapse:collapse}" +
-		"td,th{border:1px solid #999;padding:3px 6px;text-align:left}th{background:#eee}</style></head><body>\n")
+		"td,th{border:1px solid "+ChromeHTML(Border)+";padding:3px 6px;text-align:left}th{background:"+ChromeHTML(HeaderRow)+"}</style></head><body>\n")
 	b.WriteString("<h1>" + e(title) + "</h1>\n<p>" + e(i18n.T(i18n.KeyStExportedAt, lang)) + " " + e(at.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n<table>\n<tr>")
 	for _, h := range headers(lang) {
 		b.WriteString("<th>" + e(h) + "</th>")

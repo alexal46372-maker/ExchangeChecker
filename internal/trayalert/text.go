@@ -22,10 +22,16 @@ func levelText(l model.AlertLevel, lang string) string {
 
 // Title of the alert window (style by the worst level).
 func Title(v View, lang string) string {
+	base := i18n.T(i18n.KeyAlertTitleWarning, lang)
 	if v.Level >= model.LevelError {
-		return i18n.T(i18n.KeyAlertTitleError, lang)
+		base = i18n.T(i18n.KeyAlertTitleError, lang)
 	}
-	return i18n.T(i18n.KeyAlertTitleWarning, lang)
+	for _, a := range v.Alerts {
+		if a.Test {
+			return "[" + i18n.T(i18n.KeyAlertTestBadge, lang) + "] " + base
+		}
+	}
+	return base
 }
 
 // Line describes one alert.
@@ -70,7 +76,11 @@ func Text(v View, lang string) string {
 			lines = append(lines, sprintf(i18n.T(i18n.KeyAlertMore, lang), len(v.Alerts)-MaxLines))
 			break
 		}
-		lines = append(lines, "• "+Line(a, lang))
+		line := Line(a, lang)
+		if a.Test {
+			line = "[" + i18n.T(i18n.KeyAlertTestBadge, lang) + "] " + line
+		}
+		lines = append(lines, "• "+line)
 	}
 	return strings.Join(lines, "\r\n")
 }

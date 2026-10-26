@@ -128,6 +128,9 @@ func createWindowPx(class, title string, exStyle, style uint32, x, y, w, hgt int
 	if err != nil {
 		return 0, err
 	}
+	if style&winapi.WS_CHILD == 0 && style&winapi.WS_CAPTION != 0 {
+		setWindowIcons(hwnd) // phase 11 (CHK-TRAY-49): the app icon in the title bar
+	}
 	hmu.Lock()
 	handlers[hwnd] = h
 	hmu.Unlock()

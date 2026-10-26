@@ -13,6 +13,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // History window of one point (phase 9b, CHK-TRAY-26 / CHK-TRAY-27).
@@ -135,9 +136,9 @@ func newHistWindow(a *App, row trayui.StatusRow, show bool) (*histWindow, error)
 	}
 	hw.hwnd = hwnd
 	hw.tips = newTooltips(hwnd)
-	hw.day = child(hwnd, "BUTTON", i18n.T(i18n.KeyHistDay, hw.lang), winapi.BS_AUTORADIO|winapi.WS_TABSTOP, idHistDay, 12, 8, 110, 24)
-	hw.week = child(hwnd, "BUTTON", i18n.T(i18n.KeyHistWeek, hw.lang), winapi.BS_AUTORADIO, idHistWeek, 130, 8, 110, 24)
-	hw.chart, err = createWindow(chartClass, "", winapi.WS_EX_CLIENTEDGE, winapi.WS_CHILD|winapi.WS_VISIBLE, 10, 38, w-36, h-130, hwnd,
+	hw.day = child(hwnd, "BUTTON", i18n.T(i18n.KeyHistDay, hw.lang), winapi.BS_AUTORADIO|winapi.WS_TABSTOP, idHistDay, 0, 0, 0, 0)
+	hw.week = child(hwnd, "BUTTON", i18n.T(i18n.KeyHistWeek, hw.lang), winapi.BS_AUTORADIO, idHistWeek, 0, 0, 0, 0)
+	hw.chart, err = createWindow(chartClass, "", winapi.WS_EX_CLIENTEDGE, winapi.WS_CHILD|winapi.WS_VISIBLE, 0, 0, 0, 0, hwnd,
 		func(c uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 			switch msg {
 			case winapi.WM_PAINT:
@@ -152,11 +153,19 @@ func newHistWindow(a *App, row trayui.StatusRow, show bool) (*histWindow, error)
 		destroyWindow(hwnd)
 		return nil, err
 	}
-	by := int32(h - 84)
-	hw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idHistInfo, 12, by+5, 470, 22)
-	hw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV, hw.lang), winapi.WS_TABSTOP, idHistCSV, w-446, by, 130, 28)
-	hw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, hw.lang), winapi.WS_TABSTOP, idHistHTML, w-306, by, 130, 28)
-	hw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose, hw.lang), winapi.WS_TABSTOP, idHistClose, w-166, by, 130, 28)
+	hw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idHistInfo, 0, 0, 0, 0)
+	hw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV, hw.lang), winapi.WS_TABSTOP, idHistCSV, 0, 0, 0, 0)
+	hw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, hw.lang), winapi.WS_TABSTOP, idHistHTML, 0, 0, 0, 0)
+	hw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose, hw.lang), winapi.WS_TABSTOP, idHistClose, 0, 0, 0, 0)
+	// phase 11 (CHK-TRAY-45): span radios, the chart, info | exports, close
+	// phase 11 (CHK-TRAY-47): bar pinned, never wider than the work area
+	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
+		&ui.Row{Gap: ui.P16, Items: []ui.Node{uiCtl(hw.day, ui.Check, ""), uiCtl(hw.week, ui.Check, "")}},
+		&ui.Ctl{H: hw.chart, Kind: ui.Box, W: w - 36, Hgt: h - 130, Grow: true},
+	}}}, &ui.Pad{All: ui.P12, Child: &ui.Row{Grow: true, Items: []ui.Node{
+		&ui.Ctl{H: hw.info, Kind: ui.Box, W: 470, Hgt: 22},
+		&ui.Row{Right: true, Items: []ui.Node{uiCtl(hw.csv, ui.Button, ""), uiCtl(hw.html, ui.Button, ""), uiCtl(hw.close, ui.Button, "")}},
+	}}}, 0, false)
 	for c, k := range map[uintptr]string{hw.day: i18n.KeyTipHistDay, hw.week: i18n.KeyTipHistWeek, hw.chart: i18n.KeyTipHistChart,
 		hw.info: i18n.KeyTipHistInfo, hw.csv: i18n.KeyTipHistExportCSV, hw.html: i18n.KeyTipHistExportHTML, hw.close: i18n.KeyTipHistClose} {
 		hw.tips.set(c, i18n.T(k, hw.lang))
@@ -278,17 +287,17 @@ func (hw *histWindow) load() {
 	}()
 }
 
-// colours (COLORREF 0x00BBGGRR)
+// colours from the tray theme (CHK-TRAY-51).
 const (
-	clrWhite  = 0xFFFFFF
-	clrAxis   = 0x808080
-	clrGrid   = 0xE0E0E0
-	clrAvg    = 0xB05A1E // blue
-	clrMinMax = 0xE0B48C // light blue
-	clrWarn   = 0x00C2F2 // yellow (#F2C200)
-	clrErr    = 0x2530D9 // red (#D93025)
-	clrOK     = 0x43A02E // green (#2EA043)
-	clrText   = 0x404040
+	clrWhite  = trayui.White
+	clrAxis   = trayui.Axis
+	clrGrid   = trayui.Grid
+	clrAvg    = trayui.ChartAvg
+	clrMinMax = trayui.ChartBand
+	clrWarn   = trayui.StateWarning
+	clrErr    = trayui.StateError
+	clrOK     = trayui.StateOK
+	clrText   = trayui.Text
 )
 
 func toGDI(ps []trayui.Pt) []winapi.GDIPoint {

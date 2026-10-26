@@ -2,7 +2,10 @@
 
 package wintray
 
-import "github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+import (
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
+)
 
 // Phase 10 E (CHK-TRAY-42, PLAN §12 p.122): the settings window never
 // exceeds the work area of the monitor. The pages live in a scrolled
@@ -43,7 +46,12 @@ var hostExtent = map[uintptr][2]int32{}
 // grid if it fits, else clamped to the work area (with room for the
 // vertical scroll bar when the height is clamped).
 func settingsRect(style uint32) (x, y, w, h int32) {
-	cw, ch := px(setContentW), px(setContentH+setBarH)
+	return settingsRectPx(style, px(setContentW), px(setContentH+setBarH))
+}
+
+// settingsRectPx is settingsRect for a client of cw×ch pixels (the laid
+// out pages plus the bar, phase 11).
+func settingsRectPx(style uint32, cw, ch int32) (x, y, w, h int32) {
 	work := workArea()
 	outer := func(cw, ch int32) (int32, int32) {
 		r := winapi.RECT{Right: cw, Bottom: ch}
@@ -192,12 +200,12 @@ func (w *settingsWindow) layoutFit() {
 	}
 	var left, right []btn
 	for _, b := range w.barLeft {
-		if h := w.ctl[b.id]; h != 0 {
+		if h := w.ctl[b.id]; h != 0 && winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
 			left = append(left, btn{h, px(b.width)})
 		}
 	}
 	for _, b := range w.barRight {
-		if h := w.ctl[b.id]; h != 0 {
+		if h := w.ctl[b.id]; h != 0 && winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
 			right = append(right, btn{h, px(b.width)})
 		}
 	}
@@ -205,14 +213,26 @@ func (w *settingsWindow) layoutFit() {
 	for _, b := range right {
 		rightW += b.width + gap
 	}
-	leftW := m
+	// left buttons flow over as many rows as needed (phase 11: widths
+	// follow the texts); the right buttons end the last row, or get a row
+	// of their own when they do not fit beside the left ones
+	type spot struct {
+		b      btn
+		x, row int32
+	}
+	var spots []spot
+	x, row := m, int32(0)
 	for _, b := range left {
-		leftW += b.width + gap
+		if x > m && x+b.width > cw-m {
+			x, row = m, row+1
+		}
+		spots = append(spots, spot{b, x, row})
+		x += b.width + gap
 	}
-	rows := int32(1)
-	if leftW > cw-m-rightW {
-		rows = 2
+	if len(right) > 0 && x > m && x > cw-m-rightW {
+		row++
 	}
+	rows := row + 1
 	barH := px(setBarH) + (rows-1)*(bh+gap)
 	if barH > ch/2 {
 		barH = ch / 2
@@ -220,22 +240,20 @@ func (w *settingsWindow) layoutFit() {
 	top := ch - barH
 	winapi.MoveWindow(w.ctl[idSetStatus], m, top+gap, cw-2*m, px(40))
 	by := top + gap + px(40) + gap
-	x := m
-	for _, b := range left {
-		winapi.MoveWindow(b.h, x, by, b.width, bh)
-		x += b.width + gap
-	}
-	if rows == 2 {
-		by += bh + gap
+	for _, s := range spots {
+		winapi.MoveWindow(s.b.h, s.x, by+s.row*(bh+gap), s.b.width, bh)
 	}
 	x = cw - m
 	for i := len(right) - 1; i >= 0; i-- {
 		x -= right[i].width
-		winapi.MoveWindow(right[i].h, x, by, right[i].width, bh)
+		winapi.MoveWindow(right[i].h, x, by+row*(bh+gap), right[i].width, bh)
 		x -= gap
 	}
 	winapi.MoveWindow(w.host, 0, 0, cw, top)
 	w.contentW, w.contentH = px(setContentW), px(setContentH)
+	if w.pageW > 0 { // laid out by the framework (phase 11)
+		w.contentW, w.contentH = w.pageW, w.pageH
+	}
 	// the client of the host without its scroll bars
 	w.viewW, w.viewH = cw, top
 	if w.contentH > w.viewH {
@@ -256,4 +274,148 @@ func (w *settingsWindow) layoutFit() {
 type barButton struct {
 	id    int32
 	width int32
+}
+
+// layoutPages lays out the page host (phase 11, CHK-TRAY-47): one tree;
+// the pages share the area right of the navigation because only the
+// current page is visible; hidden controls take no room. The window is
+// sized for the page shown now (the databases page) and is never wider
+// than the work area.
+func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Node) {
+	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8,
+		Child: &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, &ui.Col{Gap: -1, Items: pages}}}}
+	w.rootM = m
+	syncCues(w.root)
+	w.ctlOf = map[uintptr]*ui.Ctl{}
+	ui.Walk(w.root, func(c *ui.Ctl) {
+		if c.H != 0 {
+			w.ctlOf[c.H] = c
+			c.Hidden = winapi.WindowStyle(c.H)&winapi.WS_VISIBLE == 0
+		}
+	})
+	w.syncNavIcons()
+	style := winapi.WindowStyle(w.hwnd) &^ (winapi.WS_VSCROLL | winapi.WS_HSCROLL)
+	work := workArea()
+	fw, _ := outerSize(0, 0, style, 0)
+	maxW := work.Right - work.Left - fw - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
+	// the window is as wide as the widest page (each shrunk to the work
+	// area), so that no other page scrolls horizontally: lay everything
+	// out visible once
+	hidden := map[*ui.Ctl]bool{}
+	ui.Walk(w.root, func(c *ui.Ctl) { hidden[c], c.Hidden = c.Hidden, false })
+	var allW int32
+	for i := 0; i < 8; i++ {
+		allW, _ = ui.Layout(w.root, m, 0, 0, 0)
+		if over := allW - maxW; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
+			break
+		}
+	}
+	for c, h := range hidden {
+		c.Hidden = h
+	}
+	for i := 0; i < 8; i++ {
+		w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, 0)
+		if over := w.pageW - maxW; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
+			break
+		}
+	}
+	w.fitWrap()
+	ui.Walk(w.root, w.placeCtl)
+	x, y, ww, wh := settingsRectPx(style, min32(max32(w.pageW, allW), maxW), w.pageH+px(setBarH))
+	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
+}
+
+// show shows or hides a control: a laid out one through ui.Ctl.Hidden
+// (relayoutAll applies it), the others (bar, before the layout) at once.
+func (w *settingsWindow) show(h uintptr, on bool) {
+	if c := w.ctlOf[h]; c != nil {
+		c.Hidden = !on
+		return
+	}
+	cmd := int32(winapi.SW_HIDE)
+	if on {
+		cmd = winapi.SW_SHOW
+	}
+	winapi.ShowWindow(h, cmd)
+}
+
+// relayoutAll lays the host content out again (no holes for hidden
+// controls), shows / hides the controls and fits the bar and scrolling.
+func (w *settingsWindow) relayoutAll() {
+	if w.root == nil {
+		return
+	}
+	syncCues(w.root)
+	w.syncNavIcons()
+	// another page may be wider: shrink it to the window (no horizontal
+	// scrolling, phase 11)
+	avail := winapi.GetClientRect(w.hwnd).Right - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
+	for i := 0; i < 8; i++ {
+		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+		if over := w.pageW - avail; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
+			break
+		}
+	}
+	w.fitWrap()
+	ui.Walk(w.root, w.placeCtl)
+	w.layoutFit()
+}
+
+// placeCtl moves a laid out page control (host coordinates; combo boxes
+// keep their drop-down height), records it for the scrolling and shows
+// it; an unplaced (hidden) one is hidden.
+func (w *settingsWindow) placeCtl(c *ui.Ctl) {
+	if c.H == 0 {
+		return
+	}
+	if !c.Placed {
+		winapi.ShowWindow(c.H, winapi.SW_HIDE)
+		return
+	}
+	r := c.Rect
+	h := r.H
+	if c.Kind == ui.Combo {
+		h += px(comboDrop)
+	}
+	w.hostRect[c.H] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + h}
+	winapi.MoveWindow(c.H, r.X, r.Y, r.W, h)
+	winapi.ShowWindow(c.H, winapi.SW_SHOWNA)
+}
+
+// fitWrap sets the height of the wrapped text boxes to their text at
+// the width of the last layout (an empty box takes almost no room) and
+// lays the tree out again when a height changed.
+func (w *settingsWindow) fitWrap() {
+	changed := false
+	for _, c := range w.wrap {
+		if c.H == 0 || c.Rect.W <= 0 {
+			continue
+		}
+		hg := int32(1)
+		if text := winapi.GetWindowText(c.H); text != "" {
+			_, th := winapi.TextSize(winapi.SendMessage(c.H, 0x0031 /* WM_GETFONT */, 0, 0), text, c.Rect.W)
+			hg = unpx(th) + 1
+		}
+		if hg != c.Hgt {
+			c.Hgt, changed = hg, true
+		}
+	}
+	if changed {
+		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+	}
+}
+
+// stackPairs puts the two number boxes of a thresholds / timeouts row on
+// rows of their own (a window still too wide after Shrink); it reports
+// whether anything changed.
+func (w *settingsWindow) stackPairs() bool {
+	if w.checksG == nil || w.stackedRows == nil {
+		return false
+	}
+	w.checksG.Rows, w.stackedRows = w.stackedRows, nil
+	if w.tlsG != nil && w.tlsStacked != nil {
+		last := len(w.tlsG.Rows) - 1
+		w.tlsG.Rows[last].Field, w.tlsStacked = w.tlsStacked, nil
+	}
+	return true
 }

@@ -75,6 +75,24 @@ func (w *settingsWindow) applyUIMode() {
 	w.rebuildTabs()
 	w.hideInactiveTabControls()
 	w.relayoutAll() // Hidden controls take no room (no holes)
+	// Belt: Simple↔Expert can leave expert HWNDs WS_VISIBLE at a stale Y
+	// inside panel[0] (Conn/Login overlap photo A). Re-hide after place.
+	if simple {
+		for _, id := range expertOnly {
+			if id == idSetDiscover && w.cfg.mode != traysettings.Admin {
+				continue
+			}
+			if h := w.ctl[id]; h != 0 {
+				hideWindowTree(h)
+			}
+			if h := w.labels[id]; h != 0 {
+				hideWindowTree(h)
+			}
+		}
+		if g := w.groups[i18n.KeySetGroupTLS]; g != 0 {
+			hideWindowTree(g)
+		}
+	}
 }
 
 func (w *settingsWindow) toggleUIMode() {

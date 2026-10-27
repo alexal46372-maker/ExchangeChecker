@@ -1009,7 +1009,8 @@ func (w *settingsWindow) update() {
 	winapi.EnableWindow(w.ctl[idSetCancelTest], testing)
 	if h := w.ctl[idSetAlarmTest]; h != 0 {
 		hasAlarm := sess.Supported(model.CmdAlarmTest) || sess.Status().Has(model.CapAlarmTest)
-		if hasAlarm {
+		// bar control is on pageCtl[0] — never SW_SHOW on another tab (overlay)
+		if hasAlarm && w.page == 0 {
 			winapi.ShowWindow(h, winapi.SW_SHOW)
 			admin := w.cfg.mode == traysettings.Admin
 			winapi.EnableWindow(h, admin && !w.busy)
@@ -1021,7 +1022,7 @@ func (w *settingsWindow) update() {
 				w.tips.set(h, w.t(tip))
 			}
 		} else {
-			winapi.ShowWindow(h, winapi.SW_HIDE)
+			hideWindowTree(h)
 		}
 	}
 	saved := has && !ed.IsNew
@@ -1055,11 +1056,11 @@ func (w *settingsWindow) update() {
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		if h := w.ctl[idSetClone]; h != 0 {
 			hasClone := w.cfg.session.Supported(model.CmdCloneProfile)
-			if cloneButtonVisible(ed.Mode, hasClone) {
+			if cloneButtonVisible(ed.Mode, hasClone) && w.page == 0 {
 				winapi.ShowWindow(h, winapi.SW_SHOW)
 				winapi.EnableWindow(h, saved && !w.busy)
 			} else {
-				winapi.ShowWindow(h, winapi.SW_HIDE)
+				hideWindowTree(h)
 			}
 		}
 		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy && w.wiz == nil)
@@ -1217,12 +1218,13 @@ func (w *settingsWindow) setPage(p int) {
 	}
 	w.syncTabSelection()
 	w.applyUIMode() // lays the page out (relayoutAll)
-	w.hideInactiveTabControls() // again after mode/layout (simple↔expert)
+	w.update()
+	// update() may SW_SHOW page-0 bar/list controls — clear inactive again
+	w.hideInactiveTabControls()
 	if w.host != 0 {
 		winapi.InvalidateRect(w.host, true)
 		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
 	}
-	w.update()
 }
 
 // readGeneral copies the general page into the editor (administrator).

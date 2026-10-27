@@ -51,8 +51,9 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 			t.Errorf("%s: back to the databases page", lang)
 		}
 		w.toggleUIMode() // Simple: only Databases tab
-		if winapi.TabItemCount(w.ctl[idSetTabs]) != 1 || w.tabPageAt(0) != 0 {
-			t.Errorf("%s: simple mode must keep only Databases tab, got %d", lang, winapi.TabItemCount(w.ctl[idSetTabs]))
+		nTabs := winapi.TabItemCount(w.ctl[idSetTabs])
+		if nTabs != 1 || len(w.tabPages) != 1 || w.tabPageAt(0) != 0 {
+			t.Errorf("%s: simple mode must keep only Databases tab, got win=%d pages=%v", lang, nTabs, w.tabPages)
 		}
 		if !visible(w.ctl[idSetUIMode]) {
 			t.Errorf("%s: mode button must stay", lang)

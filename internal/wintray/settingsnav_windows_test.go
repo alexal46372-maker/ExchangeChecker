@@ -9,7 +9,6 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
 // TestCHK_TRAY_47_Navigation — section tabs (SysTabControl32): Databases /
@@ -94,16 +93,17 @@ func TestCHK_TRAY_47_Cues(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_47_PageClear — HARD clear: start in Simple (Alex repro),
-// flip Simple↔Expert several times, then every distinct tab pair A→B
-// back and forth. Inactive pageCtl must be Hidden and not WS_VISIBLE;
-// never two page trees visible at once (Gap:-1 overlap).
+// TestCHK_TRAY_47_PageClear — HARD clear (Conchita @400d1ae): one child
+// panel HWND per tab. After every switch, enum Children(host): the only
+// visible page tree is the active panel; any GetWindowRect overlap of two
+// visible host-siblings fails. Start Simple, Simple↔Expert, all tab pairs.
+// Do not whack-a-mole pageCtl alone — that left CI green with live ghosts.
 func TestCHK_TRAY_47_PageClear(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	svc := newViberCfg()
 	app := startCfgApp(t, svc.cfgService, true, nil)
-	// Start Simple — the live Win failure path (#6 missed this).
+	// Start Simple — the live Win failure path (#6 / #8 missed ghosts).
 	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
 		hidden: false, // visible window when possible
 		uiMode: traysettings.UISimple})
@@ -119,34 +119,12 @@ func TestCHK_TRAY_47_PageClear(t *testing.T) {
 		if why := w.assertPageClear(); why != "" {
 			t.Fatalf("%s page=%d mode=%v: %s", tag, w.page, w.UIMode(), why)
 		}
-		// mandatory: inactive pageCtl HWNDs
-		for i, hs := range w.pageCtl {
-			if i == w.page {
-				continue
-			}
-			for _, h := range hs {
-				if h == 0 {
-					continue
-				}
-				if winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
-					t.Fatalf("%s: pageCtl[%d] hwnd still WS_VISIBLE", tag, i)
-				}
-				if c := w.ctlOf[h]; c != nil && !c.Hidden {
-					t.Fatalf("%s: pageCtl[%d] Ctl.Hidden=false", tag, i)
-				}
-			}
-			if n := w.pages[i]; n != nil {
-				ui.Walk(n, func(c *ui.Ctl) {
-					if c == nil || c.H == 0 {
-						return
-					}
-					if !c.Hidden {
-						t.Errorf("%s: pages[%d] not Hidden", tag, i)
-					}
-					if visible(c.H) {
-						t.Errorf("%s: pages[%d] still WS_VISIBLE", tag, i)
-					}
-				})
+		if why := assertHostChildrenClear(w); why != "" {
+			t.Fatalf("%s host-enum: %s", tag, why)
+		}
+		for i := range w.pagePanel {
+			if w.pagePanel[i] == 0 {
+				t.Fatalf("%s: pagePanel[%d] missing", tag, i)
 			}
 		}
 	}
@@ -156,7 +134,7 @@ func TestCHK_TRAY_47_PageClear(t *testing.T) {
 		t.Fatalf("want Simple with expert fields hidden")
 	}
 
-	// Simple ↔ Expert several times (mandatory)
+	// Simple ↔ Expert several times (mandatory); expert fields stay in panel[0]
 	for i := 0; i < 3; i++ {
 		w.toggleUIMode()
 		check("to-expert")
@@ -190,7 +168,6 @@ func TestCHK_TRAY_47_PageClear(t *testing.T) {
 				if w.page != b || !w.navTabSelected(b) {
 					t.Fatalf("round %d %d→%d: page=%d", round, a, b, w.page)
 				}
-				// active page sample control visible; previous not
 				switch b {
 				case 0:
 					if !visible(w.ctl[idSetHost]) || visible(w.ctl[idGenPoll]) || visible(w.ctl[idVbToken]) {
@@ -208,4 +185,64 @@ func TestCHK_TRAY_47_PageClear(t *testing.T) {
 			}
 		}
 	}
+}
+
+// assertHostChildrenClear enums Children(host): only chrome + the active
+// pagePanel may be IsWindowVisible; any other visible page panel / any
+// GetWindowRect overlap of two visible direct siblings fails.
+func assertHostChildrenClear(w *settingsWindow) string {
+	if w.host == 0 {
+		return "no host"
+	}
+	active := w.pagePanel[w.page]
+	var visibleSiblings []struct {
+		h uintptr
+		r winapi.RECT
+	}
+	for _, h := range winapi.Children(w.host) {
+		if h == 0 || !winapi.IsWindowVisible(h) {
+			continue
+		}
+		// inactive page panels must not be visible
+		for i, pan := range w.pagePanel {
+			if pan == h && i != w.page {
+				return "inactive pagePanel visible among host children"
+			}
+		}
+		// any direct host child that belongs to an inactive page (orphan)
+		if pg := w.pageOfHWND(h); pg >= 0 && pg != w.page && h != active {
+			return "host child belongs to inactive page but IsWindowVisible"
+		}
+		visibleSiblings = append(visibleSiblings, struct {
+			h uintptr
+			r winapi.RECT
+		}{h, winapi.GetWindowRect(h)})
+	}
+	for a := 0; a < len(visibleSiblings); a++ {
+		for b := a + 1; b < len(visibleSiblings); b++ {
+			ra, rb := visibleSiblings[a].r, visibleSiblings[b].r
+			if rectsOverlap(ra, rb) {
+				// chrome may sit beside the active panel without overlap;
+				// overlap of two visible siblings is always a fail (Conchita)
+				return "overlap: GetWindowRect of two visible host siblings"
+			}
+		}
+	}
+	// active panel tree must not expose inactive-page ghosts via IsWindowVisible
+	if active != 0 {
+		for i, pan := range w.pagePanel {
+			if i == w.page || pan == 0 {
+				continue
+			}
+			if winapi.IsWindowVisible(pan) {
+				return "inactive panel IsWindowVisible"
+			}
+			for _, ch := range winapi.Children(pan) {
+				if winapi.IsWindowVisible(ch) {
+					return "ghost under inactive panel (Children sweep)"
+				}
+			}
+		}
+	}
+	return ""
 }

@@ -244,6 +244,9 @@ type settingsWindow struct {
 	statusRefreshes, statusRefreshed int
 	page                             int          // 0 = databases, 1 = general settings, 2 = Viber
 	pageCtl                          [3][]uintptr // profiles, «Общие», «Viber» (phase 10 D4)
+	pagePanel                        [3]uintptr   // one child HWND per tab (SW_HIDE hides tree)
+	pageParent                       uintptr      // CreateWindow parent while building a page
+	pageSlot                         winapi.RECT  // shared Gap:-1 slot (host coords) for panels
 	pages                            [3]ui.Node   // page roots for SetHidden on switch (no overlay)
 	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs
 	tabPages                         []int        // tab index → page index
@@ -382,8 +385,17 @@ func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw,
 	parent := w.host
 	if w.inBar || parent == 0 {
 		parent = w.hwnd
+	} else if w.pageParent != 0 {
+		parent = w.pageParent
 	}
-	btn := class == "BUTTON" && style&0xF != winapi.BS_GROUPBOX && parent == w.host
+	onPage := false
+	for _, p := range w.pagePanel {
+		if p != 0 && parent == p {
+			onPage = true
+			break
+		}
+	}
+	btn := class == "BUTTON" && style&0xF != winapi.BS_GROUPBOX && (parent == w.host || onPage)
 	if btn {
 		style |= winapi.BS_NOTIFY
 	}
@@ -404,7 +416,7 @@ func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw,
 		}
 		w.notifyBtn[h] = true
 	}
-	if parent == w.host { // a combo box keeps its drop-down height on MoveWindow
+	if parent == w.host { // host children scroll via hostRect; panel children via the panel
 		w.hostRect[h] = winapi.RECT{Left: x, Top: y, Right: x + cw, Bottom: y + ch}
 	}
 	return h
@@ -513,7 +525,9 @@ func (w *settingsWindow) build() {
 	}
 	mode := navRow(add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 185, 0), trayui.IcoNavMode)
 	winapi.SetWindowText(w.ctl[idSetUIMode], "") // applyUIMode names it
-	w.cur = &w.pageCtl[0]
+	w.ensurePagePanels()
+	// left column (mode already created): stays a host child, visible on every tab
+	w.cur = nil
 	list := add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idSetList, ui.Box, 205, 250)
 	// phase 11 (CHK-TRAY-48): the list as wide as the navigation column
 	list.Grow, list.NoShrink = true, true
@@ -529,10 +543,12 @@ func (w *settingsWindow) build() {
 		xfer = &ui.Row{Items: []ui.Node{add("BUTTON", w.t(i18n.KeyXferExport), 0, winapi.WS_TABSTOP, idSetExport, ui.Button, 100, 0),
 			add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, ui.Button, 100, 0)}}
 	}
-	// profile page: four group boxes (phase 10 D3)
-	// phase 11 (CHK-TRAY-47): one field column for the whole page
-	// (ui.Share), «Порт» on its own row, the TLS boxes in one row,
-	// hints and info under the groups, full width (the text wraps)
+	// profile page: children of pagePanel[0] (one HWND per tab — Conchita)
+	w.pageParent = w.pagePanel[0]
+	w.cur = &w.pageCtl[0]
+	// four group boxes (phase 10 D3); phase 11 (CHK-TRAY-47): one field
+	// column (ui.Share), «Порт» on its own row, TLS in one row, hints/info
+	// under the groups, full width (the text wraps)
 	nameRow := field(w.t(i18n.KeySetName), idSetName, "EDIT", edit, cw)
 	hostRow := field(w.t(i18n.KeySetHost), idSetHost, "EDIT", edit, cw)
 	instRow := field(w.t(i18n.KeySetInstance), idSetInstance, "EDIT", edit, 200)
@@ -595,7 +611,8 @@ func (w *settingsWindow) build() {
 	w.wrap = []*ui.Ctl{hints, info, pwHint}
 	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
 
-	// general settings page (hidden until «Общие настройки…»)
+	// general settings page — children of pagePanel[1]
+	w.pageParent = w.pagePanel[1]
 	w.cur = &w.pageCtl[1]
 	gBox := add("BUTTON", w.t(i18n.KeySetGroupGeneral), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
 	w.groups[i18n.KeySetGroupGeneral] = gBox.H
@@ -623,6 +640,7 @@ func (w *settingsWindow) build() {
 	w.wrap = append(w.wrap, autoErr, note)
 	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
 	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
+	w.pageParent = 0
 	w.cur = nil
 
 	// the bar: children of the window, pinned to the bottom (layoutFit)
@@ -655,7 +673,9 @@ func (w *settingsWindow) build() {
 	}
 	button(idSetClose, i18n.KeySetClose, 90, true)
 	w.inBar = false
+	w.pageParent = w.pagePanel[pageViber]
 	viberPage := w.buildViber()
+	w.pageParent = 0
 	if xfer != nil {
 		left = append(left, xfer)
 	}
@@ -1190,36 +1210,23 @@ func (w *settingsWindow) profileDiscardOK() bool {
 }
 
 // setPage shows the databases (0), general settings (1), or Viber (2) page.
-// Every inactive-tab control is hard-hidden (SetHidden + SW_HIDE + children)
-// before the new tab is shown — page roots alone were not enough on live Win.
+// Inactive tabs are SW_HIDE'd via their pagePanel HWND (entire child tree
+// disappears) — hide-by-HWND-list was not enough on live Win7 (ghosts).
 func (w *settingsWindow) setPage(p int) {
 	if p < 0 || p > pageViber {
 		return
 	}
 	w.page = p
-	w.hideInactiveTabControls()
 	for i, n := range w.pages {
 		if n != nil {
 			ui.SetHidden(n, i != p)
 		}
 	}
-	for i, hs := range w.pageCtl {
-		on := i == p
-		for _, h := range hs {
-			if on {
-				if c := w.ctlOf[h]; c != nil {
-					c.Hidden = false
-				}
-			} else {
-				w.show(h, false)
-				hideWindowTree(h)
-			}
-		}
-	}
+	w.hideInactiveTabControls()
 	w.syncTabSelection()
 	w.applyUIMode() // lays the page out (relayoutAll)
 	w.update()
-	// update() may SW_SHOW page-0 bar/list controls — clear inactive again
+	// update() may SW_SHOW page-0 bar controls — clear inactive again
 	w.hideInactiveTabControls()
 	if w.host != 0 {
 		winapi.InvalidateRect(w.host, true)

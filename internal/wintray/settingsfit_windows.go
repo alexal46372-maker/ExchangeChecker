@@ -473,7 +473,15 @@ func (w *settingsWindow) syncPagePanels() {
 			continue
 		}
 		w.hostRect[pan] = slot
-		// children → panel-local (even when panel hidden — ready for show)
+		// Same-tab ghost fix (Alex photo A): after Simple↔Expert the layout
+		// Rects for Conn/Login are exclusive, but HWNDs left WS_VISIBLE at
+		// stale Y painted over «База данных» / doubled «Пароль». Hide every
+		// direct child first, then MoveWindow+Show only Placed && !Hidden.
+		// Walk Children(pan) so ctlOf misses cannot leave a visible ghost.
+		for _, h := range winapi.Children(pan) {
+			winapi.ShowWindow(h, winapi.SW_HIDE)
+			delete(w.hostRect, h)
+		}
 		for _, h := range w.pageCtl[i] {
 			// bar Test/… are in pageCtl[0] but parented to the frame, not the panel
 			if !w.underPagePanel(h) {
@@ -481,6 +489,7 @@ func (w *settingsWindow) syncPagePanels() {
 			}
 			c := w.ctlOf[h]
 			if c == nil || c.H == 0 {
+				hideWindowTree(h)
 				continue
 			}
 			delete(w.hostRect, h)
@@ -499,6 +508,8 @@ func (w *settingsWindow) syncPagePanels() {
 		}
 		if i == w.page {
 			winapi.ShowWindow(pan, winapi.SW_SHOWNA)
+			winapi.InvalidateRect(pan, true)
+			winapi.RedrawWindow(pan, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
 		} else {
 			hideWindowTree(pan)
 		}

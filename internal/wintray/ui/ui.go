@@ -394,8 +394,12 @@ func (g *Grid) visible() bool {
 	return false
 }
 
+// rowVisible: a row keeps its vertical slot when the field or the label
+// is shown (applyUIMode hides both together for expert-only rows; if only
+// one stayed visible the slot would collapse and later placeCtl could
+// stack the next GroupBox onto the leftover HWND — Conn/Login photo A).
 func rowVisible(r GridRow) bool {
-	return r.Field != nil && r.Field.visible() || r.Label.visible()
+	return (r.Field != nil && r.Field.visible()) || r.Label.visible()
 }
 
 func (g *Grid) labelW(m *Metrics) int32 {

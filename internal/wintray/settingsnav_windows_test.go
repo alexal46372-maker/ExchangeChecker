@@ -96,7 +96,8 @@ func TestCHK_TRAY_47_Cues(t *testing.T) {
 // TestCHK_TRAY_47_PageClear — HARD clear (Conchita @400d1ae): one child
 // panel HWND per tab. After every switch, enum Children(host): the only
 // visible page tree is the active panel; any GetWindowRect overlap of two
-// visible host-siblings fails. Start Simple, Simple↔Expert, all tab pairs.
+// visible host-siblings fails. Also same-page exclusivity inside panel[0]
+// (Conn/Login Y-overlap photo A). Start Simple, Simple↔Expert, all tab pairs.
 // Do not whack-a-mole pageCtl alone — that left CI green with live ghosts.
 func TestCHK_TRAY_47_PageClear(t *testing.T) {
 	runtime.LockOSThread()
@@ -121,6 +122,9 @@ func TestCHK_TRAY_47_PageClear(t *testing.T) {
 		}
 		if why := assertHostChildrenClear(w); why != "" {
 			t.Fatalf("%s host-enum: %s", tag, why)
+		}
+		if why := assertSamePageNoOverlap(w); why != "" {
+			t.Fatalf("%s same-page: %s", tag, why)
 		}
 		for i := range w.pagePanel {
 			if w.pagePanel[i] == 0 {
@@ -242,6 +246,77 @@ func assertHostChildrenClear(w *settingsWindow) string {
 					return "ghost under inactive panel (Children sweep)"
 				}
 			}
+		}
+	}
+	return ""
+}
+
+
+// assertSamePageNoOverlap checks visible direct children of the active
+// pagePanel do not GetWindowRect-overlap (Conn «Подключение» vs Login
+// «Вход» on Bases — Alex photo A residual after panel-per-tab). Group
+// boxes may contain controls; peer group boxes and sibling fields must
+// stay exclusive. Does not replace cross-tab Children(host) checks.
+func assertSamePageNoOverlap(w *settingsWindow) string {
+	pan := w.pagePanel[w.page]
+	if pan == 0 {
+		return "no active pagePanel"
+	}
+	type item struct {
+		h     uintptr
+		r     winapi.RECT
+		group bool
+		text  string
+	}
+	var vis []item
+	for _, h := range winapi.Children(pan) {
+		if h == 0 || !winapi.IsWindowVisible(h) {
+			continue
+		}
+		st := winapi.WindowStyle(h)
+		if st&winapi.WS_VISIBLE == 0 {
+			continue
+		}
+		class := winapi.GetClassName(h)
+		group := class == "Button" && st&winapi.BS_TYPEMASK == winapi.BS_GROUPBOX
+		vis = append(vis, item{h: h, r: winapi.GetWindowRect(h), group: group, text: winapi.GetWindowText(h)})
+	}
+	contains := func(o, i winapi.RECT) bool {
+		return o.Left <= i.Left && o.Top <= i.Top && i.Right <= o.Right && i.Bottom <= o.Bottom
+	}
+	for a := 0; a < len(vis); a++ {
+		for b := a + 1; b < len(vis); b++ {
+			ra, rb := vis[a].r, vis[b].r
+			if !rectsOverlap(ra, rb) {
+				continue
+			}
+			if vis[a].group && vis[b].group {
+				return "overlap: peer GroupBoxes on same page (" + vis[a].text + " / " + vis[b].text + ")"
+			}
+			if vis[a].group && contains(ra, rb) || vis[b].group && contains(rb, ra) {
+				continue
+			}
+			return "overlap: visible GetWindowRect on same pagePanel"
+		}
+	}
+	// layout heights: Conn group must end above Login group when both on Bases
+	if w.page == 0 {
+		var connBottom, loginTop int32
+		var haveConn, haveLogin bool
+		for i := range vis {
+			it := &vis[i]
+			if !it.group {
+				continue
+			}
+			switch it.text {
+			case "Подключение", "Connection":
+				connBottom, haveConn = it.r.Bottom, true
+			case "Вход", "Sign-in":
+				loginTop, haveLogin = it.r.Top, true
+			}
+		}
+		if haveConn && haveLogin && loginTop < connBottom {
+			return "overlap: Login group Y starts inside Conn group"
 		}
 	}
 	return ""

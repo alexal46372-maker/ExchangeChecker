@@ -13,7 +13,7 @@ import (
 func muteStatus(muted bool) trayipc.Status {
 	now := time.Now()
 	ps := model.ProfileSnapshot{ProfileID: "p1", Name: "Склад", Enabled: true, Polled: true, Level: model.LevelWarning,
-		Muted: muted, Points: []model.PointStatus{{Name: "ЦБ", Level: model.LevelWarning, FreshAt: &now}}}
+		Muted: muted, Points: []model.PointStatus{{ExchangePoint: model.ExchangePoint{Name: "ЦБ", Level: model.LevelWarning}, FreshAt: &now, LagMinutes: -1}}}
 	if muted {
 		ps.MutedSince = &now
 	}

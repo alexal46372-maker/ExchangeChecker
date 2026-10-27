@@ -243,6 +243,7 @@ type settingsWindow struct {
 	statusRefreshes, statusRefreshed int
 	page                             int          // 0 = databases, 1 = general settings
 	pageCtl                          [3][]uintptr // profiles, «Общие», «Viber» (phase 10 D4)
+	pages                            [3]ui.Node   // page roots for SetHidden on switch (no overlay)
 	cur                              *[]uintptr   // page of the controls being created
 	connected                        bool         // service session state seen by onSessionState
 	loaded                           bool         // get_config (or a snapshot) loaded at least once
@@ -659,6 +660,8 @@ func (w *settingsWindow) build() {
 	if xfer != nil {
 		left = append(left, xfer)
 	}
+	// page roots: setPage hides inactive ones via ui.SetHidden (wizard pattern)
+	w.pages = [3]ui.Node{profilePage, generalPage, viberPage}
 	// cues from traysettings.UIFields (phase 11, CHK-TRAY-50/51): before
 	// the layout so boxes are at least as wide as their cues; Viber
 	// reminder keeps the STATIC hint only (no duplicate cue banner)
@@ -1181,16 +1184,20 @@ func (w *settingsWindow) profileDiscardOK() bool {
 	return w.ask(w.t(i18n.KeySetDiscardConfirm))
 }
 
-// setPage shows the databases (0) or the general settings (1) page.
+// setPage shows the databases (0), general settings (1), or Viber (2) page.
+// Inactive page roots are SetHidden first (wizard pattern) and their HWNDs
+// are SW_HIDE immediately so the previous section cannot paint over the new one.
 func (w *settingsWindow) setPage(p int) {
 	w.page = p
-	for i, hs := range w.pageCtl {
-		cmd := int32(winapi.SW_HIDE)
-		if i == p {
-			cmd = winapi.SW_SHOW
+	for i, n := range w.pages {
+		if n != nil {
+			ui.SetHidden(n, i != p)
 		}
+	}
+	for i, hs := range w.pageCtl {
+		on := i == p
 		for _, h := range hs {
-			w.show(h, cmd == winapi.SW_SHOW)
+			w.show(h, on)
 		}
 	}
 	w.applyUIMode() // lays the page out (relayoutAll)

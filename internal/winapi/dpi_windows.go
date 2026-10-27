@@ -37,6 +37,8 @@ const (
 	BS_MULTILINE    = 0x2000
 	SS_TYPEMASK     = 0x001F
 	FW_NORMAL       = 400
+	FW_SEMIBOLD     = 600
+	FW_BOLD         = 700
 	DEFAULT_CHARSET = 1
 )
 
@@ -57,11 +59,17 @@ func ScreenDPI() int32 {
 // CreateFont creates a normal-weight font of the face, height in pixels
 // (negative = character height); 0 on failure.
 func CreateFont(face string, height int32) uintptr {
+	return CreateFontWeight(face, height, FW_NORMAL)
+}
+
+// CreateFontWeight is CreateFontW with an explicit FW_* weight (Segoe UI
+// Semibold/Bold for setup chrome; 0 on failure).
+func CreateFontWeight(face string, height, weight int32) uintptr {
 	p, err := syscall.UTF16PtrFromString(face)
 	if err != nil {
 		return 0
 	}
-	r, _, _ := callProc(procCreateFontW, uintptr(height), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0,
+	r, _, _ := callProc(procCreateFontW, uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, DEFAULT_CHARSET, 0, 0, 0, 0,
 		uintptr(unsafe.Pointer(p)))
 	return r
 }

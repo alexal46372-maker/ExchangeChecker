@@ -206,6 +206,13 @@ type IPCRequest struct {
 	ViberToken      string `json:"viberToken,omitempty"`
 	ClearViberToken bool   `json:"clearViberToken,omitempty"`
 	RecipientID     string `json:"recipientId,omitempty"`
+	// Email (phase 13b, CHK-CFG-09 / CHK-IPC-16): SmtpPassword /
+	// ClearSmtpPassword on save_settings (write-only); Addr of email_test
+	// for a one-off recipient; IncludeEmailRecipients on export/import.
+	SmtpPassword           string `json:"smtpPassword,omitempty"`
+	ClearSmtpPassword      bool   `json:"clearSmtpPassword,omitempty"`
+	Addr                   string `json:"addr,omitempty"`
+	IncludeEmailRecipients bool   `json:"includeEmailRecipients,omitempty"`
 	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
 	Level string `json:"level,omitempty"`
 	Viber bool   `json:"viber,omitempty"`
@@ -270,9 +277,10 @@ func (r IPCRequest) String() string {
 		prof = r.Profile.ID + "@" + r.Profile.Server + "/" + r.Profile.Database
 	}
 	// query / mapping only as present (no point names, no manual SQL)
-	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t query:%t mapping:%t limit:%d viberToken:%t clearViberToken:%t recipientId:%s}",
+	return fmt.Sprintf("{id:%d cmd:%s profileId:%s profile:%s password:%s pointKey:%s clearPassword:%t expectedRevision:%s ref:%d settings:%t query:%t mapping:%t limit:%d viberToken:%t clearViberToken:%t recipientId:%s smtpPassword:%t clearSmtpPassword:%t addr:%s includeEmailRecipients:%t}",
 		r.ID, r.Cmd, r.ProfileID, prof, pw, r.PointKey, r.ClearPassword, r.ExpectedRevision, r.Ref, r.Settings != nil,
-		r.Query != nil, r.Mapping != nil, r.Limit, r.ViberToken != "", r.ClearViberToken, r.RecipientID)
+		r.Query != nil, r.Mapping != nil, r.Limit, r.ViberToken != "", r.ClearViberToken, r.RecipientID,
+		r.SmtpPassword != "", r.ClearSmtpPassword, r.Addr, r.IncludeEmailRecipients)
 }
 
 // GoString masks the password (fmt %#v).
@@ -361,6 +369,8 @@ type IPCMessage struct {
 	Import *ImportResult `json:"import,omitempty"`
 	// ViberTest: viber_test reply (phase 10, CHK-SVC-06).
 	ViberTest *ViberTestResult `json:"viberTest,omitempty"`
+	// EmailTest: email_test reply (phase 13b, CHK-IPC-16).
+	EmailTest *EmailTestResult `json:"emailTest,omitempty"`
 	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
 	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
 	// Summary: summary reply (phase 11, CHK-SVC-07).

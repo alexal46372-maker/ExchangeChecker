@@ -173,17 +173,17 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_01_RightClickItems — Settings (enabled since 6c), About,
-// Language submenu (6e, the preference checked), Exit.
+// TestCHK_TRAY_01_RightClickItems — Settings enabled; full Alex order is
+// CHK-TRAY-63 (BuildTrayRightMenu). BuildRightMenu keeps Language/Service
+// for the older index-based tests below.
 func TestCHK_TRAY_01_RightClickItems(t *testing.T) {
 	for _, lang := range []string{i18n.RU, i18n.EN} {
-		it := BuildRightMenu(lang, "", SvcStateRunning)
-		if len(it) != 6 || it[0].ID != CmdSettings || it[0].Disabled || it[1].ID != CmdAbout || it[1].Disabled ||
-			len(it[2].Sub) != 3 || len(it[3].Sub) != 4 || !it[4].Separator || it[5].ID != CmdExit {
-			t.Fatalf("%s: %+v", lang, it)
+		it := BuildTrayRightMenu(RightMenuOpts{Lang: lang, Pref: "", Svc: SvcStateRunning, Theme: ThemeLight})
+		if len(it) == 0 || it[0].ID != CmdSettings || it[0].Disabled || it[0].Text != i18n.T(i18n.KeyMenuSettings, lang) {
+			t.Fatalf("%s: settings %+v", lang, it)
 		}
-		if it[0].Text != i18n.T(i18n.KeyMenuSettings, lang) {
-			t.Error("settings label")
+		if it[len(it)-1].ID != CmdExit {
+			t.Fatalf("%s: exit %+v", lang, it[len(it)-1])
 		}
 	}
 }

@@ -11,42 +11,51 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/version"
 )
 
-// Phase 10 (EC Service, CHK-CFG-06) + phase 12 (CHK-CFG-07 / CHK-IPC-14):
-// export_config / import_config (admin only, checked by the IPC server).
+// Phase 10 (EC Service, CHK-CFG-06) + phase 12 (CHK-CFG-07 / CHK-IPC-14) +
+// phase 13b (CHK-CFG-09): export_config / import_config (admin only).
 // Format model.ConfigFormatV1: settings + profiles with hasPassword; no
-// password, no secret, no Viber token / hasToken / status / viber.dpapi.
-// includeViberRecipients (default false) opts into non-secret settings.viber
-// on export and applying it on import. The tray block is EC Tray's: never
-// stored or exported by the service.
+// password, no secret, no Viber/SMTP token / hasToken / hasPassword /
+// status / *.dpapi. includeViberRecipients / includeEmailRecipients
+// (default false) opt into non-secret settings.viber / settings.email.
+// The tray block is EC Tray's: never stored or exported by the service.
 
 func importErr(key, field, valKey, msg string) error {
 	return invalid(key, &model.FieldError{Field: field, Key: valKey, Msg: msg})
 }
 
-// ExportConfig implements ipc.ConfigTransfer (includeViberRecipients false).
+// ExportConfig implements ipc.ConfigTransfer (include flags false).
 func (m *Monitor) ExportConfig() (model.ConfigExport, error) {
-	return m.ExportConfigOpts(false)
+	return m.ExportConfigBoth(false, false)
 }
 
-// ExportConfigOpts implements the optional ipc viber-recipients transfer
-// (phase 12, CHK-CFG-07): includeViberRecipients includes non-secret
-// settings.viber (recipients, enabled, schedule, events, reminderMinutes)
-// and sets containsViberRecipients when at least one recipient is present.
-// hasToken, status and the token are never exported.
+// ExportConfigOpts implements ipc.ConfigViberRecipientsTransfer.
 func (m *Monitor) ExportConfigOpts(includeViberRecipients bool) (model.ConfigExport, error) {
+	return m.ExportConfigBoth(includeViberRecipients, false)
+}
+
+// ExportConfigBoth implements ipc.ConfigEmailRecipientsTransfer (CHK-CFG-09).
+// hasToken / hasPassword / status / tokens are never exported.
+func (m *Monitor) ExportConfigBoth(includeViberRecipients, includeEmailRecipients bool) (model.ConfigExport, error) {
 	view, _, err := m.GetConfig()
 	if err != nil {
 		return model.ConfigExport{}, err
 	}
 	now := m.opt.Now().In(model.DBZone)
 	st := view.Settings
-	viberRecipients := false
+	viberRecipients, emailRecipients := false, false
 	if includeViberRecipients && st.Viber != nil {
-		v := st.Viber.ForExport() // no hasToken / status / token in JSON
+		v := st.Viber.ForExport()
 		st.Viber = &v
 		viberRecipients = len(v.Recipients) > 0
 	} else {
-		st.Viber = nil // default: settings.viber is not exported (CHK-SVC-06)
+		st.Viber = nil
+	}
+	if includeEmailRecipients && st.Email != nil {
+		e := st.Email.ForExport()
+		st.Email = &e
+		emailRecipients = len(e.Recipients) > 0
+	} else {
+		st.Email = nil
 	}
 	logins := false
 	for _, p := range view.Profiles {
@@ -55,7 +64,8 @@ func (m *Monitor) ExportConfigOpts(includeViberRecipients bool) (model.ConfigExp
 		}
 	}
 	return model.ConfigExport{Format: model.ConfigFormatV1, ExportedAt: &now, ServiceVersion: version.Version,
-		Settings: &st, Profiles: view.Profiles, ContainsLogins: logins, ContainsViberRecipients: viberRecipients}, nil
+		Settings: &st, Profiles: view.Profiles, ContainsLogins: logins,
+		ContainsViberRecipients: viberRecipients, ContainsEmailRecipients: emailRecipients}, nil
 }
 
 // sameProfile compares two profiles field by field (reflect.DeepEqual of
@@ -112,18 +122,18 @@ func normalizeValue(v reflect.Value) reflect.Value {
 	return v
 }
 
-// ImportConfig implements ipc.ConfigTransfer (includeViberRecipients false:
-// settings.viber in the file is ignored, the stored one is kept).
+// ImportConfig implements ipc.ConfigTransfer (include flags false).
 func (m *Monitor) ImportConfig(in *model.ConfigExport, mode, expectedRevision string, dryRun bool, account string) (model.ImportResult, error) {
-	return m.ImportConfigOpts(in, mode, expectedRevision, dryRun, false, account)
+	return m.ImportConfigBoth(in, mode, expectedRevision, dryRun, false, false, account)
 }
 
-// ImportConfigOpts implements the optional ipc viber-recipients transfer
-// (phase 12, CHK-CFG-07): includeViberRecipients applies non-secret
-// settings.viber from the file (token / hasToken / status ignored; the
-// saved token in viber.dpapi is never touched). Absent settings.viber
-// keeps the stored Viber settings even when the flag is set.
+// ImportConfigOpts implements ipc.ConfigViberRecipientsTransfer.
 func (m *Monitor) ImportConfigOpts(in *model.ConfigExport, mode, expectedRevision string, dryRun, includeViberRecipients bool, account string) (model.ImportResult, error) {
+	return m.ImportConfigBoth(in, mode, expectedRevision, dryRun, includeViberRecipients, false, account)
+}
+
+// ImportConfigBoth implements ipc.ConfigEmailRecipientsTransfer (CHK-CFG-09).
+func (m *Monitor) ImportConfigBoth(in *model.ConfigExport, mode, expectedRevision string, dryRun, includeViberRecipients, includeEmailRecipients bool, account string) (model.ImportResult, error) {
 	if mode == "" {
 		mode = model.ImportMerge
 	}
@@ -151,15 +161,22 @@ func (m *Monitor) ImportConfigOpts(in *model.ConfigExport, mode, expectedRevisio
 		return res, saveFailed(errNoStore)
 	}
 	var importViber *model.ViberSettings
+	var importEmail *model.EmailSettings
 	if in.Settings != nil {
 		cp := *in.Settings
 		if includeViberRecipients && cp.Viber != nil {
-			v := cp.Viber.Stored() // strip hasToken / status; never a token field
+			v := cp.Viber.Stored()
 			importViber = &v
 			cp.Viber = &v
 		} else {
-			// default / no block: settings.viber is not imported (CHK-SVC-06)
 			cp.Viber = nil
+		}
+		if includeEmailRecipients && cp.Email != nil {
+			e := cp.Email.Stored()
+			importEmail = &e
+			cp.Email = &e
+		} else {
+			cp.Email = nil
 		}
 		in.Settings = &cp
 		if err := in.Settings.Validate(); err != nil {
@@ -207,6 +224,11 @@ func (m *Monitor) ImportConfigOpts(in *model.ConfigExport, mode, expectedRevisio
 			in.Settings.Viber = importViber // non-secret only; token stays in viber.dpapi
 		} else {
 			in.Settings.Viber = curSet.Normalized().Viber
+		}
+		if importEmail != nil {
+			in.Settings.Email = importEmail // non-secret only; password stays in email.dpapi
+		} else {
+			in.Settings.Email = curSet.Normalized().Email
 		}
 	}
 	old := map[string]model.Profile{}

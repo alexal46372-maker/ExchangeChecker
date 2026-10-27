@@ -184,6 +184,19 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgViberNotChecked:         {"ещё не проверена", "not checked yet"},
 	MsgViberErrorUnknown:       {"ошибка подключения или запроса", "connection or query error"},
 	MsgViberInvalid:            {"Неверные настройки Viber.", "Invalid Viber settings."},
+	MsgEmailNoPassword:         {"Не задан пароль SMTP.", "The SMTP password is not set."},
+	MsgEmailNoRecipients:       {"Не заданы получатели email.", "No email recipients are set."},
+	MsgEmailNoHost:             {"Не задан SMTP-сервер.", "The SMTP host is not set."},
+	MsgEmailNoFrom:             {"Не задан адрес отправителя.", "The From address is not set."},
+	MsgEmailAuthFailed:         {"SMTP-сервер отклонил логин или пароль.", "The SMTP server rejected the login or password."},
+	MsgEmailInvalidAddr:        {"Неверный адрес email получателя.", "Invalid recipient email address."},
+	MsgEmailNetwork:            {"Нет связи с SMTP-сервером (сеть, прокси).", "Cannot reach the SMTP server (network, proxy)."},
+	MsgEmailTLS:                {"Ошибка TLS при подключении к SMTP: обновите корневые сертификаты Windows.", "TLS error connecting to SMTP: update the Windows root certificates."},
+	MsgEmailFailed:             {"SMTP-сервер не принял сообщение.", "The SMTP server did not accept the message."},
+	MsgEmailCanceled:           {"Отправка email отменена.", "Sending email was canceled."},
+	MsgEmailTimeout:            {"Время отправки email истекло.", "Sending email timed out."},
+	MsgEmailInvalid:            {"Неверные настройки email.", "Invalid email settings."},
+	MsgEmailRateLimited:        {"Слишком частый тест email; повторите позже.", "Email test too frequent; try again later."},
 	MsgImportTrayTooLarge:      {"Блок настроек трея в файле конфигурации слишком большой.", "The tray block of the configuration file is too large."},
 	MsgImportRollbackFailed:    {"Импорт не удался, и прежнюю конфигурацию восстановить не удалось: состояние не восстановлено, проверьте настройки.", "The import failed and the previous configuration could not be restored: state not restored, check the configuration."},
 	MsgMonitorConfigChanged:    {"Конфигурация изменена.", "Configuration changed."},
@@ -248,5 +261,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited}
 }

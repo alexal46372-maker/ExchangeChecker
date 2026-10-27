@@ -53,8 +53,9 @@ func sampleDemoStatus() trayipc.Status {
 }
 
 // TestCHK_TRAY_49_IconsInUse — the generated icons are used at 96 and
-// 144 dpi (PLAN §12 p.144): the window icons (small / big), the settings
-// navigation buttons, the tray icon of every state; sizes follow the DPI.
+// 144 dpi (PLAN §12 p.144): the window icons (small / big), IconNames
+// (incl. nav_*), the tray icon of every state; sizes follow the DPI.
+// Settings page-nav icons are gone (tabs); mode is a footer button (61).
 func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -91,20 +92,13 @@ func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
 	app := startCfgApp(t, newCfgService(), true, nil)
 	defer app.Exit()
 	w := openAdmin(t, app)
-	if len(w.navIco) != 1 {
-		t.Fatalf("%d mode icons (tabs replaced page nav)", len(w.navIco))
+	// CHK-TRAY-61: Simple/Expert is a window-common footer button (no side
+	// nav icon). IconNames() above still loads nav_mode.ico at both DPIs.
+	if len(w.navIco) != 0 {
+		t.Fatalf("%d leftover nav icons (want 0 after footer mode button)", len(w.navIco))
 	}
-	for _, p := range w.navIco {
-		b, ic := p[0].H, p[1].H
-		if winapi.SendMessage(ic, winapi.STM_GETICON, 0, 0) == 0 {
-			t.Errorf("nav %q without icon", winapi.GetWindowText(b))
-		}
-		if visible(b) != visible(ic) {
-			t.Errorf("nav %q: icon visible %v, button %v", winapi.GetWindowText(b), visible(ic), visible(b))
-		}
-		if visible(b) && winapi.GetWindowRect(ic).Right > winapi.GetWindowRect(b).Left {
-			t.Errorf("nav %q: icon not left of the button", winapi.GetWindowText(b))
-		}
+	if w.ctl[idSetUIMode] == 0 || !visible(w.ctl[idSetUIMode]) {
+		t.Fatal("mode footer button missing")
 	}
 	if winapi.SendMessage(w.hwnd, winapi.WM_GETICON, winapi.ICON_SMALL, 0) == 0 {
 		t.Error("settings window without icon")

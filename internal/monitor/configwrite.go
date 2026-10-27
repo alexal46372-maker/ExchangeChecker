@@ -220,6 +220,7 @@ func (m *Monitor) GetConfig() (model.ConfigView, string, error) {
 	}
 	st = st.Normalized()
 	m.viberView(&st)
+	m.emailView(&st)
 	return model.ConfigView{Settings: st, Profiles: out}, rev, nil
 }
 
@@ -498,7 +499,7 @@ func (m *Monitor) DeleteProfile(profileID, expectedRevision, account string) (st
 // SaveSettings implements ipc.ConfigManager (admin only): the whole
 // settings object incl. trayAutostart.
 func (m *Monitor) SaveSettings(st model.Settings, expectedRevision, account string) (string, error) {
-	return m.SaveSettingsViber(st, "", false, expectedRevision, account)
+	return m.SaveSettingsEmail(st, "", false, "", false, expectedRevision, account)
 }
 
 // viberTokenStore is the Viber token part of config.Store (CHK-SVC-06).
@@ -506,6 +507,13 @@ type viberTokenStore interface {
 	HasViberToken() bool
 	LoadViberToken() (string, error)
 	SaveViberToken(string) error
+}
+
+// emailPasswordStore is the SMTP password part of config.Store (CHK-CFG-09).
+type emailPasswordStore interface {
+	HasEmailPassword() bool
+	LoadEmailPassword() (string, error)
+	SaveEmailPassword(string) error
 }
 
 // viberView fills the read-only settings.viber.hasToken / status (st
@@ -522,12 +530,28 @@ func (m *Monitor) viberView(st *model.Settings) {
 	}
 }
 
-// SaveSettingsViber implements ipc.ViberSettingsSaver: save_settings with
-// viberToken (set; "" = no change) / clearViberToken. settings.viber
-// absent = the stored one is kept; enabled needs a token (saved or
-// given). The token is written first, a failed settings write restores
-// it (best effort).
+// emailView fills settings.email.hasPassword / status (CHK-CFG-09).
+func (m *Monitor) emailView(st *model.Settings) {
+	if st.Email == nil {
+		return
+	}
+	if es, ok := m.configWriter().(emailPasswordStore); ok && m.configWriter() != nil {
+		st.Email.HasPassword = es.HasEmailPassword()
+	}
+	if m.opt.EmailStatus != nil {
+		st.Email.Status = m.opt.EmailStatus()
+	}
+}
+
+// SaveSettingsViber implements ipc.ViberSettingsSaver.
 func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken bool, expectedRevision, account string) (string, error) {
+	return m.SaveSettingsEmail(st, token, clearToken, "", false, expectedRevision, account)
+}
+
+// SaveSettingsEmail implements ipc.EmailSettingsSaver (CHK-CFG-09):
+// save_settings with viberToken / smtpPassword (write-only) and clear*
+// flags. settings.viber / settings.email absent = keep stored.
+func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken bool, smtpPassword string, clearSmtp bool, expectedRevision, account string) (string, error) {
 	if err := requireRevision(expectedRevision); err != nil {
 		return "", err
 	}
@@ -542,17 +566,24 @@ func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken 
 		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberInvalid,
 			Message: "viber: invalid token", Args: []string{"viberToken", model.ValRequired}}
 	}
+	if smtpPassword != "" && !model.ValidSMTPPassword(smtpPassword) {
+		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailInvalid,
+			Message: "email: invalid smtpPassword", Args: []string{"smtpPassword", model.ValRequired}}
+	}
 	m.cfgMu.Lock()
 	defer m.cfgMu.Unlock()
 	if err := m.checkRevisionLocked(w, expectedRevision); err != nil {
 		return "", err
 	}
-	if st.Viber == nil || st.StalledMinutes == nil {
-		// a client that does not know settings.viber / stalledMinutes:
+	if st.Viber == nil || st.Email == nil || st.StalledMinutes == nil {
+		// a client that does not know settings.viber / email / stalledMinutes:
 		// keep the stored one
 		cur, _ := w.LoadSettings()
 		if st.Viber == nil {
 			st.Viber = cur.Normalized().Viber
+		}
+		if st.Email == nil {
+			st.Email = cur.Normalized().Email
 		}
 		if st.StalledMinutes == nil {
 			st.StalledMinutes = cur.StalledMinutes
@@ -561,6 +592,10 @@ func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken 
 	if st.Viber != nil {
 		v := st.Viber.Stored()
 		st.Viber = &v
+	}
+	if st.Email != nil {
+		e := st.Email.Stored()
+		st.Email = &e
 	}
 	ts, _ := w.(viberTokenStore)
 	if (token != "" || clearToken) && ts == nil {
@@ -586,9 +621,41 @@ func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken 
 		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgViberNoToken,
 			Message: "viber: enabled without a token", Args: []string{"viberToken", model.ValRequired}}
 	}
+	es, _ := w.(emailPasswordStore)
+	if (smtpPassword != "" || clearSmtp) && es == nil {
+		return "", saveFailed(errors.New("email: no password store"))
+	}
+	var oldSmtp string
+	hasSmtp := false
+	if es != nil {
+		var err error
+		if oldSmtp, err = es.LoadEmailPassword(); err != nil && (smtpPassword != "" || clearSmtp) {
+			return "", saveFailed(fmt.Errorf("email password: %w", err))
+		}
+		hasSmtp = oldSmtp != "" || es.HasEmailPassword()
+	}
+	newSmtp, smtpChanged := oldSmtp, false
+	if clearSmtp {
+		newSmtp, hasSmtp, smtpChanged = "", false, oldSmtp != "" || es.HasEmailPassword()
+	}
+	if smtpPassword != "" {
+		newSmtp, hasSmtp, smtpChanged = smtpPassword, true, smtpPassword != oldSmtp
+	}
+	if st.Email != nil && st.Email.Enabled && model.NeedsSMTPAuth(st.Email.TLSMode) && !hasSmtp {
+		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailNoPassword,
+			Message: "email: enabled without a password", Args: []string{"smtpPassword", model.ValRequired}}
+	}
 	if tokChanged {
 		if err := ts.SaveViberToken(newTok); err != nil {
 			return "", saveFailed(fmt.Errorf("save viber token: %w", err))
+		}
+	}
+	if smtpChanged {
+		if err := es.SaveEmailPassword(newSmtp); err != nil {
+			if tokChanged {
+				_ = ts.SaveViberToken(oldTok)
+			}
+			return "", saveFailed(fmt.Errorf("save email password: %w", err))
 		}
 	}
 	if st.Beep.Enabled == model.OptUnset {
@@ -606,10 +673,18 @@ func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken 
 				m.opt.Log.Printf("config: save_settings: restoring the Viber token failed: %v", rerr)
 			}
 		}
+		if smtpChanged {
+			if rerr := es.SaveEmailPassword(oldSmtp); rerr != nil {
+				m.opt.Log.Printf("config: save_settings: restoring the SMTP password failed: %v", rerr)
+			}
+		}
 		return "", saveFailed(fmt.Errorf("save settings: %w", err))
 	}
 	if tokChanged && m.opt.OnViberToken != nil {
 		m.opt.OnViberToken()
+	}
+	if smtpChanged && m.opt.OnEmailPassword != nil {
+		m.opt.OnEmailPassword()
 	}
 	rev := m.afterWriteLocked(w)
 	if m.opt.ApplySettings != nil {

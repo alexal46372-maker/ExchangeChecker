@@ -62,14 +62,17 @@ func TestCHK_TRAY_33_SoundWindow(t *testing.T) {
 	store := &memSoundStore{}
 	b := &testBeeper{}
 	app, _, _ := startP10App(t, &alertService{}, b, store)
-	found := 0
+	found, sound := 0, 0
 	for _, it := range app.RightMenu() {
-		if it.ID == trayui.CmdSound || it.ID == trayui.CmdVolume || it.ID == trayui.CmdPinHelp {
+		switch it.ID {
+		case trayui.CmdSound:
+			sound++
+		case trayui.CmdVolume, trayui.CmdPinHelp:
 			found++
 		}
 	}
-	if found != 3 || app.RightMenu()[len(app.RightMenu())-1].ID != trayui.CmdExit {
-		t.Fatalf("menu %+v", app.RightMenu())
+	if sound != 0 || found != 2 || app.RightMenu()[len(app.RightMenu())-1].ID != trayui.CmdExit {
+		t.Fatalf("menu sound=%d vol/pin=%d %+v", sound, found, app.RightMenu())
 	}
 	if p := app.SoundPrefs(); p.Warning.Volume != 80 || p.Error.Volume != 100 {
 		t.Fatalf("defaults %+v", p)

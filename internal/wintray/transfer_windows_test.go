@@ -208,7 +208,7 @@ func writeImportFile(t *testing.T, path string, tray *traysettings.TrayBlock, pr
 	var b []byte
 	var err error
 	if tray != nil {
-		b, err = traysettings.ExportFile(exp, tray, false)
+		b, err = traysettings.ExportFile(exp, tray, false, false)
 	} else {
 		b, err = json.Marshal(exp)
 	}

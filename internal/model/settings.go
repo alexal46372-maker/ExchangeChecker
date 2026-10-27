@@ -115,6 +115,10 @@ type Settings struct {
 	// Viber (phase 10, CHK-SVC-06): nil in save_settings = keep the
 	// stored value; always set in views; never in export_config.
 	Viber *ViberSettings `json:"viber,omitempty"`
+	// Email (phase 13b, CHK-CFG-09): nil in save_settings = keep the
+	// stored value; always set in views; export only with
+	// includeEmailRecipients (never the SMTP password).
+	Email *EmailSettings `json:"email,omitempty"`
 	// StalledMinutes (phase 11, CHK-MON-18): stalled-exchange threshold;
 	// absent = DefaultStalledMinutes (120), 0 = off, else 10..1440. A
 	// save_settings without it keeps the stored value.
@@ -140,6 +144,7 @@ func DefaultSettings() Settings {
 		Language:      LangAuto,
 		TrayAutostart: true,
 		Viber:         defaultViberPtr(),
+		Email:         defaultEmailPtr(),
 	}
 }
 
@@ -168,6 +173,15 @@ func (s Settings) Normalized() Settings {
 		v.Schedule.Days = append([]int{}, v.Schedule.Days...)
 		s.Viber = &v
 	}
+	if s.Email == nil {
+		s.Email = defaultEmailPtr()
+	} else {
+		e := *s.Email
+		e.Recipients = append([]EmailRecipient{}, e.Recipients...)
+		e.Events = append([]string{}, e.Events...)
+		e.Schedule.Days = append([]int{}, e.Schedule.Days...)
+		s.Email = &e
+	}
 	return s
 }
 
@@ -176,13 +190,20 @@ func defaultViberPtr() *ViberSettings {
 	return &v
 }
 
+func defaultEmailPtr() *EmailSettings {
+	e := DefaultEmailSettings()
+	return &e
+}
+
 // Equal compares settings field by field (Settings holds slices since
 // phase 10): Normalized forms, the read-only viber fields ignored.
 func (s Settings) Equal(o Settings) bool {
 	a, b := s.Normalized(), o.Normalized()
 	va, vb := a.Viber.Stored(), b.Viber.Stored()
+	ea, eb := a.Email.Stored(), b.Email.Stored()
 	a.Viber, b.Viber = nil, nil
-	return reflect.DeepEqual(a, b) && reflect.DeepEqual(va, vb)
+	a.Email, b.Email = nil, nil
+	return reflect.DeepEqual(a, b) && reflect.DeepEqual(va, vb) && reflect.DeepEqual(ea, eb)
 }
 
 // Stored returns the form written to settings.json (viber without the
@@ -191,6 +212,8 @@ func (s Settings) Stored() Settings {
 	s = s.Normalized()
 	v := s.Viber.Stored()
 	s.Viber = &v
+	e := s.Email.Stored()
+	s.Email = &e
 	return s
 }
 
@@ -230,6 +253,11 @@ func (s Settings) Validate() error {
 	}
 	if s.Viber != nil {
 		if err := s.Viber.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.Email != nil {
+		if err := s.Email.Validate(); err != nil {
 			errs = append(errs, err)
 		}
 	}

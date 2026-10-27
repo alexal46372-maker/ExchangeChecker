@@ -244,6 +244,64 @@ const (
 	KeyDiscResultLabel    = "disc.result_label"
 	KeySetNavGeneral      = "set.nav_general"
 	KeySetNavViber        = "set.nav_viber"
+
+	KeySetNavEmail        = "set.nav_email"
+	KeyEmGroup            = "set.em_group"
+	KeyEmEnabled          = "set.em_enabled"
+	KeyEmHost             = "set.em_host"
+	KeyEmPort             = "set.em_port"
+	KeyEmTLSMode          = "set.em_tls_mode"
+	KeyEmTLSNone          = "set.em_tls_none"
+	KeyEmTLSStartTLS      = "set.em_tls_starttls"
+	KeyEmTLSImplicit      = "set.em_tls_tls"
+	KeyEmFromAddr         = "set.em_from_addr"
+	KeyEmPassword         = "set.em_password"
+	KeyEmClearPassword    = "set.em_clear_password"
+	KeyEmPasswordSaved    = "set.em_password_saved"
+	KeyEmPasswordNone     = "set.em_password_none"
+	KeyEmPasswordNew      = "set.em_password_new"
+	KeyEmPasswordClear    = "set.em_password_clear"
+	KeyEmPasswordNoneTLS  = "set.em_password_none_tls"
+	KeyEmRecipients       = "set.em_recipients"
+	KeyEmDays             = "set.em_days"
+	KeyEmFrom             = "set.em_from"
+	KeyEmTo               = "set.em_to"
+	KeyEmEvents           = "set.em_events"
+	KeyEmTestTo           = "set.em_test_to"
+	KeyEmTestAll          = "set.em_test_all"
+	KeyEmTest             = "set.em_test"
+	KeyEmTesting          = "set.em_testing"
+	KeyEmTestOK           = "set.em_test_ok"
+	KeyEmTestFailed       = "set.em_test_failed"
+	KeyEmTestItemOK       = "set.em_test_item_ok"
+	KeyEmTestNoResult     = "set.em_test_no_result"
+	KeyEmStatus           = "set.em_status"
+	KeyEmLastOK           = "set.em_last_ok"
+	KeyEmLastError        = "set.em_last_error"
+	KeyEmSaved            = "set.em_saved"
+	KeyTipEmPage          = "tip.em_page"
+	KeyTipEmEnabled       = "tip.em_enabled"
+	KeyTipEmHost          = "tip.em_host"
+	KeyTipEmPort          = "tip.em_port"
+	KeyTipEmTLSMode       = "tip.em_tls_mode"
+	KeyTipEmFromAddr      = "tip.em_from_addr"
+	KeyTipEmPassword      = "tip.em_password"
+	KeyTipEmClearPassword = "tip.em_clear_password"
+	KeyTipEmRecipients    = "tip.em_recipients"
+	KeyTipEmDay           = "tip.em_day"
+	KeyTipEmFrom          = "tip.em_from"
+	KeyTipEmTo            = "tip.em_to"
+	KeyTipEmEvent         = "tip.em_event"
+	KeyTipEmTestTo        = "tip.em_test_to"
+	KeyTipEmTest          = "tip.em_test"
+	KeyCueEmHost          = "cue.em_host"
+	KeyCueEmPort          = "cue.em_port"
+	KeyCueEmFrom          = "cue.em_from"
+	KeyCueEmPassword      = "cue.em_password"
+	KeyXferEmailCheck     = "set.xfer_email_check"
+	KeyXferEmailWarnExport = "set.xfer_email_warn_export"
+	KeyXferEmailWarnImport = "set.xfer_email_warn_import"
+	KeyTipXferEmail       = "tip.xfer_email"
 	KeyTipSetNavProfiles  = "tip.set.nav_profiles"
 	KeyGenPoll            = "gen.poll"
 	KeyGenWarn            = "gen.warn"
@@ -625,6 +683,7 @@ const (
 	KeyAlertUnmute      = "alert.unmute"
 	KeyTipAlertMute     = "tip.alert_mute"
 	KeyMenuSound        = "menu.sound"
+	KeyMenuTheme        = "menu.theme"
 	KeyMenuVolume       = "menu.volume"
 	KeyMenuPinHelp      = "menu.pin_help"
 	KeyPinHelpTitle     = "pin.title"
@@ -675,6 +734,7 @@ const (
 	KeySetGroupTLS     = "set.group_tls"
 	KeySetGroupChecks  = "set.group_checks"
 	KeySetGroupGeneral = "set.group_general"
+	KeySetGroupSound   = "set.group_sound"
 	// phase 10 D4: «Viber» page
 	KeyVbPage             = "set.vb_page"
 	KeyVbGroup            = "set.vb_group"
@@ -1129,6 +1189,64 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyDiscResultLabel:        {"Результат проверки:", "Check result:"},
 	KeySetNavGeneral:          {"Общие настройки", "General settings"},
 	KeySetNavViber:            {"Уведомления Viber", "Viber notifications"},
+
+	KeySetNavEmail:            {"Уведомления e-mail", "E-mail notifications"},
+	KeyEmGroup:                {"Уведомления e-mail", "E-mail notifications"},
+	KeyEmEnabled:              {"Отправлять уведомления по e-mail", "Send notifications by e-mail"},
+	KeyEmHost:                 {"SMTP-сервер:", "SMTP server:"},
+	KeyEmPort:                 {"Порт:", "Port:"},
+	KeyEmTLSMode:              {"TLS:", "TLS:"},
+	KeyEmTLSNone:              {"Без TLS (без AUTH)", "No TLS (no AUTH)"},
+	KeyEmTLSStartTLS:          {"STARTTLS", "STARTTLS"},
+	KeyEmTLSImplicit:          {"TLS (порт 465)", "TLS (port 465)"},
+	KeyEmFromAddr:             {"От кого (From):", "From:"},
+	KeyEmPassword:             {"Пароль SMTP:", "SMTP password:"},
+	KeyEmClearPassword:        {"Удалить сохранённый пароль", "Delete the saved password"},
+	KeyEmPasswordSaved:        {"Пароль сохранён (не показывается).", "A password is saved (never shown)."},
+	KeyEmPasswordNone:         {"Пароль не задан.", "No password is set."},
+	KeyEmPasswordNew:          {"Новый пароль будет сохранён.", "The new password will be saved."},
+	KeyEmPasswordClear:        {"Сохранённый пароль будет удалён.", "The saved password will be deleted."},
+	KeyEmPasswordNoneTLS:      {"Пароль не используется (tlsMode = none).", "Password is unused (tlsMode = none)."},
+	KeyEmRecipients:           {"Получатели (по одному в строке: ID адрес имя):", "Recipients (one per line: ID address name):"},
+	KeyEmDays:                 {"Дни:", "Days:"},
+	KeyEmFrom:                 {"Время с (ЧЧ:ММ):", "From (HH:MM):"},
+	KeyEmTo:                   {"по:", "to:"},
+	KeyEmEvents:               {"События:", "Events:"},
+	KeyEmTestTo:               {"Тест для:", "Test to:"},
+	KeyEmTestAll:              {"Все получатели", "All recipients"},
+	KeyEmTest:                 {"Тест", "Test"},
+	KeyEmTesting:              {"Отправка теста…", "Sending test…"},
+	KeyEmTestOK:               {"Тест отправлен.", "Test sent."},
+	KeyEmTestFailed:           {"Тест не удался.", "Test failed."},
+	KeyEmTestItemOK:           {"доставлено", "delivered"},
+	KeyEmTestNoResult:         {"Нет результата теста.", "No test result."},
+	KeyEmStatus:               {"Отправлено: %d, в очереди: %d, отброшено: %d", "Sent: %d, queued: %d, dropped: %d"},
+	KeyEmLastOK:               {"Последняя успешная отправка: %s", "Last successful send: %s"},
+	KeyEmLastError:            {"Последняя ошибка (%s): %s", "Last error (%s): %s"},
+	KeyEmSaved:                {"Настройки e-mail сохранены.", "E-mail settings saved."},
+	KeyTipEmPage:              {"Уведомления по электронной почте", "E-mail notifications"},
+	KeyTipEmEnabled:           {"Включить отправку писем по событиям обмена", "Enable sending mail on exchange events"},
+	KeyTipEmHost:              {"Имя или адрес SMTP-сервера", "SMTP server host name or address"},
+	KeyTipEmPort:              {"Порт SMTP (обычно 25, 465 или 587)", "SMTP port (usually 25, 465 or 587)"},
+	KeyTipEmTLSMode:           {"none — без TLS и без AUTH; starttls / tls — AUTH с паролем, логин = From", "none — no TLS and no AUTH; starttls / tls — AUTH with password, username = From"},
+	KeyTipEmFromAddr:          {"Адрес отправителя (и логин SMTP AUTH)", "Sender address (and SMTP AUTH username)"},
+	KeyTipEmPassword:          {"Пароль SMTP (только запись; при tlsMode=none не используется)", "SMTP password (write-only; unused when tlsMode=none)"},
+	KeyTipEmClearPassword:     {"Удалить пароль, сохранённый службой", "Delete the password saved by the service"},
+	KeyTipEmRecipients:        {"По одному получателю в строке: ID адрес имя", "One recipient per line: ID address name"},
+	KeyTipEmDay:               {"День недели окна рассылки", "Weekday of the send window"},
+	KeyTipEmFrom:              {"Начало окна (локальное время службы)", "Start of the window (service local time)"},
+	KeyTipEmTo:                {"Конец окна (локальное время службы)", "End of the window (service local time)"},
+	KeyTipEmEvent:             {"Какие события слать письмом", "Which events to send by mail"},
+	KeyTipEmTestTo:            {"Кому отправить тестовое письмо", "Who receives the test message"},
+	KeyTipEmTest:              {"Отправить тестовое письмо сейчас (игнорирует расписание)", "Send a test message now (ignores the schedule)"},
+	KeyCueEmHost:              {"smtp.example.com", "smtp.example.com"},
+	KeyCueEmPort:              {"587", "587"},
+	KeyCueEmFrom:              {"monitor@example.com", "monitor@example.com"},
+	KeyCueEmPassword:          {"пароль SMTP", "SMTP password"},
+	KeyXferEmailCheck:         {"Получатели e-mail", "E-mail recipients"},
+	KeyXferEmailWarnExport:    {"В файл попадут получатели e-mail (пароль SMTP не переносится). Храните файл в надёжном месте.", "The file will include e-mail recipients (the SMTP password is never transferred). Keep the file in a safe place."},
+	KeyXferEmailWarnImport:    {"Получатели e-mail из файла будут применены (пароль SMTP не переносится).", "E-mail recipients from the file will be applied (the SMTP password is never transferred)."},
+	KeyTipXferEmail:           {"Несекретные получатели e-mail в файле (пароль SMTP никогда не переносится)", "Non-secret e-mail recipients in the file (the SMTP password is never transferred)"},
 	KeyTipSetNavProfiles:      {"Базы данных: подключение, вход, шифрование, опрос и пороги каждой базы.", "Databases: connection, sign-in, encryption, polling and thresholds of each database."},
 	KeyGenPoll:                {"Интервал опроса, с:", "Poll interval, s:"},
 	KeyGenWarn:                {"Предупреждение через, мин:", "Warning after, min:"},
@@ -1390,6 +1508,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAlertUnmute:        {"Звук вкл", "Sound on"},
 	KeyTipAlertMute:       {"Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком", "Turn the sound of this alarm off or on. The next new alarm sounds again"},
 	KeyMenuSound:          {"Звук тревог…", "Alarm sounds…"},
+	KeyMenuTheme:          {"Тема", "Theme"},
 	KeyMenuVolume:         {"Громкость…", "Volume…"},
 	KeyMenuPinHelp:        {"Как закрепить значок…", "How to pin the icon…"},
 	KeyPinHelpTitle:       {"Значок Exchange Checker", "Exchange Checker icon"},
@@ -1435,6 +1554,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetGroupTLS:        {"Шифрование", "Encryption"},
 	KeySetGroupChecks:     {"Опрос и пороги", "Polling and thresholds"},
 	KeySetGroupGeneral:    {"Общие настройки компьютера", "Computer-wide settings"},
+	KeySetGroupSound:      {"Звук", "Sound"},
 	KeyVbPage:             {"Уведомления Viber…", "Viber notifications…"},
 	KeyVbGroup:            {"Уведомления Viber", "Viber notifications"},
 	KeyVbEnabled:          {"Отправлять уведомления в Viber", "Send notifications to Viber"},

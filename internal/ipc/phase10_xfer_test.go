@@ -152,7 +152,7 @@ func (h *xferViberHandler) ExportConfigOpts(include bool) (model.ConfigExport, e
 		exp.ContainsViberRecipients = true
 		st := model.DefaultSettings()
 		st.Viber.Recipients = []model.ViberRecipient{{ID: "r1", Name: "A"}}
-		v := st.Viber.Stored()
+		v := st.Viber.ForExport()
 		st.Viber = &v
 		exp.Settings = &st
 	}
@@ -205,11 +205,18 @@ func TestCHK_IPC_14_IncludeViberRecipients(t *testing.T) {
 		m.Export.Settings == nil || m.Export.Settings.Viber == nil || len(m.Export.Settings.Viber.Recipients) != 1 {
 		t.Fatalf("export %+v include=%v", m, h.include)
 	}
-	b, _ := json.Marshal(m.Export)
+	if m.Export.Settings.Viber.HasToken || m.Export.Settings.Viber.Status != nil {
+		t.Fatalf("decoded secrets %+v", m.Export.Settings.Viber)
+	}
+	// wire form (ForExport): no hasToken/status; re-marshal after decode would
+	// show hasToken:false, so assert the export DTO shape explicitly
+	b, _ := json.Marshal(m.Export.Settings.Viber.ForExport())
 	if strings.Contains(string(b), `"hasToken"`) || strings.Contains(string(b), `"status"`) ||
-		!strings.Contains(string(b), `"containsViberRecipients":true`) ||
 		!strings.Contains(string(b), `"recipients":[{"id":"r1","name":"A"}]`) {
-		t.Fatalf("export json %s", b)
+		t.Fatalf("viber export json %s", b)
+	}
+	if raw, _ := json.Marshal(m.Export); !strings.Contains(string(raw), `"containsViberRecipients":true`) {
+		t.Fatalf("export %s", raw)
 	}
 
 	c.send(model.IPCRequest{ID: 2, Cmd: model.CmdImportConfig, IncludeViberRecipients: true,
@@ -217,5 +224,87 @@ func TestCHK_IPC_14_IncludeViberRecipients(t *testing.T) {
 	m = c.reply(2)
 	if m.Type != model.MsgOK || !h.impInc {
 		t.Fatalf("import %+v impInc=%v", m, h.impInc)
+	}
+}
+
+type muteHandler struct {
+	*v2Handler
+	mu    sync.Mutex
+	muted map[string]bool
+	calls []string
+}
+
+func (h *muteHandler) MuteUntilRecovered(id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, "mute:"+id)
+	if id == "missing" {
+		return &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile}
+	}
+	h.muted[id] = true
+	return nil
+}
+
+func (h *muteHandler) UnmuteProfile(id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, "unmute:"+id)
+	if !h.muted[id] {
+		return &model.IPCError{Code: model.ErrCodeNoActiveMute, Key: model.MsgMonitorNoActiveMute}
+	}
+	delete(h.muted, id)
+	return nil
+}
+
+func (h *muteHandler) AckAlert(string, string) (int, error) { return 0, nil }
+
+// TestCHK_IPC_15_MuteProfile — hello advertises mute_profile; mute /
+// unmute JSON replies; not_found / no_active_mute; same access as
+// ack_alert (non-admin allowed).
+func TestCHK_IPC_15_MuteProfile(t *testing.T) {
+	var admin int32 // non-admin
+	v2, _, _, _ := newV2(t)
+	h := &muteHandler{v2Handler: v2, muted: map[string]bool{}}
+	s := NewServer(h, &testLog{})
+	s.Authorize = func(io.ReadWriteCloser) (Peer, error) {
+		return Peer{Admin: atomic.LoadInt32(&admin) == 1, Account: `HOST\alex`}, nil
+	}
+	l := NewMemListener()
+	go s.Serve(l)
+	t.Cleanup(func() { s.Close() })
+
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rw.Close() })
+	var hello model.IPCMessage
+	if err := ReadMessage(rw, &hello); err != nil {
+		t.Fatal(err)
+	}
+	caps := "," + strings.Join(hello.Capabilities, ",") + ","
+	if !strings.Contains(caps, ","+model.CapMuteProfile+",") {
+		t.Fatalf("caps %v", hello.Capabilities)
+	}
+	c := &rawConn{t: t, rw: rw, pending: map[uint64]model.IPCMessage{}}
+	c.send(model.IPCRequest{ID: 1, Cmd: model.CmdMuteUntilRecovered, ProfileID: "db1"})
+	m := c.reply(1)
+	if m.Type != model.MsgOK || m.Result != model.ResultMuted {
+		t.Fatalf("mute %+v", m)
+	}
+	c.send(model.IPCRequest{ID: 2, Cmd: model.CmdUnmuteProfile, ProfileID: "db1"})
+	m = c.reply(2)
+	if m.Type != model.MsgOK || m.Result != model.ResultUnmuted {
+		t.Fatalf("unmute %+v", m)
+	}
+	c.send(model.IPCRequest{ID: 3, Cmd: model.CmdUnmuteProfile, ProfileID: "db1"})
+	m = c.reply(3)
+	if m.Type != model.MsgError || m.Code != model.ErrCodeNoActiveMute {
+		t.Fatalf("no_active_mute %+v", m)
+	}
+	c.send(model.IPCRequest{ID: 4, Cmd: model.CmdMuteUntilRecovered, ProfileID: "missing"})
+	m = c.reply(4)
+	if m.Type != model.MsgError || m.Code != model.ErrCodeNotFound {
+		t.Fatalf("not_found %+v", m)
 	}
 }

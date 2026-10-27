@@ -650,7 +650,8 @@ Wizard Win32 (страницы):
 ### Фаза 12 — служба: застой без номеров и далее (ветка `phase12-svc`; EC Service)
 
 - Застой по возрасту `FreshAt`/lastOk для точек без номеров сообщений (п. 190, `CHK-MON-19`).
-- `export_config` / `import_config` с флагом `includeViberRecipients` (п. 191, `CHK-CFG-07` / `CHK-IPC-14`); дальнейшие пункты — после ревью п. 191.
+- `export_config` / `import_config` с флагом `includeViberRecipients` (п. 191, `CHK-CFG-07` / `CHK-IPC-14`).
+- Mute профиля до восстановления (п. 192, `CHK-MON-20` / `CHK-IPC-15`); дальнейшие пункты — после ревью п. 192.
 
 ---
 
@@ -869,6 +870,8 @@ Wizard Win32 (страницы):
 190. **Застой по lastOk для точек без номеров (фаза 12, `CHK-MON-19`):** сопоставления по времени и ручной SQL (нет `_SentNo`/`_ReceivedNo`, `Source` ≠ `counters`) — «застой», если возраст `FreshAt` (lastOk) больше `stalledMinutes` (тот же порог, наследование и валидация, что у MON-18). Точка уже в warning/error по отставанию — застой не ставится (тот же факт, без дубля в Event Log/Viber; следствие: тревога застоя при порогах отставания выше порога застоя). Counters-путь MON-18 (номера + peer по `NodeKey`) не меняется. Capability `stalled` без bump. Статус / problems / события / ack — как у MON-18. Tests: `TestCHK_MON_19_*` (+ регресс `TestCHK_MON_18_*`).
 
 191. **Экспорт/импорт получателей Viber (фаза 12, `CHK-CFG-07` / `CHK-IPC-14`):** `export_config` / `import_config` принимают `includeViberRecipients` (bool, по умолчанию false). При true экспорт включает несекретные поля `settings.viber` (`enabled`, `recipients:[{id,name}]`, `schedule`, `events`, `reminderMinutes`) — **никогда** `token` / `hasToken` / `status` / `viber.dpapi`; корневой флаг `containsViberRecipients` (всегда) = true, если в экспорте есть хотя бы один recipient. Импорт с флагом применяет несекретный `settings.viber` из файла (токен на диске не трогается; `hasToken`/`status` из файла игнорируются); без флага или без блока `settings.viber` — текущий Viber сохраняется (как раньше). Capability `export_viber_recipients` в hello (рядом с `export_config` / `import_config`). Tests: `TestCHK_CFG_07_*`, `TestCHK_IPC_14_*`.
+
+192. **Mute до восстановления (фаза 12, `CHK-MON-20` / `CHK-IPC-15`):** `mute_until_recovered` / `unmute_profile` по `profileId`; capability `mute_profile`. Доступ как у `ack_alert` (любой локальный клиент, не только админ). Пока muted: нет push `alert` / `alert_repeat`, Viber и Event Log по этому профилю; опрос продолжается; `get_status` — `profile.muted` (всегда) + `mutedSince`. Снятие: `unmute_profile` или профиль вернулся в OK. Состояние — `mute-state.json` рядом с `ack-state.json`. Ошибки: `not_found`, `no_active_mute`, `access_denied`. Tests: `TestCHK_MON_20_*`, `TestCHK_IPC_15_*`.
 
 ### Ещё желательно (не блокер каркаса)
 

@@ -70,6 +70,10 @@ type ProfileSnapshot struct {
 	// Acknowledged: the profile-level alert (connection / query error)
 	// was acknowledged (CHK-IPC-02).
 	Acknowledged bool `json:"acknowledged,omitempty"`
+	// Muted / MutedSince: mute_until_recovered (phase 12, CHK-MON-20).
+	// Muted is always sent; MutedSince is set while muted.
+	Muted      bool       `json:"muted"`
+	MutedSince *time.Time `json:"mutedSince,omitempty"`
 	// Read-only settings view (phase 6): connection without password,
 	// the profile's own thresholds, mapping summary (no SQL, no columns).
 	Connection        *ProfileConnection `json:"connection,omitempty"`

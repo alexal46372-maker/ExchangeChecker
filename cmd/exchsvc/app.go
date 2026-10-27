@@ -188,7 +188,8 @@ func runService(ctx context.Context, ac appConfig) error {
 		NewReader: ac.NewReader,
 		Counters:  monitor.OpenFileCounterStore(ac.Dir, log),
 		// alarm acknowledgements next to counters-state.json (CHK-IPC-02)
-		Acks: monitor.OpenFileAckStore(ac.Dir, log),
+		Acks:  monitor.OpenFileAckStore(ac.Dir, log),
+		Mutes: monitor.OpenFileMuteStore(ac.Dir, log),
 		// one informational Event Log entry per acknowledgement; the
 		// alert entries themselves are not changed by an ack
 		OnAck: func(e model.AlertEvent) {

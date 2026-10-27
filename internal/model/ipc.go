@@ -113,6 +113,9 @@ const (
 	ErrCodeInvalidRequest = "invalid_request"
 	// ErrCodeNoActiveAlert: ack_alert found nothing to acknowledge.
 	ErrCodeNoActiveAlert = "no_active_alert"
+	// ErrCodeNoActiveMute: unmute_profile when the profile is not muted
+	// (phase 12, CHK-MON-20).
+	ErrCodeNoActiveMute = "no_active_mute"
 	// ErrCodeUnknownCommand: the service does not know the command.
 	ErrCodeUnknownCommand = "unknown_command"
 	// ErrCodeRateLimited: the command was refused by the command rate

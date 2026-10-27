@@ -42,7 +42,7 @@ func (m *Monitor) ExportConfigOpts(includeViberRecipients bool) (model.ConfigExp
 	st := view.Settings
 	viberRecipients := false
 	if includeViberRecipients && st.Viber != nil {
-		v := st.Viber.Stored() // drops hasToken / status; hasToken omitempty
+		v := st.Viber.ForExport() // no hasToken / status / token in JSON
 		st.Viber = &v
 		viberRecipients = len(v.Recipients) > 0
 	} else {

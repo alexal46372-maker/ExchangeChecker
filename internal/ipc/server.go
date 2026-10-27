@@ -54,6 +54,13 @@ type Acker interface {
 	AckAlert(profileID, pointKey string) (int, error)
 }
 
+// Muter runs mute_until_recovered / unmute_profile (phase 12, CHK-MON-20 /
+// CHK-IPC-15). Access level is the same as ack_alert (any local client).
+type Muter interface {
+	MuteUntilRecovered(profileID string) error
+	UnmuteProfile(profileID string) error
+}
+
 // EventAcker runs ack_alert {eventId} (phase 11, CHK-MON-18, capability
 // ack_event): only that alert.
 type EventAcker interface {
@@ -354,6 +361,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(Acker); ok {
 		caps = append(caps, model.CapAckAlert)
+	}
+	if _, ok := s.H.(Muter); ok {
+		caps = append(caps, model.CapMuteProfile) // phase 12 (CHK-IPC-15)
 	}
 	if _, ok := s.H.(HeartbeatSource); ok {
 		caps = append(caps, model.CapHeartbeat)
@@ -1330,6 +1340,20 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 				return errorReply(req.ID, err, "")
 			}
 			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultAcknowledged, Acked: n}
+		}
+	case model.CmdMuteUntilRecovered: // phase 12 (CHK-MON-20 / CHK-IPC-15)
+		if mu, ok := s.H.(Muter); ok {
+			if err := mu.MuteUntilRecovered(req.ProfileID); err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultMuted}
+		}
+	case model.CmdUnmuteProfile:
+		if mu, ok := s.H.(Muter); ok {
+			if err := mu.UnmuteProfile(req.ProfileID); err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultUnmuted}
 		}
 	}
 	return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)

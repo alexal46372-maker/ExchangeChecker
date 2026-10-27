@@ -329,6 +329,9 @@ func (a *App) OpenVolume() *volumeWindow {
 			switch msg {
 			case winapi.WM_HSCROLL:
 				a.volumeMoved()
+				if volumeScrollEnded(wp) {
+					a.volumePreviewCue()
+				}
 				return 0, true
 			case winapi.WM_ACTIVATE:
 				if wp&0xFFFF == 0 && !a.opt.HiddenPanel { // WA_INACTIVE
@@ -383,4 +386,29 @@ func (a *App) volumeMoved() {
 			a.logf("tray: sound: save master volume: %v", err)
 		}
 	}
+}
+
+// volumeScrollEnded reports the trackbar thumb was released after a drag
+// (SB_ENDSCROLL / TB_ENDTRACK; both are 8).
+func volumeScrollEnded(wp uintptr) bool {
+	code := uint16(wp & 0xFFFF)
+	return code == winapi.SB_ENDSCROLL || code == winapi.TB_ENDTRACK
+}
+
+// volumePreviewFreqHz / volumePreviewDurMs: short Windows-mixer-like tick
+// played at the current master volume after the user releases the slider.
+const (
+	volumePreviewFreqHz = 1000
+	volumePreviewDurMs  = 60
+)
+
+// volumePreviewCue plays one short beep/tone at the current master volume
+// via the existing «Прослушать» path (PlaySound sine WAV / Beep fallback).
+func (a *App) volumePreviewCue() {
+	a.testSound(trayalert.SoundProfile{
+		Kind:   trayalert.SoundBeep,
+		FreqHz: volumePreviewFreqHz,
+		DurMs:  volumePreviewDurMs,
+		Volume: 100,
+	}, a.soundPrefs.Master)
 }

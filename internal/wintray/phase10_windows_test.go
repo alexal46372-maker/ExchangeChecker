@@ -125,7 +125,8 @@ func TestCHK_TRAY_35_MasterVolume(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	store := &memSoundStore{}
-	app, _, _ := startP10App(t, &alertService{}, &testBeeper{}, store)
+	b := &testBeeper{}
+	app, _, _ := startP10App(t, &alertService{}, b, store)
 	app.Command(trayui.CmdVolume)
 	v := app.volWin
 	if v == nil || int(winapi.SendMessage(v.bar, winapi.TBM_GETPOS, 0, 0)) != 100 || v.tips.text(v.bar) == "" {
@@ -140,9 +141,35 @@ func TestCHK_TRAY_35_MasterVolume(t *testing.T) {
 	if s.Volume != 24 { // 80 % × 30 %
 		t.Errorf("effective %d", s.Volume)
 	}
+	// drag-release (SB_ENDSCROLL) must play a short cue at the new master volume
+	before := b.count()
+	winapi.SendMessage(v.hwnd, winapi.WM_HSCROLL, winapi.SB_ENDSCROLL, v.bar)
+	pumpUntil(t, "volume preview", func() bool { return b.count() > before && b.has(volumePreviewFreqHz) })
 	winapi.SendMessage(v.hwnd, winapi.WM_CLOSE, 0, 0)
 	if app.volWin != nil {
 		t.Error("closed")
+	}
+}
+
+// TestVolumeScrollEnded — LOWORD(wp) SB_ENDSCROLL / TB_ENDTRACK means
+// the trackbar thumb was released (logic only; no GUI).
+func TestVolumeScrollEnded(t *testing.T) {
+	cases := []struct {
+		name string
+		wp   uintptr
+		want bool
+	}{
+		{"zero", 0, false},
+		{"thumbtrack", winapi.SB_THUMBTRACK, false},
+		{"thumbpos", winapi.SB_THUMBPOSITION, false},
+		{"endscroll", winapi.SB_ENDSCROLL, true},
+		{"endtrack", winapi.TB_ENDTRACK, true},
+		{"endscroll+pos", winapi.SB_ENDSCROLL | (42 << 16), true},
+	}
+	for _, c := range cases {
+		if got := volumeScrollEnded(c.wp); got != c.want {
+			t.Errorf("%s: volumeScrollEnded(%#x)=%v, want %v", c.name, c.wp, got, c.want)
+		}
 	}
 }
 

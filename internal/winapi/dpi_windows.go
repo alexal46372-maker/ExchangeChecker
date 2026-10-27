@@ -137,6 +137,8 @@ const (
 	SB_THUMBPOSITION    = 4
 	SB_TOP              = 6
 	SB_BOTTOM           = 7
+	SB_ENDSCROLL        = 8 // trackbar thumb released (also TB_ENDTRACK)
+	TB_ENDTRACK         = 8 // same value as SB_ENDSCROLL for msctls_trackbar32
 	WM_VSCROLL          = 0x0115
 	WM_MOUSEWHEEL       = 0x020A
 	SM_CXVSCROLL        = 2

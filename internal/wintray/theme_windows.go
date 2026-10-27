@@ -46,14 +46,17 @@ func (s RegistryThemeStore) Save(t trayui.Theme) error {
 	return winapi.RegSetStringView(winapi.HKEY_CURRENT_USER, s.key(), ThemeValue, string(t), 0)
 }
 
-// LoadTheme reads the preference (errors / nil store = light) and applies
-// it to trayui.
+// LoadTheme reads the preference and applies it to trayui.
+// A nil store leaves the current theme alone (do not clobber SetTheme —
+// screenshots and tests set dark before creating windows via NewApp).
+// A store that is missing / unreadable → light.
 func LoadTheme(s ThemeStore) trayui.Theme {
+	if s == nil {
+		return trayui.Current()
+	}
 	t := trayui.ThemeLight
-	if s != nil {
-		if v, err := s.Load(); err == nil {
-			t = trayui.NormalizeTheme(string(v))
-		}
+	if v, err := s.Load(); err == nil {
+		t = trayui.NormalizeTheme(string(v))
 	}
 	trayui.SetTheme(t)
 	return t
@@ -65,6 +68,22 @@ var (
 	pageBrush    uintptr
 	brushTheme   trayui.Theme
 )
+
+// invalidateThemeBrushes drops cached chrome brushes (call after SetTheme
+// when a settings window keeps a required-field brush, etc.).
+func invalidateThemeBrushes() {
+	themeBrushMu.Lock()
+	defer themeBrushMu.Unlock()
+	if panelBrush != 0 {
+		winapi.DeleteObject(panelBrush)
+		panelBrush = 0
+	}
+	if pageBrush != 0 {
+		winapi.DeleteObject(pageBrush)
+		pageBrush = 0
+	}
+	brushTheme = ""
+}
 
 func ensureThemeBrushes() (panel, page uintptr) {
 	themeBrushMu.Lock()
@@ -93,8 +112,10 @@ func ApplyWindowTheme(hwnd uintptr) {
 	if hwnd == 0 || !winapi.IsWindow(hwnd) {
 		return
 	}
+	invalidateThemeBrushes()
 	winapi.SetImmersiveDarkMode(hwnd, trayui.IsDark())
-	winapi.RedrawWindow(hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_FRAME)
+	// class brush is COLOR_BTNFACE; force our erase + child CTLCOLOR
+	winapi.RedrawWindow(hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW|winapi.RDW_FRAME)
 }
 
 // themeCtlColor answers WM_CTLCOLOR* with the active chrome colours.

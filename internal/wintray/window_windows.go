@@ -94,7 +94,7 @@ func ensureClass(name string) error {
 		WndProc:    wndProcCallback,
 		Instance:   winapi.GetModuleHandle(),
 		Cursor:     winapi.LoadCursor(winapi.IDC_ARROW),
-		Background: 16, // COLOR_BTNFACE + 1
+		Background: 16, // COLOR_BTNFACE + 1; client chrome via themeErase (CHK-TRAY-55)
 		ClassName:  winapi.UTF16Ptr(name),
 	}
 	if _, err := winapi.RegisterClassEx(&wc); err != nil {

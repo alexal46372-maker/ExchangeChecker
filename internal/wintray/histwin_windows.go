@@ -145,7 +145,7 @@ func newHistWindow(a *App, row trayui.StatusRow, show bool) (*histWindow, error)
 				hw.paint(c)
 				return 0, true
 			case winapi.WM_ERASEBKGND:
-				return 1, true
+				return themeErase(wp, c), true
 			}
 			return 0, false
 		})

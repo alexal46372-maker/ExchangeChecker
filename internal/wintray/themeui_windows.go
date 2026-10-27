@@ -32,8 +32,18 @@ func (w *settingsWindow) applyThemeChoice() {
 		t = trayui.ThemeDark
 	}
 	trayui.SetTheme(t)
+	invalidateThemeBrushes()
+	// required-edit brush was created with the previous theme's Required colour
+	if w.reqBrush != 0 {
+		winapi.DeleteObject(w.reqBrush)
+		w.reqBrush = 0
+	}
 	if w.cfg.themeStore != nil {
 		_ = w.cfg.themeStore.Save(t)
 	}
 	ApplyWindowTheme(w.hwnd)
+	if w.host != 0 {
+		ApplyWindowTheme(w.host)
+	}
+	w.syncThemeCombo()
 }

@@ -63,7 +63,7 @@ func newCardPanel(parent uintptr, tips *tooltips, lang string, rows int32) (*car
 				winapi.EndPaint(hw, &ps)
 				return 0, true
 			case winapi.WM_ERASEBKGND:
-				return 1, true
+				return themeErase(wp, hw), true
 			}
 			return 0, false
 		})
@@ -80,7 +80,7 @@ func newCardPanel(parent uintptr, tips *tooltips, lang string, rows int32) (*car
 					p.paint(hw, i)
 					return 0, true
 				case winapi.WM_ERASEBKGND:
-					return 1, true
+					return themeErase(wp, hw), true
 				}
 				return 0, false
 			})

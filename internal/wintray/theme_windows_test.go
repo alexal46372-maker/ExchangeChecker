@@ -51,3 +51,13 @@ func TestCHK_TRAY_55_AllowlistMentionsDwmSet(t *testing.T) {
 	// compile-time presence: the winapi helper must exist
 	winapi.SetImmersiveDarkMode(0, false)
 }
+
+// TestCHK_TRAY_55_LoadThemeNilPreserves — NewApp with a nil ThemeStore
+// must not reset an explicit SetTheme(dark) (ui-screens dark pass).
+func TestCHK_TRAY_55_LoadThemeNilPreserves(t *testing.T) {
+	t.Cleanup(func() { trayui.SetTheme(trayui.ThemeLight) })
+	trayui.SetTheme(trayui.ThemeDark)
+	if got := LoadTheme(nil); got != trayui.ThemeDark || !trayui.IsDark() {
+		t.Fatalf("nil store clobbered theme: got %q dark=%v", got, trayui.IsDark())
+	}
+}

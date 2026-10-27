@@ -327,9 +327,17 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 
 // show shows or hides a control: a laid out one through ui.Ctl.Hidden
 // (relayoutAll applies it), the others (bar, before the layout) at once.
+// Hiding also calls ShowWindow(SW_HIDE) immediately so a section switch
+// cannot leave the previous panel painted until the next placeCtl pass.
 func (w *settingsWindow) show(h uintptr, on bool) {
+	if h == 0 {
+		return
+	}
 	if c := w.ctlOf[h]; c != nil {
 		c.Hidden = !on
+		if !on {
+			winapi.ShowWindow(h, winapi.SW_HIDE)
+		}
 		return
 	}
 	cmd := int32(winapi.SW_HIDE)
@@ -359,16 +367,21 @@ func (w *settingsWindow) relayoutAll() {
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	w.layoutFit()
+	if w.host != 0 {
+		winapi.InvalidateRect(w.host, true)
+		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+	}
 }
 
 // placeCtl moves a laid out page control (host coordinates; combo boxes
 // keep their drop-down height), records it for the scrolling and shows
-// it; an unplaced (hidden) one is hidden.
+// it; an unplaced or Hidden one is hidden (Hidden alone must clear the
+// HWND so section switches cannot overlay panels).
 func (w *settingsWindow) placeCtl(c *ui.Ctl) {
 	if c.H == 0 {
 		return
 	}
-	if !c.Placed {
+	if !c.Placed || c.Hidden {
 		winapi.ShowWindow(c.H, winapi.SW_HIDE)
 		return
 	}

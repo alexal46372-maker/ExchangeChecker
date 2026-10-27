@@ -446,22 +446,36 @@ func TestCHK_TRAY_42_FocusScroll(t *testing.T) {
 	defer func() { testWorkArea = nil }()
 	e := newXferEnv(t, i18n.RU)
 	w := e.w
+	contentRect := func(h uintptr) (winapi.RECT, bool) {
+		if c := w.ctlOf[h]; c != nil && c.Placed {
+			return winapi.RECT{Left: c.Rect.X, Top: c.Rect.Y, Right: c.Rect.X + c.Rect.W, Bottom: c.Rect.Y + c.Rect.H}, true
+		}
+		r, ok := w.hostRect[h]
+		return r, ok
+	}
 	visible := func(h uintptr) bool {
-		r := w.hostRect[h]
+		r, ok := contentRect(h)
+		if !ok {
+			return false
+		}
 		x, y := w.ScrollPos()
 		return r.Top-y >= 0 && r.Bottom-y <= w.viewH && r.Left-x >= 0
 	}
 	low, lowEdit := uintptr(0), uintptr(0)
+	var lowR, lowEditR winapi.RECT
 	for _, h := range w.pageCtl[0] {
-		r, ok := w.hostRect[h]
-		if !ok || winapi.WindowStyle(h)&winapi.WS_VISIBLE == 0 {
+		if !w.underPagePanel(h) || winapi.WindowStyle(h)&winapi.WS_VISIBLE == 0 {
 			continue
 		}
-		if w.notifyBtn[h] && (low == 0 || r.Bottom > w.hostRect[low].Bottom) {
-			low = h
+		r, ok := contentRect(h)
+		if !ok {
+			continue
 		}
-		if winapi.WindowStyle(h)&winapi.ES_MULTILINE == 0 && !w.notifyBtn[h] && (lowEdit == 0 || r.Bottom > w.hostRect[lowEdit].Bottom) {
-			lowEdit = h
+		if w.notifyBtn[h] && (low == 0 || r.Bottom > lowR.Bottom) {
+			low, lowR = h, r
+		}
+		if winapi.WindowStyle(h)&winapi.ES_MULTILINE == 0 && !w.notifyBtn[h] && (lowEdit == 0 || r.Bottom > lowEditR.Bottom) {
+			lowEdit, lowEditR = h, r
 		}
 	}
 	if low == 0 || lowEdit == 0 || visible(low) {

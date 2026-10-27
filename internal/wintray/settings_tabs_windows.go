@@ -17,6 +17,11 @@ const (
 	tcsHotTrack  = winapi.TCS_HOTTRACK
 )
 
+// SettingsTabPanelClass is one child panel per settings tab. SW_HIDE on
+// the panel hides every descendant (orphan STATICs included) — the
+// pageCtl walk alone left ghosts on live Win7 after PR #8.
+const SettingsTabPanelClass = "ExchangeCheckerSettingsTab"
+
 // hideWindowTree hides hwnd and every descendant (combo/edit children
 // included) so an inactive tab cannot stay painted over the active one.
 func hideWindowTree(h uintptr) {
@@ -29,11 +34,41 @@ func hideWindowTree(h uintptr) {
 	}
 }
 
-// hideInactiveTabControls hard-hides every control of every page that is
-// not the current tab: ui.SetHidden on the page root, SW_HIDE on each
-// pageCtl HWND and its children. Call before and after applyUIMode —
-// mode flips only toggled expertOnly IDs and left other page trees
-// Visible (Alex Simple→Expert overlap).
+// pagePanelProc forwards control notifications to the settings window
+// (controls are children of the tab panel, not of the scrolled host).
+func (w *settingsWindow) pagePanelProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
+	switch msg {
+	case winapi.WM_COMMAND, winapi.WM_CTLCOLOREDIT, winapi.WM_NOTIFY:
+		// via hostProc: BN_SETFOCUS / EN_SETFOCUS still scrollIntoView
+		return w.hostProc(w.host, msg, wp, lp)
+	}
+	return 0, false
+}
+
+// ensurePagePanels creates one WS_EX_CONTROLPARENT child per tab under
+// the scrolled host. Idempotent.
+func (w *settingsWindow) ensurePagePanels() {
+	if w.host == 0 {
+		return
+	}
+	for i := range w.pagePanel {
+		if w.pagePanel[i] != 0 {
+			continue
+		}
+		h, err := createWindowPx(SettingsTabPanelClass, "", winapi.WS_EX_CONTROLPARENT,
+			winapi.WS_CHILD|winapi.WS_CLIPCHILDREN, 0, 0, 10, 10, w.host, w.pagePanelProc)
+		if err != nil {
+			continue
+		}
+		w.pagePanel[i] = h
+		winapi.ShowWindow(h, winapi.SW_HIDE)
+	}
+}
+
+// hideInactiveTabControls SW_HIDEs every inactive pagePanel (entire
+// child tree) and marks the ui page roots Hidden. Also SW_HIDEs
+// pageCtl HWNDs that are not under a panel (bar Test/… on page 0).
+// Call before and after applyUIMode / update.
 func (w *settingsWindow) hideInactiveTabControls() {
 	for i, n := range w.pages {
 		if i == w.page || n == nil {
@@ -45,8 +80,17 @@ func (w *settingsWindow) hideInactiveTabControls() {
 				return
 			}
 			c.Hidden = true
-			hideWindowTree(c.H)
 		})
+	}
+	for i, pan := range w.pagePanel {
+		if pan == 0 {
+			continue
+		}
+		if i == w.page {
+			winapi.ShowWindow(pan, winapi.SW_SHOWNA)
+			continue
+		}
+		hideWindowTree(pan)
 	}
 	for i, hs := range w.pageCtl {
 		if i == w.page {
@@ -56,9 +100,62 @@ func (w *settingsWindow) hideInactiveTabControls() {
 			if c := w.ctlOf[h]; c != nil {
 				c.Hidden = true
 			}
-			hideWindowTree(h)
+			// bar / non-panel leftovers (Test, AlarmTest, …)
+			if !w.underPagePanel(h) {
+				hideWindowTree(h)
+			}
 		}
 	}
+}
+
+// underPagePanel reports whether h is a descendant of any pagePanel.
+func (w *settingsWindow) underPagePanel(h uintptr) bool {
+	if h == 0 {
+		return false
+	}
+	for _, pan := range w.pagePanel {
+		if pan == 0 {
+			continue
+		}
+		if h == pan {
+			return true
+		}
+		for _, ch := range winapi.Children(pan) {
+			if ch == h || underHWND(ch, h) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func underHWND(root, target uintptr) bool {
+	if root == 0 || target == 0 {
+		return false
+	}
+	for _, ch := range winapi.Children(root) {
+		if ch == target || underHWND(ch, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// pageOfHWND returns the tab index that owns h, or -1.
+func (w *settingsWindow) pageOfHWND(h uintptr) int {
+	for i, pan := range w.pagePanel {
+		if pan != 0 && (h == pan || underHWND(pan, h)) {
+			return i
+		}
+	}
+	for i, hs := range w.pageCtl {
+		for _, x := range hs {
+			if x == h {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // rebuildTabs fills SysTabControl32: Databases always; General in Expert;
@@ -159,7 +256,9 @@ func (w *settingsWindow) pageCtlVisible(i int) bool {
 }
 
 // assertPageClear checks inactive pages are Hidden and not WS_VISIBLE
-// (test hook). Returns a short reason or "".
+// (test hook). Also fails on GetWindowRect overlap of visible controls
+// from different tabs, and on IsWindowVisible ghosts under inactive
+// panels (catches orphans the pageCtl walk missed).
 func (w *settingsWindow) assertPageClear() string {
 	for i := range w.pageCtl {
 		wantOn := i == w.page
@@ -180,6 +279,24 @@ func (w *settingsWindow) assertPageClear() string {
 				return "pages root/controls not cleared"
 			}
 		}
+		if pan := w.pagePanel[i]; pan != 0 {
+			if !wantOn {
+				if winapi.WindowStyle(pan)&winapi.WS_VISIBLE != 0 {
+					return "inactive pagePanel still WS_VISIBLE"
+				}
+				if winapi.IsWindowVisible(pan) {
+					return "inactive pagePanel IsWindowVisible"
+				}
+				for _, ch := range winapi.Children(pan) {
+					if winapi.IsWindowVisible(ch) {
+						return "ghost: IsWindowVisible under inactive panel"
+					}
+					if winapi.WindowStyle(ch)&winapi.WS_VISIBLE != 0 {
+						return "ghost: WS_VISIBLE child under inactive panel"
+					}
+				}
+			}
+		}
 		for _, h := range w.pageCtl[i] {
 			if h == 0 {
 				continue
@@ -193,7 +310,6 @@ func (w *settingsWindow) assertPageClear() string {
 			}
 		}
 	}
-	// overlap: two page trees must not both have visible controls
 	visPages := 0
 	for i := range w.pageCtl {
 		if w.pageCtlVisible(i) {
@@ -202,6 +318,58 @@ func (w *settingsWindow) assertPageClear() string {
 	}
 	if visPages > 1 {
 		return "overlap: more than one pageCtl tree WS_VISIBLE"
+	}
+	if why := w.assertNoCrossTabOverlap(); why != "" {
+		return why
+	}
+	return ""
+}
+
+func rectsOverlap(a, b winapi.RECT) bool {
+	return a.Left < b.Right && b.Left < a.Right && a.Top < b.Bottom && b.Top < a.Bottom
+}
+
+// assertNoCrossTabOverlap fails when two IsWindowVisible controls from
+// different tabs have overlapping screen rects (Alex ghost repro).
+func (w *settingsWindow) assertNoCrossTabOverlap() string {
+	type item struct {
+		page int
+		r    winapi.RECT
+	}
+	var vis []item
+	for i, hs := range w.pageCtl {
+		for _, h := range hs {
+			if h == 0 || !winapi.IsWindowVisible(h) {
+				continue
+			}
+			vis = append(vis, item{i, winapi.GetWindowRect(h)})
+		}
+	}
+	// also any visible direct child of host that belongs to a page
+	for _, h := range winapi.Children(w.host) {
+		if !winapi.IsWindowVisible(h) {
+			continue
+		}
+		pg := w.pageOfHWND(h)
+		if pg < 0 {
+			continue
+		}
+		vis = append(vis, item{pg, winapi.GetWindowRect(h)})
+		for _, ch := range winapi.Children(h) {
+			if winapi.IsWindowVisible(ch) {
+				vis = append(vis, item{pg, winapi.GetWindowRect(ch)})
+			}
+		}
+	}
+	for a := 0; a < len(vis); a++ {
+		for b := a + 1; b < len(vis); b++ {
+			if vis[a].page == vis[b].page {
+				continue
+			}
+			if rectsOverlap(vis[a].r, vis[b].r) {
+				return "overlap: visible GetWindowRect across tabs"
+			}
+		}
 	}
 	return ""
 }

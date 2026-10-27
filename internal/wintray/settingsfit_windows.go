@@ -170,6 +170,13 @@ func (w *settingsWindow) ScrollPos() (int32, int32) { return w.scrollX, w.scroll
 func (w *settingsWindow) scrollIntoView(h uintptr) {
 	r, ok := w.hostRect[h]
 	if !ok {
+		// panel child: layout Rect is still in host/content coordinates
+		if c := w.ctlOf[h]; c != nil && c.Placed {
+			r = winapi.RECT{Left: c.Rect.X, Top: c.Rect.Y, Right: c.Rect.X + c.Rect.W, Bottom: c.Rect.Y + c.Rect.H}
+			ok = true
+		}
+	}
+	if !ok {
 		return
 	}
 	x, y := w.scrollX, w.scrollY
@@ -277,9 +284,10 @@ type barButton struct {
 }
 
 // layoutPages lays out the page host: section tabs on top, then the
-// left column (mode + profile list) and the page stack (Gap:-1). Only
-// the active tab's controls may be visible — hideInactiveTabControls
-// clears the rest so Gap:-1 cannot stack two trees (Alex overlay).
+// left column (mode + profile list) and the page stack. Pages share one
+// slot (Col Gap:-1 → gapOr 0, same origin — NOT a paint stack). Each
+// page's HWNDs live under pagePanel[i]; SW_HIDE(panel) is what stops
+// ghosts (Conchita @400d1ae).
 func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Node) {
 	body := &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, &ui.Col{Gap: -1, Items: pages}}}
 	var child ui.Node = body
@@ -324,6 +332,7 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Nod
 	}
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
+	w.syncPagePanels()
 	x, y, ww, wh := settingsRectPx(style, min32(max32(w.pageW, allW), maxW), w.pageH+px(setBarH))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 }
@@ -369,6 +378,7 @@ func (w *settingsWindow) relayoutAll() {
 	}
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
+	w.syncPagePanels()
 	w.hideInactiveTabControls()
 	w.layoutFit()
 	if w.host != 0 {
@@ -377,10 +387,10 @@ func (w *settingsWindow) relayoutAll() {
 	}
 }
 
-// placeCtl moves a laid out page control (host coordinates; combo boxes
-// keep their drop-down height), records it for the scrolling and shows
-// it; an unplaced or Hidden one is hidden (Hidden alone must clear the
-// HWND so section switches cannot overlay panels).
+// placeCtl moves a laid out control. Host children (tabs, left chrome)
+// use host coordinates and hostRect scrolling. Controls under a
+// pagePanel are positioned in panel-local coords by syncPagePanels
+// (panel HWND scrolls as one unit — Conchita child-panel architecture).
 func (w *settingsWindow) placeCtl(c *ui.Ctl) {
 	if c.H == 0 {
 		return
@@ -394,9 +404,108 @@ func (w *settingsWindow) placeCtl(c *ui.Ctl) {
 	if c.Kind == ui.Combo {
 		h += px(comboDrop)
 	}
+	if w.underPagePanel(c.H) {
+		// content coords kept on Ctl.Rect; panel-local MoveWindow in syncPagePanels
+		delete(w.hostRect, c.H)
+		return
+	}
 	w.hostRect[c.H] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + h}
 	winapi.MoveWindow(c.H, r.X, r.Y, r.W, h)
 	winapi.ShowWindow(c.H, winapi.SW_SHOWNA)
+}
+
+// syncPagePanels sizes every tab panel to the shared page slot and
+// MoveWindows its children into panel-local coordinates. Inactive
+// panels stay SW_HIDE'd (entire tree invisible).
+func (w *settingsWindow) syncPagePanels() {
+	if w.host == 0 {
+		return
+	}
+	// slot = union of placed controls on the active page (Gap:-1 shared origin)
+	var slot winapi.RECT
+	any := false
+	if n := w.pages[w.page]; n != nil {
+		ui.Walk(n, func(c *ui.Ctl) {
+			if c == nil || c.H == 0 || !c.Placed || c.Hidden {
+				return
+			}
+			// slot uses layout height only — comboDrop is a MoveWindow quirk of
+			// CBS_DROPDOWNLIST, not painted panel content (would blow hostExtent)
+			h := c.Rect.H
+			l, t, r, b := c.Rect.X, c.Rect.Y, c.Rect.X+c.Rect.W, c.Rect.Y+h
+			if !any {
+				slot = winapi.RECT{Left: l, Top: t, Right: r, Bottom: b}
+				any = true
+				return
+			}
+			if l < slot.Left {
+				slot.Left = l
+			}
+			if t < slot.Top {
+				slot.Top = t
+			}
+			if r > slot.Right {
+				slot.Right = r
+			}
+			if b > slot.Bottom {
+				slot.Bottom = b
+			}
+		})
+	}
+	if !any {
+		// keep previous slot if any; else a tiny placeholder
+		if w.pageSlot.Right > w.pageSlot.Left {
+			slot = w.pageSlot
+		} else {
+			slot = winapi.RECT{Right: 10, Bottom: 10}
+		}
+	}
+	w.pageSlot = slot
+	pw, ph := slot.Right-slot.Left, slot.Bottom-slot.Top
+	if pw < 1 {
+		pw = 1
+	}
+	if ph < 1 {
+		ph = 1
+	}
+	for i, pan := range w.pagePanel {
+		if pan == 0 {
+			continue
+		}
+		w.hostRect[pan] = slot
+		// children → panel-local (even when panel hidden — ready for show)
+		for _, h := range w.pageCtl[i] {
+			// bar Test/… are in pageCtl[0] but parented to the frame, not the panel
+			if !w.underPagePanel(h) {
+				continue
+			}
+			c := w.ctlOf[h]
+			if c == nil || c.H == 0 {
+				continue
+			}
+			delete(w.hostRect, h)
+			if !c.Placed || c.Hidden {
+				hideWindowTree(h)
+				continue
+			}
+			hgt := c.Rect.H
+			if c.Kind == ui.Combo {
+				hgt += px(comboDrop)
+			}
+			winapi.MoveWindow(h, c.Rect.X-slot.Left, c.Rect.Y-slot.Top, c.Rect.W, hgt)
+			if i == w.page {
+				winapi.ShowWindow(h, winapi.SW_SHOWNA)
+			}
+		}
+		if i == w.page {
+			winapi.ShowWindow(pan, winapi.SW_SHOWNA)
+		} else {
+			hideWindowTree(pan)
+		}
+	}
+	// re-apply scroll so panels sit at slot - scroll
+	w.scrollSet = false
+	w.scrollTo(w.scrollX, w.scrollY)
 }
 
 // fitWrap sets the height of the wrapped text boxes to their text at

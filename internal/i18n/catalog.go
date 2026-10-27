@@ -145,6 +145,10 @@ const (
 	KeySetDeleting          = "set.deleting"
 	KeySetDeleted           = "set.deleted"
 	KeySetDeleteConfirm     = "set.delete_confirm"
+	KeySetClone             = "set.clone"
+	KeySetCloned            = "set.cloned"
+	KeySetClonedNeedPw      = "set.cloned_need_pw"
+	KeySetCloneConfirm      = "set.clone_confirm"
 	KeySetDiscardConfirm    = "set.discard_confirm"
 	KeyDiscTitle            = "disc.title"
 	KeyDiscButton           = "disc.button"
@@ -332,6 +336,7 @@ const (
 	KeyTipSetList         = "tip.set.list"
 	KeyTipSetAdd          = "tip.set.add"
 	KeyTipSetDelete       = "tip.set.delete"
+	KeyTipSetClone         = "tip.set.clone"
 	KeyTipSetDiscover     = "tip.set.discover"
 	KeyTipSetName         = "tip.set.name"
 	KeyTipSetHost         = "tip.set.host"
@@ -976,6 +981,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetCancelTest:          {"Отменить проверку", "Cancel test"},
 	KeySetSave:                {"Сохранить", "Save"},
 	KeySetDelete:              {"Удалить", "Delete"},
+	KeySetClone:               {"Клонировать базу", "Clone database"},
 	KeySetAdd:                 {"Добавить", "Add"},
 	KeySetPoll:                {"Опросить сейчас", "Poll now"},
 	KeySetReload:              {"Перечитать", "Reload"},
@@ -1002,6 +1008,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetDeleting:            {"Удаление…", "Deleting…"},
 	KeySetDeleted:             {"База удалена из настроек.", "The database was removed from the settings."},
 	KeySetDeleteConfirm:       {"Удалить базу «%s» из настроек? Пароль, состояние и тревоги этой базы тоже будут удалены.", "Remove the database \"%s\" from the settings? Its password, state and alarms are removed too."},
+	KeySetCloned:              {"База «%s» создана (копия). Введите пароль SQL.", "Database \"%s\" created (copy). Enter the SQL password."},
+	KeySetClonedNeedPw:        {"База «%s» создана. Пароль не копируется — введите его.", "Database \"%s\" created. The password is not copied — enter it."},
+	KeySetCloneConfirm:        {"Клонировать базу «%s»? Пароль SQL не копируется — его нужно ввести заново.", "Clone database \"%s\"? The SQL password is not copied — you must enter it again."},
 	KeySetDiscardConfirm:      {"Отменить изменения?", "Discard changes?"},
 	KeyDiscTitle:              {"Таблицы обмена", "Exchange tables"},
 	KeyDiscButton:             {"Таблицы обмена…", "Exchange tables…"},
@@ -1203,6 +1212,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipSetList:          {"Базы, которые проверяет служба. Выберите базу, чтобы увидеть и изменить её настройки.", "Databases checked by the service. Select one to view and edit its settings."},
 	KeyTipSetAdd:           {"Добавить новую базу данных для проверки.", "Add a new database to check."},
 	KeyTipSetDelete:        {"Удалить выбранную базу из настроек (с подтверждением).", "Remove the selected database from the settings (asks first)."},
+	KeyTipSetClone:         {"Создать копию выбранной базы без пароля (нужен clone_profile).", "Create a copy of the selected database without its password (needs clone_profile)."},
 	KeyTipSetDiscover:      {"Найти в базе 1С таблицы с временем обмена и настроить их.", "Find the tables with exchange times in the 1C database and set them up."},
 	KeyTipSetName:          {"Название базы в меню трея и в тревогах. Можно оставить пустым — тогда «сервер/база».", "Name of the database in the tray menu and alerts. May be empty: \"server/database\" is shown then."},
 	KeyTipSetHost:          {"Имя компьютера или IP-адрес SQL Server, например SRV-SQL или 10.0.0.5. Без имени экземпляра.", "Computer name or IP address of SQL Server, e.g. SRV-SQL or 10.0.0.5. Without the instance name."},

@@ -37,6 +37,7 @@ type cfgService struct {
 	rev      int
 	saves    []saveCall
 	deletes  []string
+	clones   []string
 	polls    []string
 	tests    []model.IPCRequest
 	canceled int
@@ -170,6 +171,42 @@ func (f *cfgService) DeleteProfile(id, rev, account string) (string, error) {
 	f.rev++
 	return f.revision(), nil
 }
+
+func (f *cfgService) CloneProfile(profileID, newID, newName, rev, account string) (model.SavedProfile, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clones = append(f.clones, profileID)
+	var src *model.Profile
+	for i := range f.profiles {
+		if f.profiles[i].ID == profileID {
+			src = &f.profiles[i]
+			break
+		}
+	}
+	if src == nil {
+		return model.SavedProfile{}, false, &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile, Message: "not found"}
+	}
+	dst := *src
+	dst.HasPassword = false
+	if newID == "" {
+		newID = "clone-" + strconv.Itoa(len(f.clones))
+	}
+	for _, p := range f.profiles {
+		if p.ID == newID {
+			return model.SavedProfile{}, false, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorProfileInvalid, Message: "dup"}
+		}
+	}
+	dst.ID = newID
+	if newName == "" {
+		dst.Name = model.DefaultCloneName(src.Name, model.LangRU)
+	} else {
+		dst.Name = newName
+	}
+	f.profiles = append(f.profiles, dst)
+	f.rev++
+	return model.SavedProfile{Profile: dst, Revision: f.revision()}, true, nil
+}
+
 
 func (f *cfgService) SaveSettings(s model.Settings, rev, account string) (string, error) {
 	f.mu.Lock()

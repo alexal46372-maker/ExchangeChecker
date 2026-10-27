@@ -56,6 +56,7 @@ const (
 	idSetCancelTest
 	idSetSave
 	idSetDelete
+	idSetClone // «Клонировать базу» (CHK-TRAY-58)
 	idSetAdd
 	idSetPoll
 	idSetReload
@@ -286,7 +287,7 @@ func (w *settingsWindow) applyFieldCues() {
 // settingsTips are the tooltips of the settings window controls (phase 8,
 // CHK-TRAY-15): every edit box, button, check box, combo and list box.
 var settingsTips = map[int32]string{
-	idSetList: i18n.KeyTipSetList, idSetAdd: i18n.KeyTipSetAdd, idSetDelete: i18n.KeyTipSetDelete,
+	idSetList: i18n.KeyTipSetList, idSetAdd: i18n.KeyTipSetAdd, idSetDelete: i18n.KeyTipSetDelete, idSetClone: i18n.KeyTipSetClone,
 	idSetDiscover: i18n.KeyTipSetDiscover, idSetExport: i18n.KeyTipXferExport, idSetImport: i18n.KeyTipXferImport, idSetName: i18n.KeyTipSetName, idSetHost: i18n.KeyTipSetHost,
 	idSetInstance: i18n.KeyTipSetInstance, idSetPort: i18n.KeyTipSetPort, idSetDatabase: i18n.KeyTipSetDatabase,
 	idSetAuth: i18n.KeyTipSetAuth, idSetLogin: i18n.KeyTipSetLogin, idSetPassword: i18n.KeyTipSetPassword,
@@ -517,8 +518,11 @@ func (w *settingsWindow) build() {
 	// phase 11 (CHK-TRAY-48): the list as wide as the navigation column
 	list.Grow, list.NoShrink = true, true
 	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0), list,
-		&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
-			add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}}}
+		&ui.Col{Gap: ui.P4, Items: []ui.Node{
+			&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
+				add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}},
+			add("BUTTON", w.t(i18n.KeySetClone), 0, winapi.WS_TABSTOP, idSetClone, ui.Button, 205, 0),
+		}}}
 	var xfer ui.Node
 	if w.cfg.mode == traysettings.Admin {
 		left = append(left, add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, ui.Button, 205, 0))
@@ -690,6 +694,7 @@ func (w *settingsWindow) build() {
 	if w.cfg.mode == traysettings.ReadOnly {
 		w.show(w.ctl[idSetAdd], false)
 		w.show(w.ctl[idSetDelete], false)
+		w.show(w.ctl[idSetClone], false)
 		w.show(w.ctl[idSetClearPw], false)
 		w.relayoutAll()
 		w.status = w.t(i18n.KeySetReadOnlyNote)
@@ -807,6 +812,8 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idSetDelete:
 		w.deleteProfile()
+	case idSetClone:
+		w.cloneProfile()
 	case idSetExport:
 		w.exportConfig()
 	case idSetImport:
@@ -1039,6 +1046,15 @@ func (w *settingsWindow) update() {
 		}
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
+		if h := w.ctl[idSetClone]; h != 0 {
+			hasClone := w.cfg.session.Supported(model.CmdCloneProfile)
+			if hasClone {
+				winapi.ShowWindow(h, winapi.SW_SHOW)
+				winapi.EnableWindow(h, saved && !w.busy)
+			} else {
+				winapi.ShowWindow(h, winapi.SW_HIDE)
+			}
+		}
 		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy && w.wiz == nil)
 		winapi.EnableWindow(w.ctl[idSetDiscover], has && !w.busy && w.disc == nil && w.discoveryAvailable())
 	}

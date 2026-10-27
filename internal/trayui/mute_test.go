@@ -17,14 +17,25 @@ func muteStatus(muted bool) trayipc.Status {
 	if muted {
 		ps.MutedSince = &now
 	}
-	return trayipc.Status{State: trayipc.StateConnected, Version: 2, Capabilities: []string{model.CapMuteProfile},
-		Snapshot: &model.StatusSnapshot{Profiles: []model.ProfileSnapshot{ps}}}
+	return trayipc.Status{State: trayipc.StateConnected, Version: 2, Capabilities: []string{model.CapMuteProfile, model.CapHeartbeat},
+		Heartbeat: &model.Heartbeat{Protocol: 2}, Snapshot: &model.StatusSnapshot{Profiles: []model.ProfileSnapshot{ps}}, EverConnected: true}
+}
+
+func dbItems(items []Item) []Item {
+	var out []Item
+	for _, it := range items {
+		if it.Separator || it.Disabled {
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 // TestCHK_TRAY_59_MuteMenu — left-menu mute/unmute items by capability and state.
 func TestCHK_TRAY_59_MuteMenu(t *testing.T) {
 	for _, lang := range []string{i18n.RU, i18n.EN} {
-		items := BuildLeftMenu(muteStatus(false), lang)
+		items := dbItems(BuildLeftMenu(muteStatus(false), lang))
 		if len(items) < 1 || items[0].Sub == nil {
 			t.Fatalf("%s: %#v", lang, items)
 		}
@@ -32,7 +43,7 @@ func TestCHK_TRAY_59_MuteMenu(t *testing.T) {
 		if sub[0].ID != MuteCmd(0) || sub[0].Text != i18n.T(i18n.KeyMenuMute, lang) {
 			t.Fatalf("%s mute item %#v", lang, sub[0])
 		}
-		items = BuildLeftMenu(muteStatus(true), lang)
+		items = dbItems(BuildLeftMenu(muteStatus(true), lang))
 		sub = items[0].Sub
 		if sub[0].ID != UnmuteCmd(0) || sub[0].Text != i18n.T(i18n.KeyMenuUnmute, lang) {
 			t.Fatalf("%s unmute %#v", lang, sub[0])
@@ -40,10 +51,9 @@ func TestCHK_TRAY_59_MuteMenu(t *testing.T) {
 		if !strings.Contains(items[0].Text, i18n.T(i18n.KeyDBMuted, lang)) {
 			t.Fatalf("%s muted indicator missing in %q", lang, items[0].Text)
 		}
-		// no capability → no mute items
 		st := muteStatus(false)
-		st.Capabilities = nil
-		items = BuildLeftMenu(st, lang)
+		st.Capabilities = []string{model.CapHeartbeat}
+		items = dbItems(BuildLeftMenu(st, lang))
 		for _, it := range items[0].Sub {
 			if it.ID == MuteCmd(0) || it.ID == UnmuteCmd(0) {
 				t.Fatalf("%s mute without cap", lang)

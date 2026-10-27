@@ -399,7 +399,7 @@ func ExportHistoryHTML(recs []model.HistoryRecord, title string, from, to time.T
 	e := html.EscapeString
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + e(lang) + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
 	b.WriteString("<style>body{font-family:Segoe UI,Arial,sans-serif;font-size:13px}table{border-collapse:collapse}" +
-		"td,th{border:1px solid "+ChromeHTML(Border)+";padding:3px 6px;text-align:left}th{background:"+ChromeHTML(HeaderRow)+"}</style></head><body>\n")
+		"td,th{border:1px solid "+ChromeHTML(ChromeBorder())+";padding:3px 6px;text-align:left}th{background:"+ChromeHTML(ChromeHeaderRow())+"}</style></head><body>\n")
 	b.WriteString("<h1>" + e(title) + "</h1>\n<p>" + e(from.In(model.DBZone).Format("02.01.2006 15:04")) + " — " +
 		e(to.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n")
 	if partial {
@@ -417,8 +417,9 @@ func ExportHistoryHTML(recs []model.HistoryRecord, title string, from, to time.T
 			lv = r.To
 		}
 		if lv != nil {
-			if c, ok := htmlColors[LevelColor(*lv)]; ok {
-				b.WriteString(" style=\"background:" + c + "\"")
+			switch c := LevelColor(*lv); c {
+			case ColorGreen, ColorYellow, ColorRed, ColorGrey:
+				b.WriteString(" style=\"background:" + PaleHTML(c) + "\"")
 			}
 		}
 		b.WriteString(">")

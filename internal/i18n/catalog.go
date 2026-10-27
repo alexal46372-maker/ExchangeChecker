@@ -250,6 +250,9 @@ const (
 	KeyGenLangAuto        = "gen.lang_auto"
 	KeyGenLangRU          = "gen.lang_ru"
 	KeyGenLangEN          = "gen.lang_en"
+	KeyGenTheme           = "gen.theme"
+	KeyGenThemeLight      = "gen.theme_light"
+	KeyGenThemeDark       = "gen.theme_dark"
 	KeyGenAutostart       = "gen.autostart"
 	KeyGenNote            = "gen.note"
 	KeyGenSaved           = "gen.saved"
@@ -367,6 +370,7 @@ const (
 	KeyTipGenErrDur       = "tip.gen.err_dur"
 	KeyTipGenGap          = "tip.gen.gap"
 	KeyTipGenLang         = "tip.gen.lang"
+	KeyTipGenTheme        = "tip.gen.theme"
 	KeyTipGenAutostart    = "tip.gen.autostart"
 	KeyTipDiscFind        = "tip.disc.find"
 	KeyTipDiscPoints      = "tip.disc.points"
@@ -1117,6 +1121,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyGenLangAuto:            {"Как в Windows", "Windows default"},
 	KeyGenLangRU:              {"Русский", "Русский (Russian)"},
 	KeyGenLangEN:              {"English (английский)", "English"},
+	KeyGenTheme:               {"Тема:", "Theme:"},
+	KeyGenThemeLight:          {"Светлая", "Light"},
+	KeyGenThemeDark:           {"Тёмная", "Dark"},
 	KeyGenAutostart:           {"Запускать значок в трее при входе в Windows (для всех пользователей)", "Start the tray icon at Windows logon (all users)"},
 	KeyGenNote:                {"Общие настройки действуют на весь компьютер и применяются службой. Звук выключает только сигнал: окно тревоги показывается всегда. Язык значка в трее выбирается в его меню у каждого пользователя.", "General settings apply to the whole computer and are used by the service. Turning the sound off mutes only the beep: the alert window is always shown. The tray icon language is chosen in its menu by each user."},
 	KeyGenSaved:               {"Общие настройки сохранены.", "General settings saved."},
@@ -1229,6 +1236,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipGenErrDur:        {"Длительность звука ошибки, мс.", "Length of the error sound, ms."},
 	KeyTipGenGap:           {"Пауза между сигналами, мс.", "Pause between the beeps, ms."},
 	KeyTipGenLang:          {"Язык сообщений службы в журнале событий Windows.", "Language of the service messages in the Windows Event Log."},
+	KeyTipGenTheme:         {"Светлое или тёмное оформление окон трея (для этого пользователя).", "Light or dark look of the tray windows (this user)."},
 	KeyTipGenAutostart:     {"Запускать значок в трее при входе любого пользователя.", "Start the tray icon when any user logs on."},
 	KeyTipDiscFind:         {"Найти в базе таблицы, похожие на время обмена.", "Find tables that look like exchange times."},
 	KeyTipDiscPoints:       {"Загрузить список точек обмена (узлов планов обмена).", "Load the list of exchange points (exchange plan nodes)."},

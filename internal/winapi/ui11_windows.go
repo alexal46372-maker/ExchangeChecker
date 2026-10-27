@@ -15,6 +15,7 @@ var (
 	procSetParent              = moduser32.NewProc("SetParent")
 	moddwmapi                  = newSystemDLL("dwmapi.dll")
 	procDwmGetWindowAttribute  = moddwmapi.NewProc("DwmGetWindowAttribute")
+	procDwmSetWindowAttribute  = moddwmapi.NewProc("DwmSetWindowAttribute")
 	procCreateCompatibleDC     = modgdi32.NewProc("CreateCompatibleDC")
 	procCreateCompatibleBitmap = modgdi32.NewProc("CreateCompatibleBitmap")
 	procGetDIBits              = modgdi32.NewProc("GetDIBits")
@@ -167,6 +168,31 @@ const (
 // RedrawWindow repaints hwnd (and its children) at once.
 func RedrawWindow(hwnd uintptr, flags uint32) {
 	callProc(procRedrawWindow, hwnd, 0, 0, uintptr(flags))
+}
+
+
+// DWMWA_USE_IMMERSIVE_DARK_MODE (20) and the older 19 — Win10 1809+ /
+// 1903+; absent on Windows 7 (Find fails → no-op). CHK-TRAY-55.
+const (
+	DWMWA_USE_IMMERSIVE_DARK_MODE         = 20
+	DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE  = 19
+)
+
+// SetImmersiveDarkMode asks DWM for a dark title bar when dark is true
+// (Win10+). Find()+fallback only — never hard-required (CHK-TRAY-55).
+func SetImmersiveDarkMode(hwnd uintptr, dark bool) {
+	if procDwmSetWindowAttribute.Find() != nil {
+		return
+	}
+	var v uint32
+	if dark {
+		v = 1
+	}
+	pv := uintptr(unsafe.Pointer(&v))
+	sz := unsafe.Sizeof(v)
+	if hr, _, _ := callProc(procDwmSetWindowAttribute, hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, pv, sz); hr != 0 {
+		callProc(procDwmSetWindowAttribute, hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE, pv, sz)
+	}
 }
 
 // DWMWA_EXTENDED_FRAME_BOUNDS: the visible frame without the invisible

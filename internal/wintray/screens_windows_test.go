@@ -13,14 +13,16 @@ import (
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// TestCHK_TRAY_46_Screens — CI screenshots (phase 11): every window of
-// uiScenes, RU and EN, at 96 and 144 dpi, as PNG into $EC_UI_SCREENS
-// (the ui-screens artifact of the windows job, 7 days). The windows are
-// shown off-screen (not hidden) and rendered with PrintWindow.
-// Includes summary* and alarm_test* (CHK-TRAY-54).
+// TestCHK_TRAY_46_Screens — CI screenshots (phase 11/12): every window of
+// uiScenes, RU and EN, at 96 and 144 dpi, light and dark (CHK-TRAY-55),
+// as PNG into $EC_UI_SCREENS (the ui-screens artifact of the windows job,
+// 7 days). The windows are shown off-screen (not hidden) and rendered
+// with PrintWindow. Includes summary* and alarm_test* (CHK-TRAY-54).
+// Dark scenes are named with a "_dark" suffix (CHK-TRAY-55/56).
 func TestCHK_TRAY_46_Screens(t *testing.T) {
 	dir := os.Getenv("EC_UI_SCREENS")
 	if dir == "" {
@@ -28,22 +30,30 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	defer func() { testDPI = 0 }()
+	defer func() { testDPI = 0; trayui.SetTheme(trayui.ThemeLight) }()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	n := 0
-	for _, dpi := range []int32{96, 144} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
-			testDPI = dpi
-			uiScenes(t, lang, func(name string, hwnd uintptr) {
-				file := fmt.Sprintf("%s-%s-%d", strings.ReplaceAll(name, " ", "_"), lang, dpi)
-				if err := screenshot(hwnd, filepath.Join(dir, file)); err != nil {
-					t.Errorf("%s: %v", file, err)
-					return
-				}
-				n++
-			})
+	for _, theme := range []trayui.Theme{trayui.ThemeLight, trayui.ThemeDark} {
+		trayui.SetTheme(theme)
+		suffix := ""
+		if theme == trayui.ThemeDark {
+			suffix = "_dark"
+		}
+		for _, dpi := range []int32{96, 144} {
+			for _, lang := range []string{i18n.RU, i18n.EN} {
+				testDPI = dpi
+				uiScenes(t, lang, func(name string, hwnd uintptr) {
+					ApplyWindowTheme(hwnd)
+					file := fmt.Sprintf("%s%s-%s-%d", strings.ReplaceAll(name, " ", "_"), suffix, lang, dpi)
+					if err := screenshot(hwnd, filepath.Join(dir, file)); err != nil {
+						t.Errorf("%s: %v", file, err)
+						return
+					}
+					n++
+				})
+			}
 		}
 	}
 	t.Logf("%d screenshots in %s", n, dir)

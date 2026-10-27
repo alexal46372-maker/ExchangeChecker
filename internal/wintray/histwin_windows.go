@@ -287,17 +287,14 @@ func (hw *histWindow) load() {
 	}()
 }
 
-// colours from the tray theme (CHK-TRAY-51).
+// colours from the tray theme (CHK-TRAY-51 / 55). State/chart lines are
+// fixed; page / text / axis / grid follow the active chrome.
 const (
-	clrWhite  = trayui.White
-	clrAxis   = trayui.Axis
-	clrGrid   = trayui.Grid
 	clrAvg    = trayui.ChartAvg
 	clrMinMax = trayui.ChartBand
 	clrWarn   = trayui.StateWarning
 	clrErr    = trayui.StateError
 	clrOK     = trayui.StateOK
-	clrText   = trayui.Text
 )
 
 func toGDI(ps []trayui.Pt) []winapi.GDIPoint {
@@ -313,14 +310,14 @@ func (hw *histWindow) paint(c uintptr) {
 	dc := winapi.BeginPaint(c, &ps)
 	defer winapi.EndPaint(c, &ps)
 	rc := winapi.GetClientRect(c)
-	bg := winapi.CreateSolidBrush(clrWhite)
+	bg := winapi.CreateSolidBrush(trayui.ChromePage())
 	winapi.FillRect(dc, rc, bg)
 	winapi.DeleteObject(bg)
 	if !hw.loaded {
 		return
 	}
 	winapi.SetBkMode(dc, winapi.TRANSPARENT)
-	winapi.SetTextColor(dc, clrText)
+	winapi.SetTextColor(dc, trayui.ChromeText())
 	font := winapi.SelectObject(dc, uiFont())
 	defer winapi.SelectObject(dc, font)
 	L := hw.model.Layout(rc.Left+48, rc.Top+14, rc.Right-14, rc.Bottom-34, hw.gap)
@@ -331,12 +328,12 @@ func (hw *histWindow) paint(c uintptr) {
 		winapi.SelectObject(dc, old)
 		winapi.DeleteObject(p)
 	}
-	pen(winapi.PS_SOLID, 1, clrGrid, func() {
+	pen(winapi.PS_SOLID, 1, trayui.ChromeGrid(), func() {
 		for _, t := range L.YTicks {
 			winapi.Line(dc, L.Left, t.Y, L.Right, t.Y)
 		}
 	})
-	pen(winapi.PS_SOLID, 1, clrAxis, func() {
+	pen(winapi.PS_SOLID, 1, trayui.ChromeAxis(), func() {
 		winapi.Line(dc, L.Left, L.Top, L.Left, L.Bottom)
 		winapi.Line(dc, L.Left, L.Bottom, L.Right, L.Bottom)
 		for _, t := range L.XTicks {

@@ -860,6 +860,10 @@ Wizard Win32 (страницы):
 
 182. **Реализация правила — COM `HNetCfg.FwPolicy2` / `HNetCfg.FWRule` (фаза 11):** сырые vtable-вызовы по тому же шаблону, что ярлык фазы 7d (`CoInitializeEx`, `CoCreateInstance`, BSTR через `SysAllocString`/`SysFreeString`, `VARIANT` для `Item`). Без `netsh`, `os/exec`, `golang.org/x/sys`. Каждый новый `NewProc` — в allowlist CHK-TRAY-10 / CHK-POL-01 (`SysAllocString`, `SysFreeString`, `VariantClear`). Win7 (NT 6.1): `INetFwPolicy2` есть. Идемпотентность: удалить все правила с нашим Name **или** Grouping `Exchange Checker`, затем одно `Add`. Деинсталляция удаляет правило. Откат свежей установки тоже. Если служба firewall выключена / любой COM сбой — `WARNING` в журнале, установка и удаление **не падают**.
 
+194. **Тёмная тема окон (фаза 12, `CHK-TRAY-55`):** переключатель светлая/тёмная в настройках (RU «Тема» / EN «Theme»: Светлая/Тёмная / Light/Dark), хранится в HKCU `Software\ExchangeChecker\Tray\Theme` (`light`/`dark`; пусто/нет = light). В `internal/trayui` — вторая палитра chrome / State pale для dark; активная тема выбирает, какие COLORREF/HTML helpers возвращают. Клиентская область — WinAPI (кисти, цвета текста и контролов); immersive dark — `dwmapi!DwmSetWindowAttribute` с `DWMWA_USE_IMMERSIVE_DARK_MODE` (20) / старый 19 через Find()+fallback (Win10+). NewProc — в allowlist CHK-TRAY-10. Скриншоты light и dark в ui-screens (суффикс `_dark`). Тесты: `TestCHK_TRAY_55_*`.
+
+195. **HTML статус/история из chrome-темы (фаза 12, `CHK-TRAY-56`):** HTML-экспорт состояния и истории использует chrome темы (в т.ч. тёмные Border/HeaderRow) через helpers; в исходниках export/history нет строковых литералов `#999` / `#eee`. Семантично с 55. Тесты: `TestCHK_TRAY_56_*`.
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.

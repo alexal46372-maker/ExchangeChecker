@@ -97,6 +97,8 @@ type Options struct {
 	// UIModeStore keeps «Простой» / «Экспертный» of the settings window
 	// (phase 10 D; nil = every field, tests).
 	UIModeStore UIModeStore
+	// ThemeStore keeps light/dark chrome (phase 12, CHK-TRAY-55; nil = light).
+	ThemeStore ThemeStore
 	// NoBlink disables the icon blinking timer (tests drive blinkTick).
 	NoBlink bool
 }
@@ -187,6 +189,7 @@ type App struct {
 func NewApp(opt Options) (*App, error) {
 	a := &App{opt: opt, done: make(chan struct{})}
 	a.opt.Lang = i18n.Normalize(opt.Lang)
+	LoadTheme(a.opt.ThemeStore) // phase 12 CHK-TRAY-55 (before any window chrome)
 	hwnd, err := createWindow(mainClass, i18n.T(i18n.KeyAppName, a.opt.Lang), 0, winapi.WS_OVERLAPPED, 0, 0, 0, 0, 0, a.wndProc)
 	if err != nil {
 		return nil, err
@@ -625,7 +628,7 @@ func (a *App) OpenSettings() uintptr {
 	}
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
-		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
+		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore, themeStore: a.opt.ThemeStore,
 		stores:  trayStores{Lang: a.opt.LangStore, Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onClose: func() {

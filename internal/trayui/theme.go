@@ -1,8 +1,11 @@
 package trayui
 
-// Unified light visual theme of the tray (phase 11, PLAN §12 p.146,
-// CHK-TRAY-51). One set of colours, spacing and the UI font; there is no
-// dark theme. Windows take colours from here instead of scattered RGB.
+import "sync"
+
+// Unified visual theme of the tray (phase 11 light — CHK-TRAY-51;
+// phase 12 dark — CHK-TRAY-55). Light constants stay the CHK-TRAY-51
+// values; the active theme selects which COLORREF / HTML helpers return.
+// Windows take colours from the helpers instead of scattered RGB.
 
 // Font of every tray window (Segoe UI 9, scaled to the system DPI).
 const (
@@ -18,13 +21,71 @@ const (
 	SpaceL  = 16
 )
 
+// Theme is the chrome / pale palette of the tray windows.
+type Theme string
+
+const (
+	ThemeLight Theme = "light"
+	ThemeDark  Theme = "dark"
+)
+
+var (
+	themeMu   sync.RWMutex
+	curTheme  = ThemeLight
+)
+
+// NormalizeTheme returns light or dark; empty / unknown = light.
+func NormalizeTheme(s string) Theme {
+	switch Theme(trimLower(s)) {
+	case ThemeDark:
+		return ThemeDark
+	}
+	return ThemeLight
+}
+
+func trimLower(s string) string {
+	i, j := 0, len(s)
+	for i < j && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
+		i++
+	}
+	for j > i && (s[j-1] == ' ' || s[j-1] == '\t' || s[j-1] == '\n' || s[j-1] == '\r') {
+		j--
+	}
+	b := make([]byte, j-i)
+	for k := i; k < j; k++ {
+		c := s[k]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[k-i] = c
+	}
+	return string(b)
+}
+
+// SetTheme selects the active palette (light by default).
+func SetTheme(t Theme) {
+	themeMu.Lock()
+	curTheme = NormalizeTheme(string(t))
+	themeMu.Unlock()
+}
+
+// Current is the active theme.
+func Current() Theme {
+	themeMu.RLock()
+	defer themeMu.RUnlock()
+	return curTheme
+}
+
+// IsDark reports whether the dark palette is active.
+func IsDark() bool { return Current() == ThemeDark }
+
 // COLORREF packs sRGB as Win32 0x00BBGGRR.
 func ColorRef(r, g, b uint8) uint32 {
 	return uint32(r) | uint32(g)<<8 | uint32(b)<<16
 }
 
 // paleRGB: soft backgrounds of list rows, cards and HTML export
-// (normal / warning / error / disabled).
+// (normal / warning / error / disabled) — light theme (CHK-TRAY-51).
 var paleRGB = map[Color][3]uint8{
 	ColorGreen:  {0xDF, 0xF3, 0xDF},
 	ColorYellow: {0xFF, 0xF3, 0xC4},
@@ -32,11 +93,26 @@ var paleRGB = map[Color][3]uint8{
 	ColorGrey:   {0xE6, 0xE6, 0xE6},
 }
 
-// PaleColorRef is the pale background of a state.
+// darkPaleRGB: readable pale rows on a dark panel (CHK-TRAY-55).
+var darkPaleRGB = map[Color][3]uint8{
+	ColorGreen:  {0x1E, 0x3D, 0x28},
+	ColorYellow: {0x4A, 0x3C, 0x14},
+	ColorRed:    {0x4A, 0x22, 0x24},
+	ColorGrey:   {0x3A, 0x3A, 0x3A},
+}
+
+func activePale() map[Color][3]uint8 {
+	if IsDark() {
+		return darkPaleRGB
+	}
+	return paleRGB
+}
+
+// PaleColorRef is the pale background of a state (active theme).
 func PaleColorRef(c Color) uint32 {
-	v, ok := paleRGB[c]
+	v, ok := activePale()[c]
 	if !ok {
-		return Panel
+		return ChromePanel()
 	}
 	return ColorRef(v[0], v[1], v[2])
 }
@@ -52,10 +128,13 @@ func sprintfHTML(r, g, b byte) string {
 	return string([]byte{'#', hex[r>>4], hex[r&15], hex[g>>4], hex[g&15], hex[b>>4], hex[b&15]})
 }
 
-// PaleHTML is the CSS #rrggbb of a pale state background.
+// PaleHTML is the CSS #rrggbb of a pale state background (active theme).
 func PaleHTML(c Color) string {
-	v, ok := paleRGB[c]
+	v, ok := activePale()[c]
 	if !ok {
+		if IsDark() {
+			return "#282828"
+		}
 		return "#f0f0f0"
 	}
 	const hex = "0123456789abcdef"
@@ -90,7 +169,8 @@ func ColorRefOf(c Color) uint32 {
 	return StateDisabled
 }
 
-// Chrome colours (COLORREF).
+// Chrome colours (COLORREF) — light theme constants (CHK-TRAY-51).
+// Active painting / HTML must use Chrome*() helpers so dark theme applies.
 const (
 	Text          = 0x00404040 // body text
 	White         = 0x00FFFFFF
@@ -106,7 +186,110 @@ const (
 	Border        = 0x00999999 // HTML table border
 )
 
-// Chart line colours (history window).
+// Dark chrome (CHK-TRAY-55): readable text on a dark panel, muted borders.
+const (
+	darkText          = 0x00E0E0E0
+	darkPage          = 0x00202020 // page / chart background
+	darkAxis          = 0x00A0A0A0
+	darkGrid          = 0x00404040
+	darkPanel         = 0x00282828
+	darkCardFace      = 0x00303030
+	darkCardFrame     = 0x00606060
+	darkCardStripeOff = 0x00505050
+	darkRequiredField = 0x00404080
+	darkHeaderRow     = 0x00383838
+	darkBorder        = 0x00666666
+)
+
+// ChromeText is body text of the active theme.
+func ChromeText() uint32 {
+	if IsDark() {
+		return darkText
+	}
+	return Text
+}
+
+// ChromePage is the page / chart background of the active theme.
+func ChromePage() uint32 {
+	if IsDark() {
+		return darkPage
+	}
+	return White
+}
+
+// ChromePanel is the card panel / window client background.
+func ChromePanel() uint32 {
+	if IsDark() {
+		return darkPanel
+	}
+	return Panel
+}
+
+// ChromeCardFace is an empty card face.
+func ChromeCardFace() uint32 {
+	if IsDark() {
+		return darkCardFace
+	}
+	return CardFace
+}
+
+// ChromeCardFrame is the card outline.
+func ChromeCardFrame() uint32 {
+	if IsDark() {
+		return darkCardFrame
+	}
+	return CardFrame
+}
+
+// ChromeCardStripeOff is a disabled card stripe.
+func ChromeCardStripeOff() uint32 {
+	if IsDark() {
+		return darkCardStripeOff
+	}
+	return CardStripeOff
+}
+
+// ChromeRequired is the empty required-edit highlight.
+func ChromeRequired() uint32 {
+	if IsDark() {
+		return darkRequiredField
+	}
+	return RequiredField
+}
+
+// ChromeHeaderRow is the HTML / table header background.
+func ChromeHeaderRow() uint32 {
+	if IsDark() {
+		return darkHeaderRow
+	}
+	return HeaderRow
+}
+
+// ChromeBorder is the HTML / table border colour.
+func ChromeBorder() uint32 {
+	if IsDark() {
+		return darkBorder
+	}
+	return Border
+}
+
+// ChromeAxis is a chart axis colour.
+func ChromeAxis() uint32 {
+	if IsDark() {
+		return darkAxis
+	}
+	return Axis
+}
+
+// ChromeGrid is a chart grid colour.
+func ChromeGrid() uint32 {
+	if IsDark() {
+		return darkGrid
+	}
+	return Grid
+}
+
+// Chart line colours (history window) — same in both themes (on pale/dark page).
 const (
 	ChartAvg  = 0x00B05A1E // series average
 	ChartBand = 0x00E0B48C // min–max band

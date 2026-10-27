@@ -19,6 +19,9 @@ func TestCHK_TRAY_58_CloneButton(t *testing.T) {
 			svc := newCfgService()
 			app := startCfgApp(t, svc, true, nil)
 			defer app.Exit()
+			if !app.session.Supported(model.CmdCloneProfile) {
+				t.Fatalf("missing clone_profile cap: %v", app.session.Status().Capabilities)
+			}
 			w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
 				uiMode: traysettings.UISimple, confirm: func(uintptr, string, string) bool { return true }})
 			if err != nil {
@@ -26,16 +29,13 @@ func TestCHK_TRAY_58_CloneButton(t *testing.T) {
 			}
 			defer w.close()
 			w.Reload()
-			pumpUntil(t, "loaded", func() bool {
+			pumpUntil(t, "loaded", func() bool { return !w.busy && w.ed.HasProfile() && w.ed.Revision != "" })
+			pumpUntil(t, "clone visible", func() bool {
 				w.update()
-				return !w.busy && w.ed.HasProfile() && visible(w.ctl[idSetClone])
+				return visible(w.ctl[idSetClone]) && winapi.IsWindowEnabled(w.ctl[idSetClone])
 			})
-			h := w.ctl[idSetClone]
-			if !winapi.IsWindowEnabled(h) {
-				t.Fatal("clone disabled on saved profile")
-			}
-			if got := winapi.GetWindowText(h); got != w.t(i18n.KeySetClone) {
-				t.Fatalf("label %q want %q", got, w.t(i18n.KeySetClone))
+			if got := winapi.GetWindowText(w.ctl[idSetClone]); got != i18n.T(i18n.KeySetClone, lang) {
+				t.Fatalf("label %q want %q caps=%v", got, i18n.T(i18n.KeySetClone, lang), app.session.Status().Capabilities)
 			}
 			srcID := w.ed.Base.ID
 			nBefore := len(w.ed.Profiles)
@@ -47,7 +47,7 @@ func TestCHK_TRAY_58_CloneButton(t *testing.T) {
 				t.Fatalf("clones %v want [%s]", svc.clones, srcID)
 			}
 			if w.lastFocus != traysettings.FieldPassword {
-				t.Fatalf("focus %v want password (needPassword)", w.lastFocus)
+				t.Fatalf("focus %v want password", w.lastFocus)
 			}
 			if w.ed.Base.HasPassword {
 				t.Fatal("clone must not copy password")
@@ -68,7 +68,8 @@ func TestCHK_TRAY_58_CloneHiddenReadOnly(t *testing.T) {
 	}
 	defer w.close()
 	w.Reload()
-	pumpUntil(t, "loaded", func() bool { return w.loaded })
+	pumpUntil(t, "loaded", func() bool { return !w.busy && w.loaded })
+	w.update()
 	if visible(w.ctl[idSetClone]) {
 		t.Fatal("clone visible in read-only")
 	}

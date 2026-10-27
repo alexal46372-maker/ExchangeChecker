@@ -115,3 +115,22 @@ func TestCHK_CFG_09_ClearSmtpPassword(t *testing.T) {
 		t.Fatal("cleared")
 	}
 }
+
+func TestCHK_CFG_09_EnabledNoneNoPassword(t *testing.T) {
+	e := newCfgEnv(t)
+	st := model.DefaultSettings()
+	st.Email.Enabled = true
+	st.Email.Host, st.Email.Port, st.Email.From = "relay.local", 25, "bot@example.com"
+	st.Email.TLSMode = model.EmailTLSNone
+	st.Email.Recipients = []model.EmailRecipient{{ID: "e1", Addr: "a@b.co", Name: "Ann"}}
+	if _, err := e.m.SaveSettingsEmail(st, "", false, "", false, e.rev(), "a"); err != nil {
+		t.Fatalf("none must not require password: %v", err)
+	}
+	if e.st.HasEmailPassword() {
+		t.Fatal("no password stored")
+	}
+	// starttls still requires password
+	st.Email.TLSMode = model.EmailTLSStartTLS
+	wantCode(t, "starttls needs pw", errOf(e.m.SaveSettingsEmail(st, "", false, "", false, e.rev(), "a")),
+		model.ErrCodeInvalidRequest, model.MsgEmailNoPassword)
+}

@@ -37,6 +37,10 @@ type EmailOptions struct {
 	Loc   *time.Location
 	// SendHook, when set, replaces the real SMTP send (unit tests).
 	SendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
+	// TLS, when set, is used for StartTLS / implicit TLS instead of the
+	// default (ServerName=host, MinVersion TLS1.2). Tests inject a config
+	// with RootCAs / InsecureSkipVerify for a fake listener.
+	TLS *tls.Config
 }
 
 type emailItem struct {
@@ -158,7 +162,10 @@ func (n *EmailNotifier) Alert(e model.AlertEvent) {
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if !n.settings.Enabled || n.password == "" || !n.settings.HasEvent(kind) {
+	if !n.settings.Enabled || !n.settings.HasEvent(kind) {
+		return
+	}
+	if model.NeedsSMTPAuth(n.settings.TLSMode) && n.password == "" {
 		return
 	}
 	now := n.o.Now().In(n.o.Loc)
@@ -214,7 +221,11 @@ func (n *EmailNotifier) loop() {
 func (n *EmailNotifier) drain() {
 	for {
 		n.mu.Lock()
-		if len(n.queue) == 0 || !n.settings.Enabled || n.password == "" {
+		if len(n.queue) == 0 || !n.settings.Enabled {
+			n.mu.Unlock()
+			return
+		}
+		if model.NeedsSMTPAuth(n.settings.TLSMode) && n.password == "" {
 			n.mu.Unlock()
 			return
 		}
@@ -277,11 +288,13 @@ func (n *EmailNotifier) sendMail(ctx context.Context, host string, port int, tls
 	if n.o.SendHook != nil {
 		return n.o.SendHook(ctx, host, port, tlsMode, from, password, to, subject, body)
 	}
-	return SendSMTP(ctx, n.o.Dial, host, port, tlsMode, from, password, to, subject, body)
+	return SendSMTP(ctx, n.o.Dial, n.o.TLS, host, port, tlsMode, from, password, to, subject, body)
 }
 
 // SendSMTP dials and sends one message via stdlib net/smtp + crypto/tls.
-func SendSMTP(ctx context.Context, dial SMTPDialer, host string, port int, tlsMode, from, password, to, subject, body string) error {
+// tlsMode none: no TLS and no AUTH (password ignored; IP-allowlist relay).
+// starttls / tls: TLS then AUTH with username = From when password != "".
+func SendSMTP(ctx context.Context, dial SMTPDialer, tlsCfg *tls.Config, host string, port int, tlsMode, from, password, to, subject, body string) error {
 	if dial == nil {
 		d := &net.Dialer{Timeout: 15 * time.Second}
 		dial = d.DialContext
@@ -295,11 +308,24 @@ func SendSMTP(ctx context.Context, dial SMTPDialer, host string, port int, tlsMo
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = conn.SetDeadline(deadline)
 	}
+	cfg := tlsCfg
+	if cfg == nil {
+		cfg = &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+	} else {
+		c := cfg.Clone()
+		if c.ServerName == "" {
+			c.ServerName = host
+		}
+		if c.MinVersion == 0 {
+			c.MinVersion = tls.VersionTLS12
+		}
+		cfg = c
+	}
 
 	var client *smtp.Client
 	switch tlsMode {
 	case model.EmailTLSImplicit, "ssl":
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+		tlsConn := tls.Client(conn, cfg)
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
 			return fmt.Errorf("%s: %w", model.MsgEmailTLS, err)
 		}
@@ -316,11 +342,13 @@ func SendSMTP(ctx context.Context, dial SMTPDialer, host string, port int, tlsMo
 		if ok, _ := client.Extension("STARTTLS"); !ok {
 			return fmt.Errorf("%s: STARTTLS not offered", model.MsgEmailTLS)
 		}
-		if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+		if err := client.StartTLS(cfg); err != nil {
 			return fmt.Errorf("%s: %w", model.MsgEmailTLS, err)
 		}
 	}
-	if password != "" {
+	// none: never AUTH (even if a password was stored / passed).
+	// starttls/tls: AUTH username is the From address.
+	if model.NeedsSMTPAuth(tlsMode) && password != "" {
 		auth := smtp.PlainAuth("", from, password, host)
 		if err := client.Auth(auth); err != nil {
 			return fmt.Errorf("%s: %w", model.MsgEmailAuthFailed, err)
@@ -387,8 +415,11 @@ func (n *EmailNotifier) EmailTest(ctx context.Context, recipientID, addr, smtpPa
 	if addr != "" && !model.ValidEmailAddr(addr) {
 		return model.EmailTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailInvalidAddr, Message: "email: invalid addr"}
 	}
-	if pass == "" {
+	if model.NeedsSMTPAuth(settings.TLSMode) && pass == "" {
 		return model.EmailTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailNoPassword, Message: "email: no password"}
+	}
+	if !model.NeedsSMTPAuth(settings.TLSMode) {
+		pass = "" // none: ignore stored / request password; no AUTH
 	}
 	if strings.TrimSpace(settings.Host) == "" {
 		return model.EmailTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailNoHost, Message: "email: no host"}

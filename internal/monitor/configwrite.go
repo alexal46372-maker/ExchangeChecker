@@ -641,7 +641,7 @@ func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken 
 	if smtpPassword != "" {
 		newSmtp, hasSmtp, smtpChanged = smtpPassword, true, smtpPassword != oldSmtp
 	}
-	if st.Email != nil && st.Email.Enabled && !hasSmtp {
+	if st.Email != nil && st.Email.Enabled && model.NeedsSMTPAuth(st.Email.TLSMode) && !hasSmtp {
 		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailNoPassword,
 			Message: "email: enabled without a password", Args: []string{"smtpPassword", model.ValRequired}}
 	}

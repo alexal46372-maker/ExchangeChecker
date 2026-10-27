@@ -31,11 +31,19 @@ const (
 )
 
 // TLS modes of settings.email.tlsMode.
+// none = plain SMTP, no TLS and no AUTH (IP-allowlist / anonymous relay).
+// starttls / tls = TLS then AUTH; SMTP AUTH username is the From address.
 const (
 	EmailTLSNone     = "none"
 	EmailTLSStartTLS = "starttls"
 	EmailTLSImplicit = "tls" // implicit TLS (usually port 465)
 )
+
+// NeedsSMTPAuth reports whether tlsMode requires SMTP AUTH (and a password
+// when email is enabled). none never authenticates (password ignored).
+func NeedsSMTPAuth(tlsMode string) bool {
+	return tlsMode != EmailTLSNone
+}
 
 const (
 	MsgEmailNoPassword   = "notify.email_no_password"

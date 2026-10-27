@@ -1381,7 +1381,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 // ReportsProblems: hasProblems / problems and repeat pushes (CHK-MON-17).
 func (m *Monitor) ReportsProblems() bool { return true }
 
-// ReportsStalled: stalled detector (CHK-MON-18).
+// ReportsStalled: stalled detector (CHK-MON-18 counters, CHK-MON-19 time/manual).
 func (m *Monitor) ReportsStalled() bool { return true }
 
 func (m *Monitor) intervalLocked() time.Duration {
@@ -1429,16 +1429,15 @@ func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time, stalledAfter 
 		}
 		obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)),
 			Level: pt.Level, Event: tmpl})
-		if pt.Source == model.PointSourceCounters { // stall alert (phase 11, CHK-MON-18)
-			st := tmpl
-			st.Stalled, st.StalledMinutes, st.ErrorKey, st.Error = true, int(stalledAfter/time.Minute), model.MsgMonitorStalled, ""
-			lvl := model.LevelOK
-			if pt.Stalled {
-				lvl = model.LevelWarning
-			}
-			obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix),
-				Level: lvl, Event: st})
+		// stall alert: counters (CHK-MON-18) and time/manual lastOk (CHK-MON-19)
+		st := tmpl
+		st.Stalled, st.StalledMinutes, st.ErrorKey, st.Error = true, int(stalledAfter/time.Minute), model.MsgMonitorStalled, ""
+		lvl := model.LevelOK
+		if pt.Stalled {
+			lvl = model.LevelWarning
 		}
+		obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix),
+			Level: lvl, Event: st})
 	}
 	return out, reps
 }
@@ -1459,9 +1458,7 @@ func (m *Monitor) keepKeys(profiles []model.ProfileSnapshot) func(string) bool {
 		}
 		for _, pt := range ps.Points {
 			keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint))] = true
-			if pt.Source == model.PointSourceCounters {
-				keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix)] = true
-			}
+			keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix)] = true
 		}
 	}
 	return func(k string) bool { return keep[k] || whole[alert.KeyProfile(k)] }

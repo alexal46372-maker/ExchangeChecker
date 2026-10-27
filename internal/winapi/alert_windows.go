@@ -94,6 +94,13 @@ func LoadSystemIcon(id uintptr) uintptr {
 	return r
 }
 
+// LoadAppIcon loads icon resource id from this module (RT_GROUP_ICON;
+// setup embeds exchtray.ico as id 1 via tools/mkres). Shared — do not DestroyIcon.
+func LoadAppIcon(id uintptr) uintptr {
+	r, _, _ := callProc(procLoadIconW, GetModuleHandle(), id)
+	return r
+}
+
 // SetWindowPos calls SetWindowPos.
 func SetWindowPos(hwnd, after uintptr, x, y, cx, cy int32, flags uint32) {
 	callProc(procSetWindowPos, hwnd, after, uintptr(x), uintptr(y), uintptr(cx), uintptr(cy), uintptr(flags))

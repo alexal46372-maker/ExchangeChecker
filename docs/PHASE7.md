@@ -115,6 +115,7 @@
 - Общие константы: `config.ServiceExeName = "ExchangeCheckerSvc.exe"` и `config.SetupExeName` рядом с `config.TrayExeName`.
 
 ### 1.3. UI мастера (чистый WinAPI)
+- **CHK-SETUP-14 (modern chrome):** клиент ~640×420, левая brand-панель (~210 px, #0F2744 / #1B3A5C, tagline и список шагов), content #FAFBFC, нижняя полоса кнопок #F1F5F9 с линией #E2E8F0; шрифты Segoe UI через `CreateFontW` (не `DEFAULT_GUI_FONT`); фон не `COLOR_BTNFACE` (`WM_ERASEBKGND` / `WM_CTLCOLOR*`). Control IDs, `MsgGetPage`, `WizardState` и тихий `/S` без изменений.
 - Одно окно верхнего уровня класса `ExchangeCheckerSetup` из `CreateWindowExW`: STATIC, BUTTON, EDIT, чекбоксы `BS_AUTOCHECKBOX`, клавиатура через `IsDialogMessageW`. Это тот же подход, что в окне настроек трея. Шаблонов диалогов нет: rc.exe недоступен.
 - Страницы по PLAN §9:
   1. Приветствие (при обновлении: «Установлена версия X, будет обновлена до Y»).

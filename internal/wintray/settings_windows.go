@@ -322,10 +322,22 @@ var settingsTips = map[int32]string{
 	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
 	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
 	idGenLang: i18n.KeyTipGenLang, idGenTheme: i18n.KeyTipGenTheme, idGenAutostart: i18n.KeyTipGenAutostart,
+	// CHK-TRAY-62: General «Звук» section (same tips as soundwin)
+	idSndSave: i18n.KeyTipSoundSave,
+	idSndWarn + idSndBeep: i18n.KeyTipSoundKind, idSndWarn + idSndFile: i18n.KeyTipSoundKind,
+	idSndWarn + idSndFreq: i18n.KeyTipSoundFreq, idSndWarn + idSndDur: i18n.KeyTipSoundDur,
+	idSndWarn + idSndPath: i18n.KeyTipSoundFile, idSndWarn + idSndBrowse: i18n.KeyTipSoundBrowse,
+	idSndWarn + idSndVol: i18n.KeyTipSoundVolume, idSndWarn + idSndLoop: i18n.KeyTipSoundLoop,
+	idSndWarn + idSndGap: i18n.KeyTipSoundGap, idSndWarn + idSndTest: i18n.KeyTipSoundTest,
+	idSndErr + idSndBeep: i18n.KeyTipSoundKind, idSndErr + idSndFile: i18n.KeyTipSoundKind,
+	idSndErr + idSndFreq: i18n.KeyTipSoundFreq, idSndErr + idSndDur: i18n.KeyTipSoundDur,
+	idSndErr + idSndPath: i18n.KeyTipSoundFile, idSndErr + idSndBrowse: i18n.KeyTipSoundBrowse,
+	idSndErr + idSndVol: i18n.KeyTipSoundVolume, idSndErr + idSndLoop: i18n.KeyTipSoundLoop,
+	idSndErr + idSndGap: i18n.KeyTipSoundGap, idSndErr + idSndTest: i18n.KeyTipSoundTest,
 }
 
 // settingsOutputs are the static texts of the window (no tooltip).
-var settingsOutputs = map[int32]bool{idSetPwHint: true, idSetHints: true, idSetInfo: true, idGenNote: true, idGenAutostartErr: true}
+var settingsOutputs = map[int32]bool{idSetPwHint: true, idSetHints: true, idSetInfo: true, idGenNote: true, idGenAutostartErr: true, idSndInfo: true}
 
 // profNumbers are the phase 8 number boxes of the profile form.
 var profNumbers = []int32{idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idSetStalled}

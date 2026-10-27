@@ -429,10 +429,9 @@ func (w *settingsWindow) syncPagePanels() {
 			if c == nil || c.H == 0 || !c.Placed || c.Hidden {
 				return
 			}
+			// slot uses layout height only — comboDrop is a MoveWindow quirk of
+			// CBS_DROPDOWNLIST, not painted panel content (would blow hostExtent)
 			h := c.Rect.H
-			if c.Kind == ui.Combo {
-				h += px(comboDrop)
-			}
 			l, t, r, b := c.Rect.X, c.Rect.Y, c.Rect.X+c.Rect.W, c.Rect.Y+h
 			if !any {
 				slot = winapi.RECT{Left: l, Top: t, Right: r, Bottom: b}

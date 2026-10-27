@@ -93,7 +93,7 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 		if !contains(bounds, c.r) {
 			t.Errorf("%s: %v outside the window %+v", what, c, bounds)
 		}
-		if c.class == SettingsPageClass || c.class == ScrollHostClass {
+		if c.class == SettingsPageClass || c.class == ScrollHostClass || c.class == SettingsTabPanelClass {
 			checkLayout(t, what+" (page)", c.h)
 		}
 	}

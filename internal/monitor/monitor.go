@@ -158,6 +158,12 @@ type Options struct {
 	// OnViberToken is called after save_settings changed the Viber token
 	// (the notifier reloads it).
 	OnViberToken func()
+	// EmailStatus is settings.email.status of the views (phase 13b,
+	// CHK-CFG-09); nil = no status field.
+	EmailStatus func() *model.ViberStatus
+	// OnEmailPassword is called after save_settings changed the SMTP
+	// password (so the email notifier reloads it).
+	OnEmailPassword func()
 }
 
 // entry is the per-profile runtime state.
@@ -1348,12 +1354,14 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	case m.good: // a configuration has been applied
 		st := cfg.Settings.Normalized() // beep.enabled always explicit
 		m.viberView(&st)
+		m.emailView(&st)
 		snap.Settings = &st
 	case m.failSettings != nil:
 		// the first load failed (profiles.json / secrets): the real
 		// settings.json, never zero thresholds / trayAutostart=false
 		st := m.failSettings.Normalized()
 		m.viberView(&st)
+		m.emailView(&st)
 		snap.Settings = &st
 	}
 	m.heartbeatLocked(now).apply(&snap)

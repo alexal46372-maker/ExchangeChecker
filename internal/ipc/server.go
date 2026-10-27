@@ -125,6 +125,14 @@ type ConfigViberRecipientsTransfer interface {
 	ImportConfigOpts(cfg *model.ConfigExport, mode, expectedRevision string, dryRun, includeViberRecipients bool, account string) (model.ImportResult, error)
 }
 
+// ConfigEmailRecipientsTransfer: includeEmailRecipients (phase 13b,
+// CHK-CFG-09). Preferred over ConfigViberRecipientsTransfer when present
+// so both include flags are applied together.
+type ConfigEmailRecipientsTransfer interface {
+	ExportConfigBoth(includeViberRecipients, includeEmailRecipients bool) (model.ConfigExport, error)
+	ImportConfigBoth(cfg *model.ConfigExport, mode, expectedRevision string, dryRun, includeViberRecipients, includeEmailRecipients bool, account string) (model.ImportResult, error)
+}
+
 // Discoverer runs the admin-only interactive SQL commands (phase 6,
 // G2/G3; CHK-IPC-08 discover / discover_by_value / list_node_points,
 // CHK-IPC-09 check_mapping). The server checks the client (admin) before
@@ -247,6 +255,9 @@ type Server struct {
 	// Viber (phase 10, CHK-SVC-06): viber_test and capability viber; nil
 	// = not offered.
 	Viber ViberTester
+	// Email (phase 13b, CHK-IPC-16 / CHK-SVC-08): email_test and capability
+	// email; nil = not offered.
+	Email EmailTester
 	// AlarmTest (phase 11, CHK-IPC-11): alarm_test and capability
 	// alarm_test; nil = not offered.
 	AlarmTest AlarmTester
@@ -406,6 +417,9 @@ func (s *Server) Capabilities() []string {
 		if _, ok := s.H.(ConfigViberRecipientsTransfer); ok {
 			caps = append(caps, model.CapExportViberRecipients) // phase 12 (CHK-IPC-14)
 		}
+		if _, ok := s.H.(ConfigEmailRecipientsTransfer); ok {
+			caps = append(caps, model.CapExportEmailRecipients) // phase 13b (CHK-CFG-09)
+		}
 	}
 	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
 		caps = append(caps, model.CapProblems, model.CapAlertRepeat) // phase 10 (CHK-MON-17)
@@ -421,6 +435,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if s.Viber != nil {
 		caps = append(caps, model.CapViber) // phase 10 (CHK-SVC-06)
+	}
+	if s.Email != nil {
+		caps = append(caps, model.CapEmail) // phase 13b (CHK-CFG-09)
 	}
 	if s.AlarmTest != nil {
 		caps = append(caps, model.CapAlarmTest) // phase 11 (CHK-IPC-11)
@@ -808,6 +825,12 @@ func (s *Server) readLoop(c *conn) {
 				return
 			}
 			continue
+		case s.Email != nil && emailCommand(req.Cmd):
+			if !s.startEmail(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
 		case model.AdminCommand(req.Cmd):
 			reply = s.handleAdmin(c, req)
 		default:
@@ -1181,7 +1204,7 @@ func (s *Server) runRecovered(ctx context.Context, req model.IPCRequest, run fun
 
 // scrubRequest removes the password and manual SQL texts of req from msg.
 func scrubRequest(msg string, req model.IPCRequest) string {
-	secrets := []string{req.Password, req.ViberToken}
+	secrets := []string{req.Password, req.ViberToken, req.SmtpPassword}
 	if req.Mapping != nil {
 		secrets = append(secrets, req.Mapping.ManualSQL)
 	}
@@ -1249,7 +1272,9 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 	case model.CmdExportConfig: // phase 10 (CHK-CFG-06) + phase 12 (CHK-CFG-07)
 		var exp model.ConfigExport
 		var err error
-		if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
+		if ce, ok := ct.(ConfigEmailRecipientsTransfer); ok {
+			exp, err = ce.ExportConfigBoth(req.IncludeViberRecipients, req.IncludeEmailRecipients)
+		} else if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
 			exp, err = cv.ExportConfigOpts(req.IncludeViberRecipients)
 		} else {
 			exp, err = ct.ExportConfig()
@@ -1261,7 +1286,9 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 	case model.CmdImportConfig:
 		var res model.ImportResult
 		var err error
-		if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
+		if ce, ok := ct.(ConfigEmailRecipientsTransfer); ok {
+			res, err = ce.ImportConfigBoth(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, req.IncludeViberRecipients, req.IncludeEmailRecipients, cl.Account)
+		} else if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
 			res, err = cv.ImportConfigOpts(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, req.IncludeViberRecipients, cl.Account)
 		} else {
 			res, err = ct.ImportConfig(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, cl.Account)
@@ -1313,9 +1340,14 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 				Message: "ipc: save_settings without settings", Args: []string{"settings", model.ValRequired}}, "")
 		}
 		var rev string
-		if vs, ok := s.H.(ViberSettingsSaver); ok {
+		if es, ok := s.H.(EmailSettingsSaver); ok {
+			rev, err = es.SaveSettingsEmail(*req.Settings, req.ViberToken, req.ClearViberToken, req.SmtpPassword, req.ClearSmtpPassword, req.ExpectedRevision, cl.Account)
+		} else if vs, ok := s.H.(ViberSettingsSaver); ok {
+			if req.SmtpPassword != "" || req.ClearSmtpPassword {
+				return errorReply(req.ID, errors.New("email: SMTP password not supported"), model.ErrCodeUnknownCommand)
+			}
 			rev, err = vs.SaveSettingsViber(*req.Settings, req.ViberToken, req.ClearViberToken, req.ExpectedRevision, cl.Account)
-		} else if req.ViberToken != "" || req.ClearViberToken {
+		} else if req.ViberToken != "" || req.ClearViberToken || req.SmtpPassword != "" || req.ClearSmtpPassword {
 			return errorReply(req.ID, errors.New("viber token: not supported"), model.ErrCodeUnknownCommand)
 		} else {
 			rev, err = cm.SaveSettings(*req.Settings, req.ExpectedRevision, cl.Account)

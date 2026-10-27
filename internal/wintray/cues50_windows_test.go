@@ -11,7 +11,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// settingsCueID: UIField → settings/Viber edit control.
+// settingsCueID: UIField → settings/Viber/e-mail edit control.
 var settingsCueID = map[traysettings.Field]int32{
 	traysettings.FieldName: idSetName, traysettings.FieldHost: idSetHost, traysettings.FieldInstance: idSetInstance,
 	traysettings.FieldPort: idSetPort, traysettings.FieldDatabase: idSetDatabase, traysettings.FieldLogin: idSetLogin,
@@ -19,6 +19,8 @@ var settingsCueID = map[traysettings.Field]int32{
 	traysettings.FieldConnTimeout: idSetConnTO, traysettings.FieldQueryTimeout: idSetQueryTO,
 	traysettings.FieldProfStalled: idSetStalled, traysettings.FieldStalledMinutes: idGenStalled,
 	traysettings.FieldViberToken: idVbToken,
+	traysettings.FieldEmailHost: idEmHost, traysettings.FieldEmailPort: idEmPort,
+	traysettings.FieldEmailFrom: idEmFrom, traysettings.FieldEmailPassword: idEmPassword,
 }
 
 // TestCHK_TRAY_50_Cues — every UIField with Cue is set on its edit box,

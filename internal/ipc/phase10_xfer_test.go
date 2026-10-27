@@ -308,3 +308,70 @@ func TestCHK_IPC_15_MuteProfile(t *testing.T) {
 		t.Fatalf("not_found %+v", m)
 	}
 }
+
+type cloneHandler struct {
+	*cfgHandler
+	lastNewID string
+}
+
+func (h *cloneHandler) CloneProfile(profileID, newID, newName, rev, account string) (model.SavedProfile, bool, error) {
+	h.record("clone:" + profileID + ":" + newID + ":" + newName + ":" + rev)
+	if profileID == "missing" {
+		return model.SavedProfile{}, false, &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile}
+	}
+	id := newID
+	if id == "" {
+		id = "gen-1"
+	}
+	h.lastNewID = id
+	name := newName
+	if name == "" {
+		name = "X (копия)"
+	}
+	return model.SavedProfile{Profile: model.Profile{ID: id, Name: name, AuthMode: model.AuthSQL}, Revision: "r9", PollScheduled: true}, true, nil
+}
+
+// TestCHK_CFG_08_CloneProfileIPC — hello has clone_profile; admin clone
+// reply; access_denied for non-admin.
+func TestCHK_CFG_08_CloneProfileIPC(t *testing.T) {
+	var admin int32 = 1
+	v2, _, _, _ := newV2(t)
+	h := &cloneHandler{cfgHandler: &cfgHandler{v2Handler: v2}}
+	s := NewServer(h, &testLog{})
+	s.Authorize = func(io.ReadWriteCloser) (Peer, error) {
+		return Peer{Admin: atomic.LoadInt32(&admin) == 1, Account: `HOST\alex`}, nil
+	}
+	l := NewMemListener()
+	go s.Serve(l)
+	t.Cleanup(func() { s.Close() })
+
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rw.Close() })
+	var hello model.IPCMessage
+	if err := ReadMessage(rw, &hello); err != nil {
+		t.Fatal(err)
+	}
+	caps := "," + strings.Join(hello.Capabilities, ",") + ","
+	if !strings.Contains(caps, ","+model.CapCloneProfile+",") {
+		t.Fatalf("caps %v", hello.Capabilities)
+	}
+	c := &rawConn{t: t, rw: rw, pending: map[uint64]model.IPCMessage{}}
+	c.send(model.IPCRequest{ID: 1, Cmd: model.CmdCloneProfile, ProfileID: "s1", ExpectedRevision: "r1"})
+	m := c.reply(1)
+	if m.Type != model.MsgOK || m.Result != model.ResultCloned || m.ProfileID != "gen-1" || !m.NeedPassword || m.Revision != "r9" || !m.Reloaded {
+		t.Fatalf("clone %+v", m)
+	}
+	b, _ := json.Marshal(m)
+	if !strings.Contains(string(b), `"needPassword":true`) || !strings.Contains(string(b), `"result":"cloned"`) {
+		t.Fatalf("json %s", b)
+	}
+	atomic.StoreInt32(&admin, 0)
+	c2 := dialRaw(t, l)
+	c2.send(model.IPCRequest{ID: 2, Cmd: model.CmdCloneProfile, ProfileID: "s1", ExpectedRevision: "r1"})
+	if r := c2.reply(2); r.Type != model.MsgError || r.Code != model.ErrCodeAccessDenied {
+		t.Fatalf("non-admin %+v", r)
+	}
+}

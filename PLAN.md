@@ -651,7 +651,8 @@ Wizard Win32 (страницы):
 
 - Застой по возрасту `FreshAt`/lastOk для точек без номеров сообщений (п. 190, `CHK-MON-19`).
 - `export_config` / `import_config` с флагом `includeViberRecipients` (п. 191, `CHK-CFG-07` / `CHK-IPC-14`).
-- Mute профиля до восстановления (п. 192, `CHK-MON-20` / `CHK-IPC-15`); дальнейшие пункты — после ревью п. 192.
+- Mute профиля до восстановления (п. 192, `CHK-MON-20` / `CHK-IPC-15`).
+- `clone_profile` (п. 193, `CHK-CFG-08`).
 
 ---
 
@@ -872,6 +873,8 @@ Wizard Win32 (страницы):
 191. **Экспорт/импорт получателей Viber (фаза 12, `CHK-CFG-07` / `CHK-IPC-14`):** `export_config` / `import_config` принимают `includeViberRecipients` (bool, по умолчанию false). При true экспорт включает несекретные поля `settings.viber` (`enabled`, `recipients:[{id,name}]`, `schedule`, `events`, `reminderMinutes`) — **никогда** `token` / `hasToken` / `status` / `viber.dpapi`; корневой флаг `containsViberRecipients` (всегда) = true, если в экспорте есть хотя бы один recipient. Импорт с флагом применяет несекретный `settings.viber` из файла (токен на диске не трогается; `hasToken`/`status` из файла игнорируются); без флага или без блока `settings.viber` — текущий Viber сохраняется (как раньше). Capability `export_viber_recipients` в hello (рядом с `export_config` / `import_config`). Tests: `TestCHK_CFG_07_*`, `TestCHK_IPC_14_*`.
 
 192. **Mute до восстановления (фаза 12, `CHK-MON-20` / `CHK-IPC-15`):** `mute_until_recovered` / `unmute_profile` по `profileId`; capability `mute_profile`. Доступ как у `ack_alert` (любой локальный клиент, не только админ). Пока muted: нет push `alert` / `alert_repeat`, Viber и Event Log по этому профилю; опрос продолжается; `get_status` — `profile.muted` (всегда) + `mutedSince`. Снятие: `unmute_profile` или профиль вернулся в OK. Состояние — `mute-state.json` рядом с `ack-state.json`. Ошибки: `not_found`, `no_active_mute`, `access_denied`. Tests: `TestCHK_MON_20_*`, `TestCHK_IPC_15_*`.
+
+193. **Клонирование профиля (фаза 12, `CHK-CFG-08`):** `clone_profile {profileId, newId?, newName?, expectedRevision}` (админ). Копирует connection + mapping + thresholds; **не** копирует пароль/secrets → `needPassword:true`. Имя по умолчанию `"<old> (копия)"` / EN `" (copy)"` (язык из settings); `newId` пустой = новый UUID, иначе должен быть свободен. Ответ `ok {result:"cloned", revision, profileId, needPassword, profile?, reloaded, pollScheduled?}`. Capability `clone_profile` в hello. Tests: `TestCHK_CFG_08_*`.
 
 ### Ещё желательно (не блокер каркаса)
 

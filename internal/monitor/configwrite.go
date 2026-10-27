@@ -355,6 +355,96 @@ func (m *Monitor) SaveProfile(p model.Profile, password string, clearPassword bo
 	return model.SavedProfile{Profile: p, Revision: rev, PollScheduled: scheduled}, nil
 }
 
+// CloneProfile implements ipc.ConfigManager (admin only; phase 12,
+// CHK-CFG-08): copies connection, mapping and thresholds of profileID into
+// a new profile; never copies the password / secrets (HasPassword false,
+// NeedPassword true). newID empty = generate; if set must be free. newName
+// empty = "<old> (копия)" / "(copy)" from settings language. expectedRevision
+// is mandatory.
+func (m *Monitor) CloneProfile(profileID, newID, newName, expectedRevision, account string) (model.SavedProfile, bool, error) {
+	if err := requireRevision(expectedRevision); err != nil {
+		return model.SavedProfile{}, false, err
+	}
+	w := m.configWriter()
+	if w == nil {
+		return model.SavedProfile{}, false, saveFailed(errNoStore)
+	}
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return model.SavedProfile{}, false, ErrUnknownProfile
+	}
+	m.cfgMu.Lock()
+	defer m.cfgMu.Unlock()
+	if err := m.checkRevisionLocked(w, expectedRevision); err != nil {
+		return model.SavedProfile{}, false, err
+	}
+	ps, sec, err := loadForWrite(w)
+	if err != nil {
+		return model.SavedProfile{}, false, err
+	}
+	var src *model.Profile
+	seen := map[string]bool{}
+	for i := range ps {
+		seen[ps[i].ID] = true
+		if ps[i].ID == profileID {
+			src = &ps[i]
+		}
+	}
+	if src == nil {
+		return model.SavedProfile{}, false, ErrUnknownProfile
+	}
+	dst := *src
+	dst.HasPassword = false
+	newID = strings.TrimSpace(newID)
+	if newID == "" {
+		id, err := newProfileID()
+		if err != nil {
+			return model.SavedProfile{}, false, saveFailed(err)
+		}
+		newID = id
+	} else if seen[newID] {
+		return model.SavedProfile{}, false, invalid(model.MsgMonitorProfileInvalid, &model.FieldError{
+			Field: "newId", Key: model.ValDuplicate, Msg: "profile id already exists"})
+	}
+	dst.ID = newID
+	newName = strings.TrimSpace(newName)
+	if newName == "" {
+		st, _ := w.LoadSettings()
+		lang := st.Language
+		if lang != model.LangEN {
+			lang = model.LangRU
+		}
+		newName = model.DefaultCloneName(src.Name, lang)
+	}
+	dst.Name = newName
+	if err := dst.Validate(); err != nil {
+		return model.SavedProfile{}, false, invalid(model.MsgMonitorProfileInvalid, err)
+	}
+	next := append(append([]model.Profile(nil), ps...), dst)
+	if err := model.ValidateProfiles(next); err != nil {
+		return model.SavedProfile{}, false, invalidOther(err, dst.ID)
+	}
+	// never touch secrets: the clone has no password entry
+	_ = sec
+	if err := w.SaveProfiles(next); err != nil {
+		return model.SavedProfile{}, false, saveFailed(err)
+	}
+	rev := m.afterWriteLocked(w)
+	scheduled := false
+	if dst.Enabled {
+		m.cmdMu.Lock()
+		m.pendIDs[dst.ID] = true
+		m.cmdMu.Unlock()
+		select {
+		case m.pollNow <- struct{}{}:
+		default:
+		}
+		scheduled = true
+	}
+	m.configChanged(model.ConfigChange{Account: account, Action: model.CmdCloneProfile, ProfileID: dst.ID})
+	return model.SavedProfile{Profile: dst, Revision: rev, PollScheduled: scheduled}, true, nil
+}
+
 // DeleteProfile implements ipc.ConfigManager (admin only): the profile,
 // its password, counters state, alerts and acknowledgements go.
 func (m *Monitor) DeleteProfile(profileID, expectedRevision, account string) (string, error) {

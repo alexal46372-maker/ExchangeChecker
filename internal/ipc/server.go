@@ -102,6 +102,12 @@ type ConfigManager interface {
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
 }
 
+// ProfileCloner runs clone_profile (phase 12, CHK-CFG-08, admin only).
+// Optional beside ConfigManager; Monitor implements both.
+type ProfileCloner interface {
+	CloneProfile(profileID, newID, newName, expectedRevision, account string) (model.SavedProfile, bool, error)
+}
+
 // ConfigTransfer runs export_config / import_config (admin only; phase
 // 10, CHK-CFG-06). import_config requests may be up to
 // model.IPCMaxImportRequest (1 MiB) from an elevated administrator; every
@@ -376,6 +382,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ConfigManager); ok {
 		caps = append(caps, model.CapConfigRead, model.CapConfigWrite)
+	}
+	if _, ok := s.H.(ProfileCloner); ok {
+		caps = append(caps, model.CapCloneProfile) // phase 12 (CHK-CFG-08)
 	}
 	if disc {
 		caps = append(caps, model.CapDiscover, model.CapDiscoverByValue, model.CapNodePoints, model.CapCheckMapping)
@@ -1217,8 +1226,12 @@ func (s *Server) cancelOp(c *conn, req model.IPCRequest) model.IPCMessage {
 func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 	cm, ok := s.H.(ConfigManager)
 	ct, okT := s.H.(ConfigTransfer)
+	cloner, okC := s.H.(ProfileCloner)
 	if req.Cmd == model.CmdExportConfig || req.Cmd == model.CmdImportConfig {
 		ok = okT
+	}
+	if req.Cmd == model.CmdCloneProfile {
+		ok = okC
 	}
 	if !ok {
 		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
@@ -1286,6 +1299,14 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultDeleted, ProfileID: req.ProfileID,
 			Reloaded: true, Revision: rev}
+	case model.CmdCloneProfile: // phase 12 (CHK-CFG-08)
+		res, needPW, err := cloner.CloneProfile(req.ProfileID, req.NewID, req.NewName, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		p := res.Profile
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultCloned, ProfileID: p.ID, Profile: &p,
+			Reloaded: true, PollScheduled: res.PollScheduled, Revision: res.Revision, NeedPassword: needPW}
 	case model.CmdSaveSettings:
 		if req.Settings == nil {
 			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorSettingsInvalid,

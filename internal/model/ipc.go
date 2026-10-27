@@ -24,6 +24,11 @@ const (
 	// posts it before replacing or removing the files (phase 7 §7.3)
 	// without importing internal/wintray. wParam / lParam are ignored.
 	TrayExitMessage = "ExchangeChecker.TrayExit"
+	// TrayReloadPrefsMessage is the RegisterWindowMessageW name that makes
+	// the tray (window class ExchangeCheckerTray) reread Sound / UIMode /
+	// Theme / balloons / lang from HKCU without exiting (CHK-TRAY-57).
+	// The settings window posts it after importing the tray block.
+	TrayReloadPrefsMessage = "ExchangeChecker.TrayReloadPrefs"
 	// Window classes that handle TrayExitMessage (CHK-TRAY-11). A separate
 	// `exchtray --settings` process never sees the message posted to the
 	// main tray window: the installer sends it with HWND_BROADCAST or to

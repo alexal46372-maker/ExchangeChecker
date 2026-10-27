@@ -30,6 +30,9 @@ const (
 var (
 	trayExitOnce sync.Once
 	trayExitID   uint32
+
+	trayReloadPrefsOnce sync.Once
+	trayReloadPrefsID   uint32
 )
 
 // trayExitMsg is the registered model.TrayExitMessage (0 if registration
@@ -42,6 +45,22 @@ func trayExitMsg() uint32 {
 // isTrayExit reports whether msg is the registered tray exit message.
 func isTrayExit(msg uint32) bool {
 	m := trayExitMsg()
+	return m != 0 && msg == m
+}
+
+// trayReloadPrefsMsg is the registered model.TrayReloadPrefsMessage (0 if
+// registration failed: the message is then never matched). CHK-TRAY-57.
+func trayReloadPrefsMsg() uint32 {
+	trayReloadPrefsOnce.Do(func() {
+		trayReloadPrefsID = winapi.RegisterWindowMessage(model.TrayReloadPrefsMessage)
+	})
+	return trayReloadPrefsID
+}
+
+// isTrayReloadPrefs reports whether msg is the registered tray prefs
+// reload message (CHK-TRAY-57).
+func isTrayReloadPrefs(msg uint32) bool {
+	m := trayReloadPrefsMsg()
 	return m != 0 && msg == m
 }
 
@@ -97,6 +116,8 @@ type Options struct {
 	// UIModeStore keeps «Простой» / «Экспертный» of the settings window
 	// (phase 10 D; nil = every field, tests).
 	UIModeStore UIModeStore
+	// ThemeStore keeps light/dark chrome (phase 12, CHK-TRAY-55; nil = light).
+	ThemeStore ThemeStore
 	// NoBlink disables the icon blinking timer (tests drive blinkTick).
 	NoBlink bool
 }
@@ -187,12 +208,14 @@ type App struct {
 func NewApp(opt Options) (*App, error) {
 	a := &App{opt: opt, done: make(chan struct{})}
 	a.opt.Lang = i18n.Normalize(opt.Lang)
+	LoadTheme(a.opt.ThemeStore) // phase 12 CHK-TRAY-55 (before any window chrome)
 	hwnd, err := createWindow(mainClass, i18n.T(i18n.KeyAppName, a.opt.Lang), 0, winapi.WS_OVERLAPPED, 0, 0, 0, 0, 0, a.wndProc)
 	if err != nil {
 		return nil, err
 	}
 	a.hwnd = hwnd
 	trayExitMsg()
+	trayReloadPrefsMsg()
 	a.taskbarCreated = winapi.RegisterWindowMessage("TaskbarCreated")
 	a.alerts = trayalert.New(a.opt.Lang)
 	a.sounder = opt.Sounder
@@ -435,6 +458,11 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 	case msg == winapi.WM_TIMER && wp == blinkTimerID:
 		a.blinkTick()
 		return 0, true
+	case isTrayReloadPrefs(msg):
+		// CHK-TRAY-57: reread Sound / UIMode / Theme / balloons / lang
+		// from HKCU without Exit (wParam / lParam ignored)
+		a.reloadTrayPrefs()
+		return 0, true
 	case isTrayExit(msg), msg == winapi.WM_CLOSE:
 		// CHK-TRAY-11: the installer's exit message and WM_CLOSE remove
 		// the icon and end the tray (wParam / lParam ignored)
@@ -569,7 +597,37 @@ func (a *App) Command(cmd int) {
 		a.OpenVolume()
 	case trayui.CmdPinHelp:
 		a.ShowPinHelp()
+	default:
+		if i, mute, ok := trayui.MuteProfileIndex(cmd); ok {
+			a.muteProfile(i, mute)
+		}
 	}
+}
+
+// muteProfile sends mute_until_recovered / unmute_profile for
+// status.Snapshot.Profiles[i] (CHK-TRAY-59).
+func (a *App) muteProfile(i int, mute bool) {
+	if a.session == nil || !a.session.Supported(model.CmdMuteUntilRecovered) {
+		return
+	}
+	st := a.session.Status()
+	if st.Snapshot == nil || i < 0 || i >= len(st.Snapshot.Profiles) {
+		return
+	}
+	id := st.Snapshot.Profiles[i].ProfileID
+	cmd := model.CmdMuteUntilRecovered
+	if !mute {
+		cmd = model.CmdUnmuteProfile
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
+		defer cancel()
+		m, err := a.session.Do(ctx, model.IPCRequest{Cmd: cmd, ProfileID: id})
+		if err != nil || m.Type == model.MsgError {
+			return // menu is ephemeral; next status push refreshes the indicator
+		}
+		_ = a.session.Refresh(ctx)
+	}()
 }
 
 // SetLanguage applies a per-user language preference at once to the
@@ -595,6 +653,39 @@ func (a *App) SetLanguage(pref string) error {
 	}
 	return err
 }
+
+// reloadTrayPrefs rereads Sound / UIMode / Theme / balloons / lang from
+// HKCU and applies them live without Exit (CHK-TRAY-57).
+func (a *App) reloadTrayPrefs() {
+	if a.opt.LangStore != nil {
+		if pref, err := a.opt.LangStore.Load(); err == nil {
+			a.opt.LangPref = pref
+			a.opt.Lang = ResolveLang(pref)
+			a.alerts.SetLang(a.opt.Lang)
+			if a.awin != nil {
+				a.awin.setLang(a.opt.Lang)
+			}
+			a.ind = trayui.Evaluate(a.status, a.opt.Lang)
+			a.modifyIcon()
+		}
+	}
+	a.loadBalloonPref()
+	a.loadSoundPrefs()
+	_ = loadUIMode(a.opt.UIModeStore) // next settings open reads the store
+	LoadTheme(a.opt.ThemeStore)
+	ApplyWindowTheme(a.hwnd)
+	if a.settings != nil && winapi.IsWindow(a.settings.hwnd) {
+		ApplyWindowTheme(a.settings.hwnd)
+		if a.settings.host != 0 {
+			ApplyWindowTheme(a.settings.host)
+		}
+		a.settings.syncThemeCombo()
+	}
+	if a.awin != nil && winapi.IsWindow(a.awin.hwnd) {
+		ApplyWindowTheme(a.awin.hwnd)
+	}
+}
+
 
 // OpenSettings opens (or focuses) the settings window and returns its
 // handle (the open Discovery dialog's when there is one, brought to the
@@ -625,7 +716,7 @@ func (a *App) OpenSettings() uintptr {
 	}
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
-		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
+		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore, themeStore: a.opt.ThemeStore,
 		stores:  trayStores{Lang: a.opt.LangStore, Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onClose: func() {

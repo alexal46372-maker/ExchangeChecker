@@ -56,6 +56,7 @@ const (
 	idSetCancelTest
 	idSetSave
 	idSetDelete
+	idSetClone // «Клонировать базу» (CHK-TRAY-58)
 	idSetAdd
 	idSetPoll
 	idSetReload
@@ -72,6 +73,7 @@ const (
 	idGenGap
 	idGenStalled // phase 11 CHK-TRAY-53
 	idGenLang
+	idGenTheme // phase 12 CHK-TRAY-55
 	idGenAutostart
 	idGenNote
 	idGenAutostartErr
@@ -153,6 +155,8 @@ type settingsConfig struct {
 	// D, CHK-TRAY-40); nil store = not stored
 	uiMode  traysettings.UIMode
 	uiStore UIModeStore
+	// themeStore: light/dark chrome (HKCU Theme, phase 12, CHK-TRAY-55); nil = not stored
+	themeStore ThemeStore
 	// phase 10 E (CHK-TRAY-44): the tray block stores, the file dialog
 	// and the warning box (nil = GetSaveFileNameW / GetOpenFileNameW,
 	// MessageBoxW)
@@ -211,9 +215,10 @@ type settingsWindow struct {
 	barLeft, barRight []barButton
 	// expertShown: the expert-only controls are shown (test hook)
 	expertShown bool
-	// phase 10 E: the import dialog, the profiles of needPassword, the
-	// status after the import
+	// phase 10 E / 12: the import / export dialogs, the profiles of
+	// needPassword, the status after the import
 	imp         *importDialog
+	exp         *exportDialog
 	notifyBtn   map[uintptr]bool // page buttons with BS_NOTIFY
 	needPw      []string
 	afterImport string
@@ -282,7 +287,7 @@ func (w *settingsWindow) applyFieldCues() {
 // settingsTips are the tooltips of the settings window controls (phase 8,
 // CHK-TRAY-15): every edit box, button, check box, combo and list box.
 var settingsTips = map[int32]string{
-	idSetList: i18n.KeyTipSetList, idSetAdd: i18n.KeyTipSetAdd, idSetDelete: i18n.KeyTipSetDelete,
+	idSetList: i18n.KeyTipSetList, idSetAdd: i18n.KeyTipSetAdd, idSetDelete: i18n.KeyTipSetDelete, idSetClone: i18n.KeyTipSetClone,
 	idSetDiscover: i18n.KeyTipSetDiscover, idSetExport: i18n.KeyTipXferExport, idSetImport: i18n.KeyTipXferImport, idSetName: i18n.KeyTipSetName, idSetHost: i18n.KeyTipSetHost,
 	idSetInstance: i18n.KeyTipSetInstance, idSetPort: i18n.KeyTipSetPort, idSetDatabase: i18n.KeyTipSetDatabase,
 	idSetAuth: i18n.KeyTipSetAuth, idSetLogin: i18n.KeyTipSetLogin, idSetPassword: i18n.KeyTipSetPassword,
@@ -297,7 +302,7 @@ var settingsTips = map[int32]string{
 	idGenBeep: i18n.KeyTipGenBeep, idGenWarnFreq: i18n.KeyTipGenWarnFreq, idGenWarnDur: i18n.KeyTipGenWarnDur,
 	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
 	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
-	idGenLang: i18n.KeyTipGenLang, idGenAutostart: i18n.KeyTipGenAutostart,
+	idGenLang: i18n.KeyTipGenLang, idGenTheme: i18n.KeyTipGenTheme, idGenAutostart: i18n.KeyTipGenAutostart,
 }
 
 // settingsOutputs are the static texts of the window (no tooltip).
@@ -513,8 +518,11 @@ func (w *settingsWindow) build() {
 	// phase 11 (CHK-TRAY-48): the list as wide as the navigation column
 	list.Grow, list.NoShrink = true, true
 	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0), list,
-		&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
-			add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}}}
+		&ui.Col{Gap: ui.P4, Items: []ui.Node{
+			&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
+				add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}},
+			add("BUTTON", w.t(i18n.KeySetClone), 0, winapi.WS_TABSTOP, idSetClone, ui.Button, 205, 0),
+		}}}
 	var xfer ui.Node
 	if w.cfg.mode == traysettings.Admin {
 		left = append(left, add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, ui.Button, 205, 0))
@@ -603,6 +611,7 @@ func (w *settingsWindow) build() {
 		gRows = append(gRows, field(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, gw))
 	}
 	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
+	gRows = append(gRows, field(w.t(i18n.KeyGenTheme), idGenTheme, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Box, 260, 34)
 	// a wrapped check box: the page width, not its one-line text (phase 11)
 	auto.Grow, auto.NoShrink = true, true
@@ -674,6 +683,10 @@ func (w *settingsWindow) build() {
 	for _, k := range []string{i18n.KeyGenLangAuto, i18n.KeyGenLangRU, i18n.KeyGenLangEN} {
 		winapi.SendMessageString(w.ctl[idGenLang], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
+	for _, k := range []string{i18n.KeyGenThemeLight, i18n.KeyGenThemeDark} {
+		winapi.SendMessageString(w.ctl[idGenTheme], winapi.CB_ADDSTRING, 0, w.t(k))
+	}
+	w.syncThemeCombo()
 	for _, h := range w.pageCtl[1] {
 		w.show(h, false)
 	}
@@ -681,6 +694,7 @@ func (w *settingsWindow) build() {
 	if w.cfg.mode == traysettings.ReadOnly {
 		w.show(w.ctl[idSetAdd], false)
 		w.show(w.ctl[idSetDelete], false)
+		w.show(w.ctl[idSetClone], false)
 		w.show(w.ctl[idSetClearPw], false)
 		w.relayoutAll()
 		w.status = w.t(i18n.KeySetReadOnlyNote)
@@ -753,6 +767,10 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		if code == winapi.CBN_SELCHANGE && !w.loading {
 			w.readGeneral()
 		}
+	case idGenTheme:
+		if code == winapi.CBN_SELCHANGE && !w.loading {
+			w.applyThemeChoice()
+		}
 	case idGenBeep, idGenAutostart:
 		if code == winapi.BN_CLICKED && !w.loading {
 			w.readGeneral()
@@ -794,6 +812,8 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idSetDelete:
 		w.deleteProfile()
+	case idSetClone:
+		w.cloneProfile()
 	case idSetExport:
 		w.exportConfig()
 	case idSetImport:
@@ -1026,6 +1046,15 @@ func (w *settingsWindow) update() {
 		}
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
+		if h := w.ctl[idSetClone]; h != 0 {
+			hasClone := w.cfg.session.Supported(model.CmdCloneProfile)
+			if cloneButtonVisible(ed.Mode, hasClone) {
+				winapi.ShowWindow(h, winapi.SW_SHOW)
+				winapi.EnableWindow(h, saved && !w.busy)
+			} else {
+				winapi.ShowWindow(h, winapi.SW_HIDE)
+			}
+		}
 		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy && w.wiz == nil)
 		winapi.EnableWindow(w.ctl[idSetDiscover], has && !w.busy && w.disc == nil && w.discoveryAvailable())
 	}
@@ -1645,6 +1674,9 @@ func (w *settingsWindow) close() {
 	if w.imp != nil {
 		w.imp.close()
 	}
+	if w.exp != nil {
+		w.exp.close()
+	}
 	if w.wiz != nil {
 		w.wiz.close()
 	}
@@ -1671,6 +1703,7 @@ type SettingsOptions struct {
 	LangStore    LangStore
 	BalloonStore BalloonStore
 	SoundStore   SoundStore
+	ThemeStore   ThemeStore // phase 12 CHK-TRAY-55
 	// OwnerSID: the user SID of the tray that started the elevated window
 	// (--owner-sid=; "" = unknown, treated as the same user)
 	OwnerSID string
@@ -1723,8 +1756,9 @@ func RunSettings(opt SettingsOptions) int {
 		}
 	}
 	s := trayipc.New(so)
+	LoadTheme(opt.ThemeStore)
 	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,
-		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
+		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore, themeStore: opt.ThemeStore,
 		stores:    trayStores{Lang: opt.LangStore, Balloon: opt.BalloonStore, Sound: opt.SoundStore},
 		otherUser: OtherUser(opt.OwnerSID, CurrentUserSID()),
 		onClose:   func() { winapi.PostQuitMessage(0) }})

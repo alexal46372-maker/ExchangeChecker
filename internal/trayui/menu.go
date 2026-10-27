@@ -30,7 +30,27 @@ const (
 	CmdLangAuto = 1011
 	CmdLangRU   = 1012
 	CmdLangEN   = 1013
+	// phase 12 CHK-TRAY-59: mute/unmute per profile in the left (databases) menu.
+	// CmdMuteBase+i / CmdUnmuteBase+i address snap.Profiles[i] (i < 1000).
+	CmdMuteBase   = 12000
+	CmdUnmuteBase = 13000
+	cmdProfileSlot = 1000
 )
+
+// MuteCmd / UnmuteCmd are the left-menu commands for snap.Profiles[i].
+func MuteCmd(i int) int   { return CmdMuteBase + i }
+func UnmuteCmd(i int) int { return CmdUnmuteBase + i }
+
+// MuteProfileIndex reports whether cmd is mute/unmute and which profile index.
+func MuteProfileIndex(cmd int) (i int, mute bool, ok bool) {
+	if cmd >= CmdMuteBase && cmd < CmdMuteBase+cmdProfileSlot {
+		return cmd - CmdMuteBase, true, true
+	}
+	if cmd >= CmdUnmuteBase && cmd < CmdUnmuteBase+cmdProfileSlot {
+		return cmd - CmdUnmuteBase, false, true
+	}
+	return 0, false, false
+}
 
 // LangCommands maps the language commands to the stored preference
 // ("" = as in Windows).
@@ -85,13 +105,14 @@ func BuildLeftMenu(st trayipc.Status, lang string) []Item {
 	if len(snap.Profiles) == 0 {
 		return append(items, Item{Text: i18n.T(i18n.KeyDBNone, lang), Disabled: true})
 	}
-	for _, p := range snap.Profiles {
-		items = append(items, databaseItem(p, ind.Fresh, lang))
+	canMute := st.Has(model.CapMuteProfile)
+	for i, p := range snap.Profiles {
+		items = append(items, databaseItem(p, ind.Fresh, lang, canMute, i))
 	}
 	return items
 }
 
-func databaseItem(p model.ProfileSnapshot, fresh bool, lang string) Item {
+func databaseItem(p model.ProfileSnapshot, fresh bool, lang string, canMute bool, idx int) Item {
 	color := LevelColor(p.Level)
 	status := levelText(p.Level, lang)
 	switch {
@@ -104,12 +125,23 @@ func databaseItem(p model.ProfileSnapshot, fresh bool, lang string) Item {
 		color = ColorGrey
 		status += "; " + i18n.T(i18n.KeyDBStale, lang)
 	}
+	if p.Muted {
+		status += "; " + i18n.T(i18n.KeyDBMuted, lang)
+	}
 	name := p.Name
 	if name == "" {
 		name = p.ProfileID
 	}
 	it := Item{Text: name + " — " + status, Color: color}
 	var sub []Item
+	if canMute {
+		if p.Muted {
+			sub = append(sub, Item{ID: UnmuteCmd(idx), Text: i18n.T(i18n.KeyMenuUnmute, lang)})
+		} else {
+			sub = append(sub, Item{ID: MuteCmd(idx), Text: i18n.T(i18n.KeyMenuMute, lang)})
+		}
+		sub = append(sub, Item{Separator: true})
+	}
 	if p.ErrorKey != "" || p.Error != "" {
 		key := p.ErrorKey
 		if key == "" {

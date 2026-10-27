@@ -160,7 +160,7 @@ func (sw *summaryWindow) paintChart(hwnd uintptr) {
 	if w < 2 || h < 2 {
 		return
 	}
-	br := winapi.CreateSolidBrush(trayui.White)
+	br := winapi.CreateSolidBrush(trayui.ChromePage())
 	winapi.FillRect(dc, rc, br)
 	winapi.DeleteObject(br)
 	n := len(sw.chartModel.Buckets)

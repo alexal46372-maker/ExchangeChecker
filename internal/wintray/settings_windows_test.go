@@ -37,6 +37,8 @@ type cfgService struct {
 	rev      int
 	saves    []saveCall
 	deletes  []string
+	clones   []string
+	muted    map[string]bool
 	polls    []string
 	tests    []model.IPCRequest
 	canceled int
@@ -63,10 +65,14 @@ func (f *cfgService) Snapshot() model.StatusSnapshot {
 	set := model.DefaultSettings()
 	snap := model.StatusSnapshot{Seq: uint64(f.rev + 1), ConfigRevision: f.revision(), Settings: &set}
 	for _, p := range f.profiles {
-		snap.Profiles = append(snap.Profiles, model.ProfileSnapshot{ProfileID: p.ID, Name: p.Name, Enabled: p.Enabled,
+		ps := model.ProfileSnapshot{ProfileID: p.ID, Name: p.Name, Enabled: p.Enabled,
 			Connection: &model.ProfileConnection{Server: p.Server, Port: p.Port, Database: p.Database, AuthMode: p.AuthMode,
 				Login: p.Login, HasPassword: p.HasPassword, Encrypt: p.Encrypt, TLSMinVersion: p.TLSMinVersion, ServerPreset: p.ServerPreset},
-			MappingSummary: &model.MappingSummary{Configured: p.Mapping.Configured()}})
+			MappingSummary: &model.MappingSummary{Configured: p.Mapping.Configured()}}
+		if f.muted[p.ID] {
+			ps.Muted = true
+		}
+		snap.Profiles = append(snap.Profiles, ps)
 	}
 	return snap
 }
@@ -170,6 +176,73 @@ func (f *cfgService) DeleteProfile(id, rev, account string) (string, error) {
 	f.rev++
 	return f.revision(), nil
 }
+
+func (f *cfgService) CloneProfile(profileID, newID, newName, rev, account string) (model.SavedProfile, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clones = append(f.clones, profileID)
+	var src *model.Profile
+	for i := range f.profiles {
+		if f.profiles[i].ID == profileID {
+			src = &f.profiles[i]
+			break
+		}
+	}
+	if src == nil {
+		return model.SavedProfile{}, false, &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile, Message: "not found"}
+	}
+	dst := *src
+	dst.HasPassword = false
+	if newID == "" {
+		newID = "clone-" + strconv.Itoa(len(f.clones))
+	}
+	for _, p := range f.profiles {
+		if p.ID == newID {
+			return model.SavedProfile{}, false, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorProfileInvalid, Message: "dup"}
+		}
+	}
+	dst.ID = newID
+	if newName == "" {
+		dst.Name = model.DefaultCloneName(src.Name, model.LangRU)
+	} else {
+		dst.Name = newName
+	}
+	f.profiles = append(f.profiles, dst)
+	f.rev++
+	return model.SavedProfile{Profile: dst, Revision: f.revision()}, true, nil
+}
+
+func (f *cfgService) MuteUntilRecovered(profileID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.muted == nil {
+		f.muted = map[string]bool{}
+	}
+	found := false
+	for _, p := range f.profiles {
+		if p.ID == profileID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile, Message: "not found"}
+	}
+	f.muted[profileID] = true
+	return nil
+}
+
+func (f *cfgService) UnmuteProfile(profileID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.muted == nil || !f.muted[profileID] {
+		return &model.IPCError{Code: model.ErrCodeNoActiveMute, Key: model.MsgMonitorNoActiveMute, Message: "no mute"}
+	}
+	delete(f.muted, profileID)
+	return nil
+}
+
+
 
 func (f *cfgService) SaveSettings(s model.Settings, rev, account string) (string, error) {
 	f.mu.Lock()

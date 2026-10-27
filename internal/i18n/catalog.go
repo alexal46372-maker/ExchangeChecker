@@ -19,6 +19,10 @@ const (
 	KeyLevelError   = "level.error"
 
 	KeyDBDisabled = "db.disabled"
+	KeyDBMuted              = "db.muted"
+	KeyMenuMute             = "menu.mute"
+	KeyMenuUnmute           = "menu.unmute"
+	KeyCardMuted            = "card.muted"
 	KeyDBPending  = "db.pending"
 	KeyDBStale    = "db.stale"
 	KeyDBNone     = "db.none"
@@ -145,6 +149,10 @@ const (
 	KeySetDeleting          = "set.deleting"
 	KeySetDeleted           = "set.deleted"
 	KeySetDeleteConfirm     = "set.delete_confirm"
+	KeySetClone             = "set.clone"
+	KeySetCloned            = "set.cloned"
+	KeySetClonedNeedPw      = "set.cloned_need_pw"
+	KeySetCloneConfirm      = "set.clone_confirm"
 	KeySetDiscardConfirm    = "set.discard_confirm"
 	KeyDiscTitle            = "disc.title"
 	KeyDiscButton           = "disc.button"
@@ -250,6 +258,9 @@ const (
 	KeyGenLangAuto        = "gen.lang_auto"
 	KeyGenLangRU          = "gen.lang_ru"
 	KeyGenLangEN          = "gen.lang_en"
+	KeyGenTheme           = "gen.theme"
+	KeyGenThemeLight      = "gen.theme_light"
+	KeyGenThemeDark       = "gen.theme_dark"
 	KeyGenAutostart       = "gen.autostart"
 	KeyGenNote            = "gen.note"
 	KeyGenSaved           = "gen.saved"
@@ -329,6 +340,7 @@ const (
 	KeyTipSetList         = "tip.set.list"
 	KeyTipSetAdd          = "tip.set.add"
 	KeyTipSetDelete       = "tip.set.delete"
+	KeyTipSetClone         = "tip.set.clone"
 	KeyTipSetDiscover     = "tip.set.discover"
 	KeyTipSetName         = "tip.set.name"
 	KeyTipSetHost         = "tip.set.host"
@@ -367,6 +379,7 @@ const (
 	KeyTipGenErrDur       = "tip.gen.err_dur"
 	KeyTipGenGap          = "tip.gen.gap"
 	KeyTipGenLang         = "tip.gen.lang"
+	KeyTipGenTheme        = "tip.gen.theme"
 	KeyTipGenAutostart    = "tip.gen.autostart"
 	KeyTipDiscFind        = "tip.disc.find"
 	KeyTipDiscPoints      = "tip.disc.points"
@@ -750,9 +763,14 @@ const (
 	KeyXferOtherUser      = "set.xfer_other_user"
 	KeyXferEnterPw        = "set.xfer_enter_pw"
 	KeyXferTrayFailed     = "set.xfer_tray_failed"
+	KeyXferViberCheck     = "set.xfer_viber_check"
+	KeyXferViberWarnExport = "set.xfer_viber_warn_export"
+	KeyXferViberWarnImport = "set.xfer_viber_warn_import"
+	KeyXferExportTitle    = "set.xfer_export_title"
 	KeyTipXferMerge       = "tip.xfer_merge"
 	KeyTipXferReplace     = "tip.xfer_replace"
 	KeyTipXferTray        = "tip.xfer_tray"
+	KeyTipXferViber       = "tip.xfer_viber"
 	KeyTipXferDo          = "tip.xfer_do"
 	KeyTipXferPreview     = "tip.xfer_preview"
 )
@@ -811,6 +829,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyBalloonRecovered:      {"%s: обмен снова в норме", "%s: exchange is OK again"},
 	KeyBalloonSummary:        {"Просрочено точек: %d, восстановлено: %d", "Points overdue: %d, recovered: %d"},
 	KeyMenuBalloons:          {"Уведомления о просрочке", "Overdue notifications"},
+	KeyMenuMute:              {"Приглушить до восстановления", "Mute until recovered"},
+	KeyMenuUnmute:            {"Снять", "Unmute"},
+	KeyCardMuted:             {"Приглушена", "Muted"},
 	KeyMenuStatusWin:         {"Состояние…", "Status…"},
 	KeyMenuCheckNow:          {"Проверить сейчас", "Check now"},
 	KeyStTitle:               {"Состояние", "Status"},
@@ -869,6 +890,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyLevelWarning: {"предупреждение", "warning"},
 	KeyLevelError:   {"ошибка", "error"},
 
+	KeyDBMuted:               {"приглушена", "muted"},
 	KeyDBDisabled: {"выключена", "disabled"},
 	KeyDBPending:  {"ожидание опроса", "waiting for the first poll"},
 	KeyDBStale:    {"последние известные данные", "last known data"},
@@ -967,6 +989,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetCancelTest:          {"Отменить проверку", "Cancel test"},
 	KeySetSave:                {"Сохранить", "Save"},
 	KeySetDelete:              {"Удалить", "Delete"},
+	KeySetClone:               {"Клонировать базу", "Clone database"},
 	KeySetAdd:                 {"Добавить", "Add"},
 	KeySetPoll:                {"Опросить сейчас", "Poll now"},
 	KeySetReload:              {"Перечитать", "Reload"},
@@ -993,6 +1016,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetDeleting:            {"Удаление…", "Deleting…"},
 	KeySetDeleted:             {"База удалена из настроек.", "The database was removed from the settings."},
 	KeySetDeleteConfirm:       {"Удалить базу «%s» из настроек? Пароль, состояние и тревоги этой базы тоже будут удалены.", "Remove the database \"%s\" from the settings? Its password, state and alarms are removed too."},
+	KeySetCloned:              {"База «%s» создана (копия). Введите пароль SQL.", "Database \"%s\" created (copy). Enter the SQL password."},
+	KeySetClonedNeedPw:        {"База «%s» создана. Пароль не копируется — введите его.", "Database \"%s\" created. The password is not copied — enter it."},
+	KeySetCloneConfirm:        {"Клонировать базу «%s»? Пароль SQL не копируется — его нужно ввести заново.", "Clone database \"%s\"? The SQL password is not copied — you must enter it again."},
 	KeySetDiscardConfirm:      {"Отменить изменения?", "Discard changes?"},
 	KeyDiscTitle:              {"Таблицы обмена", "Exchange tables"},
 	KeyDiscButton:             {"Таблицы обмена…", "Exchange tables…"},
@@ -1117,6 +1143,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyGenLangAuto:            {"Как в Windows", "Windows default"},
 	KeyGenLangRU:              {"Русский", "Русский (Russian)"},
 	KeyGenLangEN:              {"English (английский)", "English"},
+	KeyGenTheme:               {"Тема:", "Theme:"},
+	KeyGenThemeLight:          {"Светлая", "Light"},
+	KeyGenThemeDark:           {"Тёмная", "Dark"},
 	KeyGenAutostart:           {"Запускать значок в трее при входе в Windows (для всех пользователей)", "Start the tray icon at Windows logon (all users)"},
 	KeyGenNote:                {"Общие настройки действуют на весь компьютер и применяются службой. Звук выключает только сигнал: окно тревоги показывается всегда. Язык значка в трее выбирается в его меню у каждого пользователя.", "General settings apply to the whole computer and are used by the service. Turning the sound off mutes only the beep: the alert window is always shown. The tray icon language is chosen in its menu by each user."},
 	KeyGenSaved:               {"Общие настройки сохранены.", "General settings saved."},
@@ -1191,6 +1220,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipSetList:          {"Базы, которые проверяет служба. Выберите базу, чтобы увидеть и изменить её настройки.", "Databases checked by the service. Select one to view and edit its settings."},
 	KeyTipSetAdd:           {"Добавить новую базу данных для проверки.", "Add a new database to check."},
 	KeyTipSetDelete:        {"Удалить выбранную базу из настроек (с подтверждением).", "Remove the selected database from the settings (asks first)."},
+	KeyTipSetClone:         {"Создать копию выбранной базы без пароля (нужен clone_profile).", "Create a copy of the selected database without its password (needs clone_profile)."},
 	KeyTipSetDiscover:      {"Найти в базе 1С таблицы с временем обмена и настроить их.", "Find the tables with exchange times in the 1C database and set them up."},
 	KeyTipSetName:          {"Название базы в меню трея и в тревогах. Можно оставить пустым — тогда «сервер/база».", "Name of the database in the tray menu and alerts. May be empty: \"server/database\" is shown then."},
 	KeyTipSetHost:          {"Имя компьютера или IP-адрес SQL Server, например SRV-SQL или 10.0.0.5. Без имени экземпляра.", "Computer name or IP address of SQL Server, e.g. SRV-SQL or 10.0.0.5. Without the instance name."},
@@ -1229,6 +1259,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipGenErrDur:        {"Длительность звука ошибки, мс.", "Length of the error sound, ms."},
 	KeyTipGenGap:           {"Пауза между сигналами, мс.", "Pause between the beeps, ms."},
 	KeyTipGenLang:          {"Язык сообщений службы в журнале событий Windows.", "Language of the service messages in the Windows Event Log."},
+	KeyTipGenTheme:         {"Светлое или тёмное оформление окон трея (для этого пользователя).", "Light or dark look of the tray windows (this user)."},
 	KeyTipGenAutostart:     {"Запускать значок в трее при входе любого пользователя.", "Start the tray icon when any user logs on."},
 	KeyTipDiscFind:         {"Найти в базе таблицы, похожие на время обмена.", "Find tables that look like exchange times."},
 	KeyTipDiscPoints:       {"Загрузить список точек обмена (узлов планов обмена).", "Load the list of exchange points (exchange plan nodes)."},
@@ -1457,7 +1488,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipVbTest:          {"Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с", "A test message now (ignores the schedule and «Send»), at most once per 10 s"},
 	KeyXferExport:         {"Экспорт…", "Export…"},
 	KeyXferImport:         {"Импорт…", "Import…"},
-	KeyTipXferExport:      {"Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей и Viber)", "Save the databases and the general service settings, plus the tray sound and look, to a file (no passwords, no Viber)"},
+	KeyTipXferExport:      {"Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей; получатели Viber — по флажку)", "Save the databases and the general service settings, plus the tray sound and look, to a file (no passwords; Viber recipients optional)"},
 	KeyTipXferImport:      {"Загрузить настройки из файла: сначала показывается, что изменится", "Load settings from a file: what will change is shown first"},
 	KeyXferFilter:         {"Настройки EC (*.json)", "EC settings (*.json)"},
 	KeyXferContainsLogins: {"Файл содержит адреса серверов, логины SQL (без паролей) и пути к звуковым файлам. Храните его в надёжном месте.", "The file contains server addresses, SQL logins (no passwords) and sound file paths. Keep it in a safe place."},
@@ -1481,19 +1512,24 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyXferNoChanges:      {"Базы данных не изменятся.", "The databases do not change."},
 	KeyXferNoTray:         {"В файле нет настроек трея.", "The file has no tray settings."},
 	KeyXferTrayKept:       {"Звук и вид трея не меняются.", "The tray sound and look are kept."},
-	KeyXferTraySummary:    {"Трей: язык %s, всплывающие уведомления %s, громкость %s, %s", "Tray: language %s, balloons %s, volume %s, %s"},
+	KeyXferTraySummary:    {"Трей: язык %s, всплывающие уведомления %s, громкость %s, %s, тема %s", "Tray: language %s, balloons %s, volume %s, %s, theme %s"},
 	KeyXferLangAuto:       {"как в Windows", "as in Windows"},
 	KeyXferOn:             {"вкл.", "on"},
 	KeyXferOff:            {"выкл.", "off"},
 	KeyXferNoSoundFile:    {"Внимание: звуковой файл не найден на этом компьютере, будет звучать тон: %s", "Warning: the sound file is not on this computer, the tone plays instead: %s"},
 	KeyXferDone:           {"Импорт выполнен.", "Import done."},
-	KeyXferTrayApplied:    {"Звук и вид трея применятся после перезапуска трея", "Tray sound and appearance will apply after the tray restarts"},
+	KeyXferTrayApplied:    {"Звук и вид трея применены", "Tray sound and appearance applied"},
 	KeyXferOtherUser:      {"Окно настроек запущено от имени другого пользователя Windows, чем трей: звук и вид трея не экспортируются и не импортируются (они хранятся в профиле пользователя трея).", "The settings window runs as a different Windows user than the tray: the tray sound and appearance are neither exported nor imported (they belong to the tray user's profile)."},
 	KeyXferEnterPw:        {"Введите пароль заново для «%s» и сохраните (осталось: %d).", "Enter the password again for «%s» and save (left: %d)."},
 	KeyXferTrayFailed:     {"Не удалось сохранить настройки трея: %s", "Could not save the tray settings: %s"},
+	KeyXferViberCheck:     {"Получатели Viber", "Viber recipients"},
+	KeyXferViberWarnExport: {"В файл попадут получатели Viber (токен бота не переносится). Храните файл в надёжном месте.", "The file will include Viber recipients (the bot token is never transferred). Keep the file in a safe place."},
+	KeyXferViberWarnImport: {"Получатели Viber из файла будут применены (токен бота не переносится).", "Viber recipients from the file will be applied (the bot token is never transferred)."},
+	KeyXferExportTitle:    {"Экспорт настроек", "Export settings"},
 	KeyTipXferMerge:       {"Базы с тем же идентификатором обновляются, новые добавляются, остальные остаются", "Databases with the same id are updated, new ones added, the others kept"},
 	KeyTipXferReplace:     {"Список баз становится таким, как в файле", "The list of databases becomes the one of the file"},
-	KeyTipXferTray:        {"Язык, всплывающие уведомления, звук и режим окна этого пользователя", "Language, balloons, sound and window mode of this user"},
+	KeyTipXferTray:        {"Язык, всплывающие уведомления, звук, режим окна и тема этого пользователя", "Language, balloons, sound, window mode and theme of this user"},
+	KeyTipXferViber:       {"Несекретные получатели Viber в файле (токен бота никогда не переносится)", "Non-secret Viber recipients in the file (the bot token is never transferred)"},
 	KeyTipXferDo:          {"Выполнить импорт, как показано выше", "Run the import as shown above"},
 	KeyTipXferPreview:     {"Что изменит импорт", "What the import will change"},
 }

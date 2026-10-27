@@ -256,10 +256,13 @@ func (s *Session) setElevatedLocked(v *bool) {
 var commandCapability = map[string]string{
 	model.CmdTestProfile: model.CapTestProfile,
 	model.CmdAckAlert:    model.CapAckAlert,
+	model.CmdMuteUntilRecovered: model.CapMuteProfile, // phase 12 CHK-TRAY-59
+	model.CmdUnmuteProfile:      model.CapMuteProfile,
 	// phase 6 (G5 / G6)
 	model.CmdGetConfig:     model.CapConfigRead,
 	model.CmdSaveProfile:   model.CapConfigWrite,
 	model.CmdDeleteProfile: model.CapConfigWrite,
+	model.CmdCloneProfile:  model.CapCloneProfile, // phase 12 CHK-TRAY-58
 	model.CmdSaveSettings:  model.CapConfigWrite,
 	model.CmdCancel:        model.CapCancel,
 	// phase 9 (EC Service; tray phase 9b)

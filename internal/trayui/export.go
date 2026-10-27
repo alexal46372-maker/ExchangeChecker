@@ -55,17 +55,16 @@ func ExportCSV(rows []StatusRow, lang string) []byte {
 	return b.Bytes()
 }
 
-// htmlColors: pale state backgrounds of the theme (CHK-TRAY-51).
-var htmlColors = map[Color]string{ColorGreen: PaleHTML(ColorGreen), ColorYellow: PaleHTML(ColorYellow), ColorRed: PaleHTML(ColorRed), ColorGrey: PaleHTML(ColorGrey)}
-
 // ExportHTML renders rows as an HTML page; at is the export time (UTC+3).
+// Border / HeaderRow / pale row colours come from the active chrome theme
+// (CHK-TRAY-51 / CHK-TRAY-56).
 func ExportHTML(rows []StatusRow, lang string, at time.Time) []byte {
 	var b bytes.Buffer
 	e := html.EscapeString
 	title := i18n.T(i18n.KeyStTitle, lang) + " — " + i18n.T(i18n.KeyAppName, lang)
 	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + e(lang) + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
 	b.WriteString("<style>body{font-family:Segoe UI,Arial,sans-serif;font-size:13px}table{border-collapse:collapse}" +
-		"td,th{border:1px solid "+ChromeHTML(Border)+";padding:3px 6px;text-align:left}th{background:"+ChromeHTML(HeaderRow)+"}</style></head><body>\n")
+		"td,th{border:1px solid "+ChromeHTML(ChromeBorder())+";padding:3px 6px;text-align:left}th{background:"+ChromeHTML(ChromeHeaderRow())+"}</style></head><body>\n")
 	b.WriteString("<h1>" + e(title) + "</h1>\n<p>" + e(i18n.T(i18n.KeyStExportedAt, lang)) + " " + e(at.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n<table>\n<tr>")
 	for _, h := range headers(lang) {
 		b.WriteString("<th>" + e(h) + "</th>")
@@ -73,8 +72,9 @@ func ExportHTML(rows []StatusRow, lang string, at time.Time) []byte {
 	b.WriteString("</tr>\n")
 	for _, r := range rows {
 		b.WriteString("<tr")
-		if c, ok := htmlColors[r.Color]; ok {
-			b.WriteString(" style=\"background:" + c + "\"")
+		switch r.Color {
+		case ColorGreen, ColorYellow, ColorRed, ColorGrey:
+			b.WriteString(" style=\"background:" + PaleHTML(r.Color) + "\"")
 		}
 		b.WriteString(">")
 		for _, c := range r.Cells() {

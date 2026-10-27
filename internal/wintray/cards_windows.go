@@ -57,13 +57,13 @@ func newCardPanel(parent uintptr, tips *tooltips, lang string, rows int32) (*car
 			case winapi.WM_PAINT:
 				var ps winapi.PAINTSTRUCT
 				dc := winapi.BeginPaint(hw, &ps)
-				bg := winapi.CreateSolidBrush(trayui.Panel)
+				bg := winapi.CreateSolidBrush(trayui.ChromePanel())
 				winapi.FillRect(dc, winapi.GetClientRect(hw), bg)
 				winapi.DeleteObject(bg)
 				winapi.EndPaint(hw, &ps)
 				return 0, true
 			case winapi.WM_ERASEBKGND:
-				return 1, true
+				return themeErase(wp, hw), true
 			}
 			return 0, false
 		})
@@ -80,7 +80,7 @@ func newCardPanel(parent uintptr, tips *tooltips, lang string, rows int32) (*car
 					p.paint(hw, i)
 					return 0, true
 				case winapi.WM_ERASEBKGND:
-					return 1, true
+					return themeErase(wp, hw), true
 				}
 				return 0, false
 			})
@@ -157,20 +157,21 @@ func (p *cardPanel) paint(hw uintptr, i int) {
 	if i < len(p.shown) {
 		c = p.shown[i]
 	}
-	bk, ok := rowBk[c.Color]
-	if !ok {
-		bk = trayui.CardFace
+	bk := trayui.ChromeCardFace()
+	switch c.Color {
+	case trayui.ColorGreen, trayui.ColorYellow, trayui.ColorRed, trayui.ColorGrey:
+		bk = rowBk(c.Color)
 	}
-	fill(rc, trayui.CardFrame) // frame
+	fill(rc, trayui.ChromeCardFrame()) // frame
 	fill(winapi.RECT{Left: rc.Left + 1, Top: rc.Top + 1, Right: rc.Right - 1, Bottom: rc.Bottom - 1}, bk)
 	stripe, ok := cardStripe[c.Color]
 	if !ok {
-		stripe = trayui.CardStripeOff
+		stripe = trayui.ChromeCardStripeOff()
 	}
 	sw := px(6)
 	fill(winapi.RECT{Left: rc.Left + 1, Top: rc.Top + 1, Right: rc.Left + 1 + sw, Bottom: rc.Bottom - 1}, stripe)
 	winapi.SetBkMode(dc, winapi.TRANSPARENT)
-	winapi.SetTextColor(dc, trayui.Text)
+	winapi.SetTextColor(dc, trayui.ChromeText())
 	old := winapi.SelectObject(dc, uiFont())
 	defer winapi.SelectObject(dc, old)
 	_, lh := winapi.TextSize(uiFont(), "Ag", 0)

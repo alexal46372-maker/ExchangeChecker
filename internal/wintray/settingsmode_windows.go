@@ -22,8 +22,8 @@ var reqFields = map[int32]traysettings.Field{
 	idSetLogin: traysettings.FieldLogin, idSetPassword: traysettings.FieldPassword,
 }
 
-// requiredBk is the background of an empty required box.
-const requiredBk = trayui.RequiredField // empty required edit (CHK-TRAY-51)
+// requiredBk is the background of an empty required edit (CHK-TRAY-51 / 55).
+func requiredBk() uint32 { return trayui.ChromeRequired() }
 
 // UIMode is the window mode (test hook).
 func (w *settingsWindow) UIMode() traysettings.UIMode { return w.uiMode }
@@ -125,9 +125,9 @@ func (w *settingsWindow) requiredColor(dc, ctl uintptr) (uintptr, bool) {
 	for id, on := range w.missing {
 		if on && w.ctl[id] == ctl {
 			if w.reqBrush == 0 {
-				w.reqBrush = winapi.CreateSolidBrush(requiredBk)
+				w.reqBrush = winapi.CreateSolidBrush(requiredBk())
 			}
-			winapi.SetBkColor(dc, requiredBk)
+			winapi.SetBkColor(dc, requiredBk())
 			return w.reqBrush, w.reqBrush != 0
 		}
 	}

@@ -539,6 +539,48 @@ func (e *Editor) DeleteDone(m model.IPCMessage) string {
 	return e.t(i18n.KeySetDeleted)
 }
 
+// CloneRequest is clone_profile of the selected saved profile (CHK-TRAY-58).
+// newId / newName empty = service defaults (generate id, "<name> (копия)").
+func (e *Editor) CloneRequest() (model.IPCRequest, *Problem) {
+	if e.Mode != Admin || e.IsNew || e.Sel < 0 {
+		return model.IPCRequest{}, &Problem{Text: e.t(i18n.KeySetNoProfile)}
+	}
+	if e.Revision == "" {
+		return model.IPCRequest{}, &Problem{Text: e.t(i18n.KeySetNoRevision), Reload: true}
+	}
+	return model.IPCRequest{Cmd: model.CmdCloneProfile, ProfileID: e.Base.ID, ExpectedRevision: e.Revision}, nil
+}
+
+// CloneDone applies a successful clone_profile reply: selects the new
+// profile (password not copied). Caller focuses the password field when
+// m.NeedPassword.
+func (e *Editor) CloneDone(m model.IPCMessage) string {
+	if m.Revision != "" {
+		e.Revision = m.Revision
+	}
+	if m.Profile != nil {
+		p := *m.Profile
+		e.Profiles = append(e.Profiles, p)
+		e.Select(len(e.Profiles) - 1)
+		name := p.DisplayName()
+		if m.NeedPassword {
+			return fmt.Sprintf(e.t(i18n.KeySetClonedNeedPw), name)
+		}
+		return fmt.Sprintf(e.t(i18n.KeySetCloned), name)
+	}
+	// no profile body: select by ProfileID if listed after a reload path
+	if m.ProfileID != "" {
+		for i := range e.Profiles {
+			if e.Profiles[i].ID == m.ProfileID {
+				e.Select(i)
+				break
+			}
+		}
+	}
+	return fmt.Sprintf(e.t(i18n.KeySetCloned), m.ProfileID)
+}
+
+
 // TestRequest is test_profile: the saved profile by id when nothing was
 // edited (always in read-only mode), else the form with the typed
 // password (empty = the service reuses the saved one if allowed).

@@ -56,13 +56,8 @@ type statusWindow struct {
 
 var statusColWidths = []int32{130, 140, 110, 95, 110, 80, 95, 95, 160}
 
-// rowBk: pale state backgrounds of the theme (CHK-TRAY-51).
-var rowBk = map[trayui.Color]uint32{
-	trayui.ColorGreen:  trayui.PaleColorRef(trayui.ColorGreen),
-	trayui.ColorYellow: trayui.PaleColorRef(trayui.ColorYellow),
-	trayui.ColorRed:    trayui.PaleColorRef(trayui.ColorRed),
-	trayui.ColorGrey:   trayui.PaleColorRef(trayui.ColorGrey),
-}
+// rowBk returns the pale state background of the active theme (CHK-TRAY-51/55).
+func rowBk(c trayui.Color) uint32 { return trayui.PaleColorRef(c) }
 
 func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, error) {
 	const w = 1060
@@ -241,10 +236,9 @@ func (sw *statusWindow) onNotify(lp uintptr) (uintptr, bool) {
 	case winapi.CDDS_ITEMPREPAINT:
 		i := int(cd.ItemSpec)
 		if i >= 0 && i < len(sw.rows) {
-			if bk, ok := rowBk[sw.rows[i].Color]; ok {
-				winapi.WriteCustomDrawColors(lp, trayui.Black, bk)
-				return winapi.CDRF_NEWFONT, true
-			}
+			bk := rowBk(sw.rows[i].Color)
+			winapi.WriteCustomDrawColors(lp, trayui.ChromeText(), bk)
+			return winapi.CDRF_NEWFONT, true
 		}
 		return winapi.CDRF_DODEFAULT, true
 	}

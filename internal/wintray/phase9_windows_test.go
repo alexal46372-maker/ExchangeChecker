@@ -225,12 +225,12 @@ func TestCHK_TRAY_19_StatusWindow(t *testing.T) {
 		t.Errorf("prepaint %x", r)
 	}
 	cd.DrawStage, cd.ItemSpec = winapi.CDDS_ITEMPREPAINT, uintptr(errRow)
-	if r := winapi.SendMessage(sw.hwnd, winapi.WM_NOTIFY, idStList, uintptr(unsafe.Pointer(&cd))); r != winapi.CDRF_NEWFONT || cd.ClrTextBk != rowBk[trayui.ColorRed] {
+	if r := winapi.SendMessage(sw.hwnd, winapi.WM_NOTIFY, idStList, uintptr(unsafe.Pointer(&cd))); r != winapi.CDRF_NEWFONT || cd.ClrTextBk != rowBk(trayui.ColorRed) {
 		t.Errorf("item %x bk %06x", r, cd.ClrTextBk)
 	}
 	cd.ItemSpec = uintptr(okRow)
 	winapi.SendMessage(sw.hwnd, winapi.WM_NOTIFY, idStList, uintptr(unsafe.Pointer(&cd)))
-	if cd.ClrTextBk != rowBk[trayui.ColorGreen] {
+	if cd.ClrTextBk != rowBk(trayui.ColorGreen) {
 		t.Errorf("ok bk %06x", cd.ClrTextBk)
 	}
 	runtime.KeepAlive(&cd)

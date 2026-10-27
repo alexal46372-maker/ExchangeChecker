@@ -282,9 +282,11 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 
 // uiScenes opens every tray window (settings expert / general / simple /
 // read-only, import, discovery, sound, history, volume, panel, about, wizard,
-// alert, status, summary, alarm_test) in lang and visits it (layout test,
-// CI screenshots). Summary / alarm_test use demo data under mock caps
-// CapSummary / CapAlarmTest (CHK-TRAY-54).
+// alert, status, status muted, summary, alarm_test) in lang and visits it
+// (layout test, CI screenshots). Summary / alarm_test use demo data under
+// mock caps CapSummary / CapAlarmTest (CHK-TRAY-54). Settings expert shows
+// the clone button when CapCloneProfile is present (CHK-TRAY-58); status
+// muted shows the mute indicator (CHK-TRAY-59).
 func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
 	t.Helper()
 	done, ok := useComCtl6()
@@ -292,8 +294,17 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	if !ok {
 		t.Log("Common Controls 6 activation context not available: cues are not drawn")
 	}
-	func() { // import dialog after a dry run (phase 11)
+	func() { // import / export dialogs (phase 11 / CHK-TRAY-57)
 		e := newXferEnv(t, lang)
+		e.w.click(t, idSetExport)
+		ex := e.w.exp
+		if ex == nil {
+			t.Fatalf("export dialog: %q", e.w.statusText())
+		}
+		winapi.SendMessage(ex.ctl[idExpViber], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
+		ex.syncWarn()
+		visit("export", ex.hwnd)
+		ex.close()
 		writeImportFile(t, e.path, &traysettings.TrayBlock{Language: "ru"}, e.x.profiles[0])
 		e.w.click(t, idSetImport)
 		d := e.w.imp
@@ -458,6 +469,17 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	winapi.ListViewSelect(st.list, 1) // phase 11 (CHK-TRAY-49): a selected row
 	st.updateHistoryButton()
 	visit("status selected", st.hwnd)
+	// CHK-TRAY-59: muted indicator on status/cards (settings expert already
+	// shows «Клонировать базу» via CapCloneProfile — CHK-TRAY-58).
+	muted := sampleDemoStatus()
+	if muted.Snapshot != nil && len(muted.Snapshot.Profiles) > 0 {
+		since := sampleNow.Add(-15 * time.Minute)
+		muted.Snapshot.Profiles[0].Muted = true
+		muted.Snapshot.Profiles[0].MutedSince = &since
+		muted.Capabilities = append(append([]string{}, muted.Capabilities...), model.CapMuteProfile)
+	}
+	st.update(muted, true)
+	visit("status muted", st.hwnd)
 	winapi.DestroyWindow(st.hwnd)
 
 	// CHK-TRAY-54: summary + alarm_test under mock CapSummary / CapAlarmTest

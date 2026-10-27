@@ -74,8 +74,9 @@ func TestCHK_TRAY_08_SetLanguage(t *testing.T) {
 		t.Fatalf("saved %v lang %q pref %q", store.saved, app.opt.Lang, app.opt.LangPref)
 	}
 	m := app.RightMenu()
-	if m[0].Text != i18n.T(i18n.KeyMenuSettings, i18n.EN) || !m[2].Sub[2].Checked || m[2].Sub[0].Checked {
-		t.Errorf("right menu %+v", m)
+	lang := menuSubByCmd(m, trayui.CmdLangEN)
+	if m[0].Text != i18n.T(i18n.KeyMenuSettings, i18n.EN) || lang == nil || !lang[2].Checked || lang[0].Checked {
+		t.Errorf("right menu %+v lang=%+v", m, lang)
 	}
 	if app.ind.Tooltip != trayui.Evaluate(app.status, i18n.EN).Tooltip {
 		t.Errorf("tooltip %q", app.ind.Tooltip)
@@ -85,7 +86,20 @@ func TestCHK_TRAY_08_SetLanguage(t *testing.T) {
 		t.Errorf("alert window texts %q / %q", winapi.GetWindowText(app.awin.ack), winapi.GetWindowText(app.awin.close))
 	}
 	app.Command(trayui.CmdLangAuto)
-	if store.saved[1] != "" || app.opt.LangPref != "" || !app.RightMenu()[2].Sub[0].Checked {
-		t.Errorf("auto: saved %v pref %q", store.saved, app.opt.LangPref)
+	auto := menuSubByCmd(app.RightMenu(), trayui.CmdLangAuto)
+	if store.saved[1] != "" || app.opt.LangPref != "" || auto == nil || !auto[0].Checked {
+		t.Errorf("auto: saved %v pref %q sub=%+v", store.saved, app.opt.LangPref, auto)
 	}
+}
+
+// menuSubByCmd returns the Sub of the first item that contains cmd (CHK-TRAY-63 order).
+func menuSubByCmd(m []trayui.Item, cmd int) []trayui.Item {
+	for _, it := range m {
+		for _, s := range it.Sub {
+			if s.ID == cmd {
+				return it.Sub
+			}
+		}
+	}
+	return nil
 }

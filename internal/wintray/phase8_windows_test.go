@@ -243,9 +243,16 @@ func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
 	app.opt.Service = fs
 	app.opt.Notify = func(text string, warn bool) { msgs, warns = append(msgs, text), append(warns, warn) }
 	m := app.RightMenu()
-	if m[3].Text != i18n.T(i18n.KeyMenuService, i18n.RU) || !strings.Contains(m[3].Sub[0].Text, i18n.T(i18n.KeySvcStopped, i18n.RU)) ||
-		m[3].Sub[2].Disabled || !m[3].Sub[3].Disabled {
-		t.Fatalf("menu %+v", m[3])
+	var svc *trayui.Item
+	for i := range m {
+		if m[i].Text == i18n.T(i18n.KeyMenuService, i18n.RU) {
+			svc = &m[i]
+			break
+		}
+	}
+	if svc == nil || !strings.Contains(svc.Sub[0].Text, i18n.T(i18n.KeySvcStopped, i18n.RU)) ||
+		svc.Sub[2].Disabled || !svc.Sub[3].Disabled {
+		t.Fatalf("menu svc=%+v all=%+v", svc, m)
 	}
 	app.Command(trayui.CmdSvcStart)
 	pumpUntil(t, "start message", func() bool { return len(msgs) == 1 })

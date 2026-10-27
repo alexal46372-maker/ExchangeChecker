@@ -111,7 +111,8 @@ func TestCHK_TRAY_18_Balloons(t *testing.T) {
 			sw = &m[i]
 		}
 	}
-	if sw == nil || !sw.Checked || sw.Text != "Уведомления о просрочке" || m[len(m)-1].ID != trayui.CmdExit || m[2].Sub == nil {
+	hasLang := menuSubByCmd(m, trayui.CmdLangAuto) != nil
+	if sw == nil || !sw.Checked || sw.Text != "Уведомления о просрочке" || m[len(m)-1].ID != trayui.CmdExit || !hasLang {
 		t.Fatalf("menu %+v", m)
 	}
 	app.Command(trayui.CmdBalloons)

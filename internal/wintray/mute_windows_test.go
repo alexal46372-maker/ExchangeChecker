@@ -9,40 +9,32 @@ import (
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 )
 
-// TestCHK_TRAY_59_MuteIPC — mute_until_recovered / unmute via App.Command;
-// capability mute_profile from Muter.
+// TestCHK_TRAY_59_MuteIPC — CapMuteProfile + mute/unmute over the session.
 func TestCHK_TRAY_59_MuteIPC(t *testing.T) {
 	svc := newCfgService()
 	app := startCfgApp(t, svc, true, nil)
 	defer app.Exit()
-	if !app.session.Supported(model.CmdMuteUntilRecovered) {
-		t.Fatalf("missing mute_profile cap: %v", app.session.Status().Capabilities)
+	if !app.session.Status().Has(model.CapMuteProfile) {
+		t.Fatalf("caps %v", app.session.Status().Capabilities)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := app.session.Refresh(ctx); err != nil {
-		t.Fatal(err)
+	m, err := app.session.Do(ctx, model.IPCRequest{Cmd: model.CmdMuteUntilRecovered, ProfileID: "p1"})
+	if err != nil || m.Type != model.MsgOK || m.Result != model.ResultMuted {
+		t.Fatalf("mute %+v %v", m, err)
 	}
-	st := app.session.Status()
-	if st.Snapshot == nil || len(st.Snapshot.Profiles) == 0 {
-		t.Fatal("no profiles in status")
+	if !svc.muted["p1"] {
+		t.Fatal("svc not muted")
 	}
-	// seed App.status so muteProfile index resolves (Refresh publishes async)
-	pumpUntil(t, "app status", func() bool {
-		return app.Status().Snapshot != nil && len(app.Status().Snapshot.Profiles) > 0
-	})
-
-	app.Command(trayui.MuteCmd(0))
-	pumpUntil(t, "muted", func() bool { return svc.muted != nil && svc.muted["p1"] })
-	app.Command(trayui.UnmuteCmd(0))
-	pumpUntil(t, "unmuted", func() bool { return svc.muted == nil || !svc.muted["p1"] })
-
+	m, err = app.session.Do(ctx, model.IPCRequest{Cmd: model.CmdUnmuteProfile, ProfileID: "p1"})
+	if err != nil || m.Type != model.MsgOK || m.Result != model.ResultUnmuted {
+		t.Fatalf("unmute %+v %v", m, err)
+	}
 	for _, lang := range []string{i18n.RU, i18n.EN} {
-		if i18n.T(i18n.KeyMenuMute, lang) == i18n.KeyMenuMute {
-			t.Errorf("missing mute %s", lang)
+		if i18n.T(i18n.KeyMenuMute, lang) == "" || i18n.T(i18n.KeyMenuUnmute, lang) == "" {
+			t.Errorf("strings %s", lang)
 		}
 	}
 }

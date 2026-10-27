@@ -36,12 +36,15 @@ func TestCHK_TRAY_40_UIFields(t *testing.T) {
 		t.Error("simple must be a subset")
 	}
 	for _, f := range expert {
-		if f.Capability == CapViber {
-			t.Error("viber without capability")
+		if f.Capability == CapViber || f.Capability == CapEmail {
+			t.Error("cap-gated field without capability")
 		}
 	}
 	if n := len(FieldsOf(UIExpert, []string{CapViber})); n != len(expert)+8 {
 		t.Errorf("viber fields %d", n-len(expert))
+	}
+	if n := len(FieldsOf(UIExpert, []string{CapEmail})); n != len(expert)+11 {
+		t.Errorf("email fields %d", n-len(expert))
 	}
 	if NormalizeUIMode("") != UISimple || NormalizeUIMode(" Expert ") != UIExpert || NormalizeUIMode("x") != UISimple {
 		t.Error("mode")

@@ -61,17 +61,55 @@ func keepViberStored(s *model.Settings) *model.Settings {
 	return &c
 }
 
+// stripEmail drops the Email part of the settings (default export /
+// import without includeEmailRecipients).
+func stripEmail(s *model.Settings) *model.Settings {
+	if s == nil {
+		return nil
+	}
+	c := *s
+	c.Email = nil
+	return &c
+}
+
+// keepEmailStored keeps non-secret settings.email (ForExport form: no
+// hasPassword / status) for a file with includeEmailRecipients.
+func keepEmailStored(s *model.Settings) *model.Settings {
+	if s == nil || s.Email == nil {
+		return stripEmail(s)
+	}
+	c := *s
+	e := s.Email.ForExport()
+	c.Email = &e
+	return &c
+}
+
+// applyTransferSecrets keeps or strips Viber/Email recipient blocks.
+func applyTransferSecrets(s *model.Settings, includeViber, includeEmail bool) *model.Settings {
+	if includeViber {
+		s = keepViberStored(s)
+	} else {
+		s = stripViber(s)
+	}
+	if includeEmail {
+		s = keepEmailStored(s)
+	} else {
+		s = stripEmail(s)
+	}
+	return s
+}
+
 // ExportFile is the file of an export_config reply with the tray block.
 // tray nil: no tray block (elevated as another user).
-// includeViber: keep non-secret settings.viber from the service reply
-// (CHK-TRAY-57 / CHK-CFG-07); otherwise strip it and clear
-// containsViberRecipients.
-func ExportFile(exp model.ConfigExport, tray *TrayBlock, includeViber bool) ([]byte, error) {
-	if includeViber {
-		exp.Settings = keepViberStored(exp.Settings)
-	} else {
-		exp.Settings = stripViber(exp.Settings)
+// includeViber / includeEmail: keep non-secret recipient blocks from the
+// service reply (CHK-TRAY-57/64); otherwise strip and clear contains*.
+func ExportFile(exp model.ConfigExport, tray *TrayBlock, includeViber, includeEmail bool) ([]byte, error) {
+	exp.Settings = applyTransferSecrets(exp.Settings, includeViber, includeEmail)
+	if !includeViber {
 		exp.ContainsViberRecipients = false
+	}
+	if !includeEmail {
+		exp.ContainsEmailRecipients = false
 	}
 	exp.Tray = nil
 	if tray != nil {
@@ -138,9 +176,10 @@ func ParseImport(data []byte, lang string) (*ImportFile, error) {
 		}
 	}
 	cfg.Tray = nil
-	// Keep non-secret viber for optional includeViberRecipients on
-	// ImportRequest (CHK-TRAY-57); default ImportRequest still strips.
+	// Keep non-secret viber/email for optional include*Recipients on
+	// ImportRequest (CHK-TRAY-57/64); default ImportRequest still strips.
 	cfg.Settings = keepViberStored(cfg.Settings)
+	cfg.Settings = keepEmailStored(cfg.Settings)
 	f.Config = cfg
 	return f, nil
 }
@@ -232,23 +271,19 @@ func (t *TrayBlock) Summary(lang string) string {
 }
 
 // ImportRequest is the import_config request (dryRun or the real one
-// with the revision of the dry run). includeViber sets
-// includeViberRecipients and keeps settings.viber; otherwise Viber is
-// stripped (service keeps the stored one).
-func ImportRequest(f *ImportFile, mode string, dryRun bool, revision string, includeViber bool) model.IPCRequest {
+// with the revision of the dry run). includeViber / includeEmail set the
+// matching include*Recipients flags and keep the non-secret blocks;
+// otherwise they are stripped (service keeps the stored ones).
+func ImportRequest(f *ImportFile, mode string, dryRun bool, revision string, includeViber, includeEmail bool) model.IPCRequest {
 	cfg := f.Config
-	if includeViber {
-		cfg.Settings = keepViberStored(cfg.Settings)
-	} else {
-		cfg.Settings = stripViber(cfg.Settings)
-	}
+	cfg.Settings = applyTransferSecrets(cfg.Settings, includeViber, includeEmail)
 	return model.IPCRequest{Cmd: model.CmdImportConfig, Config: &cfg, Mode: mode, DryRun: dryRun, ExpectedRevision: revision,
-		IncludeViberRecipients: includeViber}
+		IncludeViberRecipients: includeViber, IncludeEmailRecipients: includeEmail}
 }
 
-// ExportRequest is the export_config request (CHK-TRAY-57).
-func ExportRequest(includeViber bool) model.IPCRequest {
-	return model.IPCRequest{Cmd: model.CmdExportConfig, IncludeViberRecipients: includeViber}
+// ExportRequest is the export_config request (CHK-TRAY-57/64).
+func ExportRequest(includeViber, includeEmail bool) model.IPCRequest {
+	return model.IPCRequest{Cmd: model.CmdExportConfig, IncludeViberRecipients: includeViber, IncludeEmailRecipients: includeEmail}
 }
 
 // Names maps the profile ids of the file and of the editor to names.

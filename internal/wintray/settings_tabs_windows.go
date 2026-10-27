@@ -181,6 +181,9 @@ func (w *settingsWindow) rebuildTabs() {
 	if w.uiMode != traysettings.UISimple && w.viberAvailable() {
 		add(i18n.KeySetNavViber, pageViber)
 	}
+	if w.uiMode != traysettings.UISimple && w.emailAvailable() {
+		add(i18n.KeySetNavEmail, pageEmail)
+	}
 	// if current page vanished (Simple hid Viber), fall back to Databases
 	ok := false
 	for _, p := range w.tabPages {

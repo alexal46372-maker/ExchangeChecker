@@ -34,8 +34,8 @@ var expertOnlyGen = []int32{idGenPoll, idGenWarnFreq, idGenWarnDur, idGenErrFreq
 
 func (w *settingsWindow) applyUIMode() {
 	simple := w.uiMode == traysettings.UISimple
-	// CHK-TRAY-61: General tab stays in Simple; only bounce off Viber.
-	if simple && w.page == pageViber {
+	// CHK-TRAY-61/64: General tab stays in Simple; bounce off Viber/e-mail.
+	if simple && (w.page == pageViber || w.page == pageEmail) {
 		w.setPage(0) // calls applyUIMode again
 		return
 	}

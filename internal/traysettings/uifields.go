@@ -72,6 +72,18 @@ const (
 	FieldViberEvents     Field = "viber.events"
 	FieldViberReminder   Field = "viber.reminderMinutes"
 	FieldViberTest       Field = "viber.test"
+	// Email fields (phase 13a, capability email).
+	FieldEmailPassword   Field = "email.password"
+	FieldEmailHost       Field = "email.host"
+	FieldEmailPort       Field = "email.port"
+	FieldEmailTLSMode    Field = "email.tlsMode"
+	FieldEmailFrom       Field = "email.from"
+	FieldEmailRecipients Field = "email.recipients"
+	FieldEmailDays       Field = "email.schedule.days"
+	FieldEmailSchedFrom  Field = "email.schedule.from"
+	FieldEmailSchedTo    Field = "email.schedule.to"
+	FieldEmailEvents     Field = "email.events"
+	FieldEmailTest       Field = "email.test"
 	FieldBalloons        Field = "tray.balloons"
 	FieldSoundProfiles   Field = "tray.sound"
 	FieldMasterVolume    Field = "tray.masterVolume"
@@ -84,6 +96,9 @@ const (
 
 // CapViber gates the «Уведомления → Viber» section.
 const CapViber = "viber"
+
+// CapEmail gates the «Уведомления e-mail» section (CHK-TRAY-64).
+const CapEmail = "email"
 
 // UIFields is the inventory of every field (a test checks each one is on
 // a page of its mode).
@@ -133,6 +148,17 @@ var UIFields = []UIField{
 	{ID: FieldViberEvents, Section: SecNotifications, Capability: CapViber, HasDefault: true},
 	{ID: FieldViberReminder, Section: SecNotifications, Capability: CapViber, HasDefault: true}, // hint: STATIC idVbReminderHint (CHK-TRAY-50 note)
 	{ID: FieldViberTest, Section: SecNotifications, Capability: CapViber},
+	{ID: FieldEmailHost, Section: SecNotifications, Capability: CapEmail, Cue: i18n.KeyCueEmHost},
+	{ID: FieldEmailPort, Section: SecNotifications, Capability: CapEmail, HasDefault: true, Cue: i18n.KeyCueEmPort},
+	{ID: FieldEmailTLSMode, Section: SecNotifications, Capability: CapEmail, HasDefault: true},
+	{ID: FieldEmailFrom, Section: SecNotifications, Capability: CapEmail, Cue: i18n.KeyCueEmFrom},
+	{ID: FieldEmailPassword, Section: SecNotifications, Capability: CapEmail, Cue: i18n.KeyCueEmPassword},
+	{ID: FieldEmailRecipients, Section: SecNotifications, Capability: CapEmail},
+	{ID: FieldEmailDays, Section: SecNotifications, Capability: CapEmail, HasDefault: true},
+	{ID: FieldEmailSchedFrom, Section: SecNotifications, Capability: CapEmail, HasDefault: true},
+	{ID: FieldEmailSchedTo, Section: SecNotifications, Capability: CapEmail, HasDefault: true},
+	{ID: FieldEmailEvents, Section: SecNotifications, Capability: CapEmail, HasDefault: true},
+	{ID: FieldEmailTest, Section: SecNotifications, Capability: CapEmail},
 	{ID: FieldHistoryWindow, Section: SecHistory},
 	{ID: FieldLanguage, Section: SecService, Simple: true, HasDefault: true},
 	{ID: FieldAutostart, Section: SecService, Simple: true, HasDefault: true},

@@ -199,6 +199,9 @@ type settingsWindow struct {
 	// running viber_test (phase 10 D4)
 	vbTestIDs []string
 	vbTesting *model.IPCRequest
+	// emTestIDs / emTesting: email_test (CHK-TRAY-64)
+	emTestIDs []string
+	emTesting *model.IPCRequest
 	// phase 10 E: the scrolled page host, the px rectangles of its
 	// controls (unscrolled), the view / content sizes, the bar buttons
 	host                           uintptr
@@ -246,12 +249,12 @@ type settingsWindow struct {
 	// statusRefreshes / statusRefreshed: get_status re-reads started /
 	// done after save_settings (test hook)
 	statusRefreshes, statusRefreshed int
-	page                             int          // 0 = databases, 1 = general settings, 2 = Viber
-	pageCtl                          [3][]uintptr // profiles, «Общие», «Viber» (phase 10 D4)
-	pagePanel                        [3]uintptr   // one child HWND per tab (SW_HIDE hides tree)
+	page                             int          // 0 = databases, 1 = general, 2 = Viber, 3 = e-mail
+	pageCtl                          [4][]uintptr // profiles, «Общие», «Viber», «e-mail»
+	pagePanel                        [4]uintptr   // one child HWND per tab (SW_HIDE hides tree)
 	pageParent                       uintptr      // CreateWindow parent while building a page
 	pageSlot                         winapi.RECT  // shared Gap:-1 slot (host coords) for panels
-	pages                            [3]ui.Node   // page roots for SetHidden on switch (no overlay)
+	pages                            [4]ui.Node   // page roots for SetHidden on switch (no overlay)
 	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs
 	tabPages                         []int        // tab index → page index
 	tabSync                          bool         // ignore TCN_SELCHANGE while syncing
@@ -699,15 +702,18 @@ func (w *settingsWindow) build() {
 	w.inBar = false
 	w.pageParent = w.pagePanel[pageViber]
 	viberPage := w.buildViber()
+	w.pageParent = w.pagePanel[pageEmail]
+	emailPage := w.buildEmail()
 	w.pageParent = 0
 	// page roots: setPage hides inactive ones via ui.SetHidden (wizard pattern)
-	w.pages = [3]ui.Node{profilePage, generalPage, viberPage}
+	w.pages = [4]ui.Node{profilePage, generalPage, viberPage, emailPage}
 	// cues from traysettings.UIFields (phase 11, CHK-TRAY-50/51): before
 	// the layout so boxes are at least as wide as their cues; Viber
 	// reminder keeps the STATIC hint only (no duplicate cue banner)
 	w.applyFieldCues()
+	w.fillEmailTLSCombo()
 	w.rebuildTabs()
-	w.layoutPages(m, []ui.Node{profilePage, generalPage, viberPage})
+	w.layoutPages(m, []ui.Node{profilePage, generalPage, viberPage, emailPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
@@ -795,6 +801,9 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 
 func (w *settingsWindow) command(id int32, code uint32) {
 	if w.viberCommand(id, code) {
+		return
+	}
+	if w.emailCommand(id, code) {
 		return
 	}
 	if w.soundCommand(id) {
@@ -1000,6 +1009,7 @@ func (w *settingsWindow) fill() {
 	w.fillGeneral()
 	w.loadSoundSection()
 	w.fillViber()
+	w.fillEmail()
 	w.update()
 }
 
@@ -1090,6 +1100,9 @@ func (w *settingsWindow) update() {
 		if w.page == pageViber {
 			canSave = ed.CanEditViber()
 		}
+		if w.page == pageEmail {
+			canSave = ed.CanEditEmail()
+		}
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		if h := w.ctl[idSetClone]; h != 0 {
@@ -1112,6 +1125,7 @@ func (w *settingsWindow) update() {
 		winapi.SetWindowText(w.ctl[idSetStatus], st)
 	}
 	w.updateViber()
+	w.updateEmail()
 	w.updateRequired()
 }
 
@@ -1182,6 +1196,9 @@ func (w *settingsWindow) focus(f traysettings.Field) {
 	if traysettings.IsViber(f) {
 		page = pageViber
 	}
+	if traysettings.IsEmail(f) {
+		page = pageEmail
+	}
 	if page != w.page {
 		w.setPage(page)
 	}
@@ -1227,11 +1244,11 @@ func (w *settingsWindow) profileDiscardOK() bool {
 	return w.ask(w.t(i18n.KeySetDiscardConfirm))
 }
 
-// setPage shows the databases (0), general settings (1), or Viber (2) page.
+// setPage shows databases (0), general (1), Viber (2), or e-mail (3).
 // Inactive tabs are SW_HIDE'd via their pagePanel HWND (entire child tree
 // disappears) — hide-by-HWND-list was not enough on live Win7 (ghosts).
 func (w *settingsWindow) setPage(p int) {
-	if p < 0 || p > pageViber {
+	if p < 0 || p > pageEmail {
 		return
 	}
 	w.page = p
@@ -1396,6 +1413,10 @@ func (w *settingsWindow) save() {
 	}
 	if w.page == pageViber {
 		w.saveViber()
+		return
+	}
+	if w.page == pageEmail {
+		w.saveEmail()
 		return
 	}
 	if w.busy {

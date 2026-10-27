@@ -319,6 +319,9 @@ func FocusProfileField(path string, params []string) Field {
 // the control to focus (FieldNone when the form has no such control;
 // mapping fields focus «Таблицы обмена…», FieldDiscoverButton).
 func FocusField(path string, params []string) Field {
+	if f, ok := EmailFocus(path); ok {
+		return f
+	}
 	if f, ok := ViberFocus(path); ok {
 		return f
 	}

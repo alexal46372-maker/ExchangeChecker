@@ -950,6 +950,9 @@ Wizard Win32 (страницы):
 
 ---
 
+
+202. **Страница «Уведомления e-mail» (фаза 13a, `CHK-TRAY-64`, контракт feat/svc-email):** вкладка только при capability `email` и экспертном режиме (простой скрывает, как Viber). Поля: enabled, host, port, tlsMode (none/starttls/tls), from, recipients[{id,addr,name}], events, schedule, hasPassword (read-only). Сохранение — save_settings + smtpPassword/clearSmtpPassword (write-only). **tlsMode UI:** none → поле пароля выключено (AUTH нет); starttls/tls → пароль обязателен при enabled; AUTH username = From. «Тест» — email_test {recipientId?, addr?} async. Экспорт/импорт — includeEmailRecipients / containsEmailRecipients без пароля. Свой pagePanel. Tests: `TestCHK_TRAY_64_*`.
+
 ## 14. Что не делаем в v1
 
 - Веб-морда, Electron, WPF, tray на сторонних UI-kit

@@ -19,7 +19,7 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 	exp := model.ConfigExport{Format: model.ConfigFormatV1, ContainsLogins: true,
 		Settings: &model.Settings{Viber: &model.ViberSettings{}},
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад"}}}
-	b, err := ExportFile(exp, &TrayBlock{Language: "en", Balloons: true, Sound: &snd, UIMode: UIExpert, Theme: "dark"}, false)
+	b, err := ExportFile(exp, &TrayBlock{Language: "en", Balloons: true, Sound: &snd, UIMode: UIExpert, Theme: "dark"}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +44,11 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 	if err != nil || f2.Config.Settings == nil || f2.Config.Settings.Viber == nil || !f2.Config.Settings.Viber.Enabled {
 		t.Fatalf("parse keeps viber: %v %+v", err, f2)
 	}
-	req := ImportRequest(f2, model.ImportMerge, true, "", false)
+	req := ImportRequest(f2, model.ImportMerge, true, "", false, false)
 	if req.IncludeViberRecipients || req.Config.Settings == nil || req.Config.Settings.Viber != nil {
 		t.Fatalf("ImportRequest without flag must strip viber: %+v", req)
 	}
-	req2 := ImportRequest(f2, model.ImportMerge, true, "", true)
+	req2 := ImportRequest(f2, model.ImportMerge, true, "", true, false)
 	if !req2.IncludeViberRecipients || req2.Config.Settings.Viber == nil || req2.Config.Settings.Viber.HasToken {
 		t.Fatalf("ImportRequest with flag: %+v", req2)
 	}
@@ -129,7 +129,7 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 	exp := model.ConfigExport{Format: model.ConfigFormatV1, ContainsViberRecipients: true,
 		Settings: &model.Settings{Viber: &model.ViberSettings{Enabled: true, HasToken: true,
 			Recipients: []model.ViberRecipient{{ID: "u1", Name: "Ann"}}, Status: &model.ViberStatus{}}}}
-	b, err := ExportFile(exp, &TrayBlock{Language: "ru", Balloons: true, Sound: &snd, UIMode: UISimple, Theme: "dark"}, true)
+	b, err := ExportFile(exp, &TrayBlock{Language: "ru", Balloons: true, Sound: &snd, UIMode: UISimple, Theme: "dark"}, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,16 +137,16 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 	if !strings.Contains(s, `"recipients"`) || !strings.Contains(s, `"theme": "dark"`) || strings.Contains(s, `"hasToken": true`) {
 		t.Fatalf("export with viber: %s", b)
 	}
-	b0, err := ExportFile(exp, &TrayBlock{Language: "en"}, false)
+	b0, err := ExportFile(exp, &TrayBlock{Language: "en"}, false, false)
 	if err != nil || strings.Contains(string(b0), `"viber"`) || strings.Contains(string(b0), `"containsViberRecipients": true`) {
 		t.Fatalf("export without flag: %s / %v", b0, err)
 	}
-	er := ExportRequest(true)
+	er := ExportRequest(true, false)
 	raw, _ := json.Marshal(er)
 	if !strings.Contains(string(raw), `"includeViberRecipients":true`) || er.Cmd != model.CmdExportConfig {
 		t.Fatalf("ExportRequest: %s", raw)
 	}
-	er0 := ExportRequest(false)
+	er0 := ExportRequest(false, false)
 	raw0, _ := json.Marshal(er0)
 	if strings.Contains(string(raw0), "includeViberRecipients") {
 		t.Fatalf("omit empty: %s", raw0)
@@ -155,7 +155,7 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 	if err != nil || f.Tray == nil || f.Tray.Theme != "dark" {
 		t.Fatalf("parse theme: %v %+v", err, f)
 	}
-	ir := ImportRequest(f, model.ImportMerge, false, "r1", true)
+	ir := ImportRequest(f, model.ImportMerge, false, "r1", true, false)
 	raw, _ = json.Marshal(ir)
 	if !strings.Contains(string(raw), `"includeViberRecipients":true`) || ir.Config.Settings.Viber == nil {
 		t.Fatalf("ImportRequest: %s", raw)

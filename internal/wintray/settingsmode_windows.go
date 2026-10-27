@@ -28,9 +28,14 @@ func requiredBk() uint32 { return trayui.ChromeRequired() }
 // UIMode is the window mode (test hook).
 func (w *settingsWindow) UIMode() traysettings.UIMode { return w.uiMode }
 
+// expertOnlyGen are General-tab controls hidden in «Простой» (UIFields
+// Simple=false). Language / Autostart / note stay as basic General items.
+var expertOnlyGen = []int32{idGenPoll, idGenWarnFreq, idGenWarnDur, idGenErrFreq, idGenErrDur, idGenGap, idGenStalled}
+
 func (w *settingsWindow) applyUIMode() {
 	simple := w.uiMode == traysettings.UISimple
-	if simple && w.page != 0 {
+	// CHK-TRAY-61: General tab stays in Simple; only bounce off Viber.
+	if simple && w.page == pageViber {
 		w.setPage(0) // calls applyUIMode again
 		return
 	}
@@ -71,7 +76,23 @@ func (w *settingsWindow) applyUIMode() {
 	if w.tips != nil {
 		w.tips.set(w.ctl[idSetUIMode], w.t(i18n.KeyTipSetUIMode))
 	}
-	// tabs: hide General (+ Viber via capability) in Simple
+	// General expert fields (poll / alarm tones / stalled) — hide in Simple
+	for _, id := range expertOnlyGen {
+		on := !simple && w.page == 1
+		if h := w.ctl[id]; h != 0 {
+			w.show(h, on)
+			if !on {
+				hideWindowTree(h)
+			}
+		}
+		if h := w.labels[id]; h != 0 {
+			w.show(h, on)
+			if !on {
+				hideWindowTree(h)
+			}
+		}
+	}
+	// tabs: General always; Viber expert-only (CHK-TRAY-61)
 	w.rebuildTabs()
 	w.hideInactiveTabControls()
 	w.relayoutAll() // Hidden controls take no room (no holes)
@@ -91,6 +112,14 @@ func (w *settingsWindow) applyUIMode() {
 		}
 		if g := w.groups[i18n.KeySetGroupTLS]; g != 0 {
 			hideWindowTree(g)
+		}
+		for _, id := range expertOnlyGen {
+			if h := w.ctl[id]; h != 0 {
+				hideWindowTree(h)
+			}
+			if h := w.labels[id]; h != 0 {
+				hideWindowTree(h)
+			}
 		}
 	}
 }

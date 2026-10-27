@@ -76,10 +76,16 @@ func TestCHK_TRAY_41_SettingsModes(t *testing.T) {
 	if w.Missing()[idSetLogin] {
 		t.Error("windows auth needs no login")
 	}
-	// the general page is expert only
+	// CHK-TRAY-61: General stays visible in Simple (do not bounce off it)
 	w.click(t, idSetPage)
+	if w.page != 1 {
+		t.Fatalf("want General page, got %d", w.page)
+	}
 	w.click(t, idSetUIMode)
-	if w.page != 0 || w.UIMode() != traysettings.UISimple {
-		t.Error("simple mode returns to the profiles page")
+	if w.page != 1 || w.UIMode() != traysettings.UISimple {
+		t.Errorf("simple mode must keep General tab active, page=%d mode=%v", w.page, w.UIMode())
+	}
+	if winapi.TabItemCount(w.ctl[idSetTabs]) < 2 || w.tabPageAt(1) != 1 {
+		t.Errorf("simple mode must keep General tab, pages=%v", w.tabPages)
 	}
 }

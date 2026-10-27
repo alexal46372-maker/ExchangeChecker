@@ -12,8 +12,8 @@ import (
 )
 
 // TestCHK_TRAY_47_Navigation — section tabs (SysTabControl32): Databases /
-// General / Viber; Simple/Expert is a separate mode button; in Simple the
-// General (+ Viber) tabs are absent; current tab tracks setPage.
+// General / Viber; Simple/Expert is a window-common footer button; in Simple
+// General stays (CHK-TRAY-61), Viber is absent; current tab tracks setPage.
 func TestCHK_TRAY_47_Navigation(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -49,17 +49,22 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 		if w.page != 0 || winapi.GetWindowRect(w.ctl[idSetTest]).Left != barLeft() {
 			t.Errorf("%s: back to the databases page", lang)
 		}
-		w.toggleUIMode() // Simple: only Databases tab
+		w.toggleUIMode() // Simple: Databases + General; Viber expert-only
 		nTabs := winapi.TabItemCount(w.ctl[idSetTabs])
-		if nTabs != 1 || len(w.tabPages) != 1 || w.tabPageAt(0) != 0 {
-			t.Errorf("%s: simple mode must keep only Databases tab, got win=%d pages=%v", lang, nTabs, w.tabPages)
+		if nTabs < 2 || len(w.tabPages) < 2 || w.tabPageAt(0) != 0 || w.tabPageAt(1) != 1 {
+			t.Errorf("%s: simple mode must keep Databases+General, got win=%d pages=%v", lang, nTabs, w.tabPages)
+		}
+		for _, p := range w.tabPages {
+			if p == pageViber {
+				t.Errorf("%s: Viber tab must be hidden in Simple", lang)
+			}
 		}
 		if !visible(w.ctl[idSetUIMode]) {
-			t.Errorf("%s: mode button must stay", lang)
+			t.Errorf("%s: mode button must stay (window-common)", lang)
 		}
 		w.toggleUIMode()
-		if winapi.TabItemCount(w.ctl[idSetTabs]) < 2 {
-			t.Errorf("%s: expert tabs not restored", lang)
+		if winapi.TabItemCount(w.ctl[idSetTabs]) < 3 {
+			t.Errorf("%s: expert tabs not restored (want Databases+General+Viber)", lang)
 		}
 		w.close()
 		app.Exit()
@@ -177,13 +182,22 @@ func TestCHK_TRAY_47_PageClear(t *testing.T) {
 					if !visible(w.ctl[idSetHost]) || visible(w.ctl[idGenPoll]) || visible(w.ctl[idVbToken]) {
 						t.Fatalf("databases not exclusive after %d→%d", a, b)
 					}
+					if !visible(w.ctl[idSetList]) || !visible(w.ctl[idSetAdd]) {
+						t.Fatalf("bases chrome missing on Databases after %d→%d", a, b)
+					}
 				case 1:
 					if !visible(w.ctl[idGenPoll]) || visible(w.ctl[idSetHost]) || visible(w.ctl[idVbToken]) {
 						t.Fatalf("general not exclusive after %d→%d", a, b)
 					}
+					if why := assertBasesChromeHidden(w); why != "" {
+						t.Fatalf("general after %d→%d: %s", a, b, why)
+					}
 				case pageViber:
 					if !visible(w.ctl[idVbToken]) || visible(w.ctl[idSetHost]) || visible(w.ctl[idGenPoll]) {
 						t.Fatalf("viber not exclusive after %d→%d", a, b)
+					}
+					if why := assertBasesChromeHidden(w); why != "" {
+						t.Fatalf("viber after %d→%d: %s", a, b, why)
 					}
 				}
 			}
@@ -251,7 +265,6 @@ func assertHostChildrenClear(w *settingsWindow) string {
 	return ""
 }
 
-
 // assertSamePageNoOverlap checks visible direct children of the active
 // pagePanel do not GetWindowRect-overlap (Conn «Подключение» vs Login
 // «Вход» on Bases — Alex photo A residual after panel-per-tab). Group
@@ -317,6 +330,21 @@ func assertSamePageNoOverlap(w *settingsWindow) string {
 		}
 		if haveConn && haveLogin && loginTop < connBottom {
 			return "overlap: Login group Y starts inside Conn group"
+		}
+	}
+	return ""
+}
+
+// assertBasesChromeHidden — CHK-TRAY-60: profile list + Add/Delete/Clone/Discover
+// must not be visible when the active page is not Databases (SW_HIDE / panel).
+func assertBasesChromeHidden(w *settingsWindow) string {
+	for _, id := range []int32{idSetList, idSetAdd, idSetDelete, idSetClone, idSetDiscover} {
+		h := w.ctl[id]
+		if h == 0 {
+			continue
+		}
+		if winapi.IsWindowVisible(h) || winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
+			return "bases chrome HWND still visible off Databases tab"
 		}
 	}
 	return ""

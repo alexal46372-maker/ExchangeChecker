@@ -283,13 +283,12 @@ type barButton struct {
 	width int32
 }
 
-// layoutPages lays out the page host: section tabs on top, then the
-// left column (mode + profile list) and the page stack. Pages share one
-// slot (Col Gap:-1 → gapOr 0, same origin — NOT a paint stack). Each
-// page's HWNDs live under pagePanel[i]; SW_HIDE(panel) is what stops
-// ghosts (Conchita @400d1ae).
-func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Node) {
-	body := &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, &ui.Col{Gap: -1, Items: pages}}}
+// layoutPages lays out the page host: SysTabControl32 on top, then the
+// page stack only (CHK-TRAY-60). Bases chrome (list/Add/…) lives inside
+// pagePanel[0]; Export/Import/UIMode are window-common bar buttons
+// (CHK-TRAY-61). Pages share one slot (Col Gap:-1). SW_HIDE(panel) stops ghosts.
+func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
+	body := &ui.Pad{Top: 6, Child: &ui.Col{Gap: -1, Items: pages}}
 	var child ui.Node = body
 	if w.tabCtl != nil {
 		child = &ui.Col{Gap: ui.P4, Items: []ui.Node{w.tabCtl, body}}
@@ -387,7 +386,7 @@ func (w *settingsWindow) relayoutAll() {
 	}
 }
 
-// placeCtl moves a laid out control. Host children (tabs, left chrome)
+// placeCtl moves a laid out control. Host children (tabs)
 // use host coordinates and hostRect scrolling. Controls under a
 // pagePanel are positioned in panel-local coords by syncPagePanels
 // (panel HWND scrolls as one unit — Conchita child-panel architecture).

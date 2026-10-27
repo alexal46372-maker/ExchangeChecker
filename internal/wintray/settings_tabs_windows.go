@@ -9,8 +9,8 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
-// Settings section tabs: SysTabControl32 for the three pages (Databases /
-// General / Viber). Simple/Expert stays a separate button (not a tab).
+// Settings section tabs: SysTabControl32 (Databases / General / Viber).
+// Simple/Expert is a window-common footer button (CHK-TRAY-61), not a tab.
 
 const (
 	wcTabControl = winapi.WC_TABCONTROL
@@ -158,9 +158,9 @@ func (w *settingsWindow) pageOfHWND(h uintptr) int {
 	return -1
 }
 
-// rebuildTabs fills SysTabControl32: Databases always; General in Expert;
-// Viber in Expert when the capability is available (same rules as the
-// former nav buttons / updateViber).
+// rebuildTabs fills SysTabControl32 (CHK-TRAY-61): Databases always;
+// General ALWAYS (also in Simple — do not remove the tab); Viber is
+// expert-only when the capability is available.
 func (w *settingsWindow) rebuildTabs() {
 	h := w.ctl[idSetTabs]
 	if h == 0 {
@@ -177,13 +177,11 @@ func (w *settingsWindow) rebuildTabs() {
 		w.tabPages = append(w.tabPages, page)
 	}
 	add(i18n.KeySetNavProfiles, 0)
-	if w.uiMode != traysettings.UISimple {
-		add(i18n.KeySetNavGeneral, 1)
-		if w.viberAvailable() {
-			add(i18n.KeySetNavViber, pageViber)
-		}
+	add(i18n.KeySetNavGeneral, 1)
+	if w.uiMode != traysettings.UISimple && w.viberAvailable() {
+		add(i18n.KeySetNavViber, pageViber)
 	}
-	// if current page vanished (Simple / no Viber), fall back to Databases
+	// if current page vanished (Simple hid Viber), fall back to Databases
 	ok := false
 	for _, p := range w.tabPages {
 		if p == w.page {

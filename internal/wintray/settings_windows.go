@@ -15,7 +15,6 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
@@ -84,13 +83,13 @@ const (
 	idSetError
 	idSetConnTO
 	idSetQueryTO
-	idSetStalled // profile stalledMinutes (CHK-TRAY-53)
+	idSetStalled   // profile stalledMinutes (CHK-TRAY-53)
 	idSetAlarmTest // «Тест тревоги…» (CHK-TRAY-53)
-	idSetUIMode // «Экспертный режим» / «Простой режим» (phase 10 D)
-	idSetTabs  // SysTabControl32: Databases / General / Viber
-	idSetExport // «Экспорт…» (phase 10 E, administrator)
-	idSetImport // «Импорт…»
-	idSetClose  = winapi.IDCANCEL
+	idSetUIMode    // «Экспертный режим» / «Простой режим» (phase 10 D)
+	idSetTabs      // SysTabControl32: Databases / General / Viber
+	idSetExport    // «Экспорт…» (phase 10 E, administrator)
+	idSetImport    // «Импорт…»
+	idSetClose     = winapi.IDCANCEL
 )
 
 // Elevator starts the elevated settings process («Изменить
@@ -465,11 +464,10 @@ func genText(g *traysettings.GeneralForm, id int32) *string {
 }
 
 func (w *settingsWindow) build() {
-	// phase 11 (CHK-TRAY-45): the controls are created in the old order
-	// (tab order) at 0,0; the framework lays the pages out (labels
-	// measured, group boxes as wide as their content, the three pages
-	// sharing one area right of the profile list) and layoutFit pins the
-	// bar to the bottom.
+	// phase 11 (CHK-TRAY-45) + 13a (CHK-TRAY-60/61): controls at 0,0; the
+	// framework lays pages out. Bases list/actions live inside pagePanel[0];
+	// Export/Import/UIMode are window-common bar buttons; layoutFit pins
+	// the bar to the bottom.
 	edit := uint32(winapi.WS_TABSTOP | winapi.ES_AUTOHSCROLL)
 	add := func(class, text string, ex, style uint32, id int32, kind ui.Kind, wd, hg int32) *ui.Ctl {
 		c := uiCtl(w.add(class, text, ex, style, id, 0, 0, 0, 0), kind, text)
@@ -509,43 +507,32 @@ func (w *settingsWindow) build() {
 		return &ui.GroupBox{Box: g, Child: child}
 	}
 	const cw = 390 // edit / combo boxes
-	// Section tabs (SysTabControl32) replace the left push-like nav buttons
-	// (Alex: live Win still overlapped with buttons; tabs + hard-hide).
+	// Section tabs (SysTabControl32) on top; page host under tabs is
+	// panel-per-tab only (CHK-TRAY-60). Window-common Export/Import/UIMode
+	// live in the bottom bar (CHK-TRAY-61).
 	w.cur = nil
 	winapi.InitTooltips() // ICC_WIN95_CLASSES registers SysTabControl32
 	tabH := w.add(wcTabControl, "", 0, winapi.WS_TABSTOP|tcsHotTrack, idSetTabs, 0, 0, 600, 28)
 	w.tabCtl = &ui.Ctl{H: tabH, Kind: ui.Box, W: 600, Hgt: 28, Grow: true, NoShrink: true}
-	// mode switch kept as a button with icon (not a page tab)
-	navRow := func(b *ui.Ctl, ico string) ui.Node {
-		h := w.add("STATIC", "", 0, winapi.SS_ICON|winapi.SS_CENTERIMAGE, 0, 0, 0, 0, 0)
-		winapi.SendMessage(h, winapi.STM_SETICON, uiIcons.ico(ico, px(icoSmall)), 0)
-		ic := &ui.Ctl{H: h, Kind: ui.Box, W: icoSmall, Hgt: icoSmall}
-		w.navIco = append(w.navIco, [2]*ui.Ctl{b, ic})
-		return &ui.Row{Gap: ui.P4, Align: ui.Center, Items: []ui.Node{ic, b}}
-	}
-	mode := navRow(add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 185, 0), trayui.IcoNavMode)
-	winapi.SetWindowText(w.ctl[idSetUIMode], "") // applyUIMode names it
 	w.ensurePagePanels()
-	// left column (mode already created): stays a host child, visible on every tab
-	w.cur = nil
+
+	// Bases tab ONLY: profile list + Add / Delete / Clone / Discover (CHK-TRAY-60)
+	w.pageParent = w.pagePanel[0]
+	w.cur = &w.pageCtl[0]
 	list := add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idSetList, ui.Box, 205, 250)
-	// phase 11 (CHK-TRAY-48): the list as wide as the navigation column
 	list.Grow, list.NoShrink = true, true
-	left := []ui.Node{mode, label(w.t(i18n.KeySetProfiles), 0), list,
+	basesLeft := []ui.Node{label(w.t(i18n.KeySetProfiles), 0), list,
 		&ui.Col{Gap: ui.P4, Items: []ui.Node{
 			&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
 				add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}},
 			add("BUTTON", w.t(i18n.KeySetClone), 0, winapi.WS_TABSTOP, idSetClone, ui.Button, 205, 0),
 		}}}
-	var xfer ui.Node
 	if w.cfg.mode == traysettings.Admin {
-		left = append(left, add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, ui.Button, 205, 0))
-		xfer = &ui.Row{Items: []ui.Node{add("BUTTON", w.t(i18n.KeyXferExport), 0, winapi.WS_TABSTOP, idSetExport, ui.Button, 100, 0),
-			add("BUTTON", w.t(i18n.KeyXferImport), 0, winapi.WS_TABSTOP, idSetImport, ui.Button, 100, 0)}}
+		basesLeft = append(basesLeft, add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, ui.Button, 205, 0))
 	}
-	// profile page: children of pagePanel[0] (one HWND per tab — Conchita)
-	w.pageParent = w.pagePanel[0]
-	w.cur = &w.pageCtl[0]
+	basesChrome := &ui.Col{Gap: ui.P8 - 2, Items: basesLeft}
+
+	// profile form: children of pagePanel[0] (one HWND per tab — Conchita)
 	// four group boxes (phase 10 D3); phase 11 (CHK-TRAY-47): one field
 	// column (ui.Share), «Порт» on its own row, TLS in one row, hints/info
 	// under the groups, full width (the text wraps)
@@ -609,9 +596,10 @@ func (w *settingsWindow) build() {
 	pwHint.Grow = true
 	// phase 11: the wrapped text boxes are as high as their text
 	w.wrap = []*ui.Ctl{hints, info, pwHint}
-	profilePage := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
+	profileForm := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
+	profilePage := &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: basesChrome}, profileForm}}
 
-	// general settings page — children of pagePanel[1]
+	// general settings page — children of pagePanel[1]; Theme removed (CHK-TRAY-61 → tray menu in 63)
 	w.pageParent = w.pagePanel[1]
 	w.cur = &w.pageCtl[1]
 	gBox := add("BUTTON", w.t(i18n.KeySetGroupGeneral), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
@@ -628,7 +616,6 @@ func (w *settingsWindow) build() {
 		gRows = append(gRows, field(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, gw))
 	}
 	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
-	gRows = append(gRows, field(w.t(i18n.KeyGenTheme), idGenTheme, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Box, 260, 34)
 	// a wrapped check box: the page width, not its one-line text (phase 11)
 	auto.Grow, auto.NoShrink = true, true
@@ -643,7 +630,8 @@ func (w *settingsWindow) build() {
 	w.pageParent = 0
 	w.cur = nil
 
-	// the bar: children of the window, pinned to the bottom (layoutFit)
+	// the bar: children of the window, pinned to the bottom (layoutFit).
+	// Export/Import + Simple/Expert are window-common (CHK-TRAY-61).
 	w.inBar = true
 	w.add("EDIT", "", winapi.WS_EX_CLIENTEDGE, winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL|winapi.WS_VSCROLL,
 		idSetStatus, 12, 628, 743, 40)
@@ -665,9 +653,19 @@ func (w *settingsWindow) build() {
 	button(idSetPoll, i18n.KeySetPoll, 110, false)
 	w.cur = nil
 	button(idSetReload, i18n.KeySetReload, 90, false)
+	if w.cfg.mode == traysettings.Admin {
+		button(idSetExport, i18n.KeyXferExport, 100, false)
+		button(idSetImport, i18n.KeyXferImport, 100, false)
+	}
 	if w.cfg.mode == traysettings.ReadOnly {
 		button(idSetElevate, i18n.KeySetElevate, 165, false)
 	}
+	// Simple/Expert — window-common footer (near Save/Close)
+	modeLabel := longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple))
+	w.add("BUTTON", modeLabel, 0, winapi.WS_TABSTOP, idSetUIMode, 12, 674, 185, gridButtonH)
+	modeW, _ := ui.Layout(&ui.Ctl{Kind: ui.Button, Text: modeLabel, W: 185}, m, 0, 0, 0)
+	w.barRight = append(w.barRight, barButton{idSetUIMode, max32(185, unpx(modeW))})
+	winapi.SetWindowText(w.ctl[idSetUIMode], "") // applyUIMode names it
 	if w.cfg.mode == traysettings.Admin {
 		button(idSetSave, i18n.KeySetSave, 90, true)
 	}
@@ -676,9 +674,6 @@ func (w *settingsWindow) build() {
 	w.pageParent = w.pagePanel[pageViber]
 	viberPage := w.buildViber()
 	w.pageParent = 0
-	if xfer != nil {
-		left = append(left, xfer)
-	}
 	// page roots: setPage hides inactive ones via ui.SetHidden (wizard pattern)
 	w.pages = [3]ui.Node{profilePage, generalPage, viberPage}
 	// cues from traysettings.UIFields (phase 11, CHK-TRAY-50/51): before
@@ -686,8 +681,7 @@ func (w *settingsWindow) build() {
 	// reminder keeps the STATIC hint only (no duplicate cue banner)
 	w.applyFieldCues()
 	w.rebuildTabs()
-	w.layoutPages(m, &ui.Col{Gap: ui.P8 - 2, Items: left},
-		[]ui.Node{profilePage, generalPage, viberPage})
+	w.layoutPages(m, []ui.Node{profilePage, generalPage, viberPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
@@ -706,10 +700,7 @@ func (w *settingsWindow) build() {
 	for _, k := range []string{i18n.KeyGenLangAuto, i18n.KeyGenLangRU, i18n.KeyGenLangEN} {
 		winapi.SendMessageString(w.ctl[idGenLang], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
-	for _, k := range []string{i18n.KeyGenThemeLight, i18n.KeyGenThemeDark} {
-		winapi.SendMessageString(w.ctl[idGenTheme], winapi.CB_ADDSTRING, 0, w.t(k))
-	}
-	w.syncThemeCombo()
+	// Theme combo removed from General (CHK-TRAY-61); tray menu in CHK-TRAY-63.
 	for _, h := range w.pageCtl[1] {
 		w.show(h, false)
 	}
@@ -793,10 +784,6 @@ func (w *settingsWindow) command(id int32, code uint32) {
 	case idGenLang:
 		if code == winapi.CBN_SELCHANGE && !w.loading {
 			w.readGeneral()
-		}
-	case idGenTheme:
-		if code == winapi.CBN_SELCHANGE && !w.loading {
-			w.applyThemeChoice()
 		}
 	case idGenBeep, idGenAutostart:
 		if code == winapi.BN_CLICKED && !w.loading {
@@ -1147,12 +1134,12 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldEnabled:      idSetEnabled,
 	traysettings.FieldPollInterval: idGenPoll, traysettings.FieldWarnMinutes: idGenWarn, traysettings.FieldErrorMinutes: idGenError,
 	traysettings.FieldStalledMinutes: idGenStalled,
-	traysettings.FieldBeepEnabled: idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
+	traysettings.FieldBeepEnabled:    idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
 	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
 	traysettings.FieldLanguage: idGenLang, traysettings.FieldAutostart: idGenAutostart,
 	traysettings.FieldDiscoverButton: idSetDiscover, // mapping.* / mappings[i].*
 	traysettings.FieldPreset:         idSetPreset, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
-	traysettings.FieldProfStalled:    idSetStalled,
+	traysettings.FieldProfStalled: idSetStalled,
 	traysettings.FieldConnTimeout: idSetConnTO, traysettings.FieldQueryTimeout: idSetQueryTO,
 }
 

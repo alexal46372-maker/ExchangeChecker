@@ -13,7 +13,7 @@ import (
 // stored one; with includeViberRecipients true the non-secret viber
 // fields are transferred (recipients [{id,name}], enabled, schedule,
 // events, reminderMinutes) — never token / hasToken / status /
-// viber.dpapi. Root flag containsViberRecipients marks whether the file
+// viber.dpapi / email.dpapi. Root flags containsViberRecipients / containsEmailRecipients marks whether the file
 // carries recipients. The "tray" block belongs to EC Tray: the service
 // does not store it (accepted and ignored by import_config, never
 // exported).
@@ -31,6 +31,8 @@ const (
 	// CapExportViberRecipients: export_config / import_config accept
 	// includeViberRecipients (phase 12, CHK-IPC-14).
 	CapExportViberRecipients = "export_viber_recipients"
+	// CapExportEmailRecipients: includeEmailRecipients (phase 13b, CHK-CFG-09).
+	CapExportEmailRecipients = "export_email_recipients"
 	MsgConfigExport          = "config_export"
 
 	ResultImported      = "imported"
@@ -95,6 +97,10 @@ type ConfigExport struct {
 	// import — the request flag includeViberRecipients decides whether
 	// settings.viber is applied.
 	ContainsViberRecipients bool `json:"containsViberRecipients"`
+	// ContainsEmailRecipients (export, always sent; CHK-CFG-09): the
+	// export includes at least one settings.email.recipients entry
+	// (only when includeEmailRecipients was set). Ignored on import.
+	ContainsEmailRecipients bool `json:"containsEmailRecipients"`
 	// Tray is EC Tray's own block: ignored by the service.
 	Tray json.RawMessage `json:"tray,omitempty"`
 }

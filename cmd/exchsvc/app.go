@@ -179,6 +179,8 @@ func runService(ctx context.Context, ac appConfig) error {
 		StateDir: ac.Dir}) // viber_state.json: date of the last summary
 	vctx, vcancel := context.WithCancel(ctx)
 	vdone := make(chan struct{})
+	email := notify.NewEmail(notify.EmailOptions{Store: store, Lang: lang, Log: log, Now: ac.Now})
+	defer email.Close()
 	go func() { defer close(vdone); viber.Run(vctx) }()
 	defer func() { vcancel(); <-vdone }()
 
@@ -216,6 +218,7 @@ func runService(ctx context.Context, ac appConfig) error {
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),
 			hist,  // transition records of the history (CHK-SVC-03)
 			viber, // Viber (CHK-SVC-06)
+			email, // Email (CHK-SVC-08)
 		},
 		// config-load failures and hung readers (already rate-limited by
 		// the monitor) -> Event Log warning (CHK-MON-10, CHK-MON-13)
@@ -225,12 +228,15 @@ func runService(ctx context.Context, ac appConfig) error {
 		OnAlertRepeat: func(e model.AlertEvent) { srv.AlertRepeat(e) },
 		// settings.viber.status of get_config / get_status, token reload
 		// after save_settings (CHK-SVC-06)
-		ViberStatus:  viber.Status,
-		OnViberToken: viber.ReloadToken,
+		ViberStatus:     viber.Status,
+		OnViberToken:    viber.ReloadToken,
+		EmailStatus:     email.Status,
+		OnEmailPassword: email.ReloadPassword,
 		OnSnapshot: func(s model.StatusSnapshot) {
 			srv.PublishStatus(s)
 			hist.RecordSnapshot(s) // profiles polled since the last snapshot
 			viber.Snapshot(s)
+			email.Snapshot(s)
 		},
 		Now:          ac.Now,
 		PollInterval: ac.PollInterval,
@@ -241,6 +247,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	srv.History = historySource{h: hist, mon: mon}
 	srv.Summary = summarySource{historySource: historySource{h: hist, mon: mon}, now: ac.Now}
 	srv.Viber = viber
+	srv.Email = email
 	srv.AlarmTest = alarmTester{viber: viber, lang: lang} // alarm_test (CHK-IPC-11)
 	if autostart != nil {
 		// get_status.trayAutostartError + capability tray_autostart_status

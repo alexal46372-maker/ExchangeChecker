@@ -867,6 +867,8 @@ Wizard Win32 (страницы):
 - Mute профиля до восстановления (п. 192, `CHK-MON-20` / `CHK-IPC-15`).
 - `clone_profile` (п. 193, `CHK-CFG-08`).
 
+*(Email notifications — фаза 13b, п. 199–201, ветка `feat/svc-email`.)*
+
 ---
 
 190. **Застой по lastOk для точек без номеров (фаза 12, `CHK-MON-19`):** сопоставления по времени и ручной SQL (нет `_SentNo`/`_ReceivedNo`, `Source` ≠ `counters`) — «застой», если возраст `FreshAt` (lastOk) больше `stalledMinutes` (тот же порог, наследование и валидация, что у MON-18). Точка уже в warning/error по отставанию — застой не ставится (тот же факт, без дубля в Event Log/Viber; следствие: тревога застоя при порогах отставания выше порога застоя). Counters-путь MON-18 (номера + peer по `NodeKey`) не меняется. Capability `stalled` без bump. Статус / problems / события / ack — как у MON-18. Tests: `TestCHK_MON_19_*` (+ регресс `TestCHK_MON_18_*`).
@@ -876,6 +878,22 @@ Wizard Win32 (страницы):
 192. **Mute до восстановления (фаза 12, `CHK-MON-20` / `CHK-IPC-15`):** `mute_until_recovered` / `unmute_profile` по `profileId`; capability `mute_profile`. Доступ как у `ack_alert` (любой локальный клиент, не только админ). Пока muted: нет push `alert` / `alert_repeat`, Viber и Event Log по этому профилю; опрос продолжается; `get_status` — `profile.muted` (всегда) + `mutedSince`. Снятие: `unmute_profile` или профиль вернулся в OK. Состояние — `mute-state.json` рядом с `ack-state.json`. Ошибки: `not_found`, `no_active_mute`, `access_denied`. Tests: `TestCHK_MON_20_*`, `TestCHK_IPC_15_*`.
 
 193. **Клонирование профиля (фаза 12, `CHK-CFG-08`):** `clone_profile {profileId, newId?, newName?, expectedRevision}` (админ). Копирует connection + mapping + thresholds; **не** копирует пароль/secrets → `needPassword:true`. Имя по умолчанию `"<old> (копия)"` / EN `" (copy)"` (язык из settings); `newId` пустой = новый UUID, иначе должен быть свободен. Ответ `ok {result:"cloned", revision, profileId, needPassword, profile?, reloaded, pollScheduled?}`. Capability `clone_profile` в hello. Tests: `TestCHK_CFG_08_*`.
+
+### Фаза 13b — служба: email-уведомления (ветка `feat/svc-email`; EC Service)
+
+- `settings.email` + DPAPI SMTP-пароль (п. 199, `CHK-CFG-09`).
+- IPC `email_test` (п. 200, `CHK-IPC-16`).
+- Отправка писем по алертам (п. 201, `CHK-SVC-08`).
+
+199. **Email settings (фаза 13b, `CHK-CFG-09`):** `settings.email` зеркало Viber: `{enabled, host, port, tlsMode: "none"|"starttls"|"tls", from, recipients:[{id,addr,name}], events, schedule, hasPassword (read-only), status?}`.
+   - **`tlsMode`:** `none` = без TLS и **без AUTH** (IP-allowlist / anonymous relay); пароль не обязателен, `smtpPassword` при отправке игнорируется. `starttls` / `tls` — как обычно; при `enabled` пароль обязателен (`email.dpapi` / `smtpPassword`).
+   - **AUTH username** = адрес `from` (PlainAuth identity empty, username=From).
+   - Пароль SMTP — `email.dpapi` (DPAPI LocalMachine, DACL SY+BA), write-only через `save_settings` `smtpPassword` / `clearSmtpPassword` (никогда в ответах/логах/экспорте по умолчанию). На диске `Email.Stored()` в ParseSettings/SaveSettings (как Viber).
+   - `export_config`/`import_config` флаг `includeEmailRecipients` (default false) + корневой `containsEmailRecipients`; при include — несекретный блок email (без `hasPassword`/`status`/пароля). Capability `email` + `export_email_recipients`. Tests: `TestCHK_CFG_09_*`.
+
+200. **IPC email_test (фаза 13b, `CHK-IPC-16`):** админ, async (`cancel {ref}`), rate-limit 10 с как `viber_test`. `{recipientId?, addr?, smtpPassword?}` — тест одного получателя по id, one-off по `addr`, или всех сохранённых; `enabled`/schedule игнорируются. При `tlsMode=none` пароль не требуется и AUTH не вызывается. Ответ `{type:"email_test", emailTest:{ok, results:[{id?,addr,ok,errorKey?}]}}`. Tests: `TestCHK_IPC_16_*`.
+
+201. **Email на алертах (фаза 13b, `CHK-SVC-08`):** при `email.enabled`, событие в `events` и окно `schedule` (семантика как Viber) — письмо через stdlib `net/smtp` + `crypto/tls`; очередь, не блокирует monitor loop. Отдельный канал от Viber. Режимы: `none` (plain, no AUTH), `starttls`, `tls` (implicit). `SendHook`/Dial/TLS injectable — CI гоняет все три режима на fake SMTP (`TestCHK_SVC_08_SendSMTPModes`). Tests: `TestCHK_SVC_08_*`.
 
 194. **Тёмная тема окон (фаза 12, `CHK-TRAY-55`; fix ui-screens: `LoadTheme(nil)` не сбрасывает тему):** переключатель светлая/тёмная в настройках (RU «Тема» / EN «Theme»: Светлая/Тёмная / Light/Dark), хранится в HKCU `Software\ExchangeChecker\Tray\Theme` (`light`/`dark`; пусто/нет = light). В `internal/trayui` — вторая палитра chrome / State pale для dark; активная тема выбирает, какие COLORREF/HTML helpers возвращают. Клиентская область — WinAPI (кисти, цвета текста и контролов); immersive dark — `dwmapi!DwmSetWindowAttribute` с `DWMWA_USE_IMMERSIVE_DARK_MODE` (20) / старый 19 через Find()+fallback (Win10+). NewProc — в allowlist CHK-TRAY-10. Скриншоты light и dark в ui-screens (суффикс `_dark`). Тесты: `TestCHK_TRAY_55_*`.
 

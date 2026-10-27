@@ -17,6 +17,9 @@ const (
 	// CmdDeleteProfile deletes IPCRequest.ProfileID (admin only). Reply
 	// MsgOK with Result ResultDeleted, ProfileID, Reloaded, Revision.
 	CmdDeleteProfile = "delete_profile"
+	// CmdCloneProfile copies a profile without its password (phase 12,
+	// CHK-CFG-08): IPCRequest.ProfileID, NewID?, NewName?, ExpectedRevision.
+	CmdCloneProfile = "clone_profile"
 	// CmdSaveSettings replaces the global settings (admin only,
 	// IPCRequest.Settings incl. trayAutostart). Reply MsgOK with Result
 	// ResultSaved, Reloaded, Revision.
@@ -34,7 +37,9 @@ const (
 const (
 	CapConfigRead  = "config_read"
 	CapConfigWrite = "config_write"
-	CapCancel      = "cancel"
+	// CapCloneProfile: clone_profile (phase 12, CHK-CFG-08).
+	CapCloneProfile = "clone_profile"
+	CapCancel       = "cancel"
 	// CapTrayAutostartStatus: get_status replies carry trayAutostartError
 	// (CHK-CFG-04): the service manages the tray autostart in HKLM Run.
 	CapTrayAutostartStatus = "tray_autostart_status"
@@ -62,6 +67,7 @@ const (
 const (
 	ResultSaved    = "saved"
 	ResultDeleted  = "deleted"
+	ResultCloned   = "cloned"
 	ResultCanceled = "canceled"
 )
 
@@ -86,7 +92,7 @@ const (
 // AdminCommand reports whether cmd requires an elevated administrator.
 func AdminCommand(cmd string) bool {
 	switch cmd {
-	case CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdSaveSettings,
+	case CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdCloneProfile, CmdSaveSettings,
 		CmdDiscover, CmdDiscoverByValue, CmdListNodePoints, CmdCheckMapping,
 		CmdExportConfig, CmdImportConfig, CmdViberTest:
 		return true

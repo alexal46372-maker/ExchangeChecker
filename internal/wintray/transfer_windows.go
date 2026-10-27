@@ -196,6 +196,7 @@ func (w *settingsWindow) openExport() {
 	d.tips.set(d.ctl[idExpDo], w.t(i18n.KeyTipXferExport))
 	d.tips.set(d.ctl[idExpCancel], w.t(i18n.KeyTipClose))
 	d.syncWarn()
+	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full dark chrome on export dialog
 	winapi.EnableWindow(w.hwnd, false)
 }
 
@@ -392,6 +393,7 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 		d.tips.set(d.ctl[id], w.t(k))
 	}
 	d.syncViberWarn()
+	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full dark chrome on import dialog
 	winapi.EnableWindow(w.hwnd, false)
 	d.dryRun()
 }

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,7 +10,8 @@ import (
 
 // Phase 10 (EC Service, CHK-SVC-06): Viber notifications. The settings
 // are settings.viber (settings.json, get_config / get_status settings,
-// save_settings; never part of export_config). The bot token is in
+// save_settings; export_config only with includeViberRecipients, and then
+// without hasToken / status / token — CHK-CFG-07). The bot token is in
 // viber.dpapi (DPAPI LocalMachine, DACL SYSTEM+Administrators),
 // write-only: save_settings viberToken / clearViberToken; no reply, log
 // or event ever contains it (hasToken only).
@@ -107,7 +109,8 @@ type ViberRecipient struct {
 type ViberSettings struct {
 	Enabled bool `json:"enabled"`
 	// HasToken is read-only (views): viber.dpapi holds a token. Ignored
-	// on save, never stored.
+	// on save, never stored. Always present in get_config / get_status
+	// (CHK-SVC-06); omitted only from export_config via ForExport.
 	HasToken   bool             `json:"hasToken"`
 	Recipients []ViberRecipient `json:"recipients"`
 	Schedule   ViberSchedule    `json:"schedule"`
@@ -119,6 +122,41 @@ type ViberSettings struct {
 	// Status is read-only (get_config / get_status settings): delivery
 	// state of the running service. Ignored on save, never stored.
 	Status *ViberStatus `json:"status,omitempty"`
+	// exportNoSecrets: MarshalJSON omits hasToken / status (export_config
+	// with includeViberRecipients, CHK-CFG-07).
+	exportNoSecrets bool `json:"-"`
+}
+
+// ForExport returns a copy safe for export_config: Stored() fields only,
+// MarshalJSON omits hasToken and status.
+func (v ViberSettings) ForExport() ViberSettings {
+	v = v.Stored()
+	v.exportNoSecrets = true
+	return v
+}
+
+// MarshalJSON keeps hasToken always present for views; with ForExport it
+// emits only the non-secret fields.
+func (v ViberSettings) MarshalJSON() ([]byte, error) {
+	if v.exportNoSecrets {
+		return json.Marshal(struct {
+			Enabled         bool             `json:"enabled"`
+			Recipients      []ViberRecipient `json:"recipients"`
+			Schedule        ViberSchedule    `json:"schedule"`
+			Events          []string         `json:"events"`
+			ReminderMinutes int              `json:"reminderMinutes"`
+		}{v.Enabled, v.Recipients, v.Schedule, v.Events, v.ReminderMinutes})
+	}
+	type wire struct {
+		Enabled         bool             `json:"enabled"`
+		HasToken        bool             `json:"hasToken"`
+		Recipients      []ViberRecipient `json:"recipients"`
+		Schedule        ViberSchedule    `json:"schedule"`
+		Events          []string         `json:"events"`
+		ReminderMinutes int              `json:"reminderMinutes"`
+		Status          *ViberStatus     `json:"status,omitempty"`
+	}
+	return json.Marshal(wire{v.Enabled, v.HasToken, v.Recipients, v.Schedule, v.Events, v.ReminderMinutes, v.Status})
 }
 
 // DefaultViberSettings: disabled, Mon-Fri 08:30-17:00, all events,

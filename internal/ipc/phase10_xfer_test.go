@@ -138,3 +138,240 @@ func TestCHK_CFG_06_IPCLimitsAndShapes(t *testing.T) {
 		t.Fatalf("client write %v", err)
 	}
 }
+
+type xferViberHandler struct {
+	*xferHandler
+	include bool
+	impInc  bool
+}
+
+func (h *xferViberHandler) ExportConfigOpts(include bool) (model.ConfigExport, error) {
+	h.include = include
+	exp, err := h.ExportConfig()
+	if include {
+		exp.ContainsViberRecipients = true
+		st := model.DefaultSettings()
+		st.Viber.Recipients = []model.ViberRecipient{{ID: "r1", Name: "A"}}
+		v := st.Viber.ForExport()
+		st.Viber = &v
+		exp.Settings = &st
+	}
+	return exp, err
+}
+
+func (h *xferViberHandler) ImportConfigOpts(cfg *model.ConfigExport, mode, rev string, dry, include bool, account string) (model.ImportResult, error) {
+	h.impInc = include
+	return h.ImportConfig(cfg, mode, rev, dry, account)
+}
+
+func newXferViberServer(t *testing.T, admin *int32) (*xferViberHandler, *MemListener) {
+	t.Helper()
+	v2, _, _, _ := newV2(t)
+	h := &xferViberHandler{xferHandler: &xferHandler{v2Handler: v2}}
+	s := NewServer(h, &testLog{})
+	s.Authorize = func(io.ReadWriteCloser) (Peer, error) {
+		return Peer{Admin: atomic.LoadInt32(admin) == 1, Account: `HOST\alex`}, nil
+	}
+	l := NewMemListener()
+	go s.Serve(l)
+	t.Cleanup(func() { s.Close() })
+	return h, l
+}
+
+// TestCHK_IPC_14_IncludeViberRecipients — hello advertises
+// export_viber_recipients; export_config / import_config forward
+// includeViberRecipients; export JSON carries containsViberRecipients and
+// recipients without hasToken/status/token.
+func TestCHK_IPC_14_IncludeViberRecipients(t *testing.T) {
+	var admin int32 = 1
+	h, l := newXferViberServer(t, &admin)
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rw.Close() })
+	var hello model.IPCMessage
+	if err := ReadMessage(rw, &hello); err != nil {
+		t.Fatal(err)
+	}
+	caps := "," + strings.Join(hello.Capabilities, ",") + ","
+	if !strings.Contains(caps, ","+model.CapExportViberRecipients+",") || !strings.Contains(caps, ","+model.CapExportConfig+",") {
+		t.Fatalf("caps %v", hello.Capabilities)
+	}
+	c := &rawConn{t: t, rw: rw, pending: map[uint64]model.IPCMessage{}}
+	c.send(model.IPCRequest{ID: 1, Cmd: model.CmdExportConfig, IncludeViberRecipients: true})
+	m := c.reply(1)
+	if m.Type != model.MsgConfigExport || m.Export == nil || !h.include || !m.Export.ContainsViberRecipients ||
+		m.Export.Settings == nil || m.Export.Settings.Viber == nil || len(m.Export.Settings.Viber.Recipients) != 1 {
+		t.Fatalf("export %+v include=%v", m, h.include)
+	}
+	if m.Export.Settings.Viber.HasToken || m.Export.Settings.Viber.Status != nil {
+		t.Fatalf("decoded secrets %+v", m.Export.Settings.Viber)
+	}
+	// wire form (ForExport): no hasToken/status; re-marshal after decode would
+	// show hasToken:false, so assert the export DTO shape explicitly
+	b, _ := json.Marshal(m.Export.Settings.Viber.ForExport())
+	if strings.Contains(string(b), `"hasToken"`) || strings.Contains(string(b), `"status"`) ||
+		!strings.Contains(string(b), `"recipients":[{"id":"r1","name":"A"}]`) {
+		t.Fatalf("viber export json %s", b)
+	}
+	if raw, _ := json.Marshal(m.Export); !strings.Contains(string(raw), `"containsViberRecipients":true`) {
+		t.Fatalf("export %s", raw)
+	}
+
+	c.send(model.IPCRequest{ID: 2, Cmd: model.CmdImportConfig, IncludeViberRecipients: true,
+		Mode: model.ImportMerge, ExpectedRevision: "r1", Config: &model.ConfigExport{Format: model.ConfigFormatV1}})
+	m = c.reply(2)
+	if m.Type != model.MsgOK || !h.impInc {
+		t.Fatalf("import %+v impInc=%v", m, h.impInc)
+	}
+}
+
+type muteHandler struct {
+	*v2Handler
+	mu    sync.Mutex
+	muted map[string]bool
+	calls []string
+}
+
+func (h *muteHandler) MuteUntilRecovered(id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, "mute:"+id)
+	if id == "missing" {
+		return &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile}
+	}
+	h.muted[id] = true
+	return nil
+}
+
+func (h *muteHandler) UnmuteProfile(id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, "unmute:"+id)
+	if !h.muted[id] {
+		return &model.IPCError{Code: model.ErrCodeNoActiveMute, Key: model.MsgMonitorNoActiveMute}
+	}
+	delete(h.muted, id)
+	return nil
+}
+
+func (h *muteHandler) AckAlert(string, string) (int, error) { return 0, nil }
+
+// TestCHK_IPC_15_MuteProfile — hello advertises mute_profile; mute /
+// unmute JSON replies; not_found / no_active_mute; same access as
+// ack_alert (non-admin allowed).
+func TestCHK_IPC_15_MuteProfile(t *testing.T) {
+	var admin int32 // non-admin
+	v2, _, _, _ := newV2(t)
+	h := &muteHandler{v2Handler: v2, muted: map[string]bool{}}
+	s := NewServer(h, &testLog{})
+	s.Authorize = func(io.ReadWriteCloser) (Peer, error) {
+		return Peer{Admin: atomic.LoadInt32(&admin) == 1, Account: `HOST\alex`}, nil
+	}
+	l := NewMemListener()
+	go s.Serve(l)
+	t.Cleanup(func() { s.Close() })
+
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rw.Close() })
+	var hello model.IPCMessage
+	if err := ReadMessage(rw, &hello); err != nil {
+		t.Fatal(err)
+	}
+	caps := "," + strings.Join(hello.Capabilities, ",") + ","
+	if !strings.Contains(caps, ","+model.CapMuteProfile+",") {
+		t.Fatalf("caps %v", hello.Capabilities)
+	}
+	c := &rawConn{t: t, rw: rw, pending: map[uint64]model.IPCMessage{}}
+	c.send(model.IPCRequest{ID: 1, Cmd: model.CmdMuteUntilRecovered, ProfileID: "db1"})
+	m := c.reply(1)
+	if m.Type != model.MsgOK || m.Result != model.ResultMuted {
+		t.Fatalf("mute %+v", m)
+	}
+	c.send(model.IPCRequest{ID: 2, Cmd: model.CmdUnmuteProfile, ProfileID: "db1"})
+	m = c.reply(2)
+	if m.Type != model.MsgOK || m.Result != model.ResultUnmuted {
+		t.Fatalf("unmute %+v", m)
+	}
+	c.send(model.IPCRequest{ID: 3, Cmd: model.CmdUnmuteProfile, ProfileID: "db1"})
+	m = c.reply(3)
+	if m.Type != model.MsgError || m.Code != model.ErrCodeNoActiveMute {
+		t.Fatalf("no_active_mute %+v", m)
+	}
+	c.send(model.IPCRequest{ID: 4, Cmd: model.CmdMuteUntilRecovered, ProfileID: "missing"})
+	m = c.reply(4)
+	if m.Type != model.MsgError || m.Code != model.ErrCodeNotFound {
+		t.Fatalf("not_found %+v", m)
+	}
+}
+
+type cloneHandler struct {
+	*cfgHandler
+	lastNewID string
+}
+
+func (h *cloneHandler) CloneProfile(profileID, newID, newName, rev, account string) (model.SavedProfile, bool, error) {
+	h.record("clone:" + profileID + ":" + newID + ":" + newName + ":" + rev)
+	if profileID == "missing" {
+		return model.SavedProfile{}, false, &model.IPCError{Code: model.ErrCodeNotFound, Key: model.MsgMonitorUnknownProfile}
+	}
+	id := newID
+	if id == "" {
+		id = "gen-1"
+	}
+	h.lastNewID = id
+	name := newName
+	if name == "" {
+		name = "X (копия)"
+	}
+	return model.SavedProfile{Profile: model.Profile{ID: id, Name: name, AuthMode: model.AuthSQL}, Revision: "r9", PollScheduled: true}, true, nil
+}
+
+// TestCHK_CFG_08_CloneProfileIPC — hello has clone_profile; admin clone
+// reply; access_denied for non-admin.
+func TestCHK_CFG_08_CloneProfileIPC(t *testing.T) {
+	var admin int32 = 1
+	v2, _, _, _ := newV2(t)
+	h := &cloneHandler{cfgHandler: &cfgHandler{v2Handler: v2}}
+	s := NewServer(h, &testLog{})
+	s.Authorize = func(io.ReadWriteCloser) (Peer, error) {
+		return Peer{Admin: atomic.LoadInt32(&admin) == 1, Account: `HOST\alex`}, nil
+	}
+	l := NewMemListener()
+	go s.Serve(l)
+	t.Cleanup(func() { s.Close() })
+
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rw.Close() })
+	var hello model.IPCMessage
+	if err := ReadMessage(rw, &hello); err != nil {
+		t.Fatal(err)
+	}
+	caps := "," + strings.Join(hello.Capabilities, ",") + ","
+	if !strings.Contains(caps, ","+model.CapCloneProfile+",") {
+		t.Fatalf("caps %v", hello.Capabilities)
+	}
+	c := &rawConn{t: t, rw: rw, pending: map[uint64]model.IPCMessage{}}
+	c.send(model.IPCRequest{ID: 1, Cmd: model.CmdCloneProfile, ProfileID: "s1", ExpectedRevision: "r1"})
+	m := c.reply(1)
+	if m.Type != model.MsgOK || m.Result != model.ResultCloned || m.ProfileID != "gen-1" || !m.NeedPassword || m.Revision != "r9" || !m.Reloaded {
+		t.Fatalf("clone %+v", m)
+	}
+	b, _ := json.Marshal(m)
+	if !strings.Contains(string(b), `"needPassword":true`) || !strings.Contains(string(b), `"result":"cloned"`) {
+		t.Fatalf("json %s", b)
+	}
+	atomic.StoreInt32(&admin, 0)
+	c2 := dialRaw(t, l)
+	c2.send(model.IPCRequest{ID: 2, Cmd: model.CmdCloneProfile, ProfileID: "s1", ExpectedRevision: "r1"})
+	if r := c2.reply(2); r.Type != model.MsgError || r.Code != model.ErrCodeAccessDenied {
+		t.Fatalf("non-admin %+v", r)
+	}
+}

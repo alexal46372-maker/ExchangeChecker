@@ -10,7 +10,8 @@ import (
 // a baseline counts from the observation); not when a time-based point of
 // the same node key stopped too (matched by key, never by name); not when
 // the point is already warning / error by lag; never on a profile error
-// or when off.
+// or when off. Time-based points in the fixture also stall by FreshAt
+// (CHK-MON-19) when old enough and LevelOK.
 func TestCHK_MON_18_MarkStalled(t *testing.T) {
 	now := time.Date(2026, 10, 20, 12, 0, 0, 0, DBZone)
 	ago := func(m int) *time.Time { x := now.Add(-time.Duration(m) * time.Minute); return &x }
@@ -32,7 +33,8 @@ func TestCHK_MON_18_MarkStalled(t *testing.T) {
 		cp("g", "G", 200), tp("g", "", 300), // peer without a key: never matched
 		warn, errp, tp("e", "E", 500)}}
 	MarkStalled(&ps, 120*time.Minute, now)
-	want := map[int]bool{0: true, 1: false, 2: true, 3: false, 4: false, 5: false, 6: true, 7: false, 8: true, 9: false, 10: false, 11: false, 12: false}
+	// time-based peers (MON-19) also stall by FreshAt when LevelOK and age > after
+	want := map[int]bool{0: true, 1: false, 2: true, 3: false, 4: false, 5: true, 6: true, 7: true, 8: true, 9: true, 10: false, 11: false, 12: true}
 	for i, w := range want {
 		if ps.Points[i].Stalled != w {
 			t.Errorf("point %d (%s) stalled %v", i, ps.Points[i].Name, ps.Points[i].Stalled)
@@ -120,13 +122,69 @@ func TestCHK_MON_18_PeerNodeKeyFromListPoints(t *testing.T) {
 	} {
 		peer := ExchangePoint{ProfileID: "db1", Name: c.peerName, NodeKey: c.peerKey, LastSend: at(300), LastRecv: at(300)}
 		snap := NewProfileSnapshot(p, ProfileStatus{ProfileID: "db1", Points: []ExchangePoint{counters, peer}}, g, now)
-		if len(snap.Points) != 2 || snap.Points[1].NodeKey != c.peerKey || snap.Points[0].Stalled != c.stalled || snap.Stalled != c.stalled {
-			t.Errorf("%s: %+v", c.name, snap.Points)
+		if len(snap.Points) != 2 || snap.Points[1].NodeKey != c.peerKey || snap.Points[0].Stalled != c.stalled {
+			t.Errorf("%s: counters stalled=%v want %v; %+v", c.name, snap.Points[0].Stalled, c.stalled, snap.Points)
+		}
+		// MON-19: the time-based peer itself stalls by FreshAt when old enough and LevelOK
+		if c.peerKey == key && !c.stalled { // peer stopped (age 300) — peer is stalled, counters is not
+			if !snap.Points[1].Stalled || !snap.Stalled {
+				t.Errorf("%s: time peer should stall (MON-19): %+v", c.name, snap.Points[1])
+			}
 		}
 	}
 	// the alive peer of the same key: a real stall
 	peer := ExchangePoint{ProfileID: "db1", Name: "x", NodeKey: key, LastSend: at(5), LastRecv: at(5)}
 	if snap := NewProfileSnapshot(p, ProfileStatus{ProfileID: "db1", Points: []ExchangePoint{counters, peer}}, g, now); !snap.Points[0].Stalled {
 		t.Errorf("alive peer: %+v", snap.Points)
+	}
+}
+
+// TestCHK_MON_19_MarkStalledTimeManual — phase 12: time-based and manual SQL
+// points (Source "", no message numbers) stall by FreshAt / lastOk age with
+// the same stalledMinutes threshold; Level warning/error skips (no lag
+// duplicate); counters path (MON-18) is unchanged.
+func TestCHK_MON_19_MarkStalledTimeManual(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, DBZone)
+	ago := func(m int) *time.Time { x := now.Add(-time.Duration(m) * time.Minute); return &x }
+	ok := func(name string, m int) PointStatus {
+		return PointStatus{ExchangePoint: ExchangePoint{Name: name}, FreshAt: ago(m)}
+	}
+	warn := ok("w", 200)
+	warn.Level = LevelWarning
+	errp := ok("e", 200)
+	errp.Level = LevelError
+	// manual SQL points look the same as time-based (Source ""); name only
+	// distinguishes the case in the assertion text.
+	ps := ProfileSnapshot{Points: []PointStatus{
+		ok("time-old", 130),  // stalled
+		ok("time-fresh", 30), // under threshold
+		warn, errp,           // lag already raised
+		ok("manual-old", 200), // stalled (manual SQL)
+		{ExchangePoint: ExchangePoint{Name: "counters", Source: PointSourceCounters, NodeKey: "K"}, FreshAt: ago(130)},
+	}}
+	MarkStalled(&ps, 120*time.Minute, now)
+	want := map[int]bool{0: true, 1: false, 2: false, 3: false, 4: true, 5: true}
+	for i, w := range want {
+		if ps.Points[i].Stalled != w {
+			t.Errorf("%d %s stalled %v want %v", i, ps.Points[i].Name, ps.Points[i].Stalled, w)
+		}
+	}
+	if !ps.Stalled || !ps.Points[0].StalledSince.Equal(*ago(130)) || !ps.Points[4].StalledSince.Equal(*ago(200)) {
+		t.Errorf("since profile=%v t0=%v m=%v", ps.Stalled, ps.Points[0].StalledSince, ps.Points[4].StalledSince)
+	}
+}
+
+// TestCHK_MON_19_NoDuplicateTimeLag — time-based FreshAt age equals lag; with
+// warn/error below stalled the LevelOK guard keeps a single lag alarm (no
+// stalled problem / stall event).
+func TestCHK_MON_19_NoDuplicateTimeLag(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, DBZone)
+	ago := func(m int) *time.Time { x := now.Add(-time.Duration(m) * time.Minute); return &x }
+	pt := PointStatus{ExchangePoint: ExchangePoint{Name: "shop"}, FreshAt: ago(90)}
+	pt.Level = LevelError
+	ps := ProfileSnapshot{Points: []PointStatus{pt}}
+	MarkStalled(&ps, 60*time.Minute, now)
+	if ps.Stalled || ps.Points[0].Stalled {
+		t.Fatalf("stall duplicated lag: %+v", ps.Points[0])
 	}
 }

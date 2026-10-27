@@ -49,14 +49,14 @@ func stripViber(s *model.Settings) *model.Settings {
 	return &c
 }
 
-// keepViberStored keeps non-secret settings.viber (Stored form: no
+// keepViberStored keeps non-secret settings.viber (ForExport form: no
 // hasToken / status) for a file with includeViberRecipients.
 func keepViberStored(s *model.Settings) *model.Settings {
 	if s == nil || s.Viber == nil {
 		return stripViber(s)
 	}
 	c := *s
-	v := s.Viber.Stored()
+	v := s.Viber.ForExport()
 	c.Viber = &v
 	return &c
 }

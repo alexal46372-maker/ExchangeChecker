@@ -249,3 +249,144 @@ func TestCHK_MON_18_AckEvent(t *testing.T) {
 		t.Errorf("legacy ack: %d %v", n, err)
 	}
 }
+
+// timeManualReader returns a non-counters point (Source "") whose FreshAt
+// is *last — used for CHK-MON-19 time-based and manual SQL profiles.
+type timeManualReader struct {
+	wizReader
+	mu   *sync.Mutex
+	last *time.Time
+	name string
+}
+
+func (timeManualReader) Test(context.Context) error { return nil }
+func (r timeManualReader) ListPoints(context.Context) ([]model.ExchangePoint, error) {
+	r.mu.Lock()
+	t := *r.last
+	r.mu.Unlock()
+	return []model.ExchangePoint{{Name: r.name, LastSend: &t, LastRecv: &t}}, nil
+}
+
+// TestCHK_MON_19_TimeBasedStalled — a time-based mapping (no message numbers)
+// stalls when FreshAt / lastOk is older than stalledMinutes while Level is
+// still OK (lag thresholds above the stall threshold); recovers when FreshAt
+// moves; capability "stalled" unchanged.
+func TestCHK_MON_19_TimeBasedStalled(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	p := model.NewProfile("db1")
+	p.Name, p.Server, p.Database, p.AuthMode = "Склад", "srv", "db", model.AuthWindows
+	p.Mapping = model.Mapping{Mode: model.MappingAuto, Table: "Exch", PointNameColumn: "n", LastSendColumn: "s", LastRecvColumn: "r"}
+	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 10, 600, 1200
+	var mu sync.Mutex
+	last := t0.Add(-5 * time.Minute)
+	var evMu sync.Mutex
+	var events []model.AlertEvent
+	opt := baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{p}}), clk)
+	opt.NewReader = func(model.Profile, string, sqlcheck.Options) (sqlcheck.ReadCloser, error) {
+		return timeManualReader{mu: &mu, last: &last, name: "Магазин"}, nil
+	}
+	opt.Sink = alert.SinkFunc(func(e model.AlertEvent) { evMu.Lock(); events = append(events, e); evMu.Unlock() })
+	m := New(opt)
+	m.reloadConfig(true)
+	poll := func() model.StatusSnapshot {
+		m.pollAll(context.Background())
+		return m.Snapshot()
+	}
+	if ps := profileByID(poll(), "db1"); ps.Stalled || len(ps.Points) != 1 || ps.Points[0].Stalled || ps.Points[0].Source != "" {
+		t.Fatalf("fresh %+v", ps)
+	}
+	var stalled *model.Problem
+	for i := 0; i < 5 && stalled == nil; i++ {
+		clk.Add(10 * time.Minute)
+		s := poll()
+		for j := range s.Problems {
+			if s.Problems[j].Kind == model.ProblemStalled {
+				stalled = &s.Problems[j]
+			}
+		}
+	}
+	ps := profileByID(m.Snapshot(), "db1")
+	if stalled == nil || !ps.Stalled || !ps.Points[0].Stalled || stalled.StalledMinutes != 10 || stalled.PointKey != "Магазин" {
+		t.Fatalf("stalled %+v %+v", stalled, ps)
+	}
+	mu.Lock()
+	last = clk.Now()
+	mu.Unlock()
+	for i := 0; i < 5; i++ {
+		clk.Add(time.Minute)
+		poll()
+	}
+	for _, pr := range m.Snapshot().Problems {
+		if pr.Kind == model.ProblemStalled {
+			t.Fatalf("still stalled %+v", m.Snapshot().Problems)
+		}
+	}
+	evMu.Lock()
+	defer evMu.Unlock()
+	var enter, leave bool
+	for _, e := range events {
+		if e.Stalled && e.To == model.LevelWarning {
+			enter = true
+		}
+		if e.Stalled && e.To == model.LevelOK && enter {
+			leave = true
+		}
+	}
+	if !enter || !leave {
+		t.Errorf("events %+v", events)
+	}
+}
+
+// TestCHK_MON_19_ManualSQLStalled — manual SQL mapping (Source "", no
+// message numbers) uses the same FreshAt / lastOk stall rule as time-based.
+func TestCHK_MON_19_ManualSQLStalled(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	p := model.NewProfile("db2")
+	p.Name, p.Server, p.Database, p.AuthMode = "Ручной", "srv", "db", model.AuthWindows
+	p.Mapping = model.Mapping{Mode: model.MappingManual, ManualSQL: "SELECT name, s, r FROM t"}
+	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 10, 600, 1200
+	var mu sync.Mutex
+	last := t0.Add(-5 * time.Hour)
+	opt := baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{p}}), clk)
+	opt.NewReader = func(model.Profile, string, sqlcheck.Options) (sqlcheck.ReadCloser, error) {
+		return timeManualReader{mu: &mu, last: &last, name: "Узел"}, nil
+	}
+	m := New(opt)
+	m.reloadConfig(true)
+	var s model.StatusSnapshot
+	for i := 0; i < 3; i++ {
+		m.pollAll(context.Background())
+		s = m.Snapshot()
+		clk.Add(time.Minute)
+	}
+	if len(s.Problems) != 1 || s.Problems[0].Kind != model.ProblemStalled || s.Problems[0].PointKey != "Узел" {
+		t.Fatalf("problems %+v", s.Problems)
+	}
+	ps := profileByID(s, "db2")
+	if !ps.Stalled || len(ps.Points) != 1 || !ps.Points[0].Stalled || ps.Points[0].Source != "" {
+		t.Fatalf("snapshot %+v", ps)
+	}
+}
+
+// TestCHK_MON_19_CountersStillStalled — MON-18 counters path is unchanged
+// after MON-19 (numbers + LevelOK + peer rule).
+func TestCHK_MON_19_CountersStillStalled(t *testing.T) {
+	clk := &fakeClock{t: t0}
+	p := model.NewProfile("db1")
+	p.Name, p.Server, p.Database, p.AuthMode = "Склад", "srv", "db", model.AuthWindows
+	p.Mapping = model.Mapping{Mode: model.MappingCounters, Table: "_Node1", PointNameColumn: "_Description"}
+	p.StalledMinutes, p.WarnMinutes, p.ErrorMinutes = 10, 600, 1200
+	var mu sync.Mutex
+	last := t0.Add(-5 * time.Hour)
+	opt := baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings(), Profiles: []model.Profile{p}}), clk)
+	opt.NewReader = func(model.Profile, string, sqlcheck.Options) (sqlcheck.ReadCloser, error) {
+		return stallReader{mu: &mu, last: &last}, nil
+	}
+	m := New(opt)
+	m.reloadConfig(true)
+	m.pollAll(context.Background())
+	s := m.Snapshot()
+	if len(s.Problems) != 1 || s.Problems[0].Kind != model.ProblemStalled {
+		t.Fatalf("counters stalled broken: %+v", s.Problems)
+	}
+}

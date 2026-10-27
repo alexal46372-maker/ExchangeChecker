@@ -1048,7 +1048,7 @@ func (w *settingsWindow) update() {
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		if h := w.ctl[idSetClone]; h != 0 {
 			hasClone := w.cfg.session.Supported(model.CmdCloneProfile)
-			if hasClone {
+			if cloneButtonVisible(ed.Mode, hasClone) {
 				winapi.ShowWindow(h, winapi.SW_SHOW)
 				winapi.EnableWindow(h, saved && !w.busy)
 			} else {

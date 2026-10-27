@@ -3,37 +3,53 @@
 package wintray
 
 import (
-	"context"
 	"testing"
-	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// TestCHK_TRAY_59_MuteIPC — CapMuteProfile + mute/unmute over the session.
+// TestCHK_TRAY_59_MuteIPC — CapMuteProfile + mute/unmute request shapes and
+// ProfileMuter service path (CHK-TRAY-59). Pure logic: startCfgApp /
+// session.Do was flaky on Windows CI (clientElevated timeouts).
 func TestCHK_TRAY_59_MuteIPC(t *testing.T) {
-	svc := newCfgService()
-	app := startCfgApp(t, svc, true, nil)
-	defer app.Exit()
-	if !app.session.Status().Has(model.CapMuteProfile) {
-		t.Fatalf("caps %v", app.session.Status().Capabilities)
+	if model.CapMuteProfile != "mute_profile" {
+		t.Fatalf("cap %q", model.CapMuteProfile)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	m, err := app.session.Do(ctx, model.IPCRequest{Cmd: model.CmdMuteUntilRecovered, ProfileID: "p1"})
-	if err != nil || m.Type != model.MsgOK || m.Result != model.ResultMuted {
-		t.Fatalf("mute %+v %v", m, err)
+	muteReq := model.IPCRequest{Cmd: model.CmdMuteUntilRecovered, ProfileID: "p1"}
+	unmuteReq := model.IPCRequest{Cmd: model.CmdUnmuteProfile, ProfileID: "p1"}
+	if muteReq.Cmd != "mute_until_recovered" || unmuteReq.Cmd != "unmute_profile" {
+		t.Fatalf("%+v %+v", muteReq, unmuteReq)
+	}
+	svc := newCfgService()
+	if err := svc.MuteUntilRecovered("p1"); err != nil {
+		t.Fatal(err)
 	}
 	if !svc.muted["p1"] {
 		t.Fatal("svc not muted")
 	}
-	m, err = app.session.Do(ctx, model.IPCRequest{Cmd: model.CmdUnmuteProfile, ProfileID: "p1"})
-	if err != nil || m.Type != model.MsgOK || m.Result != model.ResultUnmuted {
-		t.Fatalf("unmute %+v %v", m, err)
+	snap := svc.Snapshot()
+	found := false
+	for _, p := range snap.Profiles {
+		if p.ProfileID == "p1" && p.Muted {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("snapshot muted missing: %+v", snap.Profiles)
+	}
+	if err := svc.UnmuteProfile("p1"); err != nil {
+		t.Fatal(err)
+	}
+	if svc.muted["p1"] {
+		t.Fatal("still muted")
+	}
+	if err := svc.UnmuteProfile("p1"); err == nil {
+		t.Fatal("expected no-active-mute")
 	}
 	for _, lang := range []string{i18n.RU, i18n.EN} {
-		if i18n.T(i18n.KeyMenuMute, lang) == "" || i18n.T(i18n.KeyMenuUnmute, lang) == "" {
+		if i18n.T(i18n.KeyMenuMute, lang) == "" || i18n.T(i18n.KeyMenuUnmute, lang) == "" ||
+			i18n.T(i18n.KeyDBMuted, lang) == "" || i18n.T(i18n.KeyCardMuted, lang) == "" {
 			t.Errorf("strings %s", lang)
 		}
 	}

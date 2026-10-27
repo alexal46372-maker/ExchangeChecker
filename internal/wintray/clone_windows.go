@@ -10,6 +10,19 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 )
 
+// cloneButtonVisible is true for admin + CapCloneProfile (CHK-TRAY-58).
+func cloneButtonVisible(mode traysettings.Mode, hasCap bool) bool {
+	return mode == traysettings.Admin && hasCap
+}
+
+// cloneFocusField is FieldPassword when the clone needs a password.
+func cloneFocusField(needPassword bool) traysettings.Field {
+	if needPassword {
+		return traysettings.FieldPassword
+	}
+	return traysettings.FieldNone
+}
+
 // cloneProfile runs clone_profile on the selected saved profile (CHK-TRAY-58).
 // On success with needPassword the new profile is selected and the password
 // field is focused. Hidden without CapCloneProfile (see update).
@@ -38,8 +51,8 @@ func (w *settingsWindow) cloneProfile() {
 		default:
 			w.status = w.ed.CloneDone(m)
 			w.fill()
-			if m.NeedPassword {
-				w.focus(traysettings.FieldPassword)
+			if f := cloneFocusField(m.NeedPassword); f != traysettings.FieldNone {
+				w.focus(f)
 			}
 		}
 	})

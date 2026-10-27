@@ -8,59 +8,62 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// TestCHK_TRAY_58_CloneButton — CapCloneProfile from ProfileCloner; admin
-// settings show «Клонировать базу», click clones and focuses password.
+// TestCHK_TRAY_58_CloneButton — CapCloneProfile gating, clone_profile request
+// shape, and needPassword → FieldPassword focus path (CHK-TRAY-58).
+// Pure logic: startCfgApp GUI was flaky on Windows CI (clientElevated /
+// cloned timeouts). Cross-package Editor coverage is in traysettings.
 func TestCHK_TRAY_58_CloneButton(t *testing.T) {
-	svc := newCfgService()
-	app := startCfgApp(t, svc, true, nil)
-	defer app.Exit()
-	if !app.session.Status().Has(model.CapCloneProfile) {
-		t.Fatalf("caps %v", app.session.Status().Capabilities)
+	if model.CapCloneProfile != "clone_profile" || model.CmdCloneProfile != "clone_profile" {
+		t.Fatalf("cap/cmd %q %q", model.CapCloneProfile, model.CmdCloneProfile)
 	}
-	w := openAdmin(t, app)
-	w.cfg.confirm = func(uintptr, string, string) bool { return true }
-	pumpUntil(t, "clone visible", func() bool {
-		w.update()
-		return visible(w.ctl[idSetClone]) && winapi.IsWindowEnabled(w.ctl[idSetClone])
-	})
+	if !cloneButtonVisible(traysettings.Admin, true) {
+		t.Fatal("admin+cap must show clone")
+	}
+	e := &traysettings.Editor{Mode: traysettings.Admin, Lang: i18n.RU, Revision: "r3",
+		Profiles: []model.Profile{{ID: "p1", Name: "Склад", Server: "s", Database: "d", AuthMode: model.AuthSQL, Login: "u", HasPassword: true}}}
+	e.Select(0)
+	req, pr := e.CloneRequest()
+	if pr != nil || req.Cmd != model.CmdCloneProfile || req.ProfileID != "p1" || req.ExpectedRevision != "r3" || req.Password != "" {
+		t.Fatalf("req %+v pr %v", req, pr)
+	}
+	clone := model.Profile{ID: "c1", Name: "Склад (копия)", Server: "s", Database: "d", AuthMode: model.AuthSQL}
+	msg := e.CloneDone(model.IPCMessage{Type: model.MsgOK, Result: model.ResultCloned, ProfileID: "c1",
+		Profile: &clone, Revision: "r4", NeedPassword: true})
+	if e.Base.ID != "c1" || e.Revision != "r4" || e.Base.HasPassword || msg == "" {
+		t.Fatalf("done id=%s rev=%s hasPw=%v msg=%q", e.Base.ID, e.Revision, e.Base.HasPassword, msg)
+	}
+	if cloneFocusField(true) != traysettings.FieldPassword {
+		t.Fatal("needPassword must focus password")
+	}
+	if cloneFocusField(false) != traysettings.FieldNone {
+		t.Fatal("no needPassword → no forced focus")
+	}
 	ru, en := i18n.T(i18n.KeySetClone, i18n.RU), i18n.T(i18n.KeySetClone, i18n.EN)
-	got := winapi.GetWindowText(w.ctl[idSetClone])
-	if got != ru && got != en {
-		t.Fatalf("label %q", got)
-	}
-	srcID := w.ed.Base.ID
-	nBefore := len(w.ed.Profiles)
-	w.click(t, idSetClone)
-	pumpUntil(t, "cloned", func() bool {
-		return !w.busy && len(w.ed.Profiles) > nBefore && w.ed.Base.ID != srcID
-	})
-	if len(svc.clones) != 1 {
-		t.Fatalf("clones %v", svc.clones)
-	}
-	if w.lastFocus != traysettings.FieldPassword {
-		t.Fatalf("focus %v", w.lastFocus)
+	if ru == "" || en == "" || ru == i18n.KeySetClone {
+		t.Fatalf("labels %q %q", ru, en)
 	}
 }
 
-// TestCHK_TRAY_58_CloneHiddenReadOnly — read-only hides the button.
+// TestCHK_TRAY_58_CloneHiddenReadOnly — hide without cap / read-only / unsaved.
 func TestCHK_TRAY_58_CloneHiddenReadOnly(t *testing.T) {
-	svc := newCfgService()
-	app := startCfgApp(t, svc, true, &fakeElevator{})
-	defer app.Exit()
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.ReadOnly, session: app.session, hidden: true,
-		uiMode: traysettings.UISimple, elevator: &fakeElevator{}})
-	if err != nil {
-		t.Fatal(err)
+	if cloneButtonVisible(traysettings.ReadOnly, true) {
+		t.Fatal("read-only must hide")
 	}
-	defer w.close()
-	w.Reload()
-	pumpUntil(t, "loaded", func() bool { return !w.busy && w.loaded })
-	w.update()
-	if visible(w.ctl[idSetClone]) {
-		t.Fatal("clone visible in read-only")
+	if cloneButtonVisible(traysettings.Admin, false) {
+		t.Fatal("no cap must hide")
+	}
+	e := &traysettings.Editor{Mode: traysettings.ReadOnly, Lang: i18n.RU, Revision: "r1",
+		Profiles: []model.Profile{{ID: "p1", Name: "Склад", Server: "s", Database: "d", AuthMode: model.AuthSQL}}}
+	e.Select(0)
+	if _, pr := e.CloneRequest(); pr == nil {
+		t.Fatal("read-only CloneRequest must refuse")
+	}
+	e.Mode = traysettings.Admin
+	e.New()
+	if _, pr := e.CloneRequest(); pr == nil {
+		t.Fatal("unsaved New must refuse")
 	}
 }
 

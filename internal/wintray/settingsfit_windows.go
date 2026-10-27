@@ -276,14 +276,17 @@ type barButton struct {
 	width int32
 }
 
-// layoutPages lays out the page host (phase 11, CHK-TRAY-47): one tree;
-// the pages share the area right of the navigation because only the
-// current page is visible; hidden controls take no room. The window is
-// sized for the page shown now (the databases page) and is never wider
-// than the work area.
+// layoutPages lays out the page host: section tabs on top, then the
+// left column (mode + profile list) and the page stack (Gap:-1). Only
+// the active tab's controls may be visible — hideInactiveTabControls
+// clears the rest so Gap:-1 cannot stack two trees (Alex overlay).
 func (w *settingsWindow) layoutPages(m *ui.Metrics, left ui.Node, pages []ui.Node) {
-	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8,
-		Child: &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, &ui.Col{Gap: -1, Items: pages}}}}
+	body := &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: left}, &ui.Col{Gap: -1, Items: pages}}}
+	var child ui.Node = body
+	if w.tabCtl != nil {
+		child = &ui.Col{Gap: ui.P4, Items: []ui.Node{w.tabCtl, body}}
+	}
+	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8, Child: child}
 	w.rootM = m
 	syncCues(w.root)
 	w.ctlOf = map[uintptr]*ui.Ctl{}
@@ -336,15 +339,15 @@ func (w *settingsWindow) show(h uintptr, on bool) {
 	if c := w.ctlOf[h]; c != nil {
 		c.Hidden = !on
 		if !on {
-			winapi.ShowWindow(h, winapi.SW_HIDE)
+			hideWindowTree(h)
 		}
 		return
 	}
-	cmd := int32(winapi.SW_HIDE)
 	if on {
-		cmd = winapi.SW_SHOW
+		winapi.ShowWindow(h, winapi.SW_SHOW)
+		return
 	}
-	winapi.ShowWindow(h, cmd)
+	hideWindowTree(h)
 }
 
 // relayoutAll lays the host content out again (no holes for hidden
@@ -366,6 +369,7 @@ func (w *settingsWindow) relayoutAll() {
 	}
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
+	w.hideInactiveTabControls()
 	w.layoutFit()
 	if w.host != 0 {
 		winapi.InvalidateRect(w.host, true)
@@ -382,7 +386,7 @@ func (w *settingsWindow) placeCtl(c *ui.Ctl) {
 		return
 	}
 	if !c.Placed || c.Hidden {
-		winapi.ShowWindow(c.H, winapi.SW_HIDE)
+		hideWindowTree(c.H)
 		return
 	}
 	r := c.Rect

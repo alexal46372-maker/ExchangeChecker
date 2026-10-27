@@ -110,8 +110,10 @@ func TestCHK_TRAY_43_ViberHidden(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	app := startCfgApp(t, newCfgService(), true, nil)
 	w := openAdmin(t, app)
-	if visible(w.ctl[idSetViber]) || winapi.IsWindowEnabled(w.ctl[idSetViber]) {
-		t.Error("viber button without capability")
+	for _, pg := range w.tabPages {
+		if pg == pageViber {
+			t.Error("viber tab without capability")
+		}
 	}
 }
 
@@ -125,7 +127,15 @@ func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 	svc := newViberCfg()
 	app := startCfgApp(t, svc.cfgService, true, nil)
 	w := openAdmin(t, app)
-	pumpUntil(t, "viber button", func() bool { w.update(); return visible(w.ctl[idSetViber]) })
+	pumpUntil(t, "viber tab", func() bool {
+		w.update()
+		for _, pg := range w.tabPages {
+			if pg == pageViber {
+				return true
+			}
+		}
+		return false
+	})
 	w.click(t, idSetViber)
 	if w.page != pageViber || !visible(w.ctl[idVbRecipients]) || visible(w.ctl[idSetName]) {
 		t.Fatal("viber page")
@@ -178,9 +188,15 @@ func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 		t.Errorf("reminder 5: focus %s status %q", w.lastFocus, w.status)
 	}
 	w.set(idVbReminder, "60")
-	// simple mode hides the page and the button
+	// simple mode hides the page and the Viber tab
 	w.toggleUIMode()
-	if w.page != 0 || visible(w.ctl[idSetViber]) {
+	hasVb := false
+	for _, pg := range w.tabPages {
+		if pg == pageViber {
+			hasVb = true
+		}
+	}
+	if w.page != 0 || hasVb {
 		t.Error("simple mode shows viber")
 	}
 	w.toggleUIMode()

@@ -246,24 +246,20 @@ func (w *settingsWindow) viberCommand(id int32, code uint32) bool {
 	return true
 }
 
-// updateViber enables the page and the button (capability viber,
-// «Экспертный»).
+// updateViber enables the Viber tab (capability viber, «Экспертный»).
 func (w *settingsWindow) updateViber() {
 	avail := w.viberAvailable() && w.uiMode != traysettings.UISimple
 	if !avail && w.page == pageViber {
 		w.setPage(0)
 		return
 	}
-	if b := w.ctl[idSetViber]; b != 0 && (winapi.WindowStyle(b)&winapi.WS_VISIBLE != 0) != avail {
-		cmd := int32(winapi.SW_HIDE)
-		if avail {
-			cmd = winapi.SW_SHOW
-		}
-		w.show(b, cmd == winapi.SW_SHOW)
+	before := len(w.tabPages)
+	w.rebuildTabs()
+	if len(w.tabPages) != before {
 		w.relayoutAll()
+	} else {
+		w.markNav()
 	}
-	winapi.EnableWindow(w.ctl[idSetViber], avail)
-	w.markNav()
 	can := w.ed.CanEditViber()
 	for _, id := range []int32{idVbToken, idVbRecipients, idVbFrom, idVbTo, idVbReminder} {
 		winapi.SendMessage(w.ctl[id], winapi.EM_SETREADONLY, boolPtr(!can), 0)

@@ -14,7 +14,7 @@ import (
 
 // expertOnly are the controls hidden in «Простой» (UIFields: Simple false).
 var expertOnly = []int32{idSetPort, idSetClearPw, idSetEncrypt, idSetPreset, idSetTLS10, idSetTrust,
-	idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idSetDiscover, idSetPage}
+	idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idSetDiscover}
 
 // reqFields maps the edit / combo boxes to their fields.
 var reqFields = map[int32]traysettings.Field{
@@ -35,29 +35,32 @@ func (w *settingsWindow) applyUIMode() {
 		return
 	}
 	for _, id := range expertOnly {
-		cmd := int32(winapi.SW_SHOW)
-		if simple || w.page != 0 && id != idSetPage {
-			cmd = winapi.SW_HIDE
-		}
+		on := !simple && w.page == 0
 		if id == idSetClearPw && w.cfg.mode == traysettings.ReadOnly {
-			cmd = winapi.SW_HIDE
+			on = false
 		}
 		if id == idSetDiscover && w.cfg.mode != traysettings.Admin {
 			continue
 		}
 		if h := w.ctl[id]; h != 0 {
-			w.show(h, cmd == winapi.SW_SHOW)
+			w.show(h, on)
+			if !on {
+				hideWindowTree(h)
+			}
 		}
 		if h := w.labels[id]; h != 0 {
-			w.show(h, cmd == winapi.SW_SHOW)
+			w.show(h, on)
+			if !on {
+				hideWindowTree(h)
+			}
 		}
 	}
 	if g := w.groups[i18n.KeySetGroupTLS]; g != 0 {
-		cmd := int32(winapi.SW_SHOW)
-		if simple || w.page != 0 {
-			cmd = winapi.SW_HIDE
+		on := !simple && w.page == 0
+		w.show(g, on)
+		if !on {
+			hideWindowTree(g)
 		}
-		w.show(g, cmd == winapi.SW_SHOW)
 	}
 	w.expertShown = !simple && w.page == 0
 	key := i18n.KeySetModeExpert
@@ -68,8 +71,9 @@ func (w *settingsWindow) applyUIMode() {
 	if w.tips != nil {
 		w.tips.set(w.ctl[idSetUIMode], w.t(i18n.KeyTipSetUIMode))
 	}
-	// the navigation marks the current page (phase 11, CHK-TRAY-47)
-	w.markNav()
+	// tabs: hide General (+ Viber via capability) in Simple
+	w.rebuildTabs()
+	w.hideInactiveTabControls()
 	w.relayoutAll() // Hidden controls take no room (no holes)
 }
 
@@ -134,27 +138,17 @@ func (w *settingsWindow) requiredColor(dc, ctl uintptr) (uintptr, bool) {
 	return 0, false
 }
 
-// navStyle: the navigation buttons are push-like check boxes; the one of
-// the current page is pressed (BM_SETCHECK), all stay enabled (phase 11,
-// CHK-TRAY-48: a grey disabled button read as «unavailable»).
-const navStyle = 0x0002 /* BS_CHECKBOX */ | 0x1000 /* BS_PUSHLIKE */
+// markNav keeps the tab selection in sync with w.page (tabs replaced
+// the push-like nav buttons).
+func (w *settingsWindow) markNav() { w.syncTabSelection() }
 
-// markNav presses the button of the current page.
-func (w *settingsWindow) markNav() {
-	for id, pg := range map[int32]int{idSetNavProfiles: 0, idSetPage: 1, idSetViber: pageViber} {
-		st := uintptr(winapi.BST_UNCHECKED)
-		if w.page == pg {
-			st = winapi.BST_CHECKED
-		}
-		if h := w.ctl[id]; h != 0 {
-			winapi.SendMessage(h, winapi.BM_SETCHECK, st, 0)
-		}
+// navTabSelected reports whether the section tabs currently select page.
+func (w *settingsWindow) navTabSelected(page int) bool {
+	h := w.ctl[idSetTabs]
+	if h == 0 {
+		return w.page == page
 	}
-}
-
-// navChecked reports a pressed navigation button.
-func navChecked(h uintptr) bool {
-	return winapi.SendMessage(h, winapi.BM_GETCHECK, 0, 0) == winapi.BST_CHECKED
+	return w.tabPageAt(winapi.TabGetCurSel(h)) == page
 }
 
 // syncNavIcons gives every navigation icon the visibility of its button

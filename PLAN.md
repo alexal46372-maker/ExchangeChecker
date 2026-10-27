@@ -885,6 +885,8 @@ Wizard Win32 (страницы):
 
 197. **Клонирование базы в UI (фаза 12, `CHK-TRAY-58`):** в окне настроек (рядом с управлением профилями) кнопка «Клонировать базу» / «Clone database» → IPC `clone_profile {profileId, newId?, newName?, expectedRevision}` (capability `clone_profile`, админ). Успех с `needPassword:true` → выбирается новый профиль и фокус на поле пароля (пароль **не** копируется). Без capability кнопка скрыта; `access_denied` для не-админа. RU+EN. Скриншоты ui-screens. Tests: `TestCHK_TRAY_58_*`.
 
+198. **Mute до восстановления в UI (фаза 12, `CHK-TRAY-59`):** в меню базы (левый клик по значку): «Приглушить до восстановления» / «Mute until recovered» и «Снять» / «Unmute» → IPC `mute_until_recovered` / `unmute_profile` (capability `mute_profile`, как `ack_alert`). Индикатор `muted` в строке меню, в «Состояние» и на карточке. Без capability пункты скрыты. RU+EN. Скриншоты ui-screens. Tests: `TestCHK_TRAY_59_*`.
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.

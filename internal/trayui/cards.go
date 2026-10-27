@@ -21,6 +21,8 @@ type Card struct {
 	// Disabled: polling is off; the card shows «Опрос выключен» only
 	// (phase 11, CHK-TRAY-49)
 	Disabled bool
+	// Muted: mute_until_recovered (CHK-TRAY-59)
+	Muted bool
 }
 
 // cardRank orders the colours: the card takes its worst one.
@@ -63,6 +65,9 @@ func Cards(rows []StatusRow, lang string) []Card {
 			}
 			if r.Note != "" {
 				c.Info = r.Note
+				if strings.Contains(r.Note, i18n.T(i18n.KeyCardMuted, lang)) {
+					c.Muted = true
+				}
 			}
 			if c.State == "" {
 				c.State = r.State
@@ -108,6 +113,13 @@ func Cards(rows []StatusRow, lang string) []Card {
 			tip += "\r\n" + strings.Join(tips[key], "\r\n")
 		}
 		c.Tip = tip + "\r\n" + i18n.T(i18n.KeyCardTip, lang)
+	}
+	for i := range out {
+		if out[i].Muted && out[i].State != "" {
+			out[i].State = out[i].State + " · " + i18n.T(i18n.KeyCardMuted, lang)
+		} else if out[i].Muted {
+			out[i].State = i18n.T(i18n.KeyCardMuted, lang)
+		}
 	}
 	return out
 }

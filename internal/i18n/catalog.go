@@ -19,6 +19,10 @@ const (
 	KeyLevelError   = "level.error"
 
 	KeyDBDisabled = "db.disabled"
+	KeyDBMuted              = "db.muted"
+	KeyMenuMute             = "menu.mute"
+	KeyMenuUnmute           = "menu.unmute"
+	KeyCardMuted            = "card.muted"
 	KeyDBPending  = "db.pending"
 	KeyDBStale    = "db.stale"
 	KeyDBNone     = "db.none"
@@ -825,6 +829,9 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyBalloonRecovered:      {"%s: обмен снова в норме", "%s: exchange is OK again"},
 	KeyBalloonSummary:        {"Просрочено точек: %d, восстановлено: %d", "Points overdue: %d, recovered: %d"},
 	KeyMenuBalloons:          {"Уведомления о просрочке", "Overdue notifications"},
+	KeyMenuMute:              {"Приглушить до восстановления", "Mute until recovered"},
+	KeyMenuUnmute:            {"Снять", "Unmute"},
+	KeyCardMuted:             {"Приглушена", "Muted"},
 	KeyMenuStatusWin:         {"Состояние…", "Status…"},
 	KeyMenuCheckNow:          {"Проверить сейчас", "Check now"},
 	KeyStTitle:               {"Состояние", "Status"},
@@ -883,6 +890,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyLevelWarning: {"предупреждение", "warning"},
 	KeyLevelError:   {"ошибка", "error"},
 
+	KeyDBMuted:               {"приглушена", "muted"},
 	KeyDBDisabled: {"выключена", "disabled"},
 	KeyDBPending:  {"ожидание опроса", "waiting for the first poll"},
 	KeyDBStale:    {"последние известные данные", "last known data"},

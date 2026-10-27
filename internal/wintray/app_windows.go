@@ -597,7 +597,37 @@ func (a *App) Command(cmd int) {
 		a.OpenVolume()
 	case trayui.CmdPinHelp:
 		a.ShowPinHelp()
+	default:
+		if i, mute, ok := trayui.MuteProfileIndex(cmd); ok {
+			a.muteProfile(i, mute)
+		}
 	}
+}
+
+// muteProfile sends mute_until_recovered / unmute_profile for
+// status.Snapshot.Profiles[i] (CHK-TRAY-59).
+func (a *App) muteProfile(i int, mute bool) {
+	if a.session == nil || !a.session.Supported(model.CmdMuteUntilRecovered) {
+		return
+	}
+	st := a.session.Status()
+	if st.Snapshot == nil || i < 0 || i >= len(st.Snapshot.Profiles) {
+		return
+	}
+	id := st.Snapshot.Profiles[i].ProfileID
+	cmd := model.CmdMuteUntilRecovered
+	if !mute {
+		cmd = model.CmdUnmuteProfile
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
+		defer cancel()
+		m, err := a.session.Do(ctx, model.IPCRequest{Cmd: cmd, ProfileID: id})
+		if err != nil || m.Type == model.MsgError {
+			return // menu is ephemeral; next status push refreshes the indicator
+		}
+		_ = a.session.Refresh(ctx)
+	}()
 }
 
 // SetLanguage applies a per-user language preference at once to the

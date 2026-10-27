@@ -360,6 +360,17 @@ func (w *settingsWindow) set(id int32, s string) {
 
 func (w *settingsWindow) click(t *testing.T, id int32) {
 	t.Helper()
+	switch id { // section tabs replaced the nav buttons
+	case idSetNavProfiles:
+		w.setPage(0)
+		return
+	case idSetPage:
+		w.setPage(1)
+		return
+	case idSetViber:
+		w.setPage(pageViber)
+		return
+	}
 	h := w.ctl[id]
 	if h == 0 || !winapi.IsWindowEnabled(h) {
 		t.Fatalf("control %d missing or disabled", id)
@@ -905,8 +916,8 @@ func TestCHK_TRAY_09_SettingsGeneralPage(t *testing.T) {
 		t.Fatal("initial page")
 	}
 	w.click(t, idSetPage)
-	if w.page != 1 || !navChecked(w.ctl[idSetPage]) || navChecked(w.ctl[idSetNavProfiles]) {
-		t.Fatalf("page %d: the navigation must mark «Общие настройки»", w.page)
+	if w.page != 1 || !w.navTabSelected(1) || w.navTabSelected(0) {
+		t.Fatalf("page %d: the tabs must select «Общие настройки»", w.page)
 	}
 	if w.text(idGenPoll) != "60" || !w.check(idGenBeep) || !w.check(idGenAutostart) || !winapi.IsWindowEnabled(w.ctl[idGenBeep]) {
 		t.Errorf("general page: poll %q beep %v autostart %v", w.text(idGenPoll), w.check(idGenBeep), w.check(idGenAutostart))

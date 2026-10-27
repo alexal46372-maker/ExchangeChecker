@@ -91,8 +91,8 @@ func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
 	app := startCfgApp(t, newCfgService(), true, nil)
 	defer app.Exit()
 	w := openAdmin(t, app)
-	if len(w.navIco) != 4 {
-		t.Fatalf("%d navigation icons", len(w.navIco))
+	if len(w.navIco) != 1 {
+		t.Fatalf("%d mode icons (tabs replaced page nav)", len(w.navIco))
 	}
 	for _, p := range w.navIco {
 		b, ic := p[0].H, p[1].H

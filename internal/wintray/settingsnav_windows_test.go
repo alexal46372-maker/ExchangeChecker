@@ -12,12 +12,9 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
-// TestCHK_TRAY_47_Navigation — the settings window has a left
-// navigation (PLAN §12 p.142): «Базы данных» / «Общие настройки» /
-// «Уведомления Viber» and the mode switch, RU / EN with tooltips; the
-// current page is disabled; hidden buttons leave no gap, neither in the
-// navigation («Простой») nor in the bottom bar (the test buttons of the
-// databases page on the other pages).
+// TestCHK_TRAY_47_Navigation — section tabs (SysTabControl32): Databases /
+// General / Viber; Simple/Expert is a separate mode button; in Simple the
+// General (+ Viber) tabs are absent; current tab tracks setPage.
 func TestCHK_TRAY_47_Navigation(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -30,58 +27,40 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 			t.Fatal(err)
 		}
 		w.Reload()
-		pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() && visible(w.ctl[idSetViber]) })
-		nav := []struct {
-			id       int32
-			key, tip string
-		}{{idSetNavProfiles, i18n.KeySetNavProfiles, i18n.KeyTipSetNavProfiles}, {idSetPage, i18n.KeySetNavGeneral, i18n.KeyTipSetPage},
-			{idSetViber, i18n.KeySetNavViber, i18n.KeyTipVbPage}}
-		for _, n := range nav {
-			if h := w.ctl[n.id]; winapi.GetWindowText(h) != i18n.T(n.key, lang) || w.tips.text(h) != i18n.T(n.tip, lang) || i18n.T(n.tip, lang) == "" {
-				t.Errorf("%s: nav %q tip %q", lang, winapi.GetWindowText(h), w.tips.text(h))
-			}
+		pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() && w.viberAvailable() })
+		if w.ctl[idSetTabs] == 0 || winapi.TabItemCount(w.ctl[idSetTabs]) < 2 {
+			t.Fatalf("%s: tabs missing or too few (%d)", lang, winapi.TabItemCount(w.ctl[idSetTabs]))
 		}
-		gap := px(ui.P4)
-		r := func(id int32) winapi.RECT { return w.hostRect[w.ctl[id]] }
-		for i, id := range []int32{idSetPage, idSetViber, idSetUIMode} {
-			prev := []int32{idSetNavProfiles, idSetPage, idSetViber}[i]
-			if r(id).Top-r(prev).Bottom != gap || r(id).Left != r(prev).Left {
-				t.Errorf("%s: nav button %d not right below the previous one: %+v %+v", lang, id, r(prev), r(id))
-			}
-		}
-		if !navChecked(w.ctl[idSetNavProfiles]) || navChecked(w.ctl[idSetPage]) {
-			t.Errorf("%s: databases page not marked", lang)
-		}
-		for _, id := range []int32{idSetNavProfiles, idSetPage, idSetViber} {
-			if !winapi.IsWindowEnabled(w.ctl[id]) {
-				t.Errorf("%s: nav %d disabled (the current page is pressed, not greyed)", lang, id)
-			}
+		if !w.navTabSelected(0) {
+			t.Errorf("%s: databases tab not selected", lang)
 		}
 		barLeft := func() int32 { return winapi.GetWindowRect(w.ctl[idSetStatus]).Left }
 		for _, p := range []struct {
-			id   int32
 			page int
-		}{{idSetPage, 1}, {idSetViber, pageViber}} {
-			w.click(t, p.id)
-			if w.page != p.page || !navChecked(w.ctl[p.id]) || navChecked(w.ctl[idSetNavProfiles]) {
-				t.Errorf("%s: page %d after nav %d", lang, w.page, p.id)
+		}{{1}, {pageViber}} {
+			w.setPage(p.page)
+			if w.page != p.page || !w.navTabSelected(p.page) {
+				t.Errorf("%s: page %d tab not selected", lang, p.page)
 			}
-			// the first visible bar button starts at the margin
 			if x := winapi.GetWindowRect(w.ctl[idSetReload]).Left; x != barLeft() || visible(w.ctl[idSetTest]) {
-				t.Errorf("%s page %d: «Перечитать» at %d, bar starts at %d (gap of hidden buttons)", lang, p.page, x, barLeft())
+				t.Errorf("%s page %d: «Перечитать» at %d, bar starts at %d", lang, p.page, x, barLeft())
 			}
 		}
-		w.click(t, idSetNavProfiles)
+		w.setPage(0)
 		if w.page != 0 || winapi.GetWindowRect(w.ctl[idSetTest]).Left != barLeft() {
 			t.Errorf("%s: back to the databases page", lang)
 		}
-		w.toggleUIMode() // «Простой»: no general / Viber buttons, no gap
-		if visible(w.ctl[idSetPage]) || visible(w.ctl[idSetViber]) || r(idSetUIMode).Top-r(idSetNavProfiles).Bottom != gap {
-			t.Errorf("%s: simple mode navigation %+v %+v", lang, r(idSetNavProfiles), r(idSetUIMode))
+		w.toggleUIMode() // Simple: only Databases tab
+		nTabs := winapi.TabItemCount(w.ctl[idSetTabs])
+		if nTabs != 1 || len(w.tabPages) != 1 || w.tabPageAt(0) != 0 {
+			t.Errorf("%s: simple mode must keep only Databases tab, got win=%d pages=%v", lang, nTabs, w.tabPages)
+		}
+		if !visible(w.ctl[idSetUIMode]) {
+			t.Errorf("%s: mode button must stay", lang)
 		}
 		w.toggleUIMode()
-		if r(idSetUIMode).Top <= r(idSetViber).Bottom {
-			t.Errorf("%s: expert mode navigation not restored", lang)
+		if winapi.TabItemCount(w.ctl[idSetTabs]) < 2 {
+			t.Errorf("%s: expert tabs not restored", lang)
 		}
 		w.close()
 		app.Exit()
@@ -115,81 +94,118 @@ func TestCHK_TRAY_47_Cues(t *testing.T) {
 	}
 }
 
-
-// TestCHK_TRAY_47_PageClear — switching section buttons (profiles /
-// general / Viber / simple↔expert) clears the previous right-panel
-// controls before showing the next (Alex: fields overlapped without a
-// clear). Inactive page roots stay Hidden and their HWNDs are not WS_VISIBLE.
+// TestCHK_TRAY_47_PageClear — HARD clear: start in Simple (Alex repro),
+// flip Simple↔Expert several times, then every distinct tab pair A→B
+// back and forth. Inactive pageCtl must be Hidden and not WS_VISIBLE;
+// never two page trees visible at once (Gap:-1 overlap).
 func TestCHK_TRAY_47_PageClear(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	svc := newViberCfg()
 	app := startCfgApp(t, svc.cfgService, true, nil)
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session, hidden: true,
-		uiMode: traysettings.UIExpert})
+	// Start Simple — the live Win failure path (#6 missed this).
+	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+		hidden: false, // visible window when possible
+		uiMode: traysettings.UISimple})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { w.close(); app.Exit() }()
 	w.Reload()
-	pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() && visible(w.ctl[idSetViber]) })
+	pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() })
 
-	assertPage := func(want int, see, hide []int32) {
+	check := func(tag string) {
 		t.Helper()
-		if w.page != want {
-			t.Fatalf("page=%d want %d", w.page, want)
+		if why := w.assertPageClear(); why != "" {
+			t.Fatalf("%s page=%d mode=%v: %s", tag, w.page, w.UIMode(), why)
 		}
-		for _, id := range see {
-			if h := w.ctl[id]; h == 0 || !visible(h) {
-				t.Errorf("page %d: control %d should be visible", want, id)
-			}
-		}
-		for _, id := range hide {
-			if h := w.ctl[id]; h != 0 && visible(h) {
-				t.Errorf("page %d: control %d still visible (overlay)", want, id)
-			}
-		}
-		// right-panel page roots: inactive pages must stay Hidden (wizard clear)
-		for i, n := range w.pages {
-			if n == nil {
+		// mandatory: inactive pageCtl HWNDs
+		for i, hs := range w.pageCtl {
+			if i == w.page {
 				continue
 			}
-			wantHidden := i != want
-			ui.Walk(n, func(c *ui.Ctl) {
-				if c == nil || c.H == 0 {
-					return
+			for _, h := range hs {
+				if h == 0 {
+					continue
 				}
-				if wantHidden && !c.Hidden {
-					t.Errorf("page %d: pages[%d] ctl not Hidden (overlay risk)", want, i)
+				if winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
+					t.Fatalf("%s: pageCtl[%d] hwnd still WS_VISIBLE", tag, i)
 				}
-				if wantHidden && visible(c.H) {
-					t.Errorf("page %d: pages[%d] hwnd still WS_VISIBLE (overlay)", want, i)
+				if c := w.ctlOf[h]; c != nil && !c.Hidden {
+					t.Fatalf("%s: pageCtl[%d] Ctl.Hidden=false", tag, i)
 				}
-			})
+			}
+			if n := w.pages[i]; n != nil {
+				ui.Walk(n, func(c *ui.Ctl) {
+					if c == nil || c.H == 0 {
+						return
+					}
+					if !c.Hidden {
+						t.Errorf("%s: pages[%d] not Hidden", tag, i)
+					}
+					if visible(c.H) {
+						t.Errorf("%s: pages[%d] still WS_VISIBLE", tag, i)
+					}
+				})
+			}
 		}
 	}
 
-	assertPage(0, []int32{idSetHost, idSetName}, []int32{idGenPoll, idVbToken})
-	w.click(t, idSetPage)
-	assertPage(1, []int32{idGenPoll, idGenBeep}, []int32{idSetHost, idVbToken})
-	w.click(t, idSetViber)
-	assertPage(pageViber, []int32{idVbToken, idVbEnabled}, []int32{idSetHost, idGenPoll})
-	w.click(t, idSetNavProfiles)
-	assertPage(0, []int32{idSetHost}, []int32{idGenPoll, idVbToken})
+	check("simple-start")
+	if w.UIMode() != traysettings.UISimple || visible(w.ctl[idSetPort]) {
+		t.Fatalf("want Simple with expert fields hidden")
+	}
 
-	// simple ↔ expert on the profiles page: expert-only fields clear
+	// Simple ↔ Expert several times (mandatory)
+	for i := 0; i < 3; i++ {
+		w.toggleUIMode()
+		check("to-expert")
+		if w.UIMode() != traysettings.UIExpert || !visible(w.ctl[idSetHost]) {
+			t.Fatalf("expert flip %d: host not visible", i)
+		}
+		if visible(w.ctl[idGenPoll]) || visible(w.ctl[idVbToken]) {
+			t.Fatalf("expert flip %d: other page controls visible (overlap)", i)
+		}
+		w.toggleUIMode()
+		check("to-simple")
+		if w.UIMode() != traysettings.UISimple || visible(w.ctl[idSetPort]) || visible(w.ctl[idGenPoll]) {
+			t.Fatalf("simple flip %d: expert/general still visible", i)
+		}
+	}
+
+	// Expert: all distinct tab pairs A→B, then back, several rounds
 	w.toggleUIMode()
-	if w.UIMode() != traysettings.UISimple || visible(w.ctl[idSetPort]) || visible(w.ctl[idSetEncrypt]) {
-		t.Errorf("simple: expert fields still visible")
+	pumpUntil(t, "viber tab", func() bool { w.update(); return w.viberAvailable() && winapi.TabItemCount(w.ctl[idSetTabs]) >= 3 })
+	pages := []int{0, 1, pageViber}
+	for round := 0; round < 2; round++ {
+		for _, a := range pages {
+			for _, b := range pages {
+				if a == b {
+					continue
+				}
+				w.setPage(a)
+				check("pair-a")
+				w.setPage(b)
+				check("pair-b")
+				if w.page != b || !w.navTabSelected(b) {
+					t.Fatalf("round %d %d→%d: page=%d", round, a, b, w.page)
+				}
+				// active page sample control visible; previous not
+				switch b {
+				case 0:
+					if !visible(w.ctl[idSetHost]) || visible(w.ctl[idGenPoll]) || visible(w.ctl[idVbToken]) {
+						t.Fatalf("databases not exclusive after %d→%d", a, b)
+					}
+				case 1:
+					if !visible(w.ctl[idGenPoll]) || visible(w.ctl[idSetHost]) || visible(w.ctl[idVbToken]) {
+						t.Fatalf("general not exclusive after %d→%d", a, b)
+					}
+				case pageViber:
+					if !visible(w.ctl[idVbToken]) || visible(w.ctl[idSetHost]) || visible(w.ctl[idGenPoll]) {
+						t.Fatalf("viber not exclusive after %d→%d", a, b)
+					}
+				}
+			}
+		}
 	}
-	if !visible(w.ctl[idSetHost]) {
-		t.Errorf("simple: host should stay visible")
-	}
-	w.toggleUIMode()
-	if w.UIMode() != traysettings.UIExpert || !visible(w.ctl[idSetPort]) {
-		t.Errorf("expert: port not restored")
-	}
-	// simple→expert then jump to Viber: profiles expert fields must clear
-	w.click(t, idSetViber)
-	assertPage(pageViber, []int32{idVbToken}, []int32{idSetHost, idSetPort, idGenPoll})
 }

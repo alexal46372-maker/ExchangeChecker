@@ -87,6 +87,7 @@ const (
 	idSetStalled // profile stalledMinutes (CHK-TRAY-53)
 	idSetAlarmTest // «Тест тревоги…» (CHK-TRAY-53)
 	idSetUIMode // «Экспертный режим» / «Простой режим» (phase 10 D)
+	idSetTabs  // SysTabControl32: Databases / General / Viber
 	idSetExport // «Экспорт…» (phase 10 E, administrator)
 	idSetImport // «Импорт…»
 	idSetClose  = winapi.IDCANCEL
@@ -241,9 +242,12 @@ type settingsWindow struct {
 	// statusRefreshes / statusRefreshed: get_status re-reads started /
 	// done after save_settings (test hook)
 	statusRefreshes, statusRefreshed int
-	page                             int          // 0 = databases, 1 = general settings
+	page                             int          // 0 = databases, 1 = general settings, 2 = Viber
 	pageCtl                          [3][]uintptr // profiles, «Общие», «Viber» (phase 10 D4)
 	pages                            [3]ui.Node   // page roots for SetHidden on switch (no overlay)
+	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs
+	tabPages                         []int        // tab index → page index
+	tabSync                          bool         // ignore TCN_SELCHANGE while syncing
 	cur                              *[]uintptr   // page of the controls being created
 	connected                        bool         // service session state seen by onSessionState
 	loaded                           bool         // get_config (or a snapshot) loaded at least once
@@ -258,7 +262,7 @@ type settingsWindow struct {
 	// cues: cue banners set on the edit boxes (CHK-TRAY-17; EM_SETCUEBANNER
 	// itself needs comctl32 v6 of the tray manifest)
 	cues map[int32]string
-	// navIco: navigation button and its icon static (phase 11, CHK-TRAY-49)
+	// navIco: mode button and its icon static (tabs replaced page nav buttons)
 	navIco [][2]*ui.Ctl
 }
 
@@ -295,7 +299,7 @@ var settingsTips = map[int32]string{
 	idSetClearPw: i18n.KeyTipSetClearPw, idSetUIMode: i18n.KeyTipSetUIMode, idSetEncrypt: i18n.KeyTipSetEncrypt, idSetPreset: i18n.KeyTipSetPreset,
 	idSetTLS10: i18n.KeyTipSetTLS10, idSetTrust: i18n.KeyTipSetTrust, idSetEnabled: i18n.KeyTipSetEnabled,
 	idSetWarn: i18n.KeyTipSetWarn, idSetError: i18n.KeyTipSetError, idSetConnTO: i18n.KeyTipSetConnTimeout,
-	idSetQueryTO: i18n.KeyTipSetQueryTimeout, idSetPage: i18n.KeyTipSetPage, idSetNavProfiles: i18n.KeyTipSetNavProfiles, idSetStatus: i18n.KeyTipSetStatus,
+	idSetQueryTO: i18n.KeyTipSetQueryTimeout, idSetTabs: i18n.KeyTipSetPage, idSetStatus: i18n.KeyTipSetStatus,
 	idSetTest: i18n.KeyTipSetTest, idSetCancelTest: i18n.KeyTipSetCancelTest, idSetSave: i18n.KeyTipSetSave,
 	idSetPoll: i18n.KeyTipSetPoll, idSetReload: i18n.KeyTipSetReload, idSetElevate: i18n.KeyTipSetElevate,
 	idSetClose: i18n.KeyTipSetClose,
@@ -493,12 +497,13 @@ func (w *settingsWindow) build() {
 		return &ui.GroupBox{Box: g, Child: child}
 	}
 	const cw = 390 // edit / combo boxes
-	// left navigation (phase 11, CHK-TRAY-47): one button per page, the
-	// current one pressed (push-like check box, not disabled: Кончита); then the mode switch; then the profile list
-	// column of the databases page
+	// Section tabs (SysTabControl32) replace the left push-like nav buttons
+	// (Alex: live Win still overlapped with buttons; tabs + hard-hide).
 	w.cur = nil
-	// phase 11 (CHK-TRAY-49): an icon (SS_ICON static) left of every
-	// navigation button (185 + 4 + 16 = the former 205 units); it is shown and hidden with its button
+	winapi.InitTooltips() // ICC_WIN95_CLASSES registers SysTabControl32
+	tabH := w.add(wcTabControl, "", 0, winapi.WS_TABSTOP|tcsHotTrack, idSetTabs, 0, 0, 600, 28)
+	w.tabCtl = &ui.Ctl{H: tabH, Kind: ui.Box, W: 600, Hgt: 28, Grow: true, NoShrink: true}
+	// mode switch kept as a button with icon (not a page tab)
 	navRow := func(b *ui.Ctl, ico string) ui.Node {
 		h := w.add("STATIC", "", 0, winapi.SS_ICON|winapi.SS_CENTERIMAGE, 0, 0, 0, 0, 0)
 		winapi.SendMessage(h, winapi.STM_SETICON, uiIcons.ico(ico, px(icoSmall)), 0)
@@ -506,19 +511,13 @@ func (w *settingsWindow) build() {
 		w.navIco = append(w.navIco, [2]*ui.Ctl{b, ic})
 		return &ui.Row{Gap: ui.P4, Align: ui.Center, Items: []ui.Node{ic, b}}
 	}
-	nav := &ui.Col{Gap: ui.P4, Items: []ui.Node{
-		navRow(add("BUTTON", w.t(i18n.KeySetNavProfiles), 0, winapi.WS_TABSTOP|navStyle, idSetNavProfiles, ui.Button, 185, 0), trayui.IcoNavDatabases),
-		navRow(add("BUTTON", w.t(i18n.KeySetNavGeneral), 0, winapi.WS_TABSTOP|navStyle, idSetPage, ui.Button, 185, 0), trayui.IcoNavGeneral),
-		navRow(add("BUTTON", w.t(i18n.KeySetNavViber), 0, winapi.WS_TABSTOP|navStyle, idSetViber, ui.Button, 185, 0), trayui.IcoNavViber),
-		navRow(add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 185, 0), trayui.IcoNavMode),
-	}}
-	winapi.SetWindowText(w.ctl[idSetUIMode], "")         // applyUIMode names it
-	winapi.ShowWindow(w.ctl[idSetViber], winapi.SW_HIDE) // updateViber shows it
+	mode := navRow(add("BUTTON", longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple)), 0, winapi.WS_TABSTOP, idSetUIMode, ui.Button, 185, 0), trayui.IcoNavMode)
+	winapi.SetWindowText(w.ctl[idSetUIMode], "") // applyUIMode names it
 	w.cur = &w.pageCtl[0]
 	list := add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idSetList, ui.Box, 205, 250)
 	// phase 11 (CHK-TRAY-48): the list as wide as the navigation column
 	list.Grow, list.NoShrink = true, true
-	left := []ui.Node{label(w.t(i18n.KeySetProfiles), 0), list,
+	left := []ui.Node{mode, label(w.t(i18n.KeySetProfiles), 0), list,
 		&ui.Col{Gap: ui.P4, Items: []ui.Node{
 			&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
 				add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}},
@@ -666,7 +665,8 @@ func (w *settingsWindow) build() {
 	// the layout so boxes are at least as wide as their cues; Viber
 	// reminder keeps the STATIC hint only (no duplicate cue banner)
 	w.applyFieldCues()
-	w.layoutPages(m, &ui.Col{Gap: ui.P12, Items: []ui.Node{nav, &ui.Col{Gap: ui.P8 - 2, Items: left}}},
+	w.rebuildTabs()
+	w.layoutPages(m, &ui.Col{Gap: ui.P8 - 2, Items: left},
 		[]ui.Node{profilePage, generalPage, viberPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
@@ -736,6 +736,10 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 	case winapi.WM_COMMAND:
 		w.command(int32(wp&0xFFFF), uint32(wp>>16&0xFFFF))
 		return 0, true
+	case winapi.WM_NOTIFY:
+		if w.onTabNotify(lp) {
+			return 0, true
+		}
 	case winapi.WM_CTLCOLOREDIT:
 		if br, ok := w.requiredColor(wp, lp); ok {
 			return br, true
@@ -1005,7 +1009,8 @@ func (w *settingsWindow) update() {
 	winapi.EnableWindow(w.ctl[idSetCancelTest], testing)
 	if h := w.ctl[idSetAlarmTest]; h != 0 {
 		hasAlarm := sess.Supported(model.CmdAlarmTest) || sess.Status().Has(model.CapAlarmTest)
-		if hasAlarm {
+		// bar control is on pageCtl[0] — never SW_SHOW on another tab (overlay)
+		if hasAlarm && w.page == 0 {
 			winapi.ShowWindow(h, winapi.SW_SHOW)
 			admin := w.cfg.mode == traysettings.Admin
 			winapi.EnableWindow(h, admin && !w.busy)
@@ -1017,7 +1022,7 @@ func (w *settingsWindow) update() {
 				w.tips.set(h, w.t(tip))
 			}
 		} else {
-			winapi.ShowWindow(h, winapi.SW_HIDE)
+			hideWindowTree(h)
 		}
 	}
 	saved := has && !ed.IsNew
@@ -1051,11 +1056,11 @@ func (w *settingsWindow) update() {
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		if h := w.ctl[idSetClone]; h != 0 {
 			hasClone := w.cfg.session.Supported(model.CmdCloneProfile)
-			if cloneButtonVisible(ed.Mode, hasClone) {
+			if cloneButtonVisible(ed.Mode, hasClone) && w.page == 0 {
 				winapi.ShowWindow(h, winapi.SW_SHOW)
 				winapi.EnableWindow(h, saved && !w.busy)
 			} else {
-				winapi.ShowWindow(h, winapi.SW_HIDE)
+				hideWindowTree(h)
 			}
 		}
 		winapi.EnableWindow(w.ctl[idSetAdd], !w.busy && w.wiz == nil)
@@ -1185,10 +1190,14 @@ func (w *settingsWindow) profileDiscardOK() bool {
 }
 
 // setPage shows the databases (0), general settings (1), or Viber (2) page.
-// Inactive page roots are SetHidden first (wizard pattern) and their HWNDs
-// are SW_HIDE immediately so the previous section cannot paint over the new one.
+// Every inactive-tab control is hard-hidden (SetHidden + SW_HIDE + children)
+// before the new tab is shown — page roots alone were not enough on live Win.
 func (w *settingsWindow) setPage(p int) {
+	if p < 0 || p > pageViber {
+		return
+	}
 	w.page = p
+	w.hideInactiveTabControls()
 	for i, n := range w.pages {
 		if n != nil {
 			ui.SetHidden(n, i != p)
@@ -1197,11 +1206,25 @@ func (w *settingsWindow) setPage(p int) {
 	for i, hs := range w.pageCtl {
 		on := i == p
 		for _, h := range hs {
-			w.show(h, on)
+			if on {
+				if c := w.ctlOf[h]; c != nil {
+					c.Hidden = false
+				}
+			} else {
+				w.show(h, false)
+				hideWindowTree(h)
+			}
 		}
 	}
+	w.syncTabSelection()
 	w.applyUIMode() // lays the page out (relayoutAll)
 	w.update()
+	// update() may SW_SHOW page-0 bar/list controls — clear inactive again
+	w.hideInactiveTabControls()
+	if w.host != 0 {
+		winapi.InvalidateRect(w.host, true)
+		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+	}
 }
 
 // readGeneral copies the general page into the editor (administrator).

@@ -13,6 +13,7 @@ import (
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -166,6 +167,10 @@ type settingsConfig struct {
 	// otherUser: elevated as another user than the tray owner: no tray
 	// block in export / import (this HKCU is not the tray user's)
 	otherUser bool
+	// CHK-TRAY-62: alarm sound profiles in General (HKCU Sound).
+	onSoundSave func(trayalert.SoundPrefs) error
+	onSoundTest func(trayalert.SoundProfile, int)
+	soundPrefs  func() trayalert.SoundPrefs // live prefs from the tray App; nil = load store
 }
 
 // UIModeStore keeps the settings window mode.
@@ -266,6 +271,13 @@ type settingsWindow struct {
 	cues map[int32]string
 	// navIco: mode button and its icon static (tabs replaced page nav buttons)
 	navIco [][2]*ui.Ctl
+	// CHK-TRAY-62: «Звук» section (warning/error profiles) on General
+	sndWarn, sndErr profileCtl
+	sndInfo, sndSave uintptr
+	sndPick         func(cur string) (string, bool)
+	sndMaster       int
+	sndPreview      *trayalert.SoundPlayer
+	sndPreviewer    trayalert.Sounder
 }
 
 func (w *settingsWindow) setCue(id int32, text string) {
@@ -626,7 +638,9 @@ func (w *settingsWindow) build() {
 	// takes no room (no gap under the autostart check box)
 	w.wrap = append(w.wrap, autoErr, note)
 	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
-	generalPage := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
+	generalBox := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
+	soundBox := w.buildSoundSection(add, label) // CHK-TRAY-62
+	generalPage := &ui.Col{Gap: ui.P12, Items: []ui.Node{generalBox, soundBox}}
 	w.pageParent = 0
 	w.cur = nil
 
@@ -653,14 +667,14 @@ func (w *settingsWindow) build() {
 	button(idSetPoll, i18n.KeySetPoll, 110, false)
 	w.cur = nil
 	button(idSetReload, i18n.KeySetReload, 90, false)
-	if w.cfg.mode == traysettings.Admin {
-		button(idSetExport, i18n.KeyXferExport, 100, false)
-		button(idSetImport, i18n.KeyXferImport, 100, false)
-	}
 	if w.cfg.mode == traysettings.ReadOnly {
 		button(idSetElevate, i18n.KeySetElevate, 165, false)
 	}
-	// Simple/Expert — window-common footer (near Save/Close)
+	// Export/Import + Simple/Expert near Save/Close (CHK-TRAY-61 note)
+	if w.cfg.mode == traysettings.Admin {
+		button(idSetExport, i18n.KeyXferExport, 100, true)
+		button(idSetImport, i18n.KeyXferImport, 100, true)
+	}
 	modeLabel := longest(w.t(i18n.KeySetModeExpert), w.t(i18n.KeySetModeSimple))
 	w.add("BUTTON", modeLabel, 0, winapi.WS_TABSTOP, idSetUIMode, 12, 674, 185, gridButtonH)
 	modeW, _ := ui.Layout(&ui.Ctl{Kind: ui.Button, Text: modeLabel, W: 185}, m, 0, 0, 0)
@@ -692,6 +706,7 @@ func (w *settingsWindow) build() {
 		winapi.SendMessageString(w.ctl[idSetPreset], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
 	w.tips = newTooltips(w.hwnd)
+	w.applySoundTips()
 	for id, h := range w.ctl {
 		if key, ok := settingsTips[id]; ok {
 			w.tips.set(h, w.t(key))
@@ -768,6 +783,9 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 
 func (w *settingsWindow) command(id int32, code uint32) {
 	if w.viberCommand(id, code) {
+		return
+	}
+	if w.soundCommand(id) {
 		return
 	}
 	switch id {
@@ -968,6 +986,7 @@ func (w *settingsWindow) fill() {
 	w.setCheck(idSetTrust, f.TrustServerCert && traysettings.TrustApplies(f.Encrypt))
 	w.setCheck(idSetEnabled, f.Enabled)
 	w.fillGeneral()
+	w.loadSoundSection()
 	w.fillViber()
 	w.update()
 }
@@ -1704,6 +1723,7 @@ func (w *settingsWindow) close() {
 	if w.wiz != nil {
 		w.wiz.close()
 	}
+	w.stopSoundPreview()
 	if w.testCancel != nil {
 		w.testCancel()
 		w.testCancel = nil
@@ -1785,7 +1805,13 @@ func RunSettings(opt SettingsOptions) int {
 		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore, themeStore: opt.ThemeStore,
 		stores:    trayStores{Lang: opt.LangStore, Balloon: opt.BalloonStore, Sound: opt.SoundStore},
 		otherUser: OtherUser(opt.OwnerSID, CurrentUserSID()),
-		onClose:   func() { winapi.PostQuitMessage(0) }})
+		onSoundSave: func(p trayalert.SoundPrefs) error {
+			if opt.SoundStore == nil {
+				return nil
+			}
+			return opt.SoundStore.Save(p.Normalized(trayalert.DefaultSoundPrefs(nil)).String())
+		},
+		onClose: func() { winapi.PostQuitMessage(0) }})
 	if err != nil {
 		return 1
 	}

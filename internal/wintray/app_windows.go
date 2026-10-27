@@ -548,14 +548,12 @@ func (a *App) onNotify(ev uint32) {
 // LeftMenu / RightMenu are the current menu models.
 func (a *App) LeftMenu() []trayui.Item { return trayui.BuildLeftMenu(a.status, a.opt.Lang) }
 func (a *App) RightMenu() []trayui.Item {
-	m := trayui.BuildRightMenu(a.opt.Lang, a.opt.LangPref, a.serviceState())
-	// phase 9a items before the separator above «Выход»
-	ext := trayui.Phase9Items(a.opt.Lang, a.balloonsOn, a.connected() && !a.check.Busy)
-	ext = append(ext, trayui.Phase10Items(a.opt.Lang)...)
-	ext = append(ext, trayui.Phase11Items(a.opt.Lang, a.session != nil && (a.session.Supported(model.CmdSummary) || a.session.Status().Has(model.CapSummary)))...)
-	at := len(m) - 2
-	out := append(append(append([]trayui.Item(nil), m[:at]...), ext...), m[at:]...)
-	return out
+	sum := a.session != nil && (a.session.Supported(model.CmdSummary) || a.session.Status().Has(model.CapSummary))
+	return trayui.BuildTrayRightMenu(trayui.RightMenuOpts{
+		Lang: a.opt.Lang, Pref: a.opt.LangPref, Svc: a.serviceState(),
+		Theme: trayui.Current(), Balloons: a.balloonsOn,
+		Connected: a.connected() && !a.check.Busy, SummaryAvailable: sum,
+	})
 }
 
 // ShowLeftMenu shows the databases menu at the cursor.
@@ -591,12 +589,14 @@ func (a *App) Command(cmd int) {
 		a.CheckNow()
 	case trayui.CmdBalloons:
 		a.SetBalloons(!a.balloonsOn)
-	case trayui.CmdSound:
+	case trayui.CmdSound: // not in tray menu (CHK-TRAY-62); kept for tests
 		a.OpenSound()
 	case trayui.CmdVolume:
 		a.OpenVolume()
 	case trayui.CmdPinHelp:
 		a.ShowPinHelp()
+	case trayui.CmdThemeLight, trayui.CmdThemeDark:
+		a.SetChromeTheme(trayui.ThemeCommands[cmd])
 	default:
 		if i, mute, ok := trayui.MuteProfileIndex(cmd); ok {
 			a.muteProfile(i, mute)
@@ -679,7 +679,6 @@ func (a *App) reloadTrayPrefs() {
 		if a.settings.host != 0 {
 			ApplyWindowTheme(a.settings.host)
 		}
-		a.settings.syncThemeCombo()
 	}
 	if a.awin != nil && winapi.IsWindow(a.awin.hwnd) {
 		ApplyWindowTheme(a.awin.hwnd)
@@ -719,6 +718,7 @@ func (a *App) OpenSettings() uintptr {
 		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore, themeStore: a.opt.ThemeStore,
 		stores:  trayStores{Lang: a.opt.LangStore, Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
+		onSoundSave: a.SaveSoundPrefs, onSoundTest: a.testSound, soundPrefs: func() trayalert.SoundPrefs { return a.SoundPrefs() },
 		onClose: func() {
 			if a.settings == w {
 				a.settings = nil

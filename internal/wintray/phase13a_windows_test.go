@@ -4,10 +4,13 @@ package wintray
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -140,5 +143,70 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 		if !visible(w.ctl[id]) {
 			t.Fatalf("Simple: common %d must stay visible", id)
 		}
+	}
+}
+
+// TestCHK_TRAY_62_SoundInGeneral — alarm profiles live in General «Звук»
+// (warning+error); tray menu has no CmdSound (CHK-TRAY-62).
+func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	store := &memSoundStore{}
+	svc := newViberCfg()
+	app := startCfgApp(t, svc.cfgService, true, nil)
+	app.opt.SoundStore = store
+	app.loadSoundPrefs()
+	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+		hidden: true, uiMode: traysettings.UIExpert,
+		stores: trayStores{Sound: store},
+		onSoundSave: app.SaveSoundPrefs, onSoundTest: app.testSound,
+		soundPrefs: func() trayalert.SoundPrefs { return app.SoundPrefs() },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { w.close(); app.Exit() }()
+	w.Reload()
+	pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() })
+
+	w.setPage(1)
+	if w.sndWarn.freq == 0 || w.sndErr.freq == 0 || w.sndSave == 0 {
+		t.Fatal("sound section controls missing on General")
+	}
+	if !w.underPagePanel(w.sndWarn.freq) || !w.underPagePanel(w.sndSave) {
+		t.Fatal("sound controls must be under General page panel")
+	}
+	if winapi.GetWindowText(w.sndWarn.vol) != "80" || winapi.GetWindowText(w.sndErr.vol) != "100" {
+		t.Fatalf("defaults warn=%q err=%q", winapi.GetWindowText(w.sndWarn.vol), winapi.GetWindowText(w.sndErr.vol))
+	}
+	// invalid → not saved
+	winapi.SetWindowText(w.sndErr.freq, "5")
+	winapi.SendMessage(w.sndSave, winapi.BM_CLICK, 0, 0)
+	if store.saves != 0 || !strings.Contains(winapi.GetWindowText(w.sndInfo), "Ошибка") {
+		t.Fatalf("invalid saved: %q saves=%d", winapi.GetWindowText(w.sndInfo), store.saves)
+	}
+	winapi.SetWindowText(w.sndErr.freq, "1500")
+	winapi.SetWindowText(w.sndErr.vol, "60")
+	winapi.SendMessage(w.sndSave, winapi.BM_CLICK, 0, 0)
+	if store.saves != 1 || app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Volume != 60 {
+		t.Fatalf("save failed saves=%d prefs=%+v", store.saves, app.SoundPrefs())
+	}
+	// menu: no CmdSound; Theme present (CHK-TRAY-63 also)
+	var sound, theme bool
+	for _, it := range app.RightMenu() {
+		if it.ID == trayui.CmdSound {
+			sound = true
+		}
+		for _, s := range it.Sub {
+			if s.ID == trayui.CmdThemeLight || s.ID == trayui.CmdThemeDark {
+				theme = true
+			}
+		}
+	}
+	if sound {
+		t.Fatal("CmdSound must not appear in tray menu")
+	}
+	if !theme {
+		t.Fatal("Theme submenu missing from tray menu")
 	}
 }

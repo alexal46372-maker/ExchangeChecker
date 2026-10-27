@@ -625,6 +625,7 @@ const (
 	KeyAlertUnmute      = "alert.unmute"
 	KeyTipAlertMute     = "tip.alert_mute"
 	KeyMenuSound        = "menu.sound"
+	KeyMenuTheme        = "menu.theme"
 	KeyMenuVolume       = "menu.volume"
 	KeyMenuPinHelp      = "menu.pin_help"
 	KeyPinHelpTitle     = "pin.title"
@@ -675,6 +676,7 @@ const (
 	KeySetGroupTLS     = "set.group_tls"
 	KeySetGroupChecks  = "set.group_checks"
 	KeySetGroupGeneral = "set.group_general"
+	KeySetGroupSound   = "set.group_sound"
 	// phase 10 D4: «Viber» page
 	KeyVbPage             = "set.vb_page"
 	KeyVbGroup            = "set.vb_group"
@@ -1390,6 +1392,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyAlertUnmute:        {"Звук вкл", "Sound on"},
 	KeyTipAlertMute:       {"Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком", "Turn the sound of this alarm off or on. The next new alarm sounds again"},
 	KeyMenuSound:          {"Звук тревог…", "Alarm sounds…"},
+	KeyMenuTheme:          {"Тема", "Theme"},
 	KeyMenuVolume:         {"Громкость…", "Volume…"},
 	KeyMenuPinHelp:        {"Как закрепить значок…", "How to pin the icon…"},
 	KeyPinHelpTitle:       {"Значок Exchange Checker", "Exchange Checker icon"},
@@ -1435,6 +1438,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetGroupTLS:        {"Шифрование", "Encryption"},
 	KeySetGroupChecks:     {"Опрос и пороги", "Polling and thresholds"},
 	KeySetGroupGeneral:    {"Общие настройки компьютера", "Computer-wide settings"},
+	KeySetGroupSound:      {"Звук", "Sound"},
 	KeyVbPage:             {"Уведомления Viber…", "Viber notifications…"},
 	KeyVbGroup:            {"Уведомления Viber", "Viber notifications"},
 	KeyVbEnabled:          {"Отправлять уведомления в Viber", "Send notifications to Viber"},

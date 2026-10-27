@@ -39,7 +39,8 @@ func hideWindowTree(h uintptr) {
 func (w *settingsWindow) pagePanelProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 	switch msg {
 	case winapi.WM_COMMAND, winapi.WM_CTLCOLOREDIT, winapi.WM_NOTIFY:
-		return w.wndProc(w.hwnd, msg, wp, lp)
+		// via hostProc: BN_SETFOCUS / EN_SETFOCUS still scrollIntoView
+		return w.hostProc(w.host, msg, wp, lp)
 	}
 	return 0, false
 }

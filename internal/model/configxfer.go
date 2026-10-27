@@ -5,11 +5,18 @@ import (
 	"time"
 )
 
-// Phase 10 (EC Service, CHK-CFG-06): export_config / import_config (admin
-// only). The file format "ec-config/1" carries the settings and the
-// profiles with HasPassword; never a password, a DPAPI secret or a Viber
-// token / receiver. The "tray" block belongs to EC Tray: the service does
-// not store it (accepted and ignored by import_config, never exported).
+// Phase 10 (EC Service, CHK-CFG-06) + phase 12 (CHK-CFG-07 / CHK-IPC-14):
+// export_config / import_config (admin only). The file format "ec-config/1"
+// carries the settings and the profiles with HasPassword; never a
+// password or a DPAPI secret. Viber: by default (includeViberRecipients
+// false / absent) settings.viber is not exported and import keeps the
+// stored one; with includeViberRecipients true the non-secret viber
+// fields are transferred (recipients [{id,name}], enabled, schedule,
+// events, reminderMinutes) — never token / hasToken / status /
+// viber.dpapi. Root flag containsViberRecipients marks whether the file
+// carries recipients. The "tray" block belongs to EC Tray: the service
+// does not store it (accepted and ignored by import_config, never
+// exported).
 
 // Commands and capabilities.
 const (
@@ -21,7 +28,10 @@ const (
 	CmdImportConfig = "import_config"
 	CapExportConfig = "export_config"
 	CapImportConfig = "import_config"
-	MsgConfigExport = "config_export"
+	// CapExportViberRecipients: export_config / import_config accept
+	// includeViberRecipients (phase 12, CHK-IPC-14).
+	CapExportViberRecipients = "export_viber_recipients"
+	MsgConfigExport          = "config_export"
 
 	ResultImported      = "imported"
 	ResultImportChecked = "dry_run"
@@ -79,6 +89,12 @@ type ConfigExport struct {
 	// has a non-empty SQL login (the file is then personal data; logins
 	// are exported, passwords never). Ignored on import.
 	ContainsLogins bool `json:"containsLogins"`
+	// ContainsViberRecipients (export, always sent; CHK-CFG-07): the
+	// export includes at least one settings.viber.recipients entry
+	// (only possible when includeViberRecipients was set). Ignored on
+	// import — the request flag includeViberRecipients decides whether
+	// settings.viber is applied.
+	ContainsViberRecipients bool `json:"containsViberRecipients"`
 	// Tray is EC Tray's own block: ignored by the service.
 	Tray json.RawMessage `json:"tray,omitempty"`
 }

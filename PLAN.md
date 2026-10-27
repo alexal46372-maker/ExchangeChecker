@@ -649,7 +649,8 @@ Wizard Win32 (страницы):
 
 ### Фаза 12 — служба: застой без номеров и далее (ветка `phase12-svc`; EC Service)
 
-- Застой по возрасту `FreshAt`/lastOk для точек без номеров сообщений (п. 190, `CHK-MON-19`); дальнейшие пункты — после ревью п. 190.
+- Застой по возрасту `FreshAt`/lastOk для точек без номеров сообщений (п. 190, `CHK-MON-19`).
+- `export_config` / `import_config` с флагом `includeViberRecipients` (п. 191, `CHK-CFG-07` / `CHK-IPC-14`); дальнейшие пункты — после ревью п. 191.
 
 ---
 
@@ -866,6 +867,8 @@ Wizard Win32 (страницы):
 182. **Реализация правила — COM `HNetCfg.FwPolicy2` / `HNetCfg.FWRule` (фаза 11):** сырые vtable-вызовы по тому же шаблону, что ярлык фазы 7d (`CoInitializeEx`, `CoCreateInstance`, BSTR через `SysAllocString`/`SysFreeString`, `VARIANT` для `Item`). Без `netsh`, `os/exec`, `golang.org/x/sys`. Каждый новый `NewProc` — в allowlist CHK-TRAY-10 / CHK-POL-01 (`SysAllocString`, `SysFreeString`, `VariantClear`). Win7 (NT 6.1): `INetFwPolicy2` есть. Идемпотентность: удалить все правила с нашим Name **или** Grouping `Exchange Checker`, затем одно `Add`. Деинсталляция удаляет правило. Откат свежей установки тоже. Если служба firewall выключена / любой COM сбой — `WARNING` в журнале, установка и удаление **не падают**.
 
 190. **Застой по lastOk для точек без номеров (фаза 12, `CHK-MON-19`):** сопоставления по времени и ручной SQL (нет `_SentNo`/`_ReceivedNo`, `Source` ≠ `counters`) — «застой», если возраст `FreshAt` (lastOk) больше `stalledMinutes` (тот же порог, наследование и валидация, что у MON-18). Точка уже в warning/error по отставанию — застой не ставится (тот же факт, без дубля в Event Log/Viber; следствие: тревога застоя при порогах отставания выше порога застоя). Counters-путь MON-18 (номера + peer по `NodeKey`) не меняется. Capability `stalled` без bump. Статус / problems / события / ack — как у MON-18. Tests: `TestCHK_MON_19_*` (+ регресс `TestCHK_MON_18_*`).
+
+191. **Экспорт/импорт получателей Viber (фаза 12, `CHK-CFG-07` / `CHK-IPC-14`):** `export_config` / `import_config` принимают `includeViberRecipients` (bool, по умолчанию false). При true экспорт включает несекретные поля `settings.viber` (`enabled`, `recipients:[{id,name}]`, `schedule`, `events`, `reminderMinutes`) — **никогда** `token` / `hasToken` / `status` / `viber.dpapi`; корневой флаг `containsViberRecipients` (всегда) = true, если в экспорте есть хотя бы один recipient. Импорт с флагом применяет несекретный `settings.viber` из файла (токен на диске не трогается; `hasToken`/`status` из файла игнорируются); без флага или без блока `settings.viber` — текущий Viber сохраняется (как раньше). Capability `export_viber_recipients` в hello (рядом с `export_config` / `import_config`). Tests: `TestCHK_CFG_07_*`, `TestCHK_IPC_14_*`.
 
 ### Ещё желательно (не блокер каркаса)
 

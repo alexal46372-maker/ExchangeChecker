@@ -182,6 +182,10 @@ type IPCRequest struct {
 	Config *ConfigExport `json:"config,omitempty"`
 	Mode   string        `json:"mode,omitempty"`
 	DryRun bool          `json:"dryRun,omitempty"`
+	// IncludeViberRecipients (phase 12, CHK-CFG-07 / CHK-IPC-14): export_config
+	// includes non-secret settings.viber; import_config applies it (default
+	// false = omit / keep stored). Never transfers the token.
+	IncludeViberRecipients bool `json:"includeViberRecipients,omitempty"`
 	// Viber (phase 10, CHK-SVC-06): ViberToken (save_settings: set,
 	// empty / absent = no change; viber_test: use once, not saved;
 	// write-only, never logged), ClearViberToken (save_settings: remove

@@ -138,3 +138,84 @@ func TestCHK_CFG_06_IPCLimitsAndShapes(t *testing.T) {
 		t.Fatalf("client write %v", err)
 	}
 }
+
+type xferViberHandler struct {
+	*xferHandler
+	include bool
+	impInc  bool
+}
+
+func (h *xferViberHandler) ExportConfigOpts(include bool) (model.ConfigExport, error) {
+	h.include = include
+	exp, err := h.ExportConfig()
+	if include {
+		exp.ContainsViberRecipients = true
+		st := model.DefaultSettings()
+		st.Viber.Recipients = []model.ViberRecipient{{ID: "r1", Name: "A"}}
+		v := st.Viber.Stored()
+		st.Viber = &v
+		exp.Settings = &st
+	}
+	return exp, err
+}
+
+func (h *xferViberHandler) ImportConfigOpts(cfg *model.ConfigExport, mode, rev string, dry, include bool, account string) (model.ImportResult, error) {
+	h.impInc = include
+	return h.ImportConfig(cfg, mode, rev, dry, account)
+}
+
+func newXferViberServer(t *testing.T, admin *int32) (*xferViberHandler, *MemListener) {
+	t.Helper()
+	v2, _, _, _ := newV2(t)
+	h := &xferViberHandler{xferHandler: &xferHandler{v2Handler: v2}}
+	s := NewServer(h, &testLog{})
+	s.Authorize = func(io.ReadWriteCloser) (Peer, error) {
+		return Peer{Admin: atomic.LoadInt32(admin) == 1, Account: `HOST\alex`}, nil
+	}
+	l := NewMemListener()
+	go s.Serve(l)
+	t.Cleanup(func() { s.Close() })
+	return h, l
+}
+
+// TestCHK_IPC_14_IncludeViberRecipients — hello advertises
+// export_viber_recipients; export_config / import_config forward
+// includeViberRecipients; export JSON carries containsViberRecipients and
+// recipients without hasToken/status/token.
+func TestCHK_IPC_14_IncludeViberRecipients(t *testing.T) {
+	var admin int32 = 1
+	h, l := newXferViberServer(t, &admin)
+	rw, err := l.Dial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rw.Close() })
+	var hello model.IPCMessage
+	if err := ReadMessage(rw, &hello); err != nil {
+		t.Fatal(err)
+	}
+	caps := "," + strings.Join(hello.Capabilities, ",") + ","
+	if !strings.Contains(caps, ","+model.CapExportViberRecipients+",") || !strings.Contains(caps, ","+model.CapExportConfig+",") {
+		t.Fatalf("caps %v", hello.Capabilities)
+	}
+	c := &rawConn{t: t, rw: rw, pending: map[uint64]model.IPCMessage{}}
+	c.send(model.IPCRequest{ID: 1, Cmd: model.CmdExportConfig, IncludeViberRecipients: true})
+	m := c.reply(1)
+	if m.Type != model.MsgConfigExport || m.Export == nil || !h.include || !m.Export.ContainsViberRecipients ||
+		m.Export.Settings == nil || m.Export.Settings.Viber == nil || len(m.Export.Settings.Viber.Recipients) != 1 {
+		t.Fatalf("export %+v include=%v", m, h.include)
+	}
+	b, _ := json.Marshal(m.Export)
+	if strings.Contains(string(b), `"hasToken"`) || strings.Contains(string(b), `"status"`) ||
+		!strings.Contains(string(b), `"containsViberRecipients":true`) ||
+		!strings.Contains(string(b), `"recipients":[{"id":"r1","name":"A"}]`) {
+		t.Fatalf("export json %s", b)
+	}
+
+	c.send(model.IPCRequest{ID: 2, Cmd: model.CmdImportConfig, IncludeViberRecipients: true,
+		Mode: model.ImportMerge, ExpectedRevision: "r1", Config: &model.ConfigExport{Format: model.ConfigFormatV1}})
+	m = c.reply(2)
+	if m.Type != model.MsgOK || !h.impInc {
+		t.Fatalf("import %+v impInc=%v", m, h.impInc)
+	}
+}

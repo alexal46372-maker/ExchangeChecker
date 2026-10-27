@@ -9,7 +9,8 @@ import (
 
 // Phase 10 (EC Service, CHK-SVC-06): Viber notifications. The settings
 // are settings.viber (settings.json, get_config / get_status settings,
-// save_settings; never part of export_config). The bot token is in
+// save_settings; export_config only with includeViberRecipients, and then
+// without hasToken / status / token — CHK-CFG-07). The bot token is in
 // viber.dpapi (DPAPI LocalMachine, DACL SYSTEM+Administrators),
 // write-only: save_settings viberToken / clearViberToken; no reply, log
 // or event ever contains it (hasToken only).
@@ -108,7 +109,7 @@ type ViberSettings struct {
 	Enabled bool `json:"enabled"`
 	// HasToken is read-only (views): viber.dpapi holds a token. Ignored
 	// on save, never stored.
-	HasToken   bool             `json:"hasToken"`
+	HasToken   bool             `json:"hasToken,omitempty"`
 	Recipients []ViberRecipient `json:"recipients"`
 	Schedule   ViberSchedule    `json:"schedule"`
 	// Events: the sent kinds (ViberEvent*), default all four.

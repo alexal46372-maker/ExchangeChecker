@@ -104,6 +104,14 @@ type ConfigTransfer interface {
 	ImportConfig(cfg *model.ConfigExport, mode, expectedRevision string, dryRun bool, account string) (model.ImportResult, error)
 }
 
+// ConfigViberRecipientsTransfer: export_config / import_config with
+// includeViberRecipients (phase 12, CHK-CFG-07 / CHK-IPC-14). Optional;
+// when absent the flag is ignored (export omits viber, import keeps it).
+type ConfigViberRecipientsTransfer interface {
+	ExportConfigOpts(includeViberRecipients bool) (model.ConfigExport, error)
+	ImportConfigOpts(cfg *model.ConfigExport, mode, expectedRevision string, dryRun, includeViberRecipients bool, account string) (model.ImportResult, error)
+}
+
 // Discoverer runs the admin-only interactive SQL commands (phase 6,
 // G2/G3; CHK-IPC-08 discover / discover_by_value / list_node_points,
 // CHK-IPC-09 check_mapping). The server checks the client (admin) before
@@ -376,6 +384,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ConfigTransfer); ok {
 		caps = append(caps, model.CapExportConfig, model.CapImportConfig) // phase 10 (CHK-CFG-06)
+		if _, ok := s.H.(ConfigViberRecipientsTransfer); ok {
+			caps = append(caps, model.CapExportViberRecipients) // phase 12 (CHK-IPC-14)
+		}
 	}
 	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
 		caps = append(caps, model.CapProblems, model.CapAlertRepeat) // phase 10 (CHK-MON-17)
@@ -1212,14 +1223,26 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 		return errorReply(req.ID, ErrAccessDenied, "")
 	}
 	switch req.Cmd {
-	case model.CmdExportConfig: // phase 10 (CHK-CFG-06)
-		exp, err := ct.ExportConfig()
+	case model.CmdExportConfig: // phase 10 (CHK-CFG-06) + phase 12 (CHK-CFG-07)
+		var exp model.ConfigExport
+		var err error
+		if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
+			exp, err = cv.ExportConfigOpts(req.IncludeViberRecipients)
+		} else {
+			exp, err = ct.ExportConfig()
+		}
 		if err != nil {
 			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgConfigExport, Export: &exp}
 	case model.CmdImportConfig:
-		res, err := ct.ImportConfig(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, cl.Account)
+		var res model.ImportResult
+		var err error
+		if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
+			res, err = cv.ImportConfigOpts(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, req.IncludeViberRecipients, cl.Account)
+		} else {
+			res, err = ct.ImportConfig(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, cl.Account)
+		}
 		if err != nil {
 			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
 		}

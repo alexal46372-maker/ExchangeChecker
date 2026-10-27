@@ -44,6 +44,8 @@ const (
 	MsgMonitorUnknownPoint = "monitor.unknown_point"
 	// MsgMonitorNoActiveAlert: ack_alert found no active alert.
 	MsgMonitorNoActiveAlert = "monitor.no_active_alert"
+	// MsgMonitorNoActiveMute: unmute_profile when the profile is not muted.
+	MsgMonitorNoActiveMute = "monitor.no_active_mute"
 	// MsgMonitorAlertAcked: informational text of an acknowledgement.
 	MsgMonitorAlertAcked = "monitor.alert_acked"
 	// MsgMonitorRateLimited: the command was refused by the rate limit.
@@ -140,6 +142,7 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgMonitorUnknownProfile:   {"Такой базы нет в настройках (удалена или не сохранена).", "No such database in the configuration (deleted or not saved)."},
 	MsgMonitorUnknownPoint:     {"У базы нет такой точки обмена.", "The database has no such exchange point."},
 	MsgMonitorNoActiveAlert:    {"Нет активной тревоги для подтверждения.", "There is no active alarm to acknowledge."},
+	MsgMonitorNoActiveMute:     {"Профиль не отключён (нет активного mute).", "The profile is not muted."},
 	MsgMonitorAlertAcked:       {"Тревога подтверждена.", "Alarm acknowledged."},
 	MsgMonitorRateLimited:      {"Слишком частые запросы, повторите через несколько секунд.", "Too many requests, try again in a few seconds."},
 	MsgTestOK:                  {"Соединение установлено.", "Connection succeeded."},
@@ -233,7 +236,7 @@ func MonitorMessage(key, lang string) string {
 func MonitorMessageKeys() []string {
 	return []string{MsgMonitorPollError, MsgMonitorConnError, MsgMonitorTimeout, MsgMonitorQueryError,
 		MsgMonitorMapping, MsgMonitorConfig, MsgMonitorPanic, MsgMonitorBusy, MsgMonitorBaseline, MsgMonitorHung, MsgMonitorConfigStale, MsgMonitorConfigInvalid,
-		MsgMonitorPollerHung, MsgMonitorUnknownProfile, MsgMonitorUnknownPoint, MsgMonitorNoActiveAlert, MsgMonitorAlertAcked, MsgMonitorRateLimited,
+		MsgMonitorPollerHung, MsgMonitorUnknownProfile, MsgMonitorUnknownPoint, MsgMonitorNoActiveAlert, MsgMonitorNoActiveMute, MsgMonitorAlertAcked, MsgMonitorRateLimited,
 		MsgTestOK, MsgTestNetwork, MsgTestLogin, MsgTestDatabase, MsgTestTLS, MsgTestTimeout, MsgTestConfig, MsgTestOther,
 		MsgTestBusy, MsgTestPasswordRequired, MsgTestWindowsUnsaved, MsgTestInvalidProfile,
 		MsgMonitorAccessDenied, MsgMonitorConfigSaveFailed, MsgMonitorConfigConflict, MsgMonitorProfileInvalid,

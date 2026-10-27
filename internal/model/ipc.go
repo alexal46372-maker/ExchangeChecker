@@ -113,6 +113,9 @@ const (
 	ErrCodeInvalidRequest = "invalid_request"
 	// ErrCodeNoActiveAlert: ack_alert found nothing to acknowledge.
 	ErrCodeNoActiveAlert = "no_active_alert"
+	// ErrCodeNoActiveMute: unmute_profile when the profile is not muted
+	// (phase 12, CHK-MON-20).
+	ErrCodeNoActiveMute = "no_active_mute"
 	// ErrCodeUnknownCommand: the service does not know the command.
 	ErrCodeUnknownCommand = "unknown_command"
 	// ErrCodeRateLimited: the command was refused by the command rate
@@ -173,15 +176,24 @@ type IPCRequest struct {
 	Settings *Settings `json:"settings,omitempty"`
 	// ClearPassword: save_profile deletes the saved password (phase 6).
 	ClearPassword bool `json:"clearPassword,omitempty"`
-	// ExpectedRevision of save_profile / delete_profile / save_settings:
-	// mandatory since phase 6b (missing -> invalid_request, errorArgs
-	// ["expectedRevision", "validation.required"]); mismatch -> conflict.
+	// ExpectedRevision of save_profile / delete_profile / save_settings /
+	// clone_profile: mandatory since phase 6b (missing -> invalid_request,
+	// errorArgs ["expectedRevision", "validation.required"]); mismatch ->
+	// conflict.
 	ExpectedRevision string `json:"expectedRevision,omitempty"`
+	// NewID / NewName of clone_profile (phase 12, CHK-CFG-08): optional;
+	// empty NewID = generate, empty NewName = "<old> (копия)" / "(copy)".
+	NewID   string `json:"newId,omitempty"`
+	NewName string `json:"newName,omitempty"`
 	// import_config (phase 10, CHK-CFG-06): Config, Mode (merge default |
 	// replace), DryRun (validate and report, write nothing).
 	Config *ConfigExport `json:"config,omitempty"`
 	Mode   string        `json:"mode,omitempty"`
 	DryRun bool          `json:"dryRun,omitempty"`
+	// IncludeViberRecipients (phase 12, CHK-CFG-07 / CHK-IPC-14): export_config
+	// includes non-secret settings.viber; import_config applies it (default
+	// false = omit / keep stored). Never transfers the token.
+	IncludeViberRecipients bool `json:"includeViberRecipients,omitempty"`
 	// Viber (phase 10, CHK-SVC-06): ViberToken (save_settings: set,
 	// empty / absent = no change; viber_test: use once, not saved;
 	// write-only, never logged), ClearViberToken (save_settings: remove
@@ -331,6 +343,9 @@ type IPCMessage struct {
 	Reloaded bool `json:"reloaded,omitempty"`
 	// PollScheduled: a poll of the saved (enabled) profile is queued.
 	PollScheduled bool `json:"pollScheduled,omitempty"`
+	// NeedPassword: clone_profile (CHK-CFG-08) — the clone has no secret;
+	// the admin must enter the SQL password (always true for a clone).
+	NeedPassword bool `json:"needPassword,omitempty"`
 	// Revision of the configuration after save_* / of get_config.
 	Revision string `json:"revision,omitempty"`
 	// Config is the get_config reply (MsgConfig).

@@ -54,6 +54,13 @@ type Acker interface {
 	AckAlert(profileID, pointKey string) (int, error)
 }
 
+// Muter runs mute_until_recovered / unmute_profile (phase 12, CHK-MON-20 /
+// CHK-IPC-15). Access level is the same as ack_alert (any local client).
+type Muter interface {
+	MuteUntilRecovered(profileID string) error
+	UnmuteProfile(profileID string) error
+}
+
 // EventAcker runs ack_alert {eventId} (phase 11, CHK-MON-18, capability
 // ack_event): only that alert.
 type EventAcker interface {
@@ -95,6 +102,12 @@ type ConfigManager interface {
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
 }
 
+// ProfileCloner runs clone_profile (phase 12, CHK-CFG-08, admin only).
+// Optional beside ConfigManager; Monitor implements both.
+type ProfileCloner interface {
+	CloneProfile(profileID, newID, newName, expectedRevision, account string) (model.SavedProfile, bool, error)
+}
+
 // ConfigTransfer runs export_config / import_config (admin only; phase
 // 10, CHK-CFG-06). import_config requests may be up to
 // model.IPCMaxImportRequest (1 MiB) from an elevated administrator; every
@@ -102,6 +115,14 @@ type ConfigManager interface {
 type ConfigTransfer interface {
 	ExportConfig() (model.ConfigExport, error)
 	ImportConfig(cfg *model.ConfigExport, mode, expectedRevision string, dryRun bool, account string) (model.ImportResult, error)
+}
+
+// ConfigViberRecipientsTransfer: export_config / import_config with
+// includeViberRecipients (phase 12, CHK-CFG-07 / CHK-IPC-14). Optional;
+// when absent the flag is ignored (export omits viber, import keeps it).
+type ConfigViberRecipientsTransfer interface {
+	ExportConfigOpts(includeViberRecipients bool) (model.ConfigExport, error)
+	ImportConfigOpts(cfg *model.ConfigExport, mode, expectedRevision string, dryRun, includeViberRecipients bool, account string) (model.ImportResult, error)
 }
 
 // Discoverer runs the admin-only interactive SQL commands (phase 6,
@@ -347,6 +368,9 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(Acker); ok {
 		caps = append(caps, model.CapAckAlert)
 	}
+	if _, ok := s.H.(Muter); ok {
+		caps = append(caps, model.CapMuteProfile) // phase 12 (CHK-IPC-15)
+	}
 	if _, ok := s.H.(HeartbeatSource); ok {
 		caps = append(caps, model.CapHeartbeat)
 	}
@@ -358,6 +382,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ConfigManager); ok {
 		caps = append(caps, model.CapConfigRead, model.CapConfigWrite)
+	}
+	if _, ok := s.H.(ProfileCloner); ok {
+		caps = append(caps, model.CapCloneProfile) // phase 12 (CHK-CFG-08)
 	}
 	if disc {
 		caps = append(caps, model.CapDiscover, model.CapDiscoverByValue, model.CapNodePoints, model.CapCheckMapping)
@@ -376,6 +403,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ConfigTransfer); ok {
 		caps = append(caps, model.CapExportConfig, model.CapImportConfig) // phase 10 (CHK-CFG-06)
+		if _, ok := s.H.(ConfigViberRecipientsTransfer); ok {
+			caps = append(caps, model.CapExportViberRecipients) // phase 12 (CHK-IPC-14)
+		}
 	}
 	if pr, ok := s.H.(ProblemsReporter); ok && pr.ReportsProblems() {
 		caps = append(caps, model.CapProblems, model.CapAlertRepeat) // phase 10 (CHK-MON-17)
@@ -1196,8 +1226,12 @@ func (s *Server) cancelOp(c *conn, req model.IPCRequest) model.IPCMessage {
 func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 	cm, ok := s.H.(ConfigManager)
 	ct, okT := s.H.(ConfigTransfer)
+	cloner, okC := s.H.(ProfileCloner)
 	if req.Cmd == model.CmdExportConfig || req.Cmd == model.CmdImportConfig {
 		ok = okT
+	}
+	if req.Cmd == model.CmdCloneProfile {
+		ok = okC
 	}
 	if !ok {
 		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
@@ -1212,14 +1246,26 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 		return errorReply(req.ID, ErrAccessDenied, "")
 	}
 	switch req.Cmd {
-	case model.CmdExportConfig: // phase 10 (CHK-CFG-06)
-		exp, err := ct.ExportConfig()
+	case model.CmdExportConfig: // phase 10 (CHK-CFG-06) + phase 12 (CHK-CFG-07)
+		var exp model.ConfigExport
+		var err error
+		if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
+			exp, err = cv.ExportConfigOpts(req.IncludeViberRecipients)
+		} else {
+			exp, err = ct.ExportConfig()
+		}
 		if err != nil {
 			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgConfigExport, Export: &exp}
 	case model.CmdImportConfig:
-		res, err := ct.ImportConfig(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, cl.Account)
+		var res model.ImportResult
+		var err error
+		if cv, ok := ct.(ConfigViberRecipientsTransfer); ok {
+			res, err = cv.ImportConfigOpts(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, req.IncludeViberRecipients, cl.Account)
+		} else {
+			res, err = ct.ImportConfig(req.Config, req.Mode, req.ExpectedRevision, req.DryRun, cl.Account)
+		}
 		if err != nil {
 			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
 		}
@@ -1253,6 +1299,14 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultDeleted, ProfileID: req.ProfileID,
 			Reloaded: true, Revision: rev}
+	case model.CmdCloneProfile: // phase 12 (CHK-CFG-08)
+		res, needPW, err := cloner.CloneProfile(req.ProfileID, req.NewID, req.NewName, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		p := res.Profile
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultCloned, ProfileID: p.ID, Profile: &p,
+			Reloaded: true, PollScheduled: res.PollScheduled, Revision: res.Revision, NeedPassword: needPW}
 	case model.CmdSaveSettings:
 		if req.Settings == nil {
 			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorSettingsInvalid,
@@ -1307,6 +1361,20 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 				return errorReply(req.ID, err, "")
 			}
 			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultAcknowledged, Acked: n}
+		}
+	case model.CmdMuteUntilRecovered: // phase 12 (CHK-MON-20 / CHK-IPC-15)
+		if mu, ok := s.H.(Muter); ok {
+			if err := mu.MuteUntilRecovered(req.ProfileID); err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultMuted}
+		}
+	case model.CmdUnmuteProfile:
+		if mu, ok := s.H.(Muter); ok {
+			if err := mu.UnmuteProfile(req.ProfileID); err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultUnmuted}
 		}
 	}
 	return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)

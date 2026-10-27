@@ -202,3 +202,98 @@ func TestCHK_CFG_06_TrayLimitAndRollback(t *testing.T) {
 		t.Fatal("secrets written although the import failed")
 	}
 }
+
+// TestCHK_CFG_07_ExportImportViberRecipients — includeViberRecipients
+// (default false): export omits settings.viber and sets
+// containsViberRecipients false; with the flag, export carries non-secret
+// viber (recipients [{id,name}], enabled, schedule, events,
+// reminderMinutes) and never token / hasToken / status / viber.dpapi;
+// containsViberRecipients is true when recipients are present. Import
+// with the flag applies non-secret viber and leaves the saved token;
+// without the flag (or without settings.viber) the stored viber is kept.
+func TestCHK_CFG_07_ExportImportViberRecipients(t *testing.T) {
+	e := newCfgEnv(t)
+	m := e.m
+	st := model.DefaultSettings()
+	st.Viber.Enabled = true
+	st.Viber.Recipients = []model.ViberRecipient{{ID: "r1", Name: "Иван"}, {ID: "r2", Name: "Пётр"}}
+	if _, err := m.SaveSettingsViber(st, "TOKEN-SECRET", false, e.rev(), "a"); err != nil {
+		t.Fatal(err)
+	}
+
+	// default export: no viber
+	x, err := m.ExportConfig()
+	raw, _ := json.Marshal(x)
+	if err != nil || x.Settings.Viber != nil || x.ContainsViberRecipients ||
+		strings.Contains(string(raw), "viber") || strings.Contains(string(raw), "TOKEN") ||
+		strings.Contains(string(raw), `"hasToken"`) || !strings.Contains(string(raw), `"containsViberRecipients":false`) {
+		t.Fatalf("default export %s %v", raw, err)
+	}
+
+	// includeViberRecipients: non-secret viber only
+	x, err = m.ExportConfigOpts(true)
+	raw, _ = json.Marshal(x)
+	if err != nil || x.Settings == nil || x.Settings.Viber == nil || !x.ContainsViberRecipients ||
+		len(x.Settings.Viber.Recipients) != 2 || x.Settings.Viber.Recipients[0] != (model.ViberRecipient{ID: "r1", Name: "Иван"}) ||
+		!x.Settings.Viber.Enabled || x.Settings.Viber.HasToken || x.Settings.Viber.Status != nil ||
+		strings.Contains(string(raw), "TOKEN") || strings.Contains(string(raw), `"hasToken"`) ||
+		strings.Contains(string(raw), `"status"`) || !strings.Contains(string(raw), `"containsViberRecipients":true`) {
+		t.Fatalf("include export %s %v", raw, err)
+	}
+	// exact settings.viber shape (no hasToken / status)
+	vb, _ := json.Marshal(x.Settings.Viber)
+	wantV := `{"enabled":true,"recipients":[{"id":"r1","name":"Иван"},{"id":"r2","name":"Пётр"}],"schedule":{"days":[1,2,3,4,5],"from":"08:30","to":"17:00"},"events":["error","warning","recovered","no_connection"],"reminderMinutes":60}`
+	if string(vb) != wantV {
+		t.Fatalf("viber json\n got %s\nwant %s", vb, wantV)
+	}
+
+	// import without flag: keep stored recipients + token even if file has other viber
+	imp := x
+	is := *x.Settings
+	is.WarnMinutes = 33
+	is.Viber = &model.ViberSettings{Enabled: false, Recipients: []model.ViberRecipient{{ID: "other", Name: "X"}}}
+	imp.Settings = &is
+	if _, err := m.ImportConfig(&imp, model.ImportReplace, e.rev(), false, "a"); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ := e.st.LoadSettings()
+	tok, _ := e.st.LoadViberToken()
+	if cur.WarnMinutes != 33 || !cur.Viber.Enabled || len(cur.Viber.Recipients) != 2 || cur.Viber.Recipients[0].ID != "r1" || tok != "TOKEN-SECRET" {
+		t.Fatalf("import without flag %+v tok %q", cur.Viber, tok)
+	}
+
+	// import with flag: apply non-secret viber, token untouched
+	is2 := *x.Settings
+	is2.Viber = &model.ViberSettings{
+		Enabled: true, HasToken: true, // must be ignored
+		Recipients: []model.ViberRecipient{{ID: "new1", Name: "Новый"}},
+		Schedule:   model.ViberSchedule{Days: []int{1}, From: "09:00", To: "18:00"},
+		Events:     []string{model.ViberEventError}, ReminderMinutes: 30,
+		Status: &model.ViberStatus{Queued: 99},
+	}
+	imp2 := model.ConfigExport{Format: model.ConfigFormatV1, Settings: &is2, Profiles: x.Profiles}
+	if _, err := m.ImportConfigOpts(&imp2, model.ImportReplace, e.rev(), false, true, "a"); err != nil {
+		t.Fatal(err)
+	}
+	cur, _ = e.st.LoadSettings()
+	tok, _ = e.st.LoadViberToken()
+	rawSet, _ := json.Marshal(cur.Viber.Stored())
+	if tok != "TOKEN-SECRET" || !cur.Viber.Enabled || len(cur.Viber.Recipients) != 1 || cur.Viber.Recipients[0].ID != "new1" ||
+		cur.Viber.ReminderMinutes != 30 || strings.Contains(string(rawSet), "hasToken") && cur.Viber.HasToken {
+		t.Fatalf("import with flag %+v tok %q stored %s", cur.Viber, tok, rawSet)
+	}
+	if e.st.HasViberToken() != true {
+		t.Fatal("token file touched")
+	}
+
+	// empty recipients -> containsViberRecipients false
+	st.Viber.Recipients = nil
+	st.Viber.Enabled = false
+	if _, err := m.SaveSettingsViber(st, "", true, e.rev(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	x, _ = m.ExportConfigOpts(true)
+	if x.ContainsViberRecipients || x.Settings.Viber == nil || len(x.Settings.Viber.Recipients) != 0 {
+		t.Fatalf("empty recipients %+v", x)
+	}
+}

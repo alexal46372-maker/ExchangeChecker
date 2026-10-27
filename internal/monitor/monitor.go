@@ -112,6 +112,9 @@ type Options struct {
 	// Acks keeps the alarm acknowledgements (FileAckStore in the
 	// service); nil = in-memory (CHK-IPC-02).
 	Acks AckStore
+	// Mutes keeps mute_until_recovered state (FileMuteStore next to
+	// ack-state.json); nil = in-memory (CHK-MON-20).
+	Mutes MuteStore
 	// OnAck is called for every newly acknowledged alert (the service
 	// writes one informational Event Log entry).
 	OnAck func(model.AlertEvent)
@@ -339,6 +342,9 @@ type Monitor struct {
 	// the writes
 	acks    map[string]AckRecord
 	ackSave sync.Mutex
+	// mutes (CHK-MON-20), guarded by mu; muteSave serializes the writes
+	mutes    map[string]MuteRecord
+	muteSave sync.Mutex
 
 	tester   *Tester
 	explorer *Explorer // interactive commands (G2/G3)
@@ -418,12 +424,15 @@ func New(opt Options) *Monitor {
 	if opt.Acks == nil {
 		opt.Acks = &MemAckStore{}
 	}
+	if opt.Mutes == nil {
+		opt.Mutes = &MemMuteStore{}
+	}
 	m := &Monitor{
 		opt: opt, tracker: alert.NewTracker(opt.Policy),
 		pollNow: make(chan struct{}, 1), reload: make(chan struct{}, 1),
 		entries: map[string]*entry{}, results: map[string]model.ProfileSnapshot{},
 		cmdLast: map[string]time.Time{}, pendIDs: map[string]bool{},
-		started: opt.Now().In(model.DBZone), acks: map[string]AckRecord{},
+		started: opt.Now().In(model.DBZone), acks: map[string]AckRecord{}, mutes: map[string]MuteRecord{},
 		tester: &Tester{Test: opt.Test, Category: opt.TestCategory, Timeout: opt.TestTimeout,
 			Max: opt.TestMax, Now: opt.Now, WithTimeout: opt.TestWithTimeout},
 		explorer: &Explorer{New: opt.Interactive, DiscoverTimeout: opt.DiscoverTimeout, HardTimeout: opt.InteractiveLimit,
@@ -440,6 +449,7 @@ func New(opt Options) *Monitor {
 	m.ring.size = model.EventRingSize
 	m.raisedAt = map[string]time.Time{}
 	m.loadAcks()
+	m.loadMutes()
 	return m
 }
 
@@ -1301,6 +1311,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		m.tracker.Retain(keep)
 	}
 	acksChanged := m.applyAcksLocked(keep)
+	mutesChanged := m.applyMutesLocked(profiles)
 	alerts := m.tracker.Active()
 	m.markAckedLocked(profiles, alerts)
 	for i := range events {
@@ -1362,8 +1373,14 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	if acksChanged {
 		m.saveAcks()
 	}
+	if mutesChanged {
+		m.saveMutes()
+	}
 	for _, ev := range events {
 		m.opt.Log.Printf("alert #%d: %s", ev.ID, alert.Format(ev, model.LangEN))
+		if m.mutedOutbound(ev.ProfileID) {
+			continue // muted: no Event Log / Viber / IPC alert (CHK-MON-20)
+		}
 		if m.opt.Sink != nil {
 			m.opt.Sink.Alert(ev)
 		}
@@ -1373,6 +1390,9 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	}
 	if m.opt.OnAlertRepeat != nil {
 		for _, ev := range repEvents {
+			if m.mutedOutbound(ev.ProfileID) {
+				continue
+			}
 			m.opt.OnAlertRepeat(ev)
 		}
 	}
@@ -1381,7 +1401,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 // ReportsProblems: hasProblems / problems and repeat pushes (CHK-MON-17).
 func (m *Monitor) ReportsProblems() bool { return true }
 
-// ReportsStalled: stalled detector (CHK-MON-18).
+// ReportsStalled: stalled detector (CHK-MON-18 counters, CHK-MON-19 time/manual).
 func (m *Monitor) ReportsStalled() bool { return true }
 
 func (m *Monitor) intervalLocked() time.Duration {
@@ -1429,16 +1449,15 @@ func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time, stalledAfter 
 		}
 		obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)),
 			Level: pt.Level, Event: tmpl})
-		if pt.Source == model.PointSourceCounters { // stall alert (phase 11, CHK-MON-18)
-			st := tmpl
-			st.Stalled, st.StalledMinutes, st.ErrorKey, st.Error = true, int(stalledAfter/time.Minute), model.MsgMonitorStalled, ""
-			lvl := model.LevelOK
-			if pt.Stalled {
-				lvl = model.LevelWarning
-			}
-			obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix),
-				Level: lvl, Event: st})
+		// stall alert: counters (CHK-MON-18) and time/manual lastOk (CHK-MON-19)
+		st := tmpl
+		st.Stalled, st.StalledMinutes, st.ErrorKey, st.Error = true, int(stalledAfter/time.Minute), model.MsgMonitorStalled, ""
+		lvl := model.LevelOK
+		if pt.Stalled {
+			lvl = model.LevelWarning
 		}
+		obs(alert.Observation{Key: alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix),
+			Level: lvl, Event: st})
 	}
 	return out, reps
 }
@@ -1459,9 +1478,7 @@ func (m *Monitor) keepKeys(profiles []model.ProfileSnapshot) func(string) bool {
 		}
 		for _, pt := range ps.Points {
 			keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint))] = true
-			if pt.Source == model.PointSourceCounters {
-				keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix)] = true
-			}
+			keep[alert.PointKey(ps.ProfileID, model.PointKey(pt.ExchangePoint)+model.StalledKeySuffix)] = true
 		}
 	}
 	return func(k string) bool { return keep[k] || whole[alert.KeyProfile(k)] }

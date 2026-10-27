@@ -5,22 +5,30 @@ import (
 	"time"
 )
 
-// Phase 11 (EC Service, CHK-MON-18): the stalled-exchange detector. A
-// counters-mode point (1C _NodeNNN, message numbers _SentNo / _ReceivedNo
-// read by sqlcheck.ReadNodeStates) is stalled when neither number changed
-// for more than the stalled threshold while the exchange is otherwise
-// alive: the poll succeeds, the point itself is not already warning /
-// error by lag (in counters mode FreshAt is the last number change, so a
-// stall is then the same fact as the lag alarm — no duplicate alert), and,
-// when the profile has a time-based point of the same node (NodeKey, the
-// 1C node key / code; never the display name), that point's exchange
-// time is newer than the last number change. Consequence: a stall alert
-// appears only when the lag thresholds exceed the stalled threshold. Since = the last number change (its
-// FreshAt); a baseline (first observation) counts from the observation,
-// so nothing is flagged before the threshold passed since the service
-// first saw the numbers. The point / profile level is not changed; the
-// stall is its own warning alert (problems kind "stalled", transitions
-// in events_since / history / Event Log / Viber "warning" + "recovered").
+// Phase 11 (EC Service, CHK-MON-18) + phase 12 (CHK-MON-19): the
+// stalled-exchange detector. A counters-mode point (1C _NodeNNN, message
+// numbers _SentNo / _ReceivedNo read by sqlcheck.ReadNodeStates) is stalled
+// when neither number changed for more than the stalled threshold while
+// the exchange is otherwise alive: the poll succeeds, the point itself is
+// not already warning / error by lag (in counters mode FreshAt is the last
+// number change, so a stall is then the same fact as the lag alarm — no
+// duplicate alert), and, when the profile has a time-based point of the
+// same node (NodeKey, the 1C node key / code; never the display name),
+// that point's exchange time is newer than the last number change.
+// Consequence: a stall alert appears only when the lag thresholds exceed
+// the stalled threshold. Since = the last number change (its FreshAt); a
+// baseline (first observation) counts from the observation, so nothing is
+// flagged before the threshold passed since the service first saw the
+// numbers.
+//
+// Phase 12 (CHK-MON-19): points WITHOUT message numbers (time-based
+// mappings and manual SQL, Source != PointSourceCounters) use the same
+// stalledMinutes threshold against the age of their last exchange
+// (FreshAt = lastOk). The LevelOK guard applies the same way (no duplicate
+// of the lag alarm). Capability "stalled" is unchanged (no bump). The
+// point / profile level is not changed; the stall is its own warning
+// alert (problems kind "stalled", transitions in events_since / history /
+// Event Log / Viber "warning" + "recovered").
 const (
 	CapStalled = "stalled"
 	// CapAckEvent: ack_alert {eventId} acknowledges only that alert; the
@@ -61,6 +69,8 @@ func (p Profile) StalledAfter(global Settings) time.Duration {
 
 // MarkStalled sets PointStatus.Stalled / StalledSince and
 // ProfileSnapshot.Stalled of a polled snapshot (no error) at now.
+// Counters points: CHK-MON-18 (numbers + peer by NodeKey). Time-based and
+// manual SQL points (no message numbers): CHK-MON-19 (FreshAt / lastOk age).
 func MarkStalled(ps *ProfileSnapshot, after time.Duration, now time.Time) {
 	ps.Stalled = false
 	for i := range ps.Points {
@@ -69,7 +79,7 @@ func MarkStalled(ps *ProfileSnapshot, after time.Duration, now time.Time) {
 	if after <= 0 || ps.Error != "" {
 		return
 	}
-	peers := map[string]time.Time{} // time-based points by node key
+	peers := map[string]time.Time{} // time-based points by node key (counters peers)
 	for _, pt := range ps.Points {
 		if pt.Source != PointSourceCounters && pt.FreshAt != nil && pt.NodeKey != "" {
 			if t, ok := peers[pt.NodeKey]; !ok || pt.FreshAt.After(t) {
@@ -79,14 +89,16 @@ func MarkStalled(ps *ProfileSnapshot, after time.Duration, now time.Time) {
 	}
 	for i := range ps.Points {
 		pt := &ps.Points[i]
-		if pt.Source != PointSourceCounters || pt.FreshAt == nil || now.Sub(*pt.FreshAt) <= after {
+		if pt.FreshAt == nil || now.Sub(*pt.FreshAt) <= after {
 			continue
 		}
 		if pt.Level != LevelOK {
 			continue // already alarmed by lag: the stall would duplicate it
 		}
-		if t, ok := peers[pt.NodeKey]; pt.NodeKey != "" && ok && !t.After(*pt.FreshAt) {
-			continue // the exchange time stopped too: a lag alarm, not a stall
+		if pt.Source == PointSourceCounters {
+			if t, ok := peers[pt.NodeKey]; pt.NodeKey != "" && ok && !t.After(*pt.FreshAt) {
+				continue // the exchange time stopped too: a lag alarm, not a stall
+			}
 		}
 		since := pt.FreshAt.In(DBZone)
 		pt.Stalled, pt.StalledSince = true, &since

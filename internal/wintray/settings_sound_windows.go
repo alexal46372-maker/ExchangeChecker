@@ -32,7 +32,7 @@ func (w *settingsWindow) buildSoundSection(
 	info := add("STATIC", "", 0, winapi.SS_LEFT, idSndInfo, ui.Box, 540, 36)
 	info.Grow = true
 	w.sndInfo = info.H
-	save := add("BUTTON", i18n.T(i18n.KeySoundSave, lang), 0, winapi.BS_PUSHBUTTON|winapi.WS_TABSTOP, idSndSave, ui.Button, 0, 0)
+	save := add("BUTTON", i18n.T(i18n.KeySoundSave, lang), 0, winapi.WS_TABSTOP, idSndSave, ui.Button, 0, 0)
 	w.sndSave = save.H
 	if w.tips != nil {
 		w.tips.set(w.sndSave, i18n.T(i18n.KeyTipSoundSave, lang))

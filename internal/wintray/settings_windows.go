@@ -214,9 +214,10 @@ type settingsWindow struct {
 	barLeft, barRight []barButton
 	// expertShown: the expert-only controls are shown (test hook)
 	expertShown bool
-	// phase 10 E: the import dialog, the profiles of needPassword, the
-	// status after the import
+	// phase 10 E / 12: the import / export dialogs, the profiles of
+	// needPassword, the status after the import
 	imp         *importDialog
+	exp         *exportDialog
 	notifyBtn   map[uintptr]bool // page buttons with BS_NOTIFY
 	needPw      []string
 	afterImport string
@@ -1656,6 +1657,9 @@ func (w *settingsWindow) close() {
 	}
 	if w.imp != nil {
 		w.imp.close()
+	}
+	if w.exp != nil {
+		w.exp.close()
 	}
 	if w.wiz != nil {
 		w.wiz.close()

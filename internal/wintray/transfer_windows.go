@@ -13,32 +13,47 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
-// Phase 10 E (CHK-TRAY-44): «Экспорт…» / «Импорт…» of the administrator
-// settings window. Export: export_config + the tray block of this user
-// (HKCU). Import: the file, import_config dryRun with a preview (merge /
-// replace, «Также звук и вид трея»), then the real import with the
-// revision of the dry run; the profiles of needPassword are opened one by
-// one for the password. The tray block is written to HKCU and takes
-// effect when the tray starts again.
+// Phase 10 E (CHK-TRAY-44) + phase 12 (CHK-TRAY-57): «Экспорт…» /
+// «Импорт…» of the administrator settings window. Export: options dialog
+// (optional «Получатели Viber») then export_config + the tray block of
+// this user (HKCU, including Theme). Import: the file, import_config
+// dryRun with a preview (merge / replace, «Также звук и вид трея»,
+// «Получатели Viber»), then the real import; the tray block is written
+// to HKCU and applied live via ExchangeChecker.TrayReloadPrefs (no
+// restart). OTS (other user SID) still skips the tray block.
 
 // ImportClass is the window class of the import dialog.
 const ImportClass = "ExchangeCheckerTrayImport"
+
+// ExportClass is the window class of the export options dialog (CHK-TRAY-57).
+const ExportClass = "ExchangeCheckerTrayExport"
 
 const (
 	idImpFile int32 = 100 + iota
 	idImpMerge
 	idImpReplace
 	idImpTray
+	idImpViber
 	idImpPreview
 	idImpDo
+	idImpWarn
 	idImpCancel = winapi.IDCANCEL
 )
 
-const impCW, impCH = 600, 420
+const (
+	idExpViber int32 = 200 + iota
+	idExpWarn
+	idExpDo
+	idExpCancel = winapi.IDCANCEL
+)
+
+const impCW, impCH = 600, 460
+const expCW, expCH = 480, 220
 
 // trayStores are the per-user stores of the tray block (nil = not
 // stored; export then writes the defaults).
@@ -95,6 +110,13 @@ func (w *settingsWindow) trayBlock() traysettings.TrayBlock {
 	if t.UIMode == "" {
 		t.UIMode = traysettings.UISimple
 	}
+	if w.cfg.themeStore != nil {
+		if th, err := w.cfg.themeStore.Load(); err == nil {
+			t.Theme = string(th)
+		}
+	} else {
+		t.Theme = string(trayui.Current())
+	}
 	return t
 }
 
@@ -119,19 +141,86 @@ func (w *settingsWindow) saveTray(t *traysettings.TrayBlock) error {
 	if w.cfg.uiStore != nil {
 		keep(w.cfg.uiStore.Save(t.UIMode))
 	}
+	if w.cfg.themeStore != nil && t.Theme != "" {
+		keep(w.cfg.themeStore.Save(trayui.NormalizeTheme(t.Theme)))
+	}
+	if first == nil {
+		broadcastTrayReloadPrefs()
+	}
 	return first
 }
 
 func (w *settingsWindow) exportConfig() {
-	if w.busy || !w.transferAvailable() {
+	if w.busy || w.exp != nil || !w.transferAvailable() {
 		return
 	}
-	path, ok := w.fileDialog(true)
+	w.openExport()
+}
+
+// exportDialog is the export options (Viber recipients checkbox, CHK-TRAY-57).
+type exportDialog struct {
+	w      *settingsWindow
+	hwnd   uintptr
+	ctl    map[int32]uintptr
+	closed bool
+	tips   *tooltips
+}
+
+func (w *settingsWindow) openExport() {
+	d := &exportDialog{w: w, ctl: map[int32]uintptr{}}
+	style := uint32(winapi.WS_POPUP | winapi.WS_CAPTION | winapi.WS_SYSMENU)
+	if !w.cfg.hidden {
+		style |= winapi.WS_VISIBLE
+	}
+	hwnd, err := createWindow(ExportClass, w.t(i18n.KeyXferExportTitle), 0, style, 0, 0, expCW, expCH, w.hwnd, d.wndProc)
+	if err != nil {
+		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetFailed), err.Error()))
+		return
+	}
+	d.hwnd = hwnd
+	w.exp = d
+	add := func(class, text string, style uint32, id int32, kind ui.Kind) *ui.Ctl {
+		c := child(hwnd, class, text, style, id, 0, 0, 0, 0)
+		d.ctl[id] = c
+		return uiCtl(c, kind, text)
+	}
+	vib := add("BUTTON", w.t(i18n.KeyXferViberCheck), winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idExpViber, ui.Check)
+	warn := add("STATIC", "", winapi.SS_LEFT, idExpWarn, ui.Label)
+	warn.W, warn.Hgt = expCW-2*gridMargin, 64
+	do := add("BUTTON", w.t(i18n.KeyXferExport), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, idExpDo, ui.Button)
+	cl := add("BUTTON", w.t(i18n.KeyStClose), winapi.WS_TABSTOP, idExpCancel, ui.Button)
+	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{vib, warn}}},
+		&ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{do, cl}}}, 0, false)
+	d.tips = newTooltips(hwnd)
+	d.tips.set(d.ctl[idExpViber], w.t(i18n.KeyTipXferViber))
+	d.tips.set(d.ctl[idExpDo], w.t(i18n.KeyTipXferExport))
+	d.tips.set(d.ctl[idExpCancel], w.t(i18n.KeyTipClose))
+	d.syncWarn()
+	winapi.EnableWindow(w.hwnd, false)
+}
+
+func (d *exportDialog) checked(id int32) bool {
+	return winapi.SendMessage(d.ctl[id], winapi.BM_GETCHECK, 0, 0) == winapi.BST_CHECKED
+}
+
+func (d *exportDialog) syncWarn() {
+	text := ""
+	if d.checked(idExpViber) {
+		text = d.w.t(i18n.KeyXferViberWarnExport)
+	}
+	winapi.SetWindowText(d.ctl[idExpWarn], text)
+}
+
+func (d *exportDialog) doExport() {
+	path, ok := d.w.fileDialog(true)
 	if !ok {
 		return
 	}
+	includeViber := d.checked(idExpViber)
+	d.close()
+	w := d.w
 	w.status = w.t(i18n.KeySetLoading)
-	w.call(model.IPCRequest{Cmd: model.CmdExportConfig}, func(m model.IPCMessage, err error) {
+	w.call(traysettings.ExportRequest(includeViber), func(m model.IPCMessage, err error) {
 		switch {
 		case err != nil:
 			w.problem(w.ed.ErrorProblem(err, traysettings.CallTimeout))
@@ -145,7 +234,7 @@ func (w *settingsWindow) exportConfig() {
 				t := w.trayBlock()
 				tray = &t
 			}
-			b, err := traysettings.ExportFile(*m.Export, tray)
+			b, err := traysettings.ExportFile(*m.Export, tray, includeViber)
 			if err == nil {
 				err = os.WriteFile(path, b, 0o600)
 			}
@@ -161,8 +250,50 @@ func (w *settingsWindow) exportConfig() {
 			if m.Export.ContainsLogins || tray != nil {
 				w.notice(w.t(i18n.KeyXferContainsLogins))
 			}
+			if includeViber || m.Export.ContainsViberRecipients {
+				w.notice(w.t(i18n.KeyXferViberWarnExport))
+			}
 		}
 	})
+}
+
+func (d *exportDialog) close() {
+	if d.closed {
+		return
+	}
+	d.closed = true
+	w := d.w
+	winapi.EnableWindow(w.hwnd, true)
+	destroyWindow(d.hwnd)
+	if w.exp == d {
+		w.exp = nil
+	}
+}
+
+func (d *exportDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
+	switch msg {
+	case winapi.WM_COMMAND:
+		id, code := int32(wp&0xFFFF), uint32(wp>>16&0xFFFF)
+		switch id {
+		case idExpViber:
+			if code == winapi.BN_CLICKED {
+				d.syncWarn()
+			}
+		case idExpDo:
+			d.doExport()
+		case idExpCancel:
+			d.close()
+		}
+		return 0, true
+	case winapi.WM_CLOSE:
+		d.close()
+		return 0, true
+	}
+	if isTrayExit(msg) {
+		d.w.exitNow()
+		return 0, true
+	}
+	return 0, false
 }
 
 func (w *settingsWindow) importConfig() {
@@ -233,14 +364,17 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 	merge := add("BUTTON", w.t(i18n.KeyXferMerge), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idImpMerge, ui.Check)
 	repl := add("BUTTON", w.t(i18n.KeyXferReplace), winapi.WS_TABSTOP|winapi.BS_AUTORADIOBUTTON, idImpReplace, ui.Check)
 	tray := add("BUTTON", w.t(i18n.KeyXferTrayCheck), winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idImpTray, ui.Check)
+	vib := add("BUTTON", w.t(i18n.KeyXferViberCheck), winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idImpViber, ui.Check)
+	warn := add("STATIC", "", winapi.SS_LEFT, idImpWarn, ui.Label)
+	warn.W, warn.Hgt = impCW-2*gridMargin, 40
 	pv := add("EDIT", "", winapi.WS_TABSTOP|winapi.WS_BORDER|winapi.WS_VSCROLL|winapi.ES_MULTILINE|winapi.ES_READONLY|winapi.ES_AUTOVSCROLL,
 		idImpPreview, ui.Edit)
-	pv.W, pv.Hgt, pv.Grow = impCW-2*gridMargin, impCH-200, true
+	pv.W, pv.Hgt, pv.Grow = impCW-2*gridMargin, impCH-260, true
 	do := add("BUTTON", w.t(i18n.KeyXferDo), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, idImpDo, ui.Button)
 	cl := add("BUTTON", w.t(i18n.KeyStClose), winapi.WS_TABSTOP, idImpCancel, ui.Button)
-	// phase 11 (CHK-TRAY-45): file, mode, tray block, preview, buttons
+	// phase 11/12: file, mode, tray + viber, warning, preview, buttons
 	fitForm(hwnd, &ui.Pad{Left: ui.P12, Top: ui.P12, Right: ui.P12, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
-		file, &ui.Col{Gap: ui.P4, Items: []ui.Node{merge, repl}}, tray, pv}}},
+		file, &ui.Col{Gap: ui.P4, Items: []ui.Node{merge, repl}}, tray, vib, warn, pv}}},
 		&ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{do, cl}}}, 0, false)
 	winapi.SendMessage(d.ctl[idImpMerge], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
 	if f.Tray != nil && !w.cfg.otherUser {
@@ -248,11 +382,16 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 	} else {
 		winapi.EnableWindow(d.ctl[idImpTray], false)
 	}
+	hasViber := f.Config.Settings != nil && f.Config.Settings.Viber != nil && len(f.Config.Settings.Viber.Recipients) > 0
+	if !hasViber {
+		winapi.EnableWindow(d.ctl[idImpViber], false)
+	}
 	d.tips = newTooltips(hwnd)
 	for id, k := range map[int32]string{idImpMerge: i18n.KeyTipXferMerge, idImpReplace: i18n.KeyTipXferReplace, idImpTray: i18n.KeyTipXferTray,
-		idImpPreview: i18n.KeyTipXferPreview, idImpDo: i18n.KeyTipXferDo, idImpCancel: i18n.KeyTipClose} {
+		idImpViber: i18n.KeyTipXferViber, idImpPreview: i18n.KeyTipXferPreview, idImpDo: i18n.KeyTipXferDo, idImpCancel: i18n.KeyTipClose} {
 		d.tips.set(d.ctl[id], w.t(k))
 	}
+	d.syncViberWarn()
 	winapi.EnableWindow(w.hwnd, false)
 	d.dryRun()
 }
@@ -270,6 +409,18 @@ func (d *importDialog) mode() string {
 
 func (d *importDialog) applyTray() bool {
 	return d.file.Tray != nil && !d.w.cfg.otherUser && d.checked(idImpTray)
+}
+
+func (d *importDialog) includeViber() bool {
+	return d.checked(idImpViber)
+}
+
+func (d *importDialog) syncViberWarn() {
+	text := ""
+	if d.includeViber() {
+		text = d.w.t(i18n.KeyXferViberWarnImport)
+	}
+	winapi.SetWindowText(d.ctl[idImpWarn], text)
 }
 
 func (d *importDialog) setPreview(s string) {
@@ -305,7 +456,7 @@ func (d *importDialog) run(dry bool, done func(model.IPCMessage, error)) {
 	seq := d.seq
 	d.running = true
 	d.enable()
-	req := traysettings.ImportRequest(d.file, d.mode(), dry, d.rev)
+	req := traysettings.ImportRequest(d.file, d.mode(), dry, d.rev, d.includeViber())
 	d.w.call(req, func(m model.IPCMessage, err error) {
 		if d.closed || seq != d.seq {
 			return
@@ -409,6 +560,12 @@ func (d *importDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintpt
 			if code == winapi.BN_CLICKED {
 				d.showPreview()
 			}
+		case idImpViber:
+			if code == winapi.BN_CLICKED && !d.running {
+				d.syncViberWarn()
+				d.head = ""
+				d.dryRun()
+			}
 		case idImpDo:
 			d.doImport()
 		case idImpCancel:
@@ -487,4 +644,18 @@ func OwnerSIDFromArgs(args []string) string {
 // OtherUser: the tray owner is known and is not this user.
 func OtherUser(owner, current string) bool {
 	return owner != "" && current != "" && !strings.EqualFold(owner, current)
+}
+
+// broadcastTrayReloadPrefs posts model.TrayReloadPrefsMessage to every
+// ExchangeCheckerTray window so the running tray rereads HKCU without
+// Exit (CHK-TRAY-57).
+func broadcastTrayReloadPrefs() {
+	msg := trayReloadPrefsMsg()
+	if msg == 0 {
+		return
+	}
+	for _, hwnd := range winapi.EnumWindowsByClass(model.TrayWindowClass) {
+		winapi.PostMessage(hwnd, msg, 0, 0)
+	}
+	winapi.BroadcastMessage(msg, 2000)
 }

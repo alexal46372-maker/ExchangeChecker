@@ -754,9 +754,14 @@ const (
 	KeyXferOtherUser      = "set.xfer_other_user"
 	KeyXferEnterPw        = "set.xfer_enter_pw"
 	KeyXferTrayFailed     = "set.xfer_tray_failed"
+	KeyXferViberCheck     = "set.xfer_viber_check"
+	KeyXferViberWarnExport = "set.xfer_viber_warn_export"
+	KeyXferViberWarnImport = "set.xfer_viber_warn_import"
+	KeyXferExportTitle    = "set.xfer_export_title"
 	KeyTipXferMerge       = "tip.xfer_merge"
 	KeyTipXferReplace     = "tip.xfer_replace"
 	KeyTipXferTray        = "tip.xfer_tray"
+	KeyTipXferViber       = "tip.xfer_viber"
 	KeyTipXferDo          = "tip.xfer_do"
 	KeyTipXferPreview     = "tip.xfer_preview"
 )
@@ -1465,7 +1470,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipVbTest:          {"Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с", "A test message now (ignores the schedule and «Send»), at most once per 10 s"},
 	KeyXferExport:         {"Экспорт…", "Export…"},
 	KeyXferImport:         {"Импорт…", "Import…"},
-	KeyTipXferExport:      {"Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей и Viber)", "Save the databases and the general service settings, plus the tray sound and look, to a file (no passwords, no Viber)"},
+	KeyTipXferExport:      {"Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей; получатели Viber — по флажку)", "Save the databases and the general service settings, plus the tray sound and look, to a file (no passwords; Viber recipients optional)"},
 	KeyTipXferImport:      {"Загрузить настройки из файла: сначала показывается, что изменится", "Load settings from a file: what will change is shown first"},
 	KeyXferFilter:         {"Настройки EC (*.json)", "EC settings (*.json)"},
 	KeyXferContainsLogins: {"Файл содержит адреса серверов, логины SQL (без паролей) и пути к звуковым файлам. Храните его в надёжном месте.", "The file contains server addresses, SQL logins (no passwords) and sound file paths. Keep it in a safe place."},
@@ -1489,19 +1494,24 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyXferNoChanges:      {"Базы данных не изменятся.", "The databases do not change."},
 	KeyXferNoTray:         {"В файле нет настроек трея.", "The file has no tray settings."},
 	KeyXferTrayKept:       {"Звук и вид трея не меняются.", "The tray sound and look are kept."},
-	KeyXferTraySummary:    {"Трей: язык %s, всплывающие уведомления %s, громкость %s, %s", "Tray: language %s, balloons %s, volume %s, %s"},
+	KeyXferTraySummary:    {"Трей: язык %s, всплывающие уведомления %s, громкость %s, %s, тема %s", "Tray: language %s, balloons %s, volume %s, %s, theme %s"},
 	KeyXferLangAuto:       {"как в Windows", "as in Windows"},
 	KeyXferOn:             {"вкл.", "on"},
 	KeyXferOff:            {"выкл.", "off"},
 	KeyXferNoSoundFile:    {"Внимание: звуковой файл не найден на этом компьютере, будет звучать тон: %s", "Warning: the sound file is not on this computer, the tone plays instead: %s"},
 	KeyXferDone:           {"Импорт выполнен.", "Import done."},
-	KeyXferTrayApplied:    {"Звук и вид трея применятся после перезапуска трея", "Tray sound and appearance will apply after the tray restarts"},
+	KeyXferTrayApplied:    {"Звук и вид трея применены", "Tray sound and appearance applied"},
 	KeyXferOtherUser:      {"Окно настроек запущено от имени другого пользователя Windows, чем трей: звук и вид трея не экспортируются и не импортируются (они хранятся в профиле пользователя трея).", "The settings window runs as a different Windows user than the tray: the tray sound and appearance are neither exported nor imported (they belong to the tray user's profile)."},
 	KeyXferEnterPw:        {"Введите пароль заново для «%s» и сохраните (осталось: %d).", "Enter the password again for «%s» and save (left: %d)."},
 	KeyXferTrayFailed:     {"Не удалось сохранить настройки трея: %s", "Could not save the tray settings: %s"},
+	KeyXferViberCheck:     {"Получатели Viber", "Viber recipients"},
+	KeyXferViberWarnExport: {"В файл попадут получатели Viber (токен бота не переносится). Храните файл в надёжном месте.", "The file will include Viber recipients (the bot token is never transferred). Keep the file in a safe place."},
+	KeyXferViberWarnImport: {"Получатели Viber из файла будут применены (токен бота не переносится).", "Viber recipients from the file will be applied (the bot token is never transferred)."},
+	KeyXferExportTitle:    {"Экспорт настроек", "Export settings"},
 	KeyTipXferMerge:       {"Базы с тем же идентификатором обновляются, новые добавляются, остальные остаются", "Databases with the same id are updated, new ones added, the others kept"},
 	KeyTipXferReplace:     {"Список баз становится таким, как в файле", "The list of databases becomes the one of the file"},
-	KeyTipXferTray:        {"Язык, всплывающие уведомления, звук и режим окна этого пользователя", "Language, balloons, sound and window mode of this user"},
+	KeyTipXferTray:        {"Язык, всплывающие уведомления, звук, режим окна и тема этого пользователя", "Language, balloons, sound, window mode and theme of this user"},
+	KeyTipXferViber:       {"Несекретные получатели Viber в файле (токен бота никогда не переносится)", "Non-secret Viber recipients in the file (the bot token is never transferred)"},
 	KeyTipXferDo:          {"Выполнить импорт, как показано выше", "Run the import as shown above"},
 	KeyTipXferPreview:     {"Что изменит импорт", "What the import will change"},
 }

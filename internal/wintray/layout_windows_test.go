@@ -292,8 +292,17 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	if !ok {
 		t.Log("Common Controls 6 activation context not available: cues are not drawn")
 	}
-	func() { // import dialog after a dry run (phase 11)
+	func() { // import / export dialogs (phase 11 / CHK-TRAY-57)
 		e := newXferEnv(t, lang)
+		e.w.click(t, idSetExport)
+		ex := e.w.exp
+		if ex == nil {
+			t.Fatalf("export dialog: %q", e.w.statusText())
+		}
+		winapi.SendMessage(ex.ctl[idExpViber], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
+		ex.syncWarn()
+		visit("export", ex.hwnd)
+		ex.close()
 		writeImportFile(t, e.path, &traysettings.TrayBlock{Language: "ru"}, e.x.profiles[0])
 		e.w.click(t, idSetImport)
 		d := e.w.imp

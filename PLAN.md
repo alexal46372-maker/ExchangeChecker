@@ -864,6 +864,8 @@ Wizard Win32 (страницы):
 
 195. **HTML статус/история из chrome-темы (фаза 12, `CHK-TRAY-56`):** HTML-экспорт состояния и истории использует chrome темы (в т.ч. тёмные Border/HeaderRow) через helpers; в исходниках export/history нет строковых литералов `#999` / `#eee`. Семантично с 55. Тесты: `TestCHK_TRAY_56_*`.
 
+196. **Экспорт/импорт получателей Viber + live reload prefs (фаза 12, `CHK-TRAY-57`):** в диалогах экспорта/импорта флажок «Получатели Viber» / «Viber recipients» → `includeViberRecipients` на `export_config` / `import_config` (токен никогда не переносится; предупреждение RU+EN при включении). Блок `tray` несёт `theme` (light/dark); после импорта блока трея — `RegisterWindowMessage("ExchangeChecker.TrayReloadPrefs")` и broadcast на окна `ExchangeCheckerTray`: перечитать Sound / UIMode / Theme / balloons / lang из HKCU **без Exit** (зеркало `trayExitMsg` / `isTrayExit`). Обязательный текст «после перезапуска» для пути блока трея снят (prefs применяются сразу); OTS (чужой SID) по-прежнему не пишет чужой HKCU. Скриншоты export/import в ui-screens. Тесты: `TestCHK_TRAY_57_*`.
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.

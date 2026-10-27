@@ -16,6 +16,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -169,7 +170,12 @@ func TestCHK_TRAY_44_Export(t *testing.T) {
 	for _, lang := range []string{i18n.RU, i18n.EN} {
 		e := newXferEnv(t, lang)
 		e.w.click(t, idSetExport)
-		pumpUntil(t, "exported", func() bool { return !e.w.busy })
+		d := e.w.exp
+		if d == nil {
+			t.Fatalf("%s: export dialog: %q", lang, e.w.statusText())
+		}
+		winapi.SendMessage(d.ctl[idExpDo], winapi.BM_CLICK, 0, 0)
+		pumpUntil(t, "exported", func() bool { return e.w.exp == nil && !e.w.busy })
 		b, err := os.ReadFile(e.path)
 		if err != nil {
 			t.Fatalf("%s: %v (status %q)", lang, err, e.w.statusText())
@@ -202,7 +208,7 @@ func writeImportFile(t *testing.T, path string, tray *traysettings.TrayBlock, pr
 	var b []byte
 	var err error
 	if tray != nil {
-		b, err = traysettings.ExportFile(exp, tray)
+		b, err = traysettings.ExportFile(exp, tray, false)
 	} else {
 		b, err = json.Marshal(exp)
 	}
@@ -277,7 +283,8 @@ func TestCHK_TRAY_44_Import(t *testing.T) {
 	if last.dry || last.mode != model.ImportMerge || last.rev != "r1" || last.n != 2 {
 		t.Errorf("real import %+v (all %+v)", last, calls)
 	}
-	if st := e.w.statusText(); !strings.Contains(st, i18n.T(i18n.KeyXferTrayApplied, i18n.RU)) || strings.Contains(st, "применены") {
+	if st := e.w.statusText(); !strings.Contains(st, i18n.T(i18n.KeyXferTrayApplied, i18n.RU)) ||
+		strings.Contains(st, "перезапуск") || strings.Contains(strings.ToLower(st), "restart") {
 		t.Errorf("status after import: %q", st)
 	}
 	if e.lang.v != "ru" || !e.bal.on || e.ui.m != traysettings.UISimple || !strings.Contains(e.snd.raw, `Z:\\нет\\alarm.wav`) {
@@ -392,7 +399,11 @@ func TestCHK_TRAY_44_OtherUser(t *testing.T) {
 		warn := i18n.T(i18n.KeyXferOtherUser, lang)
 		e := newXferEnv(t, lang, true)
 		e.w.click(t, idSetExport)
-		pumpUntil(t, "exported", func() bool { return !e.w.busy })
+		if e.w.exp == nil {
+			t.Fatalf("%s: export dialog", lang)
+		}
+		winapi.SendMessage(e.w.exp.ctl[idExpDo], winapi.BM_CLICK, 0, 0)
+		pumpUntil(t, "exported", func() bool { return e.w.exp == nil && !e.w.busy })
 		b, err := os.ReadFile(e.path)
 		if err != nil || strings.Contains(string(b), `"tray"`) || !strings.Contains(e.w.statusText(), warn) {
 			t.Fatalf("%s: export %v tray block present / status %q", lang, err, e.w.statusText())
@@ -414,9 +425,15 @@ func TestCHK_TRAY_44_OtherUser(t *testing.T) {
 			t.Errorf("%s: HKCU written as another user", lang)
 		}
 	}
-	if i18n.T(i18n.KeyXferTrayApplied, i18n.RU) != "Звук и вид трея применятся после перезапуска трея" ||
-		i18n.T(i18n.KeyXferTrayApplied, i18n.EN) != "Tray sound and appearance will apply after the tray restarts" {
-		t.Error("restart hint text")
+	if i18n.T(i18n.KeyXferTrayApplied, i18n.RU) != "Звук и вид трея применены" ||
+		i18n.T(i18n.KeyXferTrayApplied, i18n.EN) != "Tray sound and appearance applied" {
+		t.Error("applied hint text")
+	}
+	for _, lang := range []string{i18n.RU, i18n.EN} {
+		s := i18n.T(i18n.KeyXferTrayApplied, lang)
+		if strings.Contains(s, "перезапуск") || strings.Contains(strings.ToLower(s), "restart") {
+			t.Errorf("%s: restart must not be required: %q", lang, s)
+		}
 	}
 }
 
@@ -480,3 +497,143 @@ func TestCHK_TRAY_42_FocusScroll(t *testing.T) {
 		t.Error("CBN_SETFOCUS")
 	}
 }
+
+
+// TestCHK_TRAY_57_ExportImportViberFlag — checkbox sets includeViberRecipients
+// on the request JSON path (via ExportRequest / ImportRequest builders used
+// by the dialogs); warning strings RU+EN; Theme in the tray block.
+func TestCHK_TRAY_57_ExportImportViberFlag(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	for _, lang := range []string{i18n.RU, i18n.EN} {
+		if i18n.T(i18n.KeyXferViberCheck, lang) == "" || i18n.T(i18n.KeyXferViberWarnExport, lang) == "" ||
+			i18n.T(i18n.KeyXferViberWarnImport, lang) == "" {
+			t.Fatalf("%s: viber strings", lang)
+		}
+		if strings.Contains(i18n.T(i18n.KeyXferViberWarnExport, lang), "токен") == (lang == i18n.EN) {
+			// RU mentions токен; EN mentions token
+		}
+		tok := map[string]string{i18n.RU: "токен", i18n.EN: "token"}[lang]
+		if !strings.Contains(strings.ToLower(i18n.T(i18n.KeyXferViberWarnExport, lang)), strings.ToLower(tok)) ||
+			!strings.Contains(strings.ToLower(i18n.T(i18n.KeyXferViberWarnImport, lang)), strings.ToLower(tok)) {
+			t.Errorf("%s: warn must mention token never transferred", lang)
+		}
+	}
+	e := newXferEnv(t, i18n.RU)
+	theme := &memTheme{v: "dark"}
+	e.w.cfg.themeStore = theme
+	e.w.click(t, idSetExport)
+	d := e.w.exp
+	if d == nil || d.checked(idExpViber) {
+		t.Fatal("export dialog: viber off by default")
+	}
+	winapi.SendMessage(d.ctl[idExpViber], winapi.BM_CLICK, 0, 0)
+	if !d.checked(idExpViber) {
+		t.Fatal("viber check")
+	}
+	warn := winapi.GetWindowText(d.ctl[idExpWarn])
+	if warn != i18n.T(i18n.KeyXferViberWarnExport, i18n.RU) {
+		t.Errorf("export warn %q", warn)
+	}
+	winapi.SendMessage(d.ctl[idExpDo], winapi.BM_CLICK, 0, 0)
+	pumpUntil(t, "exported", func() bool { return e.w.exp == nil && !e.w.busy })
+	b, err := os.ReadFile(e.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Tray traysettings.TrayBlock `json:"tray"`
+	}
+	if err := json.Unmarshal(b, &f); err != nil || f.Tray.Theme != "dark" {
+		t.Fatalf("tray theme in file: %v %+v", err, f.Tray)
+	}
+	// import dialog shows viber checkbox (disabled without recipients in file)
+	e.w.click(t, idSetImport)
+	imp := e.w.imp
+	if imp == nil {
+		t.Fatal("import dialog")
+	}
+	pumpUntil(t, "dry run", func() bool { return imp.res != nil })
+	if winapi.IsWindowEnabled(imp.ctl[idImpViber]) {
+		t.Error("viber check enabled without recipients in file")
+	}
+	imp.close()
+}
+
+type memTheme struct{ v string }
+
+func (m *memTheme) Load() (trayui.Theme, error) { return trayui.NormalizeTheme(m.v), nil }
+func (m *memTheme) Save(t trayui.Theme) error   { m.v = string(t); return nil }
+
+// TestCHK_TRAY_57_ReloadPrefsMessage — RegisterWindowMessage for
+// TrayReloadPrefs; handler rereads HKCU without Exit.
+func TestCHK_TRAY_57_ReloadPrefsMessage(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	m := winapi.RegisterWindowMessage(model.TrayReloadPrefsMessage)
+	if m == 0 || m != trayReloadPrefsMsg() || !isTrayReloadPrefs(m) || isTrayExit(m) {
+		t.Fatalf("reload msg %#x exit %#x", m, trayExitMsg())
+	}
+	lang := &memLang{v: "en"}
+	bal := &memBalloon{on: false}
+	snd := &memSound{raw: trayalert.DefaultSoundPrefs(nil).String()}
+	theme := &memTheme{v: "light"}
+	ui := &memUI{m: traysettings.UIExpert}
+	app := startCfgApp(t, newCfgService(), false, nil)
+	app.opt.LangStore = lang
+	app.opt.BalloonStore = bal
+	app.opt.SoundStore = snd
+	app.opt.ThemeStore = theme
+	app.opt.UIModeStore = ui
+	app.loadBalloonPref()
+	if app.balloonsOn || appClosed(app) {
+		t.Fatalf("pre: balloons %v closed %v", app.balloonsOn, appClosed(app))
+	}
+	lang.v = "ru"
+	bal.on = true
+	theme.v = "dark"
+	prefs := trayalert.DefaultSoundPrefs(nil)
+	prefs.Master = 55
+	snd.raw = prefs.String()
+	ui.m = traysettings.UISimple
+	winapi.PostMessage(app.hwnd, m, 0x111, 0x222)
+	pumpUntil(t, "reload prefs", func() bool { return app.balloonsOn && app.opt.Lang == i18n.RU && trayui.IsDark() })
+	if appClosed(app) || app.opt.LangPref != "ru" || !app.balloonsOn || !trayui.IsDark() {
+		t.Fatalf("after reload: closed %v lang %q pref %q balloons %v dark %v",
+			appClosed(app), app.opt.Lang, app.opt.LangPref, app.balloonsOn, trayui.IsDark())
+	}
+	if app.soundPrefs.Master != 55 {
+		t.Errorf("sound master %d", app.soundPrefs.Master)
+	}
+}
+
+// TestCHK_TRAY_57_TrayBlockApplyNoRestart — import of the tray block writes
+// HKCU, broadcasts reload, status has no mandatory restart string; OTS
+// unchanged (covered by TestCHK_TRAY_44_OtherUser).
+func TestCHK_TRAY_57_TrayBlockApplyNoRestart(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	e := newXferEnv(t, i18n.EN)
+	theme := &memTheme{v: "light"}
+	e.w.cfg.themeStore = theme
+	snd := trayalert.DefaultSoundPrefs(nil)
+	snd.Master = 40
+	writeImportFile(t, e.path, &traysettings.TrayBlock{Language: "ru", Balloons: true, Sound: &snd, UIMode: traysettings.UISimple, Theme: "dark"}, e.x.profiles[0])
+	e.w.click(t, idSetImport)
+	d := e.w.imp
+	if d == nil {
+		t.Fatal(e.w.statusText())
+	}
+	pumpUntil(t, "dry run", func() bool { return d.res != nil })
+	winapi.SendMessage(d.ctl[idImpDo], winapi.BM_CLICK, 0, 0)
+	pumpUntil(t, "imported", func() bool { return e.w.imp == nil && !e.w.busy && e.w.loaded })
+	st := e.w.statusText()
+	if !strings.Contains(st, i18n.T(i18n.KeyXferTrayApplied, i18n.EN)) ||
+		strings.Contains(strings.ToLower(st), "restart") || strings.Contains(st, "перезапуск") {
+		t.Errorf("status %q", st)
+	}
+	if e.lang.v != "ru" || !e.bal.on || e.ui.m != traysettings.UISimple || theme.v != "dark" {
+		t.Errorf("tray block: lang %q bal %v ui %q theme %q", e.lang.v, e.bal.on, e.ui.m, theme.v)
+	}
+}
+

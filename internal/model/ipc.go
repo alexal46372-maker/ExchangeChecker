@@ -24,6 +24,11 @@ const (
 	// posts it before replacing or removing the files (phase 7 §7.3)
 	// without importing internal/wintray. wParam / lParam are ignored.
 	TrayExitMessage = "ExchangeChecker.TrayExit"
+	// TrayReloadPrefsMessage is the RegisterWindowMessageW name that makes
+	// the tray (window class ExchangeCheckerTray) reread Sound / UIMode /
+	// Theme / balloons / lang from HKCU without exiting (CHK-TRAY-57).
+	// The settings window posts it after importing the tray block.
+	TrayReloadPrefsMessage = "ExchangeChecker.TrayReloadPrefs"
 	// Window classes that handle TrayExitMessage (CHK-TRAY-11). A separate
 	// `exchtray --settings` process never sees the message posted to the
 	// main tray window: the installer sends it with HWND_BROADCAST or to
@@ -182,6 +187,10 @@ type IPCRequest struct {
 	Config *ConfigExport `json:"config,omitempty"`
 	Mode   string        `json:"mode,omitempty"`
 	DryRun bool          `json:"dryRun,omitempty"`
+	// IncludeViberRecipients (phase 12, CHK-CFG-07 / CHK-IPC-14): export_config
+	// includes non-secret settings.viber; import_config applies it (default
+	// false = omit / keep stored). Never transfers the token.
+	IncludeViberRecipients bool `json:"includeViberRecipients,omitempty"`
 	// Viber (phase 10, CHK-SVC-06): ViberToken (save_settings: set,
 	// empty / absent = no change; viber_test: use once, not saved;
 	// write-only, never logged), ClearViberToken (save_settings: remove

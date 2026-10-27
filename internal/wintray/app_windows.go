@@ -30,6 +30,9 @@ const (
 var (
 	trayExitOnce sync.Once
 	trayExitID   uint32
+
+	trayReloadPrefsOnce sync.Once
+	trayReloadPrefsID   uint32
 )
 
 // trayExitMsg is the registered model.TrayExitMessage (0 if registration
@@ -42,6 +45,22 @@ func trayExitMsg() uint32 {
 // isTrayExit reports whether msg is the registered tray exit message.
 func isTrayExit(msg uint32) bool {
 	m := trayExitMsg()
+	return m != 0 && msg == m
+}
+
+// trayReloadPrefsMsg is the registered model.TrayReloadPrefsMessage (0 if
+// registration failed: the message is then never matched). CHK-TRAY-57.
+func trayReloadPrefsMsg() uint32 {
+	trayReloadPrefsOnce.Do(func() {
+		trayReloadPrefsID = winapi.RegisterWindowMessage(model.TrayReloadPrefsMessage)
+	})
+	return trayReloadPrefsID
+}
+
+// isTrayReloadPrefs reports whether msg is the registered tray prefs
+// reload message (CHK-TRAY-57).
+func isTrayReloadPrefs(msg uint32) bool {
+	m := trayReloadPrefsMsg()
 	return m != 0 && msg == m
 }
 
@@ -196,6 +215,7 @@ func NewApp(opt Options) (*App, error) {
 	}
 	a.hwnd = hwnd
 	trayExitMsg()
+	trayReloadPrefsMsg()
 	a.taskbarCreated = winapi.RegisterWindowMessage("TaskbarCreated")
 	a.alerts = trayalert.New(a.opt.Lang)
 	a.sounder = opt.Sounder
@@ -438,6 +458,11 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 	case msg == winapi.WM_TIMER && wp == blinkTimerID:
 		a.blinkTick()
 		return 0, true
+	case isTrayReloadPrefs(msg):
+		// CHK-TRAY-57: reread Sound / UIMode / Theme / balloons / lang
+		// from HKCU without Exit (wParam / lParam ignored)
+		a.reloadTrayPrefs()
+		return 0, true
 	case isTrayExit(msg), msg == winapi.WM_CLOSE:
 		// CHK-TRAY-11: the installer's exit message and WM_CLOSE remove
 		// the icon and end the tray (wParam / lParam ignored)
@@ -598,6 +623,39 @@ func (a *App) SetLanguage(pref string) error {
 	}
 	return err
 }
+
+// reloadTrayPrefs rereads Sound / UIMode / Theme / balloons / lang from
+// HKCU and applies them live without Exit (CHK-TRAY-57).
+func (a *App) reloadTrayPrefs() {
+	if a.opt.LangStore != nil {
+		if pref, err := a.opt.LangStore.Load(); err == nil {
+			a.opt.LangPref = pref
+			a.opt.Lang = ResolveLang(pref)
+			a.alerts.SetLang(a.opt.Lang)
+			if a.awin != nil {
+				a.awin.setLang(a.opt.Lang)
+			}
+			a.ind = trayui.Evaluate(a.status, a.opt.Lang)
+			a.modifyIcon()
+		}
+	}
+	a.loadBalloonPref()
+	a.loadSoundPrefs()
+	_ = loadUIMode(a.opt.UIModeStore) // next settings open reads the store
+	LoadTheme(a.opt.ThemeStore)
+	ApplyWindowTheme(a.hwnd)
+	if a.settings != nil && winapi.IsWindow(a.settings.hwnd) {
+		ApplyWindowTheme(a.settings.hwnd)
+		if a.settings.host != 0 {
+			ApplyWindowTheme(a.settings.host)
+		}
+		a.settings.syncThemeCombo()
+	}
+	if a.awin != nil && winapi.IsWindow(a.awin.hwnd) {
+		ApplyWindowTheme(a.awin.hwnd)
+	}
+}
+
 
 // OpenSettings opens (or focuses) the settings window and returns its
 // handle (the open Discovery dialog's when there is one, brought to the

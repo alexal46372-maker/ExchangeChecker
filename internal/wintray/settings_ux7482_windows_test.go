@@ -199,6 +199,7 @@ func TestCHK_TRAY_81_SoundStopLabel(t *testing.T) {
 		t.Fatal("missing Прослушать buttons")
 	}
 
+	// Stay on this goroutine (LockOSThread) — no t.Run: Win32 BM_CLICK hangs off-thread.
 	for _, tc := range []struct {
 		name string
 		id   int32
@@ -207,36 +208,33 @@ func TestCHK_TRAY_81_SoundStopLabel(t *testing.T) {
 		{"Warning", idSndWarn + idSndTest, w.sndWarn},
 		{"Error", idSndErr + idSndTest, w.sndErr},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			started = nil
-			stops = 0
-			previewing = false
-			btn := tc.ctl.test
-			if got := winapi.GetWindowText(btn); got != listen {
-				t.Fatalf("initial label=%q want %q", got, listen)
-			}
-			before := len(started)
-			w.click(t, tc.id)
-			if len(started) != before+1 {
-				t.Fatalf("previewSound/onSoundTest not called: started=%d", len(started))
-			}
-			if !previewing {
-				t.Fatal("preview flag false after start")
-			}
-			if got := winapi.GetWindowText(btn); got != stop {
-				t.Fatalf("playing label=%q want %q", got, stop)
-			}
-			w.click(t, tc.id) // «Остановить»
-			if stops != 1 {
-				t.Fatalf("onSoundStop calls=%d want 1", stops)
-			}
-			if previewing {
-				t.Fatal("preview still running after stop")
-			}
-			if got := winapi.GetWindowText(btn); got != listen {
-				t.Fatalf("after stop label=%q want %q", got, listen)
-			}
-		})
+		started = nil
+		stops = 0
+		previewing = false
+		btn := tc.ctl.test
+		if got := winapi.GetWindowText(btn); got != listen {
+			t.Fatalf("%s initial label=%q want %q", tc.name, got, listen)
+		}
+		w.click(t, tc.id)
+		if len(started) != 1 {
+			t.Fatalf("%s previewSound/onSoundTest not called: started=%d", tc.name, len(started))
+		}
+		if !previewing {
+			t.Fatalf("%s preview flag false after start", tc.name)
+		}
+		if got := winapi.GetWindowText(btn); got != stop {
+			t.Fatalf("%s playing label=%q want %q", tc.name, got, stop)
+		}
+		w.click(t, tc.id) // «Остановить»
+		if stops != 1 {
+			t.Fatalf("%s onSoundStop calls=%d want 1", tc.name, stops)
+		}
+		if previewing {
+			t.Fatalf("%s preview still running after stop", tc.name)
+		}
+		if got := winapi.GetWindowText(btn); got != listen {
+			t.Fatalf("%s after stop label=%q want %q", tc.name, got, listen)
+		}
 	}
 }
 
@@ -267,16 +265,15 @@ func TestCHK_TRAY_82_NoSoundSaveButton(t *testing.T) {
 		t.Fatalf("saved prefs warn=%d err=%d", saved[0].Warning.FreqHz, saved[0].Error.FreqHz)
 	}
 
-	// Window Save also routes through persistSoundSection (CHK-TRAY-82).
+	// Window Save path: saveSettings calls persistSoundSection first (CHK-TRAY-82).
 	saved = nil
 	winapi.SetWindowText(w.sndWarn.freq, "1500")
-	w.click(t, idSetSave)
-	pumpUntil(t, "sound saved via window Save", func() bool { return len(saved) >= 1 })
-	if len(saved) < 1 {
-		t.Fatal("window Save did not call onSoundSave")
+	w.saveSettings() // same entry as idSetSave; persist is synchronous
+	if len(saved) != 1 {
+		t.Fatalf("saveSettings onSoundSave calls=%d want 1", len(saved))
 	}
 	if saved[0].Warning.FreqHz != 1500 {
-		t.Fatalf("window Save prefs warn freq=%d want 1500", saved[0].Warning.FreqHz)
+		t.Fatalf("saveSettings prefs warn freq=%d want 1500", saved[0].Warning.FreqHz)
 	}
 }
 

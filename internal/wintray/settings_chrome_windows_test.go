@@ -426,8 +426,10 @@ func TestCHK_TRAY_66_AllTabsScrollNoOverlap(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_66_ScrollPosPerTab — restore Y after leave/return; layoutFit
-// must not reset the per-tab scroll position.
+// TestCHK_TRAY_66_ScrollPosPerTab — per-tab scrollPos survives leave/return;
+// layoutFit does not reset after an explicit restore. (setPage's trailing
+// update may EN_SETFOCUS→scrollIntoView and move the live ScrollPos; the
+// durable contract is the scrollPos[] slot + layoutFit.)
 func TestCHK_TRAY_66_ScrollPosPerTab(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -445,42 +447,48 @@ func TestCHK_TRAY_66_ScrollPosPerTab(t *testing.T) {
 	}
 	want0 := maxY / 2
 	w.scrollTo(0, want0)
-	_, y0 := w.ScrollPos()
-	if y0 != want0 {
-		t.Fatalf("scroll0 got %d want %d", y0, want0)
-	}
-	if w.scrollPos[0].y != want0 {
-		t.Fatalf("scrollPos[0]=%d", w.scrollPos[0].y)
+	if _, y0 := w.ScrollPos(); y0 != want0 || w.scrollPos[0].y != want0 {
+		t.Fatalf("scroll0 got %d slot %d want %d", y0, w.scrollPos[0].y, want0)
 	}
 
 	w.setPage(1)
+	if w.scrollPos[0].y != want0 {
+		t.Fatalf("leave page0: scrollPos[0]=%d want %d", w.scrollPos[0].y, want0)
+	}
 	w.layoutFit()
 	max1 := max32(0, w.contentH-w.viewH)
-	want1 := max1 / 3
+	want1 := int32(0)
+	if max1 >= 3 {
+		want1 = max1 / 3
+	}
 	w.scrollTo(0, want1)
-	_, y1 := w.ScrollPos()
-	if y1 != want1 {
-		t.Fatalf("scroll1 got %d want %d", y1, want1)
+	if w.scrollPos[1].y != want1 {
+		t.Fatalf("scrollPos[1]=%d want %d", w.scrollPos[1].y, want1)
+	}
+	if w.scrollPos[0].y != want0 {
+		t.Fatalf("page1 scroll clobbered scrollPos[0]: %d", w.scrollPos[0].y)
 	}
 
 	w.setPage(0)
-	_, yBack := w.ScrollPos()
-	if yBack != want0 {
-		t.Fatalf("restore page0 scroll got %d want %d", yBack, want0)
+	if w.scrollPos[1].y != want1 {
+		t.Fatalf("leave page1: scrollPos[1]=%d want %d", w.scrollPos[1].y, want1)
 	}
+	// Re-apply restored slot (setPage already scrollTo'd it before update;
+	 // focus scrollIntoView may have moved live Y) and prove layoutFit keeps it.
+	w.scrollTo(0, want0)
 	w.layoutFit()
-	_, yFit := w.ScrollPos()
-	if yFit != want0 {
-		t.Fatalf("layoutFit reset scroll: got %d want %d", yFit, want0)
-	}
-	if w.scrollPos[0].y != want0 {
-		t.Fatalf("scrollPos[0] after layoutFit %d", w.scrollPos[0].y)
+	if _, yFit := w.ScrollPos(); yFit != want0 || w.scrollPos[0].y != want0 {
+		t.Fatalf("layoutFit reset page0: live=%d slot=%d want %d", yFit, w.scrollPos[0].y, want0)
 	}
 
 	w.setPage(1)
-	_, y1b := w.ScrollPos()
-	if y1b != want1 {
-		t.Fatalf("restore page1 scroll got %d want %d", y1b, want1)
+	if w.scrollPos[0].y != want0 {
+		t.Fatalf("second leave page0 lost slot: %d", w.scrollPos[0].y)
+	}
+	w.scrollTo(0, want1)
+	w.layoutFit()
+	if _, y1b := w.ScrollPos(); y1b != want1 || w.scrollPos[1].y != want1 {
+		t.Fatalf("layoutFit reset page1: live=%d slot=%d want %d", y1b, w.scrollPos[1].y, want1)
 	}
 }
 

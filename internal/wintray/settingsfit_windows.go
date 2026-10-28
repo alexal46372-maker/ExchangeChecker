@@ -291,11 +291,49 @@ func (w *settingsWindow) layoutFit() {
 	for _, s := range spots {
 		winapi.MoveWindow(s.b.h, s.x, by+s.row*(bh+gap), s.b.width, bh)
 	}
-	x = cw - m
+	// Right buttons: wrap to extra rows when they do not fit on one line
+	// (144 dpi EN Export/Import/Mode/Save/Close overflowed left of client).
+	rx, rrow := cw-m, row
 	for i := len(right) - 1; i >= 0; i-- {
-		x -= right[i].width
-		winapi.MoveWindow(right[i].h, x, by+row*(bh+gap), right[i].width, bh)
-		x -= gap
+		if rx < m+right[i].width && rx < cw-m {
+			rrow++
+			rx = cw - m
+		}
+		rx -= right[i].width
+		if rx < m {
+			rx = m
+		}
+		winapi.MoveWindow(right[i].h, rx, by+rrow*(bh+gap), right[i].width, bh)
+		rx -= gap
+	}
+	if rrow > row {
+		rows = rrow + 1
+		barH = px(setBarH) + (rows-1)*(bh+gap)
+		if barH > ch/2 {
+			barH = ch / 2
+		}
+		footer = ch - barH
+		w.footerTop = footer
+		winapi.MoveWindow(w.ctl[idSetStatus], m, footer+gap, cw-2*m, px(40))
+		by = footer + gap + px(40) + gap
+		// re-place left spots for the new footer top
+		for _, s := range spots {
+			winapi.MoveWindow(s.b.h, s.x, by+s.row*(bh+gap), s.b.width, bh)
+		}
+		// re-place right on the updated by
+		rx, rrow = cw-m, row
+		for i := len(right) - 1; i >= 0; i-- {
+			if rx < m+right[i].width && rx < cw-m {
+				rrow++
+				rx = cw - m
+			}
+			rx -= right[i].width
+			if rx < m {
+				rx = m
+			}
+			winapi.MoveWindow(right[i].h, rx, by+rrow*(bh+gap), right[i].width, bh)
+			rx -= gap
+		}
 	}
 	// Middle scroll host only (between fixed tabs and fixed footer).
 	hostTop := w.tabChromeH
@@ -320,12 +358,32 @@ func (w *settingsWindow) layoutFit() {
 		}
 	}
 	hostExtent[w.host] = [2]int32{w.contentW, w.contentH}
+	// Drop stale hostRect entries (e.g. pre-chrome leftovers) then re-sync
+	// panels against the final host size so scroll 0 ⇒ child y ≥ 0.
+	for h := range w.hostRect {
+		if h == w.host {
+			delete(w.hostRect, h)
+			continue
+		}
+		isPan := false
+		for _, pan := range w.pagePanel {
+			if pan == h {
+				isPan = true
+				break
+			}
+		}
+		if !isPan {
+			delete(w.hostRect, h)
+		}
+	}
 	w.scrollSet = false
 	sx, sy := int32(0), int32(0)
 	if w.page >= 0 && w.page < len(w.scrollPos) {
 		sx, sy = w.scrollPos[w.page].x, w.scrollPos[w.page].y
 	}
-	w.scrollTo(sx, sy)
+	// syncPagePanels writes hostRect[pan]=slot and scrollTo's
+	w.scrollX, w.scrollY = sx, sy
+	w.syncPagePanels()
 }
 
 // barButton is a button of the bottom row and its grid width.

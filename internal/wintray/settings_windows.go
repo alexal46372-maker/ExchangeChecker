@@ -1078,11 +1078,13 @@ func (w *settingsWindow) update() {
 		// page-action: visibility via showPageActions (not pageCtl leftovers)
 		admin := w.cfg.mode == traysettings.Admin
 		winapi.EnableWindow(h, hasAlarm && admin && !w.busy && w.page == 0)
-		tip := i18n.KeyAlarmTestTip
-		if !admin {
-			tip = i18n.KeyAlarmTestTipDenied
-		}
+		// Keep catalog tip (CHK-TRAY-15); Denied only when the control is
+		// shown to a non-admin (capability present). Hidden → default tip.
 		if w.tips != nil {
+			tip := i18n.KeyAlarmTestTip
+			if hasAlarm && !admin {
+				tip = i18n.KeyAlarmTestTipDenied
+			}
 			w.tips.set(h, w.t(tip))
 		}
 	}

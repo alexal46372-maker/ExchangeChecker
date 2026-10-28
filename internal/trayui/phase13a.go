@@ -35,8 +35,8 @@ func ThemeMenu(lang string, cur Theme) Item {
 	return Item{Text: i18n.T(i18n.KeyMenuTheme, lang), Sub: sub}
 }
 
-// BuildTrayRightMenu is the Alex right-click order (CHK-TRAY-63):
-// Settings → work items (no «Звук тревог») → sep → Theme → sep → About → sep → Exit.
+// BuildTrayRightMenu is the Alex right-click order (CHK-TRAY-63 + CHK-TRAY-79):
+// Settings → work (no Sound, no Language) → sep → Theme → Language → sep → About → sep → Exit.
 func BuildTrayRightMenu(o RightMenuOpts) []Item {
 	lang := o.Lang
 	langSub := []Item{
@@ -51,7 +51,6 @@ func BuildTrayRightMenu(o RightMenuOpts) []Item {
 		{ID: CmdStatusWin, Text: i18n.T(i18n.KeyMenuStatusWin, lang)},
 		{ID: CmdCheckNow, Text: i18n.T(i18n.KeyMenuCheckNow, lang), Disabled: !o.Connected},
 		{ID: CmdBalloons, Text: i18n.T(i18n.KeyMenuBalloons, lang), Checked: o.Balloons},
-		{Text: i18n.T(i18n.KeyMenuLanguage, lang), Sub: langSub},
 		{Text: i18n.T(i18n.KeyMenuService, lang), Sub: ServiceMenu(o.Svc, lang)},
 	}
 	work = append(work, Phase10Items(lang)...)
@@ -60,9 +59,11 @@ func BuildTrayRightMenu(o RightMenuOpts) []Item {
 	}
 	out := []Item{{ID: CmdSettings, Text: i18n.T(i18n.KeyMenuSettings, lang)}}
 	out = append(out, work...)
+	// CHK-TRAY-79: bottom→top Exit → sep → About → sep → Language → Theme → sep → rest.
 	out = append(out,
 		Item{Separator: true},
 		ThemeMenu(lang, o.Theme),
+		Item{Text: i18n.T(i18n.KeyMenuLanguage, lang), Sub: langSub},
 		Item{Separator: true},
 		Item{ID: CmdAbout, Text: i18n.T(i18n.KeyMenuAbout, lang)},
 		Item{Separator: true},

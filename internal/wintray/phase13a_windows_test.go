@@ -123,8 +123,8 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 		t.Fatalf("Simple must keep General active, page=%d", w.page)
 	}
 	n := winapi.TabItemCount(w.ctl[idSetTabs])
-	if n < 2 || w.tabPageAt(0) != 0 || w.tabPageAt(1) != 1 {
-		t.Fatalf("Simple tabs want Databases+General, got %d pages=%v", n, w.tabPages)
+	if n < 2 || w.tabPageAt(0) != 1 || w.tabPageAt(1) != 0 {
+		t.Fatalf("Simple tabs want General+Databases (CHK-TRAY-75), got %d pages=%v", n, w.tabPages)
 	}
 	for _, p := range w.tabPages {
 		if p == pageViber {
@@ -135,8 +135,11 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 	if !visible(w.ctl[idGenLang]) || !visible(w.ctl[idGenWarn]) {
 		t.Fatal("Simple General: language / warn threshold must stay")
 	}
-	if visible(w.ctl[idGenPoll]) || visible(w.ctl[idGenWarnFreq]) {
-		t.Fatal("Simple General: expert poll/freq must hide")
+	if visible(w.ctl[idGenPoll]) {
+		t.Fatal("Simple General: expert poll must hide")
+	}
+	if w.ctl[idGenWarnFreq] != 0 && visible(w.ctl[idGenWarnFreq]) {
+		t.Fatal("Simple General: sound freq dup must stay removed/hidden (CHK-TRAY-74)")
 	}
 	// Export/Import/UIMode still common
 	for _, id := range common {
@@ -159,7 +162,7 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
 		hidden: true, uiMode: traysettings.UIExpert,
 		stores: trayStores{Sound: store},
-		onSoundSave: app.SaveSoundPrefs, onSoundTest: app.testSound,
+		onSoundSave: app.SaveSoundPrefs, onSoundTest: app.testSound, onSoundStop: app.stopTestSound,
 		soundPrefs: func() trayalert.SoundPrefs { return app.SoundPrefs() },
 	})
 	if err != nil {

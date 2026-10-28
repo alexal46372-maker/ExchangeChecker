@@ -14,8 +14,8 @@ import (
 )
 
 // buildSoundSection embeds the «Звук тревог» profiles one-to-one into the
-// General tab as a «Звук» group (CHK-TRAY-62). Save persists HKCU Sound;
-// «Прослушать» uses the tray App preview when available.
+// General tab as a «Звук» group (CHK-TRAY-62/74/81/82). Window Save persists
+// HKCU Sound; «Прослушать» toggles to «Остановить» and really stops.
 func (w *settingsWindow) buildSoundSection(
 	add func(class, text string, ex, style uint32, id int32, kind ui.Kind, wd, hg int32) *ui.Ctl,
 	label func(text string, id int32) *ui.Ctl,
@@ -26,25 +26,20 @@ func (w *settingsWindow) buildSoundSection(
 			i18n.T(i18n.KeySoundFilterAll, lang) + "\x00*.*"
 		return winapi.GetOpenFileName(w.hwnd, i18n.T(i18n.KeySoundTitle, lang), f, cur)
 	}
+	// CHK-TRAY-74: enable/disable alert sound lives in «Звук», not upper General.
+	beepEn := add("BUTTON", i18n.T(i18n.KeyGenBeepEnabled, lang), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idGenBeep, ui.Check, 0, 0)
 	var warnN, errN ui.Node
 	w.sndWarn, warnN = w.buildEmbeddedProfile(add, label, idSndWarn, i18n.T(i18n.KeySoundWarning, lang))
 	w.sndErr, errN = w.buildEmbeddedProfile(add, label, idSndErr, i18n.T(i18n.KeySoundError, lang))
 	info := add("STATIC", "", 0, winapi.SS_LEFT, idSndInfo, ui.Box, 540, 36)
 	info.Grow = true
 	w.sndInfo = info.H
-	save := add("BUTTON", i18n.T(i18n.KeySoundSave, lang), 0, winapi.WS_TABSTOP, idSndSave, ui.Button, 0, 0)
-	w.sndSave = save.H
-	if w.tips != nil {
-		w.tips.set(w.sndSave, i18n.T(i18n.KeyTipSoundSave, lang))
-	}
+	// CHK-TRAY-82: no per-section «Сохранить» — window Save persists sound.
+	w.sndSave = 0
 	gBox := add("BUTTON", i18n.T(i18n.KeySetGroupSound, lang), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
 	w.groups[i18n.KeySetGroupSound] = gBox.H
 	return &ui.GroupBox{Box: gBox, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
-		warnN, errN,
-		&ui.Col{Gap: ui.P8, Items: []ui.Node{
-			info,
-			&ui.Row{Right: true, Items: []ui.Node{save}},
-		}},
+		beepEn, warnN, errN, info,
 	}}}
 }
 
@@ -206,25 +201,7 @@ func (w *settingsWindow) soundCommand(id int32) bool {
 	if w.sndWarn.freq == 0 {
 		return false
 	}
-	if id == idSndSave {
-		p, bad := w.soundValues()
-		if bad != "" {
-			winapi.SetWindowText(w.sndInfo, bad)
-			return true
-		}
-		var err error
-		if w.cfg.onSoundSave != nil {
-			err = w.cfg.onSoundSave(p)
-		} else if w.cfg.stores.Sound != nil {
-			err = w.cfg.stores.Sound.Save(p.Normalized(trayalert.DefaultSoundPrefs(nil)).String())
-		}
-		if err != nil {
-			winapi.SetWindowText(w.sndInfo, err.Error())
-			return true
-		}
-		winapi.SetWindowText(w.sndInfo, i18n.T(i18n.KeySoundSaved, w.cfg.lang))
-		return true
-	}
+	// CHK-TRAY-82: idSndSave removed from UI.
 	for _, c := range []profileCtl{w.sndWarn, w.sndErr} {
 		switch id - c.base {
 		case idSndBrowse:
@@ -239,10 +216,15 @@ func (w *settingsWindow) soundCommand(id int32) bool {
 			}
 			return true
 		case idSndTest:
+			// CHK-TRAY-81: Прослушать ↔ Остановить; Stop must halt playback.
+			if w.sndPreviewing == c.base {
+				w.stopSoundPreview()
+				return true
+			}
 			pr, bad := w.readSoundProfile(c)
 			winapi.SetWindowText(w.sndInfo, bad)
 			if bad == "" {
-				w.previewSound(pr)
+				w.previewSound(pr, c)
 			}
 			return true
 		case idSndBeep, idSndFile, idSndLoop:
@@ -252,10 +234,27 @@ func (w *settingsWindow) soundCommand(id int32) bool {
 	return false
 }
 
-func (w *settingsWindow) previewSound(p trayalert.SoundProfile) {
+func (w *settingsWindow) previewSound(p trayalert.SoundProfile, c profileCtl) {
+	w.stopSoundPreview() // stop other profile / leftover
+	p.Loop = false       // preview never loops forever (CHK-TRAY-81)
+	w.sndPreviewing = c.base
+	w.setSoundTestLabel(c, true)
+	done := func() {
+		if w.sndPreviewing == c.base {
+			w.sndPreviewing = 0
+			w.setSoundTestLabel(c, false)
+		}
+	}
 	if w.cfg.onSoundTest != nil {
 		w.cfg.onSoundTest(p, w.sndMaster)
+		// wrap after testSound installs endPreview OnDone (CHK-TRAY-81)
+		if w.cfg.onSoundDone != nil {
+			w.cfg.onSoundDone(done)
+		}
 		return
+	}
+	if w.cfg.onSoundDone != nil {
+		w.cfg.onSoundDone(done)
 	}
 	if w.sndPreviewer == nil {
 		w.sndPreviewer = &winSounder{alias: aliasTest, lang: func() string { return w.cfg.lang }}
@@ -263,19 +262,70 @@ func (w *settingsWindow) previewSound(p trayalert.SoundProfile) {
 	if w.sndPreview == nil {
 		w.sndPreview = trayalert.NewSoundPlayer(w.sndPreviewer)
 	}
+	w.sndPreview.OnDone = func() {
+		// runs on player goroutine — bounce to UI via PostMessage if needed;
+		// settings tests / HiddenSettings path call done directly.
+		done()
+	}
 	w.sndPreview.Set(false, trayalert.Sound{})
 	w.sndPreview.Set(true, trayalert.Sound{Profile: p, Volume: trayalert.EffectiveVolume(p.Volume, w.sndMaster)})
 }
 
 func (w *settingsWindow) stopSoundPreview() {
+	if w.cfg.onSoundStop != nil {
+		w.cfg.onSoundStop()
+	}
 	if w.sndPreview != nil {
 		w.sndPreview.Set(false, trayalert.Sound{})
 	}
-	if w.cfg.onSoundTest == nil {
+	for _, c := range []profileCtl{w.sndWarn, w.sndErr} {
+		if c.base != 0 {
+			w.setSoundTestLabel(c, false)
+		}
+	}
+	w.sndPreviewing = 0
+}
+
+func (w *settingsWindow) setSoundTestLabel(c profileCtl, stopping bool) {
+	if c.test == 0 {
 		return
 	}
-	// App.testSound path: stop via empty — App.stopTestSound is not
-	// exposed; preview is fire-and-forget for the section.
+	key := i18n.KeySoundTest
+	if stopping {
+		key = i18n.KeySoundStop
+	}
+	winapi.SetWindowText(c.test, i18n.T(key, w.cfg.lang))
+}
+
+// persistSoundSection writes the «Звук» profiles via onSoundSave / store (CHK-TRAY-82).
+// Returns an error string for the status line, or "".
+func (w *settingsWindow) persistSoundSection() string {
+	if w.sndWarn.freq == 0 {
+		return ""
+	}
+	p, bad := w.soundValues()
+	if bad != "" {
+		if w.sndInfo != 0 {
+			winapi.SetWindowText(w.sndInfo, bad)
+		}
+		return bad
+	}
+	var err error
+	if w.cfg.onSoundSave != nil {
+		err = w.cfg.onSoundSave(p)
+	} else if w.cfg.stores.Sound != nil {
+		err = w.cfg.stores.Sound.Save(p.Normalized(trayalert.DefaultSoundPrefs(nil)).String())
+	}
+	if err != nil {
+		if w.sndInfo != 0 {
+			winapi.SetWindowText(w.sndInfo, err.Error())
+		}
+		return err.Error()
+	}
+	if w.sndInfo != 0 {
+		winapi.SetWindowText(w.sndInfo, i18n.T(i18n.KeySoundSaved, w.cfg.lang))
+	}
+	return ""
 }
 
 // applySoundTips sets tooltips on the embedded sound controls (tips are
@@ -285,7 +335,9 @@ func (w *settingsWindow) applySoundTips() {
 		return
 	}
 	lang := w.cfg.lang
-	w.tips.set(w.sndSave, i18n.T(i18n.KeyTipSoundSave, lang))
+	if w.sndSave != 0 {
+		w.tips.set(w.sndSave, i18n.T(i18n.KeyTipSoundSave, lang))
+	}
 	for _, c := range []profileCtl{w.sndWarn, w.sndErr} {
 		for ctl, k := range map[uintptr]string{c.beep: i18n.KeyTipSoundKind, c.file: i18n.KeyTipSoundKind,
 			c.freq: i18n.KeyTipSoundFreq, c.dur: i18n.KeyTipSoundDur, c.path: i18n.KeyTipSoundFile,

@@ -718,7 +718,23 @@ func (a *App) OpenSettings() uintptr {
 		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore, themeStore: a.opt.ThemeStore,
 		stores:  trayStores{Lang: a.opt.LangStore, Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
-		onSoundSave: a.SaveSoundPrefs, onSoundTest: a.testSound, soundPrefs: func() trayalert.SoundPrefs { return a.SoundPrefs() },
+		onSoundSave: a.SaveSoundPrefs, onSoundTest: a.testSound,
+		onSoundStop: a.stopTestSound,
+		onSoundDone: func(cb func()) {
+			if a.tester == nil {
+				a.tester = trayalert.NewSoundPlayer(a.testSounder)
+			}
+			prev := a.tester.OnDone
+			a.tester.OnDone = func() {
+				if prev != nil {
+					prev()
+				}
+				if cb != nil {
+					a.runOnUI(cb)
+				}
+			}
+		},
+		soundPrefs: func() trayalert.SoundPrefs { return a.SoundPrefs() },
 		onClose: func() {
 			if a.settings == w {
 				a.settings = nil

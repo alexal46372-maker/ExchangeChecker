@@ -10,7 +10,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
 
-// Settings section tabs: SysTabControl32 (Databases / General / Viber).
+// Settings section tabs: SysTabControl32 (General / Databases / Viber / Email).
 // Simple/Expert is a window-common footer button (CHK-TRAY-61), not a tab.
 
 const (
@@ -219,8 +219,8 @@ func (w *settingsWindow) pageOfHWND(h uintptr) int {
 	return -1
 }
 
-// rebuildTabs fills SysTabControl32 (CHK-TRAY-61): Databases always;
-// General ALWAYS (also in Simple — do not remove the tab); Viber is
+// rebuildTabs fills SysTabControl32 (CHK-TRAY-61/75): General first,
+// Databases second (always); General ALWAYS (also in Simple); Viber/Email
 // expert-only when the capability is available.
 func (w *settingsWindow) rebuildTabs() {
 	h := w.ctl[idSetTabs]
@@ -237,15 +237,16 @@ func (w *settingsWindow) rebuildTabs() {
 		}
 		w.tabPages = append(w.tabPages, page)
 	}
-	add(i18n.KeySetNavProfiles, 0)
+	// CHK-TRAY-75: General → Databases → Viber → e-mail (page indices unchanged).
 	add(i18n.KeySetNavGeneral, 1)
+	add(i18n.KeySetNavProfiles, 0)
 	if w.uiMode != traysettings.UISimple && w.viberAvailable() {
 		add(i18n.KeySetNavViber, pageViber)
 	}
 	if w.uiMode != traysettings.UISimple && w.emailAvailable() {
 		add(i18n.KeySetNavEmail, pageEmail)
 	}
-	// if current page vanished (Simple hid Viber), fall back to Databases
+	// if current page vanished (Simple hid Viber), fall back to General
 	ok := false
 	for _, p := range w.tabPages {
 		if p == w.page {
@@ -254,7 +255,7 @@ func (w *settingsWindow) rebuildTabs() {
 		}
 	}
 	if !ok {
-		w.page = 0
+		w.page = 1
 	}
 	w.syncTabSelection()
 }

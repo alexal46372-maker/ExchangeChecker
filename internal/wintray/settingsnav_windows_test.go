@@ -51,8 +51,8 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 		}
 		w.toggleUIMode() // Simple: Databases + General; Viber expert-only
 		nTabs := winapi.TabItemCount(w.ctl[idSetTabs])
-		if nTabs < 2 || len(w.tabPages) < 2 || w.tabPageAt(0) != 0 || w.tabPageAt(1) != 1 {
-			t.Errorf("%s: simple mode must keep Databases+General, got win=%d pages=%v", lang, nTabs, w.tabPages)
+		if nTabs < 2 || len(w.tabPages) < 2 || w.tabPageAt(0) != 1 || w.tabPageAt(1) != 0 {
+			t.Errorf("%s: simple mode must keep General+Databases (CHK-TRAY-75), got win=%d pages=%v", lang, nTabs, w.tabPages)
 		}
 		for _, p := range w.tabPages {
 			if p == pageViber {

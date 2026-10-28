@@ -188,6 +188,11 @@ func (w *settingsWindow) scrollTo(x, y int32) {
 			if w.ctl[idSetTabs] != 0 && h == w.ctl[idSetTabs] {
 				continue
 			}
+			// CHK-TRAY-78: DB list + Add/Remove/Clone stay fixed; only right panel scrolls.
+			if w.pinnedHost[h] {
+				winapi.MoveWindowNoRedraw(h, r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top)
+				continue
+			}
 			winapi.MoveWindowNoRedraw(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
 		}
 		// bRedraw=FALSE inside batch — SetScrollInfo(TRUE) partial-invalidates on Win7.
@@ -246,12 +251,12 @@ func (w *settingsWindow) layoutFit() {
 	// Fixed tab chrome (frame child) — never inside the scroll host.
 	tabH := px(settingsTabChromeH)
 	if w.ctl[idSetTabs] != 0 {
-		// brand accent (3px) + pad above tabs
+		// brand accent (3px) + pad above tabs; no pad under tabs (CHK-TRAY-76)
 		winapi.MoveWindow(w.ctl[idSetTabs], m, 3+gap/2, cw-2*m, tabH)
 		winapi.ShowWindow(w.ctl[idSetTabs], winapi.SW_SHOWNA)
 		delete(w.hostRect, w.ctl[idSetTabs])
 	}
-	w.tabChromeH = 3 + gap/2 + tabH + gap/2
+	w.tabChromeH = 3 + gap/2 + tabH // flush host under SysTabControl (CHK-TRAY-76)
 	type btn struct {
 		h     uintptr
 		width int32
@@ -424,8 +429,8 @@ type barButton struct {
 // (CHK-TRAY-61). Pages share one slot (Col Gap:-1). SW_HIDE(panel) stops ghosts.
 func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
 	// Tabs are frame chrome (layoutFit); host content is pages only.
-	body := &ui.Pad{Top: 6, Child: &ui.Col{Gap: -1, Items: pages}}
-	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8, Child: body}
+	body := &ui.Pad{Top: 2, Child: &ui.Col{Gap: -1, Items: pages}} // CHK-TRAY-76: minimal gap under tabs
+	w.root = &ui.Pad{Left: ui.P12, Top: 0, Right: ui.P12, Bottom: ui.P8, Child: body}
 	w.rootM = m
 	syncCues(w.root)
 	w.ctlOf = map[uintptr]*ui.Ctl{}
@@ -461,10 +466,13 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
 			break
 		}
 	}
+	// CHK-TRAY-77: stretch every tab to the host width (GroupBox/Col Grow).
+	wid := min32(max32(w.pageW, allW), maxW)
+	w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, wid)
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	w.syncPagePanels()
-	x, y, ww, wh := settingsRectPx(style, min32(max32(w.pageW, allW), maxW), w.pageH+px(setBarH)+px(settingsTabChromeH)+px(gridGap))
+	x, y, ww, wh := settingsRectPx(style, wid, w.pageH+px(setBarH)+px(settingsTabChromeH)+px(gridGap))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 }
 
@@ -507,6 +515,8 @@ func (w *settingsWindow) relayoutAll() {
 			break
 		}
 	}
+	// CHK-TRAY-77: fill host width on General/Viber/Email like Databases.
+	w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, avail)
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	w.syncPagePanels()
@@ -558,6 +568,9 @@ func (w *settingsWindow) syncPagePanels() {
 		ui.Walk(n, func(c *ui.Ctl) {
 			if c == nil || c.H == 0 || !c.Placed || c.Hidden {
 				return
+			}
+			if w.pinnedHost[c.H] {
+				return // CHK-TRAY-78: left chrome is not part of the scrolling panel slot
 			}
 			// slot uses layout height only — comboDrop is a MoveWindow quirk of
 			// CBS_DROPDOWNLIST, not painted panel content (would blow hostExtent)

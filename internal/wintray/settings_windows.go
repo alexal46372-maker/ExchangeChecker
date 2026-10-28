@@ -170,6 +170,8 @@ type settingsConfig struct {
 	// CHK-TRAY-62: alarm sound profiles in General (HKCU Sound).
 	onSoundSave func(trayalert.SoundPrefs) error
 	onSoundTest func(trayalert.SoundProfile, int)
+	onSoundStop func()            // CHK-TRAY-81: halt «Прослушать»
+	onSoundDone func(cb func())   // register one-shot preview-done callback
 	soundPrefs  func() trayalert.SoundPrefs // live prefs from the tray App; nil = load store
 }
 
@@ -262,6 +264,7 @@ type settingsWindow struct {
 	footerTop                        int32        // y of footer bar in client (paint)
 	scrollPos                        [4]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
 	pageActions                      []uintptr    // Test/Cancel/Alarm/Poll — footer, not pageCtl
+	pinnedHost                       map[uintptr]bool // CHK-TRAY-78: DB list chrome (no vertical scroll)
 	cur                              *[]uintptr   // page of the controls being created
 	connected                        bool         // service session state seen by onSessionState
 	loaded                           bool         // get_config (or a snapshot) loaded at least once
@@ -285,6 +288,7 @@ type settingsWindow struct {
 	sndMaster       int
 	sndPreview      *trayalert.SoundPlayer
 	sndPreviewer    trayalert.Sounder
+	sndPreviewing   int32 // profile base currently previewing (0 = none); CHK-TRAY-81
 }
 
 func (w *settingsWindow) setCue(id int32, text string) {
@@ -453,6 +457,8 @@ func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw,
 }
 
 // genEdits are the number boxes of the general page and their fields.
+// genEdits: non-sound general fields only (CHK-TRAY-74). Beep freq/dur/gap
+// live exclusively in the «Звук» frame; BeepEnabled checkbox moved there too.
 var genEdits = []struct {
 	id    int32
 	field traysettings.Field
@@ -461,11 +467,6 @@ var genEdits = []struct {
 	{idGenPoll, traysettings.FieldPollInterval, i18n.KeyGenPoll},
 	{idGenWarn, traysettings.FieldWarnMinutes, i18n.KeyGenWarn},
 	{idGenError, traysettings.FieldErrorMinutes, i18n.KeyGenError},
-	{idGenWarnFreq, traysettings.FieldWarnFreq, i18n.KeyGenWarnFreq},
-	{idGenWarnDur, traysettings.FieldWarnDur, i18n.KeyGenWarnDur},
-	{idGenErrFreq, traysettings.FieldErrorFreq, i18n.KeyGenErrorFreq},
-	{idGenErrDur, traysettings.FieldErrorDur, i18n.KeyGenErrorDur},
-	{idGenGap, traysettings.FieldGap, i18n.KeyGenGap},
 	{idGenStalled, traysettings.FieldStalledMinutes, i18n.KeyGenStalled},
 }
 
@@ -550,23 +551,43 @@ func (w *settingsWindow) build() {
 	delete(w.hostRect, tabH) // belt: never scroll the tab strip
 	w.ensurePagePanels()
 
-	// Bases tab ONLY: profile list + Add / Delete / Clone / Discover (CHK-TRAY-60)
-	w.pageParent = w.pagePanel[0]
+	// Bases tab ONLY: profile list + Add / Delete / Clone / Discover (CHK-TRAY-60).
+	// CHK-TRAY-78: list chrome is a HOST child (pinned — does not scroll);
+	// only the right-hand form lives under pagePanel[0] and scrolls.
+	w.pageParent = 0 // host
 	w.cur = &w.pageCtl[0]
-	list := add("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LBS_NOTIFY|0x0100 /* LBS_NOINTEGRALHEIGHT */, idSetList, ui.Box, 205, 250)
+	w.pinnedHost = map[uintptr]bool{}
+	pin := func(c *ui.Ctl) *ui.Ctl {
+		if c != nil && c.H != 0 {
+			w.pinnedHost[c.H] = true
+		}
+		return c
+	}
+	// CHK-TRAY-80: report ListView with «Опрос» checkbox column.
+	list := pin(add(winapi.WC_LISTVIEW, "", winapi.WS_EX_CLIENTEDGE,
+		winapi.WS_TABSTOP|winapi.WS_VSCROLL|winapi.LVS_REPORT|winapi.LVS_SINGLESEL|winapi.LVS_SHOWSELALWAYS,
+		idSetList, ui.Box, 205, 250))
 	list.Grow, list.NoShrink = true, true
-	basesLeft := []ui.Node{label(w.t(i18n.KeySetProfiles), 0), list,
+	winapi.SendMessage(list.H, winapi.LVM_SETEXTENDEDLISTVIEWSTYLE, winapi.LVS_EX_CHECKBOXES|winapi.LVS_EX_FULLROWSELECT,
+		winapi.LVS_EX_CHECKBOXES|winapi.LVS_EX_FULLROWSELECT)
+	winapi.ListViewInsertColumn(list.H, 0, w.t(i18n.KeySetColPoll), 55)
+	winapi.ListViewInsertColumn(list.H, 1, w.t(i18n.KeySetProfiles), 140)
+	plabel := pin(label(w.t(i18n.KeySetProfiles), 0))
+	addBtn := pin(add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0))
+	delBtn := pin(add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0))
+	cloneBtn := pin(add("BUTTON", w.t(i18n.KeySetClone), 0, winapi.WS_TABSTOP, idSetClone, ui.Button, 205, 0))
+	basesLeft := []ui.Node{plabel, list,
 		&ui.Col{Gap: ui.P4, Items: []ui.Node{
-			&ui.Row{Grow: true, Items: []ui.Node{add("BUTTON", w.t(i18n.KeySetAdd), 0, winapi.WS_TABSTOP, idSetAdd, ui.Button, 100, 0),
-				add("BUTTON", w.t(i18n.KeySetDelete), 0, winapi.WS_TABSTOP, idSetDelete, ui.Button, 100, 0)}},
-			add("BUTTON", w.t(i18n.KeySetClone), 0, winapi.WS_TABSTOP, idSetClone, ui.Button, 205, 0),
+			&ui.Row{Grow: true, Items: []ui.Node{addBtn, delBtn}},
+			cloneBtn,
 		}}}
 	if w.cfg.mode == traysettings.Admin {
-		basesLeft = append(basesLeft, add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, ui.Button, 205, 0))
+		basesLeft = append(basesLeft, pin(add("BUTTON", w.t(i18n.KeyDiscButton), 0, winapi.WS_TABSTOP, idSetDiscover, ui.Button, 205, 0)))
 	}
 	basesChrome := &ui.Col{Gap: ui.P8 - 2, Items: basesLeft}
 
-	// profile form: children of pagePanel[0] (one HWND per tab — Conchita)
+	// profile form: children of pagePanel[0] (scrolls — CHK-TRAY-78)
+	w.pageParent = w.pagePanel[0]
 	// four group boxes (phase 10 D3); phase 11 (CHK-TRAY-47): one field
 	// column (ui.Share), «Порт» on its own row, TLS in one row, hints/info
 	// under the groups, full width (the text wraps)
@@ -602,7 +623,7 @@ func (w *settingsWindow) build() {
 	tlsG := &ui.Grid{Gap: ui.P4, Rows: tlsRows}
 	w.tlsG = tlsG
 	tls := group(i18n.KeySetGroupTLS, tlsG)
-	enabled := check(idSetEnabled, i18n.KeySetEnabled)
+	// CHK-TRAY-80: poll enable lives in the DB list «Опрос» column (not here).
 	// two number boxes per row: own thresholds, then timeouts (phase 8)
 	// (phase 11: one per row when the window is too narrow, stackPairs)
 	var stacked []ui.GridRow
@@ -615,12 +636,12 @@ func (w *settingsWindow) build() {
 		return ui.GridRow{Label: l1, Field: &ui.Row{Items: []ui.Node{e1, &ui.Space{W: ui.P8}, l2, e2}}}
 	}
 	stalledRow := field(w.t(i18n.KeySetStalledMin), idSetStalled, "EDIT", edit|winapi.ES_NUMBER, 200)
-	checksG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{{Span: true, Field: enabled},
+	checksG := &ui.Grid{Gap: ui.P4, Rows: []ui.GridRow{
 		pair(i18n.KeySetWarnMin, idSetWarn, i18n.KeySetErrorMin, idSetError),
 		pair(i18n.KeySetConnTimeout, idSetConnTO, i18n.KeySetQueryTimeout, idSetQueryTO),
 		stalledRow,
 	}}
-	w.checksG, w.stackedRows = checksG, append([]ui.GridRow{checksG.Rows[0]}, append(stacked, stalledRow)...)
+	w.checksG, w.stackedRows = checksG, append(append([]ui.GridRow{}, stacked...), stalledRow)
 	checks := group(i18n.KeySetGroupChecks, checksG)
 	ui.Share(connG, loginG, tlsG, checksG)
 	hints := add("STATIC", "", 0, winapi.SS_LEFT, idSetHints, ui.Box, 120, 30)
@@ -639,10 +660,7 @@ func (w *settingsWindow) build() {
 	gBox := add("BUTTON", w.t(i18n.KeySetGroupGeneral), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
 	w.groups[i18n.KeySetGroupGeneral] = gBox.H
 	var gRows []ui.GridRow
-	for i, g := range genEdits {
-		if i == 3 {
-			gRows = append(gRows, ui.GridRow{Span: true, Field: check(idGenBeep, i18n.KeyGenBeepEnabled)})
-		}
+	for _, g := range genEdits {
 		gw := int32(100)
 		if g.id == idGenStalled {
 			gw = 200 // cue «0 = выкл., пусто = 120»
@@ -720,6 +738,7 @@ func (w *settingsWindow) build() {
 	w.pageParent = 0
 	// page roots: setPage hides inactive ones via ui.SetHidden (wizard pattern)
 	w.pages = [4]ui.Node{profilePage, generalPage, viberPage, emailPage}
+	w.page = 1 // CHK-TRAY-75: open on «Общие настройки» (first tab)
 	// cues from traysettings.UIFields (phase 11, CHK-TRAY-50/51): before
 	// the layout so boxes are at least as wide as their cues; Viber
 	// reminder keeps the STATIC hint only (no duplicate cue banner)
@@ -802,6 +821,9 @@ func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uint
 		if w.onTabNotify(lp) {
 			return 0, true
 		}
+		if w.onListNotify(lp) {
+			return 0, true
+		}
 	case winapi.WM_CTLCOLOREDIT:
 		if br, ok := w.requiredColor(wp, lp); ok {
 			return br, true
@@ -834,7 +856,7 @@ func (w *settingsWindow) command(id int32, code uint32) {
 			w.ed.Form.PasswordTyped = winapi.GetWindowTextLength(w.ctl[idSetPassword]) > 0
 			w.update()
 		}
-	case idGenPoll, idGenWarn, idGenError, idGenWarnFreq, idGenWarnDur, idGenErrFreq, idGenErrDur, idGenGap, idGenStalled:
+	case idGenPoll, idGenWarn, idGenError, idGenStalled:
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readGeneral()
 		}
@@ -866,12 +888,13 @@ func (w *settingsWindow) command(id int32, code uint32) {
 			w.readForm()
 			w.update()
 		}
-	case idSetClearPw, idSetTLS10, idSetTrust, idSetEnabled:
+	case idSetClearPw, idSetTLS10, idSetTrust:
 		if code == winapi.BN_CLICKED && !w.loading {
 			w.readForm()
 			w.update()
 		}
 	case idSetList:
+		// selection / checkbox via WM_NOTIFY (LVN_ITEMCHANGED); keep for compatibility
 		if code == winapi.LBN_SELCHANGE {
 			w.selectFromList()
 		}
@@ -961,7 +984,13 @@ func (w *settingsWindow) readForm() {
 	if i := int(winapi.SendMessage(w.ctl[idSetEncrypt], winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(traysettings.EncryptChoices) {
 		f.Encrypt = traysettings.EncryptChoices[i]
 	}
-	f.ClearPassword, f.TLS10, f.Enabled = w.check(idSetClearPw), w.check(idSetTLS10), w.check(idSetEnabled)
+	f.ClearPassword, f.TLS10 = w.check(idSetClearPw), w.check(idSetTLS10)
+	// Enabled comes from the DB list «Опрос» checkbox (CHK-TRAY-80).
+	if lv := w.ctl[idSetList]; lv != 0 {
+		if i := winapi.ListViewSelected(lv); i >= 0 {
+			f.Enabled = winapi.ListViewChecked(lv, i)
+		}
+	}
 	// the trust box is shown cleared and disabled where it has no effect
 	// (CHK-TRAY-13); its value is kept for «Весь сеанс (TLS)»
 	// (read only while the box is enabled, i.e. before a mode change)
@@ -980,17 +1009,29 @@ func (w *settingsWindow) readForm() {
 func (w *settingsWindow) fill() {
 	w.loading = true
 	defer func() { w.loading = false }()
-	lb := w.ctl[idSetList]
-	winapi.SendMessage(lb, winapi.LB_RESETCONTENT, 0, 0)
+	lv := w.ctl[idSetList]
+	winapi.SendMessage(lv, winapi.LVM_DELETEALLITEMS, 0, 0)
 	for _, p := range w.ed.Profiles {
-		winapi.SendMessageString(lb, winapi.LB_ADDSTRING, 0, p.DisplayName())
+		i := winapi.ListViewAddRow(lv, []string{"", p.DisplayName()})
+		if i >= 0 {
+			winapi.ListViewSetChecked(lv, i, p.Enabled)
+		}
 	}
 	sel := w.ed.Sel
 	if w.ed.IsNew {
-		winapi.SendMessageString(lb, winapi.LB_ADDSTRING, 0, w.t(i18n.KeySetNewProfile))
+		i := winapi.ListViewAddRow(lv, []string{"", w.t(i18n.KeySetNewProfile)})
+		if i >= 0 {
+			winapi.ListViewSetChecked(lv, i, w.ed.Form.Enabled) // new DB: default ON (model.NewProfile)
+		}
 		sel = len(w.ed.Profiles)
 	}
-	winapi.SendMessage(lb, winapi.LB_SETCURSEL, uintptr(sel), 0) // -1 clears
+	if sel >= 0 {
+		winapi.ListViewSelect(lv, sel)
+		// keep Form.Enabled in sync with the selected row checkbox
+		if winapi.ListViewChecked(lv, sel) != w.ed.Form.Enabled && w.ed.HasProfile() {
+			winapi.ListViewSetChecked(lv, sel, w.ed.Form.Enabled)
+		}
+	}
 	f := w.ed.Form
 	for id, s := range map[int32]string{idSetName: f.Name, idSetHost: f.Host, idSetInstance: f.Instance, idSetPort: f.Port,
 		idSetDatabase: f.Database, idSetLogin: f.Login, idSetWarn: f.WarnMin, idSetError: f.ErrorMin,
@@ -1023,7 +1064,7 @@ func (w *settingsWindow) fill() {
 	w.setCheck(idSetClearPw, f.ClearPassword)
 	w.setCheck(idSetTLS10, f.TLS10)
 	w.setCheck(idSetTrust, f.TrustServerCert && traysettings.TrustApplies(f.Encrypt))
-	w.setCheck(idSetEnabled, f.Enabled)
+	// idSetEnabled removed from «Опрос и пороги» (CHK-TRAY-80); list checkbox owns it.
 	w.fillGeneral()
 	w.loadSoundSection()
 	w.fillViber()
@@ -1057,7 +1098,7 @@ func (w *settingsWindow) update() {
 	if want := trust && ed.Form.TrustServerCert; w.check(idSetTrust) != want {
 		w.setCheck(idSetTrust, want)
 	}
-	winapi.EnableWindow(w.ctl[idSetEnabled], edit)
+	// poll checkbox column enable follows list editability (CHK-TRAY-80)
 	pw := ""
 	if has {
 		pw = ed.PasswordHint()
@@ -1343,6 +1384,11 @@ func (w *settingsWindow) saveSettings() {
 		return
 	}
 	w.readGeneral()
+	// CHK-TRAY-82: sound profiles persist with the shared Settings Save.
+	if bad := w.persistSoundSection(); bad != "" {
+		w.setStatus(bad)
+		return
+	}
 	req, pr := w.ed.SettingsRequest()
 	if pr != nil {
 		w.problem(pr)
@@ -1400,12 +1446,14 @@ func (w *settingsWindow) listIndex() int {
 }
 
 func (w *settingsWindow) selectFromList() {
-	i := int(int32(winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCURSEL, 0, 0)))
+	i := winapi.ListViewSelected(w.ctl[idSetList])
 	if i == w.listIndex() {
 		return
 	}
 	if !w.profileDiscardOK() {
-		winapi.SendMessage(w.ctl[idSetList], winapi.LB_SETCURSEL, uintptr(w.listIndex()), 0)
+		if cur := w.listIndex(); cur >= 0 {
+			winapi.ListViewSelect(w.ctl[idSetList], cur)
+		}
 		return
 	}
 	if w.ed.IsNew && i == len(w.ed.Profiles) {
@@ -1414,6 +1462,53 @@ func (w *settingsWindow) selectFromList() {
 	w.ed.Select(i)
 	w.status = ""
 	w.fill()
+}
+
+// onListNotify handles LVN_ITEMCHANGED for selection and «Опрос» checkbox (CHK-TRAY-80).
+func (w *settingsWindow) onListNotify(lp uintptr) bool {
+	if lp == 0 || w.ctl[idSetList] == 0 {
+		return false
+	}
+	hdr := winapi.ReadNMHDR(lp)
+	if hdr.From != w.ctl[idSetList] || hdr.Code != winapi.LVN_ITEMCHANGED {
+		return false
+	}
+	nmlv := winapi.ReadNMLISTVIEW(lp)
+	if nmlv.Changed&winapi.LVIF_STATE == 0 {
+		return false
+	}
+	// selection change
+	if nmlv.NewState&winapi.LVIS_SELECTED != 0 && nmlv.OldState&winapi.LVIS_SELECTED == 0 {
+		if !w.loading {
+			w.selectFromList()
+		}
+		return true
+	}
+	// checkbox image change (state image 1/2)
+	if (nmlv.NewState^nmlv.OldState)&winapi.LVIS_STATEIMAGEMASK != 0 && !w.loading {
+		i := int(nmlv.Item)
+		if i < 0 {
+			return true
+		}
+		on := winapi.ListViewChecked(w.ctl[idSetList], i)
+		if i != w.listIndex() {
+			// select the row whose poll flag changed (may prompt discard)
+			if !w.profileDiscardOK() {
+				// revert checkbox
+				winapi.ListViewSetChecked(w.ctl[idSetList], i, !on)
+				return true
+			}
+			w.ed.Select(i)
+			w.fill() // rebuild; then apply the clicked value
+			winapi.ListViewSetChecked(w.ctl[idSetList], i, on)
+		}
+		if w.ed.CanEdit() && w.ed.HasProfile() {
+			w.ed.Form.Enabled = on
+			w.update()
+		}
+		return true
+	}
+	return true
 }
 
 func (w *settingsWindow) newProfile() {

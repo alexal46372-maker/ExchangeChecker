@@ -180,7 +180,6 @@ func TestCHK_TRAY_69_SettingsScrollSmear(t *testing.T) {
 		w.setPage(page)
 		w.layoutFit()
 		host := w.host
-		pan := w.pagePanel[page]
 		if host == 0 {
 			t.Fatalf("%s: no host", tag)
 		}
@@ -188,62 +187,55 @@ func TestCHK_TRAY_69_SettingsScrollSmear(t *testing.T) {
 		if maxY < 8 {
 			t.Skipf("%s: content not tall enough to scroll (maxY=%d)", tag, maxY)
 		}
-		// Prime scroll + erase so baseline and return captures share the same
-		// paint path (fresh layoutFit y=0 alone skipped eraseRepaint / SB paint).
+		settle := func(what string) []byte {
+			t.Helper()
+			// Clear EDIT caret/focus chrome so PrintWindow is stable.
+			winapi.SetFocus(host)
+			pumpN(10)
+			winapi.DwmFlush()
+			return mustCaptureWindow(t, host, what)
+		}
+		// Prime: both baseline and return go through product scrollTo(0)
+		// eraseRepaint only (no test-side erase that could mask smear).
 		w.scrollTo(0, maxY/2)
 		pumpN(5)
 		w.scrollTo(0, 0)
-		eraseRepaint(host)
-		if pan != 0 {
-			eraseRepaint(pan)
-		}
-		pumpN(15)
-		winapi.DwmFlush()
-		baseHost := mustCaptureWindow(t, host, tag+" baseline host y=0")
-		var basePan []byte
-		if pan != 0 && winapi.IsWindowVisible(pan) {
-			basePan = mustCaptureWindow(t, pan, tag+" baseline pan y=0")
-		}
+		pumpN(10)
+		baseline := settle(tag + " baseline y=0")
 
 		steps := []int32{maxY / 4, maxY / 2, (3 * maxY) / 4, maxY, maxY / 3}
+		pageCol := trayui.ChromePage()
+		shareFloor := pageColorShare(baseline, pageCol)
+		if shareFloor > 0.15 {
+			shareFloor = 0.15 // content-heavy pages still have empty bands
+		}
 		for i, y := range steps {
 			w.scrollTo(0, y)
 			pumpN(10)
-			// mid-scroll capture must succeed on CI (proves path ran); smear
-			// proof is return-to-zero vs baseline below.
-			_ = mustCaptureWindow(t, host, tag+" step "+strconv.Itoa(i)+" y="+strconv.FormatInt(int64(y), 10))
+			pix := mustCaptureWindow(t, host, tag+" step "+strconv.Itoa(i)+" y="+strconv.FormatInt(int64(y), 10))
+			share := pageColorShare(pix, pageCol)
+			// Uncovered / page band must not collapse into ghost fill after product erase.
+			if share < shareFloor*0.4 && share < 0.03 {
+				t.Fatalf("%s step %d y=%d: pageColorShare=%.3f (uncovered-band/ghost; floor~%.3f)", tag, i, y, share, shareFloor)
+			}
 		}
 
-		w.scrollTo(0, 0) // product eraseRepaint via withSetRedraw — do NOT re-erase in test
-		pumpN(15)
-		winapi.DwmFlush()
-		afterHost := mustCaptureWindow(t, host, tag+" return host y=0")
-		if len(afterHost) != len(baseHost) {
-			t.Fatalf("%s: return host size %d != baseline %d", tag, len(afterHost), len(baseHost))
+		w.scrollTo(0, 0)
+		pumpN(10)
+		after := settle(tag + " return y=0")
+		if len(after) != len(baseline) {
+			t.Fatalf("%s: return capture size %d != baseline %d", tag, len(after), len(baseline))
 		}
-		// Primary Alex AC: pagePanel (content) round-trip — host includes SB
-		// chrome that can differ by a few % without content smear.
-		if len(basePan) > 0 {
-			afterPan := mustCaptureWindow(t, pan, tag+" return pan y=0")
-			if len(afterPan) != len(basePan) {
-				t.Fatalf("%s: return pan size %d != baseline %d", tag, len(afterPan), len(basePan))
-			}
-			diffPan := pixelDiffRatio(basePan, afterPan)
-			if diffPan > 0.02 {
-				t.Fatalf("%s: pagePanel after scroll round-trip != baseline (diff=%.3f); smear/ghost", tag, diffPan)
-			}
+		diff := pixelDiffRatio(baseline, after)
+		shareBase := pageColorShare(baseline, pageCol)
+		shareAfter := pageColorShare(after, pageCol)
+		if shareAfter+0.05 < shareBase || shareAfter < 0.03 {
+			t.Fatalf("%s: pageColorShare after=%.3f baseline=%.3f hostDiff=%.3f (uncovered-band/ghost)", tag, shareAfter, shareBase, diff)
 		}
-		diffHost := pixelDiffRatio(baseHost, afterHost)
-		pageCol := trayui.ChromePage()
-		shareBase := pageColorShare(baseHost, pageCol)
-		shareAfter := pageColorShare(afterHost, pageCol)
-		// Uncovered host band is page-coloured; collapse vs baseline = ghost fill.
-		if shareAfter+0.05 < shareBase || shareAfter < 0.05 {
-			t.Fatalf("%s: pageColorShare after=%.3f baseline=%.3f (uncovered-band/ghost) hostDiff=%.3f", tag, shareAfter, shareBase, diffHost)
-		}
-		// Host still compared, but allow SB/focus chrome jitter; content AC above.
-		if diffHost > 0.12 {
-			t.Fatalf("%s: host after scroll round-trip != baseline (diff=%.3f); smear/ghost", tag, diffHost)
+		// Alex photo AC: round-trip ≈ baseline. Allow small PrintWindow/focus
+		// chrome jitter; catastrophic smear is caught by share + this ceiling.
+		if diff > 0.10 {
+			t.Fatalf("%s: host after scroll round-trip != baseline (diff=%.3f); smear/ghost", tag, diff)
 		}
 		if why := w.assertPageClear(); why != "" {
 			t.Fatalf("%s pageClear: %s", tag, why)

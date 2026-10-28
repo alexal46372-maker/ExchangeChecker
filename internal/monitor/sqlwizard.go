@@ -55,10 +55,10 @@ func (m *Monitor) SQLBrowse(ctx context.Context, req model.IPCRequest) (model.SQ
 // SQLBrowseProgress is SQLBrowse with the phase 11 request fields (mode,
 // port, cidr; CHK-IPC-12) and sqlcheck.Browse progress events. Limits per
 // mode (rate_limited + retryAfterMs): broadcast / auto 15 s, local 3 s,
-// subnet 15 s, host 3 s (+ any host 1 s); a running browse: busy +
-// retryAfterMs. Subnet: the whole request ends after
-// timeoutMs (model.ClampSQLBrowseTimeoutMsFor: subnet default and max
-// 15 s) plus model.IPCSQLBrowseGrace.
+// subnet 15 s between requests, host 3 s (+ any host 1 s); a running
+// browse: busy + retryAfterMs. Subnet: the whole request ends after
+// timeoutMs (model.ClampSQLBrowseTimeoutMsFor: subnet default 30 s / max
+// 45 s, CHK-SQL-15) plus model.IPCSQLBrowseGrace.
 func (m *Monitor) SQLBrowseProgress(ctx context.Context, req model.IPCRequest, progress func(model.SQLBrowseProgress)) (model.SQLBrowseResult, error) {
 	var res model.SQLBrowseResult
 	br := model.SQLBrowseRequest{Host: strings.TrimSpace(req.Host), Instance: strings.TrimSpace(req.Instance),
@@ -105,8 +105,8 @@ func (m *Monitor) SQLBrowseProgress(ctx context.Context, req model.IPCRequest, p
 		return res, &model.IPCError{Code: model.ErrCodeRateLimited, Key: model.MsgBrowseRateLimited,
 			Message: "monitor: sql_browse rate limited, retry after " + strconv.FormatInt(ms, 10) + " ms", RetryAfterMs: ms}
 	}
-	// subnet: timeoutMs default / max 15 s (ClampSQLBrowseTimeoutMsFor,
-	// only on an explicit mode "subnet"; "" = host or broadcast)
+	// subnet: timeoutMs default 30 s / max 45 s (ClampSQLBrowseTimeoutMsFor,
+	// CHK-SQL-15; only on an explicit mode "subnet"; "" = host or broadcast)
 	total := time.Duration(br.TimeoutMs)*time.Millisecond + model.IPCSQLBrowseGrace
 	if x.browsing {
 		ms := int64(x.browseEnd.Sub(now) / time.Millisecond)

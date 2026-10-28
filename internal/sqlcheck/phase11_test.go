@@ -294,10 +294,10 @@ func TestCHK_SQL_12_Subnet(t *testing.T) {
 	if KindOf(err) != KindCanceled || time.Since(start) > time.Second {
 		t.Errorf("cancel: %v %v", err, time.Since(start))
 	}
-	// subnetHosts: CIDR must be a local network; /24 = 254 hosts
+	// subnetHosts: empty CIDR scans every local /24 (CHK-SQL-15); 254 hosts each
 	ifs := []*net.IPNet{{IP: net.IPv4(192, 168, 5, 10).To4(), Mask: net.CIDRMask(16, 32)}, {IP: net.IPv4(10, 1, 2, 3).To4(), Mask: net.CIDRMask(24, 32)}}
 	h, used, others, narrowed, err := subnetHosts("", ifs)
-	if err != nil || !narrowed || len(h) != 254 || used != "192.168.5.0/24" || h[0] != "192.168.5.1" || h[253] != "192.168.5.254" || len(others) != 1 || others[0] != "10.1.2.0/24" {
+	if err != nil || !narrowed || len(h) != 508 || used != "192.168.5.0/24" || h[0] != "192.168.5.1" || h[253] != "192.168.5.254" || h[254] != "10.1.2.1" || h[507] != "10.1.2.254" || len(others) != 1 || others[0] != "10.1.2.0/24" {
 		t.Errorf("%d %s %v %v", len(h), used, others, err)
 	}
 	if _, _, _, nar, _ := subnetHosts("", ifs[1:]); nar {
@@ -474,12 +474,12 @@ func TestCHK_SQL_12_SubnetNarrowedAndDefaultMode(t *testing.T) {
 	if (model.SQLBrowseRequest{}).EffectiveMode() == model.SQLBrowseSubnet || (model.SQLBrowseRequest{Host: "x"}).EffectiveMode() == model.SQLBrowseSubnet {
 		t.Error("subnet must be explicit")
 	}
-	// subnet timeout bound 15 s, others 5 s
-	if (model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, TimeoutMs: 15000}).Validate() != nil ||
-		(model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, TimeoutMs: 15001}).Validate() == nil ||
+	// subnet timeout bound 30 s default / 45 s max (CHK-SQL-15), others 5 s
+	if (model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, TimeoutMs: 30000}).Validate() != nil ||
+		(model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, TimeoutMs: 45001}).Validate() == nil ||
 		(model.SQLBrowseRequest{TimeoutMs: 15000}).Validate() == nil ||
-		(model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet}).Timeout() != 15000 ||
-		model.ClampSQLBrowseTimeoutMsFor(model.SQLBrowseSubnet, 60000) != 15000 || model.ClampSQLBrowseTimeoutMsFor("", 60000) != 5000 {
+		(model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet}).Timeout() != 30000 ||
+		model.ClampSQLBrowseTimeoutMsFor(model.SQLBrowseSubnet, 60000) != 45000 || model.ClampSQLBrowseTimeoutMsFor("", 60000) != 5000 {
 		t.Error("timeouts")
 	}
 }
@@ -620,11 +620,13 @@ func checkNodeKeysMatch(t *testing.T, st Store) {
 	t.Logf("matched %d time points, %d node states", len(pts), len(ns))
 }
 
-// CHK-SQL-12: narrowed reflects the interface whose network is scanned.
+// CHK-SQL-12: narrowed reflects the interface whose network is scanned
+// (empty CIDR scans every local /24 — narrowed if any is from a wide iface).
 func TestCHK_SQL_12_NarrowedUsedInterface(t *testing.T) {
 	ifs := []*net.IPNet{{IP: net.IPv4(10, 1, 2, 3).To4(), Mask: net.CIDRMask(24, 32)}, {IP: net.IPv4(172, 20, 5, 9).To4(), Mask: net.CIDRMask(16, 32)}}
-	if _, used, _, nar, err := subnetHosts("", ifs); err != nil || used != "10.1.2.0/24" || nar {
-		t.Errorf("default /24: %s %v %v", used, nar, err)
+	h, used, others, nar, err := subnetHosts("", ifs)
+	if err != nil || used != "10.1.2.0/24" || !nar || len(h) != 508 || len(others) != 1 || others[0] != "172.20.5.0/24" {
+		t.Errorf("empty CIDR all /24s: %d %s %v %v %v", len(h), used, others, nar, err)
 	}
 	if _, used, _, nar, err := subnetHosts("172.20.7.0/24", ifs); err != nil || used != "172.20.7.0/24" || !nar {
 		t.Errorf("inside the /16 interface: %s %v %v", used, nar, err)
@@ -635,5 +637,104 @@ func TestCHK_SQL_12_NarrowedUsedInterface(t *testing.T) {
 	rev := []*net.IPNet{ifs[1], ifs[0]}
 	if _, used, _, nar, err := subnetHosts("10.1.2.0/24", rev); err != nil || used != "10.1.2.0/24" || nar {
 		t.Errorf("ifs[0] is /16 but the /24 one is used: %v %v", nar, err)
+	}
+}
+
+// CHK-SQL-15: hosts whose first dial is slower than the old 300 ms probe
+// budget but within SQLSubnetProbeTimeoutMs are found in a single Browse
+// (multi-click with the old 300 ms budget would miss on the first pass).
+func TestCHK_SQL_15_ThoroughProbeTimeout(t *testing.T) {
+	addr := fakeTDS(t, 2)
+	_, ps, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(ps)
+	var attempts sync.Map // host -> attempt count
+	slow := map[string]bool{"10.9.9.11": true, "10.9.9.12": true, "10.9.9.13": true}
+	dial := func(ctx context.Context, a string) (net.Conn, error) {
+		host, _, _ := net.SplitHostPort(a)
+		n := 1
+		if v, ok := attempts.Load(host); ok {
+			n = v.(int) + 1
+		}
+		attempts.Store(host, n)
+		if slow[host] && n == 1 {
+			// Slower than old SQLProbeTimeoutMs (300), faster than new 1200 ms.
+			select {
+			case <-time.After(500 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return dialTCP4(ctx, addr)
+		}
+		if slow[host] {
+			return dialTCP4(ctx, addr)
+		}
+		return nil, errors.New("refused")
+	}
+	hosts := []string{"10.9.9.11", "10.9.9.12", "10.9.9.13", "10.9.9.14", "10.9.9.15"}
+	// Old budget would cancel the slow dials via WithTimeout(300ms).
+	oldTO := time.Duration(model.SQLProbeTimeoutMs) * time.Millisecond
+	var missed int
+	for _, h := range hosts {
+		if !slow[h] {
+			continue
+		}
+		c, err := func() (net.Conn, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), oldTO)
+			defer cancel()
+			return dial(ctx, net.JoinHostPort(h, strconv.Itoa(port)))
+		}()
+		if err != nil {
+			missed++
+			continue
+		}
+		c.Close()
+	}
+	if missed != 3 {
+		t.Fatalf("old 300ms budget should miss the 3 slow hosts, missed=%d", missed)
+	}
+	attempts = sync.Map{}
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, Port: port, TimeoutMs: 10000},
+		BrowseOptions{SubnetHosts: hosts, dial: dial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Instances) != 3 || res.TCPProbe == nil || res.TCPProbe.Probed != 5 || res.TCPProbe.Prelogin != 3 || res.Partial {
+		t.Fatalf("thorough Browse: %+v %+v", res.Instances, res.TCPProbe)
+	}
+	if res.TCPProbe.Probed != len(hosts) {
+		t.Errorf("Probed==Total want %d got %d", len(hosts), res.TCPProbe.Probed)
+	}
+}
+
+// CHK-SQL-15: empty CIDR Browse scans every distinct local /24, not only ifs[0].
+func TestCHK_SQL_15_MultiSlash24(t *testing.T) {
+	addr := fakeTDS(t, 2)
+	_, ps, _ := net.SplitHostPort(addr)
+	port, _ := strconv.Atoi(ps)
+	ifs := func() []*net.IPNet {
+		return []*net.IPNet{
+			{IP: net.IPv4(10, 0, 0, 5).To4(), Mask: net.CIDRMask(24, 32)},
+			{IP: net.IPv4(10, 1, 1, 8).To4(), Mask: net.CIDRMask(24, 32)},
+		}
+	}
+	dial := func(ctx context.Context, a string) (net.Conn, error) {
+		if strings.HasPrefix(a, "10.1.1.42:") {
+			return dialTCP4(ctx, addr)
+		}
+		return nil, errors.New("refused")
+	}
+	res, err := Browse(context.Background(), model.SQLBrowseRequest{Mode: model.SQLBrowseSubnet, Port: port, TimeoutMs: 15000},
+		BrowseOptions{dial: dial, ifaces: ifs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.TCPProbe == nil || res.TCPProbe.CIDR != "10.0.0.0/24" || len(res.TCPProbe.Subnets) != 1 || res.TCPProbe.Subnets[0] != "10.1.1.0/24" {
+		t.Fatalf("tcpProbe %+v", res.TCPProbe)
+	}
+	if res.TCPProbe.Probed != 508 || res.Partial {
+		t.Fatalf("probed %d partial %v", res.TCPProbe.Probed, res.Partial)
+	}
+	if len(res.Instances) != 1 || res.Instances[0].Address != "10.1.1.42" || res.TCPProbe.Prelogin != 1 {
+		t.Fatalf("second-/24 server: %+v %+v", res.Instances, res.TCPProbe)
 	}
 }

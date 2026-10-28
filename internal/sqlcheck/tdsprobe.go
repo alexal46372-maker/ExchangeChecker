@@ -14,10 +14,11 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// Phase 11 (PLAN §12 p. 162, CHK-SQL-12): TCP probe with a TDS PRELOGIN
-// ([MS-TDS] 2.2.6.5) that reads the server version without logging in:
-// the host's port (host mode) and every address of one /24 (subnet mode,
-// 32 in parallel, 300 ms each, ctx-cancellable).
+// Phase 11 (PLAN §12 p. 162, CHK-SQL-12) + CHK-SQL-15: TCP probe with a
+// TDS PRELOGIN ([MS-TDS] 2.2.6.5) that reads the server version without
+// logging in: the host's port (host mode) and every address of each local
+// /24 (subnet mode, 32 in parallel, SQLSubnetProbeTimeoutMs each, one
+// timeout-retry pass, ctx-cancellable).
 
 // preloginInfo is the parsed PRELOGIN answer.
 type preloginInfo struct {
@@ -193,10 +194,10 @@ func lookupIPv4(ctx context.Context, host string) ([]net.IP, error) {
 	return ips, nil
 }
 
-// subnetHosts returns the addresses of cidr (empty: the first
-// interface's /24) and the other local /24s. A CIDR must overlap a local
-// interface network (no scans of foreign networks); a /24../30 (checked by
-// the model) has at most 254 hosts.
+// subnetHosts returns the addresses to probe. Empty cidr: every distinct
+// local /24 (CHK-SQL-15); used is the first, others the rest. Explicit
+// cidr: that network only (must overlap a local interface). A /24../30
+// (checked by the model) has at most 254 hosts per network.
 func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, others []string, narrowed bool, err error) {
 	var locals []*net.IPNet
 	for _, n := range ifs {
@@ -209,53 +210,79 @@ func subnetHosts(cidr string, ifs []*net.IPNet) (hosts []string, used string, ot
 			locals = append(locals, l)
 		}
 	}
-	var nw *net.IPNet
+	appendNet := func(nw *net.IPNet) {
+		ones, _ := nw.Mask.Size()
+		base := binary.BigEndian.Uint32(nw.IP.To4())
+		size := uint32(1) << (32 - ones)
+		for i := uint32(1); i+1 < size && len(hosts) < model.MaxSQLSubnetHosts; i++ {
+			ip := make(net.IP, 4)
+			binary.BigEndian.PutUint32(ip, base+i)
+			hosts = append(hosts, ip.String())
+		}
+	}
+	narrowedFor := func(nw *net.IPNet) bool {
+		for _, n := range ifs {
+			if nw.Contains(n.IP) || n.Contains(nw.IP) {
+				ones, bits := n.Mask.Size()
+				return bits == 32 && ones < 24
+			}
+		}
+		return false
+	}
 	if cidr == "" {
 		if len(locals) == 0 {
 			return nil, "", nil, false, errors.New("no IPv4 interface")
 		}
-		nw = locals[0]
-	} else {
-		_, nw, err = net.ParseCIDR(cidr)
-		if err != nil || nw.IP.To4() == nil {
-			return nil, "", nil, false, errors.New("bad CIDR")
+		used = locals[0].String()
+		for i, l := range locals {
+			if i > 0 {
+				others = append(others, l.String())
+			}
+			if narrowedFor(l) {
+				narrowed = true
+			}
+			appendNet(l)
 		}
-		ok := false
-		for _, n := range ifs {
-			ok = ok || nw.Contains(n.IP) || n.Contains(nw.IP)
-		}
-		if !ok {
-			return nil, "", nil, false, errNotLocalSubnet
-		}
+		return hosts, used, others, narrowed, nil
 	}
-	// narrowed: the interface the scanned network belongs to is wider
-	// than /24 (not just ifs[0])
+	_, nw, err := net.ParseCIDR(cidr)
+	if err != nil || nw.IP.To4() == nil {
+		return nil, "", nil, false, errors.New("bad CIDR")
+	}
+	ok := false
 	for _, n := range ifs {
-		if nw.Contains(n.IP) || n.Contains(nw.IP) {
-			ones, bits := n.Mask.Size()
-			narrowed = bits == 32 && ones < 24
-			break
-		}
+		ok = ok || nw.Contains(n.IP) || n.Contains(nw.IP)
 	}
+	if !ok {
+		return nil, "", nil, false, errNotLocalSubnet
+	}
+	narrowed = narrowedFor(nw)
 	for _, l := range locals {
 		if l.String() != nw.String() {
 			others = append(others, l.String())
 		}
 	}
-	ones, _ := nw.Mask.Size()
-	base := binary.BigEndian.Uint32(nw.IP.To4())
-	size := uint32(1) << (32 - ones)
-	for i := uint32(1); i+1 < size && len(hosts) < model.MaxSQLSubnetHosts; i++ {
-		ip := make(net.IP, 4)
-		binary.BigEndian.PutUint32(ip, base+i)
-		hosts = append(hosts, ip.String())
-	}
+	appendNet(nw)
 	return hosts, nw.String(), others, narrowed, nil
 }
 
 var errNotLocalSubnet = errors.New("subnet is not a local network")
 
-// subnet probes port on every address of the subnet.
+// probeTimeoutErr reports a dial/prelogin cut short by the per-host budget
+// (cold ARP), not a fast refusal.
+func probeTimeoutErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
+// subnet probes port on every address of the subnet set (CHK-SQL-15:
+// thorough per-host timeout + one retry of timed-out dials).
 func (b *browseRun) subnet(ctx context.Context, cidr string, port int) error {
 	tp := &model.SQLBrowseTCPInfo{Port: port, CIDR: cidr, Subnets: []string{}}
 	b.res.TCPProbe = tp
@@ -280,46 +307,71 @@ func (b *browseRun) subnet(ctx context.Context, cidr string, port int) error {
 		hosts, tp.Truncated = hosts[:model.MaxSQLSubnetHosts], true
 	}
 	total := len(hosts)
+	probeTO := time.Duration(model.SQLSubnetProbeTimeoutMs) * time.Millisecond
+	if b.opt.ProbeTimeout > probeTO {
+		probeTO = b.opt.ProbeTimeout
+	}
 	b.progress("subnet", 0, total)
-	jobs := make(chan string)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	done := 0
-	for w := 0; w < b.opt.Concurrency && w < total; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for h := range jobs {
-				info, open, err := prelogin(ctx, b.opt.dial, net.JoinHostPort(h, strconv.Itoa(port)), 0x02, b.opt.ProbeTimeout)
-				if err == nil {
-					b.add(model.SQLServerInstance{Host: h, Address: h, TCPPort: port, Version: info.Version, Source: "tcp"})
-				}
-				mu.Lock()
-				done++
-				tp.Probed++
-				if open {
-					tp.Open++
-				}
-				if err == nil {
-					tp.Prelogin++
-				}
-				d := done
-				b.progress("subnet", d, total) // under mu: serialized callback
-				mu.Unlock()
-			}
-		}()
-	}
-feed:
-	for _, h := range hosts {
-		select {
-		case jobs <- h:
-		case <-ctx.Done():
-			break feed
+	runPass := func(batch []string, countProbed bool) []string {
+		if len(batch) == 0 || ctx.Err() != nil {
+			return nil
 		}
+		jobs := make(chan string)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		var timedOut []string
+		workers := b.opt.Concurrency
+		if workers > len(batch) {
+			workers = len(batch)
+		}
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for h := range jobs {
+					info, open, err := prelogin(ctx, b.opt.dial, net.JoinHostPort(h, strconv.Itoa(port)), 0x02, probeTO)
+					mu.Lock()
+					if countProbed {
+						tp.Probed++
+					}
+					if open {
+						tp.Open++
+					}
+					if err == nil {
+						tp.Prelogin++
+						b.add(model.SQLServerInstance{Host: h, Address: h, TCPPort: port, Version: info.Version, Source: "tcp"})
+					} else if !open && probeTimeoutErr(err) {
+						timedOut = append(timedOut, h)
+					}
+					d := tp.Probed
+					if d > total {
+						d = total
+					}
+					b.progress("subnet", d, total)
+					mu.Unlock()
+				}
+			}()
+		}
+	feed:
+		for _, h := range batch {
+			select {
+			case jobs <- h:
+			case <-ctx.Done():
+				break feed
+			}
+		}
+		close(jobs)
+		wg.Wait()
+		return timedOut
 	}
-	close(jobs)
-	wg.Wait()
-	if tp.Probed < total {
+	retry := runPass(hosts, true)
+	// Second pass: only hosts that burned the per-host budget on pass 1
+	// (cold ARP). Fast refusals are not retried. Open/Prelogin on retry
+	// may increase; Probed already counted the host.
+	if len(retry) > 0 && ctx.Err() == nil {
+		_ = runPass(retry, false)
+	}
+	if tp.Probed < total || tp.Truncated {
 		b.res.Partial = true
 	}
 	return nil

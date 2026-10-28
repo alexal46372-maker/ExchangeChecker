@@ -58,20 +58,29 @@ type SQLBrowseTCPInfo struct {
 	Prelogin int `json:"prelogin"`
 	// Truncated: the scan was cut (ctx ended).
 	Truncated bool `json:"truncated,omitempty"`
-	// CIDR scanned (subnet mode) and the other local /24 networks the
-	// wizard may scan next (one /24 per request, <= 254 addresses).
+	// CIDR: primary /24 reported for the scan (explicit request, or the
+	// first local /24 when CIDR was empty). Subnets: the other local /24s
+	// included in the same empty-CIDR Browse (CHK-SQL-15); empty when an
+	// explicit CIDR was requested.
 	CIDR    string   `json:"cidr,omitempty"`
 	Subnets []string `json:"subnets,omitempty"`
-	// Narrowed: the scanned interface network is wider than /24 (only
-	// its own /24 was scanned; advice sql.browse_advice_subnet_narrowed).
+	// Narrowed: at least one scanned /24 belongs to an interface network
+	// wider than /24 (only that interface's own /24 is scanned, not the
+	// whole wide net; advice sql.browse_advice_subnet_narrowed).
 	Narrowed bool `json:"narrowed,omitempty"`
 }
 
 // Subnet probe limits.
 const (
-	MaxSQLSubnetHosts       = 254 // one /24 per scan (architect)
-	SQLSubnetConcurrency    = 32
-	SQLProbeTimeoutMs       = 300
+	// MaxSQLSubnetHosts: up to 8 local /24s (interfaceIPv4s cap) × 254.
+	MaxSQLSubnetHosts    = 2032
+	SQLSubnetConcurrency = 32
+	// SQLProbeTimeoutMs: base dial/PRELOGIN budget (host mode uses 4×).
+	SQLProbeTimeoutMs = 300
+	// SQLSubnetProbeTimeoutMs: thorough per-host budget for subnet mode
+	// (CHK-SQL-15). Aligns with host's 4×SQLProbeTimeoutMs so a cold ARP
+	// that misses at 300 ms still succeeds in one Browse.
+	SQLSubnetProbeTimeoutMs = 1200
 	SQLBrowseSends          = 3
 	SQLBrowseSendIntervalMs = 300
 )
@@ -194,8 +203,8 @@ var sqlBrowseDiagMessages = map[string]LocalizedText{
 	ValSQLBrowseCIDR:          {"Поле «{0}»: укажите сеть IPv4 вида 192.168.1.0/24 (от /24 до /30, не более 254 адресов) одного из сетевых интерфейсов этого компьютера.", "Field \"{0}\": enter an IPv4 network like 192.168.1.0/24 (/24 to /30, at most 254 addresses) of one of this computer's network interfaces."},
 	MsgSQLBrowseAdviceBrowserDisabled: {"Служба «SQL Server Browser» отключена (тип запуска «Отключена»): в «Службах» или SQL Server Configuration Manager задайте тип запуска «Автоматически» и запустите службу.",
 		"The \"SQL Server Browser\" service is disabled (start type Disabled): in Services or SQL Server Configuration Manager set the start type to Automatic and start the service."},
-	MsgSQLBrowseAdviceSubnetNarrowed: {"Сеть интерфейса шире /24: проверена только своя /24 (до 254 адресов). Для другой части сети укажите её /24 вручную или введите имя сервера.",
-		"The interface network is wider than /24: only its own /24 (up to 254 addresses) was scanned. For another part of the network enter its /24 or the server name."},
+	MsgSQLBrowseAdviceSubnetNarrowed: {"Сеть интерфейса шире /24: в одном сканировании проверяются /24 каждого локального интерфейса (до 254 адресов на сеть), но не вся широкая сеть. Для другой части той же сети укажите её /24 вручную или введите имя сервера.",
+		"The interface network is wider than /24: one Browse scans each local interface's /24 (up to 254 addresses per network), not the whole wide network. For another part of the same network enter its /24 or the server name."},
 	MsgSQLBrowseAdviceTCPDisabled: {"У локального экземпляра не задан TCP-порт: включите протокол TCP/IP в SQL Server Configuration Manager и перезапустите службу SQL Server.",
 		"The local instance has no TCP port: enable the TCP/IP protocol in SQL Server Configuration Manager and restart the SQL Server service."},
 }

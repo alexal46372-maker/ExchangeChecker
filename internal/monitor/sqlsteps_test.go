@@ -16,9 +16,10 @@ import (
 // TestCHK_IPC_12_SQLBrowseModes — sql_browse v2: mode / port / cidr reach
 // sqlcheck.Browse with a Progress callback; validation.sql_browse_cidr
 // passes through (invalid_request + monitor.bad_request, args [cidr,
-// key]); per-mode limits (local 3 s, broadcast 15 s, subnet 15 s, keys
-// independent); subnet runs with the 15 s IPC deadline; a running browse
-// answers busy + retryAfterMs.
+// key]); per-mode limits (local 3 s, broadcast 15 s, subnet 15 s between
+// requests, keys independent); subnet runs with DefaultSQLSubnetTimeoutMs
+// + grace IPC deadline (CHK-SQL-15: 30 s + 2 s); a running browse answers
+// busy + retryAfterMs.
 func TestCHK_IPC_12_SQLBrowseModes(t *testing.T) {
 	clk := &fakeClock{t: t0}
 	m := New(baseOpt(newFactory(), NewMemConfig(Config{Settings: model.DefaultSettings()}), clk))
@@ -54,7 +55,7 @@ func TestCHK_IPC_12_SQLBrowseModes(t *testing.T) {
 	if err != nil || res.Mode != "subnet" || len(res.SendErrors) != model.MaxSQLBrowseSendErrors || res.SendErrorCount != 20 || len(events) != 1 {
 		t.Fatalf("subnet %+v %v %v", res, err, events)
 	}
-	if got[0].CIDR != "192.168.1.0/24" || got[0].Port != 1444 || got[0].TimeoutMs != model.DefaultSQLSubnetTimeoutMs || deadlines[0] < 16*time.Second || deadlines[0] > 17*time.Second {
+	if got[0].CIDR != "192.168.1.0/24" || got[0].Port != 1444 || got[0].TimeoutMs != model.DefaultSQLSubnetTimeoutMs || deadlines[0] < 31*time.Second || deadlines[0] > 33*time.Second {
 		t.Errorf("subnet req %+v deadline %v", got[0], deadlines[0])
 	}
 	limited := func(what string, err error, ms int64) {
@@ -66,8 +67,8 @@ func TestCHK_IPC_12_SQLBrowseModes(t *testing.T) {
 	}
 	_, err = m.SQLBrowseProgress(ctx, model.IPCRequest{Mode: "subnet", TimeoutMs: 60000}, nil)
 	limited("subnet again", err, 15000)
-	// timeoutMs clamped per mode: subnet up to 15 s, others 5 s
-	if model.ClampSQLBrowseTimeoutMsFor("subnet", 60000) != 15000 || model.ClampSQLBrowseTimeoutMsFor("", 60000) != model.IPCSQLBrowseMaxTimeoutMs {
+	// timeoutMs clamped per mode: subnet up to MaxSQLSubnetTimeoutMs (45 s, CHK-SQL-15), others 5 s
+	if model.ClampSQLBrowseTimeoutMsFor("subnet", 60000) != model.MaxSQLSubnetTimeoutMs || model.ClampSQLBrowseTimeoutMsFor("", 60000) != model.IPCSQLBrowseMaxTimeoutMs {
 		t.Error("clamp")
 	}
 	if _, err = m.SQLBrowseProgress(ctx, model.IPCRequest{Mode: "local"}, nil); err != nil {

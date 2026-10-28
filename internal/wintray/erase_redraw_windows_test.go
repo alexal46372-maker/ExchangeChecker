@@ -214,11 +214,7 @@ func TestCHK_TRAY_69_SettingsScrollSmear(t *testing.T) {
 			_ = mustCaptureWindow(t, host, tag+" step "+strconv.Itoa(i)+" y="+strconv.FormatInt(int64(y), 10))
 		}
 
-		w.scrollTo(0, 0)
-		eraseRepaint(host)
-		if pan != 0 {
-			eraseRepaint(pan)
-		}
+		w.scrollTo(0, 0) // product eraseRepaint via withSetRedraw — do NOT re-erase in test
 		pumpN(15)
 		winapi.DwmFlush()
 		afterHost := mustCaptureWindow(t, host, tag+" return host y=0")

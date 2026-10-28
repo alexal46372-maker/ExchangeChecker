@@ -667,6 +667,28 @@ func (w *settingsWindow) syncPagePanels() {
 	w.scrollTo(w.scrollX, w.scrollY)
 }
 
+
+// repositionPinnedInPanelNoRedraw keeps DB list chrome fixed on screen while
+// pagePanel[0] scrolls (CHK-TRAY-78). List stays parented under the panel
+// (CHK-TRAY-60); local Y is contentY - slot.Top + scrollY.
+func (w *settingsWindow) repositionPinnedInPanelNoRedraw() {
+	if w.page != 0 || len(w.pagePanel) == 0 || w.pagePanel[0] == 0 || len(w.pinnedHost) == 0 {
+		return
+	}
+	slot := w.pageSlot
+	for h := range w.pinnedHost {
+		c := w.ctlOf[h]
+		if c == nil || c.H == 0 || !c.Placed || c.Hidden {
+			continue
+		}
+		hgt := c.Rect.H
+		if c.Kind == ui.Combo {
+			hgt += px(comboDrop)
+		}
+		winapi.MoveWindowNoRedraw(h, c.Rect.X-slot.Left+w.scrollX, c.Rect.Y-slot.Top+w.scrollY, c.Rect.W, hgt)
+	}
+}
+
 // fitWrap sets the height of the wrapped text boxes to their text at
 // the width of the last layout (an empty box takes almost no room) and
 // lays the tree out again when a height changed.

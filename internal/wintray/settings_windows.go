@@ -1225,6 +1225,9 @@ func (w *settingsWindow) focus(f traysettings.Field) {
 }
 
 // ask shows a Yes/No question («Нет» is the default button).
+// After the modal returns, force erase+repaint of the settings frame and
+// scroll host — Win7 leaves parent content smeared behind MessageBox
+// (CHK-TRAY-70).
 func (w *settingsWindow) ask(text string) bool {
 	confirm := w.cfg.confirm
 	if confirm == nil {
@@ -1236,6 +1239,8 @@ func (w *settingsWindow) ask(text string) bool {
 		return false
 	}
 	ok := confirm(w.hwnd, text, w.t(i18n.KeyAppName))
+	eraseRepaint(w.hwnd)
+	eraseRepaint(w.host)
 	return ok && !w.exiting // the exit message came while it was open
 }
 

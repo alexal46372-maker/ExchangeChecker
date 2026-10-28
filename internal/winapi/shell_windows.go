@@ -109,3 +109,11 @@ var procMoveWindow = moduser32.NewProc("MoveWindow")
 func MoveWindow(hwnd uintptr, x, y, w, h int32) {
 	callProc(procMoveWindow, hwnd, uintptr(x), uintptr(y), uintptr(w), uintptr(h), 1)
 }
+
+// MoveWindowNoRedraw moves / resizes without an intermediate repaint
+// (SetWindowPos|SWP_NOREDRAW). Scroll batches must call a single
+// erase+repaint on the host afterwards (CHK-TRAY-68) — per-child
+// MoveWindow(TRUE) / SetWindowPos without NOREDRAW smears on Windows 7.
+func MoveWindowNoRedraw(hwnd uintptr, x, y, w, h int32) {
+	SetWindowPos(hwnd, 0, x, y, w, h, SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOREDRAW)
+}

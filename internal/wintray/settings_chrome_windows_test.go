@@ -125,8 +125,9 @@ func assertTabsNotInHostRect(w *settingsWindow) string {
 	return ""
 }
 
-// assertScrollChromeFlags — scrollTo/setPage must RedrawWindow with the
-// full invalidate+erase+children+updatenow combo (source contract).
+// assertScrollChromeFlags — source contract for RDW combo on settings
+// paths (CHK-TRAY-66). NOT smear proof by itself — host CaptureWindow
+// lives in CHK-TRAY-69/70; global MoveWindowNoRedraw contract in CHK-TRAY-68.
 func assertScrollChromeFlags(t *testing.T) {
 	t.Helper()
 	for _, name := range []string{"settingsfit_windows.go", "settings_windows.go", "settingsmode_windows.go"} {
@@ -135,13 +136,19 @@ func assertScrollChromeFlags(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := []byte("RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW")
-		if !bytes.Contains(b, want) {
-			t.Fatalf("%s: missing RedrawWindow flags RDW_INVALIDATE|ERASE|ALLCHILDREN|UPDATENOW", name)
+		// settingsfit scrollTo now goes through eraseRepaint; layoutFit still
+		// keeps the literal combo. Accept either form.
+		alt := []byte("eraseRepaint")
+		if !bytes.Contains(b, want) && !bytes.Contains(b, alt) {
+			t.Fatalf("%s: missing RedrawWindow RDW combo or eraseRepaint", name)
 		}
 	}
 	combo := winapi.RDW_INVALIDATE | winapi.RDW_ERASE | winapi.RDW_ALLCHILDREN | winapi.RDW_UPDATENOW
-	if combo != 0x0001|0x0004|0x0080|0x0100 {
-		t.Fatalf("RDW combo %#x", combo)
+	if combo != eraseRedrawFlags {
+		t.Fatalf("RDW combo %#x eraseRedrawFlags %#x", combo, eraseRedrawFlags)
+	}
+	if eraseRedrawFlags != 0x0001|0x0004|0x0080|0x0100 {
+		t.Fatalf("eraseRedrawFlags %#x want 0x185", eraseRedrawFlags)
 	}
 }
 

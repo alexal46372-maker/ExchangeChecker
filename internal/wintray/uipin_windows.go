@@ -74,11 +74,17 @@ func fitForm(hwnd uintptr, content, bar ui.Node, minW int32, keep bool) (int32, 
 	}
 	if host == 0 {
 		h, err := createWindowPx(ScrollHostClass, "", winapi.WS_EX_CONTROLPARENT,
-			winapi.WS_CHILD|winapi.WS_VISIBLE|winapi.WS_VSCROLL|winapi.WS_CLIPCHILDREN, 0, 0, cw, viewH, hwnd,
+			winapi.WS_CHILD|winapi.WS_VISIBLE|winapi.WS_VSCROLL|winapi.WS_CLIPCHILDREN|winapi.WS_CLIPSIBLINGS, 0, 0, cw, viewH, hwnd,
 			func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 				switch msg {
-				case winapi.WM_COMMAND, winapi.WM_NOTIFY, winapi.WM_DRAWITEM, winapi.WM_CTLCOLOREDIT,
-					winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLORBTN, winapi.WM_CTLCOLORLISTBOX:
+				case winapi.WM_ERASEBKGND:
+					// page brush, not panel — matches content STATICs (CHK-TRAY-68)
+					return contentErase(wp, hw), true
+				case winapi.WM_CTLCOLOREDIT, winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLORBTN, winapi.WM_CTLCOLORLISTBOX:
+					if r, ok := contentCtlColor(msg, wp); ok {
+						return r, true
+					}
+				case winapi.WM_COMMAND, winapi.WM_NOTIFY, winapi.WM_DRAWITEM:
 					return winapi.SendMessage(hwnd, msg, wp, lp), true
 				case winapi.WM_HSCROLL:
 					if lp != 0 { // a trackbar

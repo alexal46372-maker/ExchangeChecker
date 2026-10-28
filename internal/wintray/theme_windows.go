@@ -66,44 +66,54 @@ var (
 	themeBrushMu sync.Mutex
 	panelBrush   uintptr
 	pageBrush    uintptr
+	lineBrush    uintptr
+	brandBrush   uintptr
 	brushTheme   trayui.Theme
 )
+
+func deleteBrush(h *uintptr) {
+	if *h != 0 {
+		winapi.DeleteObject(*h)
+		*h = 0
+	}
+}
 
 // invalidateThemeBrushes drops cached chrome brushes (call after SetTheme
 // when a settings window keeps a required-field brush, etc.).
 func invalidateThemeBrushes() {
 	themeBrushMu.Lock()
 	defer themeBrushMu.Unlock()
-	if panelBrush != 0 {
-		winapi.DeleteObject(panelBrush)
-		panelBrush = 0
-	}
-	if pageBrush != 0 {
-		winapi.DeleteObject(pageBrush)
-		pageBrush = 0
-	}
+	deleteBrush(&panelBrush)
+	deleteBrush(&pageBrush)
+	deleteBrush(&lineBrush)
+	deleteBrush(&brandBrush)
 	brushTheme = ""
 }
 
 func ensureThemeBrushes() (panel, page uintptr) {
+	panel, page, _, _ = ensureChromeBrushes()
+	return panel, page
+}
+
+// ensureChromeBrushes returns persistent panel/page/line/brand brushes
+// (installer pattern: create once, never Create+Delete per erase).
+func ensureChromeBrushes() (panel, page, line, brand uintptr) {
 	themeBrushMu.Lock()
 	defer themeBrushMu.Unlock()
 	cur := trayui.Current()
 	if panelBrush != 0 && brushTheme == cur {
-		return panelBrush, pageBrush
+		return panelBrush, pageBrush, lineBrush, brandBrush
 	}
-	if panelBrush != 0 {
-		winapi.DeleteObject(panelBrush)
-		panelBrush = 0
-	}
-	if pageBrush != 0 {
-		winapi.DeleteObject(pageBrush)
-		pageBrush = 0
-	}
+	deleteBrush(&panelBrush)
+	deleteBrush(&pageBrush)
+	deleteBrush(&lineBrush)
+	deleteBrush(&brandBrush)
 	panelBrush = winapi.CreateSolidBrush(trayui.ChromePanel())
 	pageBrush = winapi.CreateSolidBrush(trayui.ChromePage())
+	lineBrush = winapi.CreateSolidBrush(trayui.ChromeCardFrame())
+	brandBrush = winapi.CreateSolidBrush(trayui.ChromeBrandDark())
 	brushTheme = cur
-	return panelBrush, pageBrush
+	return panelBrush, pageBrush, lineBrush, brandBrush
 }
 
 // ApplyWindowTheme sets immersive dark mode (Win10+, Find fallback) and
@@ -118,7 +128,9 @@ func ApplyWindowTheme(hwnd uintptr) {
 	winapi.RedrawWindow(hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW|winapi.RDW_FRAME)
 }
 
-// themeCtlColor answers WM_CTLCOLOR* with the active chrome colours.
+// themeCtlColor answers WM_CTLCOLOR* with the active chrome colours
+// for panel/footer frames (STATICs → panel brush). Content hosts use
+// contentCtlColor instead (page brush; installer ctlColor pattern).
 func themeCtlColor(msg uint32, wp, _ uintptr) (uintptr, bool) {
 	switch msg {
 	case winapi.WM_CTLCOLOREDIT, winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLORLISTBOX, winapi.WM_CTLCOLORBTN:
@@ -131,6 +143,22 @@ func themeCtlColor(msg uint32, wp, _ uintptr) (uintptr, bool) {
 		}
 		winapi.SetBkColor(dc, trayui.ChromePanel())
 		return panel, true
+	}
+	return 0, false
+}
+
+// contentCtlColor answers WM_CTLCOLOR* for scrolled content hosts /
+// page panels: every content STATIC/EDIT matches the page brush
+// (CHK-TRAY-68; installer setupChrome.ctlColor(content=true)).
+func contentCtlColor(msg uint32, wp uintptr) (uintptr, bool) {
+	switch msg {
+	case winapi.WM_CTLCOLOREDIT, winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLORLISTBOX, winapi.WM_CTLCOLORBTN:
+		dc := wp
+		winapi.SetBkMode(dc, winapi.TRANSPARENT)
+		winapi.SetTextColor(dc, trayui.ChromeText())
+		winapi.SetBkColor(dc, trayui.ChromePage())
+		_, page := ensureThemeBrushes()
+		return page, true
 	}
 	return 0, false
 }

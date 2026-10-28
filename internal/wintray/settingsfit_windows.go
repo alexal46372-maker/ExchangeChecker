@@ -102,7 +102,20 @@ func (w *settingsWindow) hostProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uin
 			w.scrollIntoView(lp)
 		}
 		return w.wndProc(w.hwnd, msg, wp, lp)
-	case winapi.WM_CTLCOLOREDIT, winapi.WM_NOTIFY:
+	case winapi.WM_CTLCOLOREDIT:
+		// required-field brush first; else content page brush (not panel)
+		if br, ok := w.requiredColor(wp, lp); ok {
+			return br, true
+		}
+		if r, ok := contentCtlColor(msg, wp); ok {
+			return r, true
+		}
+		return w.wndProc(w.hwnd, msg, wp, lp)
+	case winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLORLISTBOX, winapi.WM_CTLCOLORBTN:
+		if r, ok := contentCtlColor(msg, wp); ok {
+			return r, true
+		}
+	case winapi.WM_NOTIFY:
 		return w.wndProc(w.hwnd, msg, wp, lp)
 	case winapi.WM_VSCROLL, winapi.WM_HSCROLL:
 		vert := msg == winapi.WM_VSCROLL
@@ -160,23 +173,22 @@ func (w *settingsWindow) scrollTo(x, y int32) {
 	if w.page >= 0 && w.page < len(w.scrollPos) {
 		w.scrollPos[w.page].x, w.scrollPos[w.page].y = x, y
 	}
-	// Move children from unscrolled hostRect; never touch the frame tab strip
-	// (tabs are not in hostRect). Then force a full child repaint — MoveWindow
-	// alone left ghosts/overlap on Win7 (CHK-TRAY-66).
-	for h, r := range w.hostRect {
-		if h == 0 || !winapi.IsWindow(h) {
-			continue
+	// Move children from unscrolled hostRect without per-child repaint
+	// (Win7 intermediate paints trail — CHK-TRAY-68). Never touch the frame
+	// tab strip; never ScrollWindow. One eraseRepaint(host) after the batch.
+	withSetRedraw(w.host, func() {
+		for h, r := range w.hostRect {
+			if h == 0 || !winapi.IsWindow(h) {
+				continue
+			}
+			if w.ctl[idSetTabs] != 0 && h == w.ctl[idSetTabs] {
+				continue
+			}
+			winapi.MoveWindowNoRedraw(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
 		}
-		if w.ctl[idSetTabs] != 0 && h == w.ctl[idSetTabs] {
-			continue
-		}
-		winapi.MoveWindow(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
-	}
-	winapi.SetScroll(w.host, winapi.SB_VERT, w.contentH, w.viewH, y)
-	winapi.SetScroll(w.host, winapi.SB_HORZ, w.contentW, w.viewW, x)
-	if w.host != 0 {
-		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
-	}
+		winapi.SetScroll(w.host, winapi.SB_VERT, w.contentH, w.viewH, y)
+		winapi.SetScroll(w.host, winapi.SB_HORZ, w.contentW, w.viewW, x)
+	})
 }
 
 // ScrollPos is the page scroll position in pixels (test hook).

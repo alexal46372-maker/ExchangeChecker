@@ -21,10 +21,12 @@ const (
 	MinSQLBrowseTimeoutMs = 500
 	MaxSQLBrowseTimeoutMs = 5000
 	// MaxSQLSubnetTimeoutMs / DefaultSQLSubnetTimeoutMs: subnet mode (TCP
-	// scan of up to 254 addresses) may run up to 15 s (architect, phase 11);
-	// subnet runs only when requested explicitly, never for mode "".
-	MaxSQLSubnetTimeoutMs     = 15000
-	DefaultSQLSubnetTimeoutMs = 15000
+	// PRELOGIN of every local /24, CHK-SQL-15) needs a longer budget than
+	// the phase-11 15 s: two /24s at SQLSubnetProbeTimeoutMs with
+	// concurrency 32 is ~19 s worst case; default 30 s, max 45 s.
+	// Subnet runs only when requested explicitly, never for mode "".
+	MaxSQLSubnetTimeoutMs     = 45000
+	DefaultSQLSubnetTimeoutMs = 30000
 	// MaxSQLBrowseInstances caps the instances of one result (Truncated).
 	MaxSQLBrowseInstances = 256
 	// MaxSQLBrowseHostLen: host name / IP literal length.
@@ -48,9 +50,10 @@ type SQLBrowseRequest struct {
 	Mode string `json:"mode,omitempty"`
 	// Port: TCP port probed in host / subnet mode (0 = 1433).
 	Port int `json:"port,omitempty"`
-	// CIDR: subnet mode network ("" = the /24 of the first IPv4
-	// interface); IPv4 /24../30 only; sqlcheck also requires it to
-	// overlap a local interface network.
+	// CIDR: subnet mode network ("" = every distinct local IPv4 /24 of
+	// this computer's interfaces, CHK-SQL-15); IPv4 /24../30 only;
+	// sqlcheck also requires an explicit CIDR to overlap a local
+	// interface network.
 	CIDR string `json:"cidr,omitempty"`
 }
 
@@ -69,7 +72,7 @@ const (
 	SQLBrowseAuto      = ""
 	SQLBrowseLocal     = "local"     // this computer: registry, SQLBrowser service, 127.0.0.1:1434
 	SQLBrowseBroadcast = "broadcast" // SSRP broadcast on every IPv4 interface + local
-	SQLBrowseSubnet    = "subnet"    // TDS PRELOGIN to TCP port on every /24 address of each interface
+	SQLBrowseSubnet    = "subnet"    // TDS PRELOGIN to TCP port on every address of each local /24 (empty CIDR: all of them)
 	SQLBrowseHost      = "host"      // SSRP unicast + TCP PRELOGIN probe of Host
 )
 
@@ -166,7 +169,7 @@ func (r SQLBrowseRequest) MaxTimeoutMs() int {
 }
 
 // ClampSQLBrowseTimeoutMsFor is ClampSQLBrowseTimeoutMs with the subnet
-// bound (15 s) for mode subnet (proposal for the IPC layer).
+// bound (45 s) for mode subnet (proposal for the IPC layer).
 func ClampSQLBrowseTimeoutMsFor(mode string, ms int) int {
 	if mode != SQLBrowseSubnet {
 		return ClampSQLBrowseTimeoutMs(ms)

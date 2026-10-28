@@ -56,7 +56,8 @@ type BrowseOptions struct {
 	SendInterval time.Duration
 	// SubnetHosts overrides the subnet addresses ("ip"), for tests.
 	SubnetHosts []string
-	// ProbeTimeout per TCP probe (0 = 300 ms); Concurrency (0 = 32).
+	// ProbeTimeout per TCP probe (0 = SQLProbeTimeoutMs; subnet mode uses
+	// at least SQLSubnetProbeTimeoutMs). Concurrency (0 = 32).
 	ProbeTimeout time.Duration
 	Concurrency  int
 
@@ -141,8 +142,10 @@ func (b *browseRun) sendErr(local, target string, err error) {
 //     127.0.0.1:1434;
 //   - host: SSRP CLNT_UCAST_EX / CLNT_UCAST_INST to the host's IPv4
 //     addresses and a TDS PRELOGIN probe of host:Port (1433);
-//   - subnet: TDS PRELOGIN probe of every address of one /24 (CIDR or the
-//     first interface's /24), 32 in parallel, 300 ms each.
+//   - subnet: TDS PRELOGIN probe of every address of each local /24
+//     (explicit CIDR, or all distinct interface /24s when empty), 32 in
+//     parallel, SQLSubnetProbeTimeoutMs each, one timeout-retry pass
+//     (CHK-SQL-15).
 //
 // SSRP is sent 3 times 300 ms apart; answers are collected until
 // req.Timeout() (3 s; unicast: until every address answered). In

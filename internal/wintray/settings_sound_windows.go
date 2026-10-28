@@ -278,12 +278,19 @@ func (w *settingsWindow) stopSoundPreview() {
 	if w.sndPreview != nil {
 		w.sndPreview.Set(false, trayalert.Sound{})
 	}
+	was := w.sndPreviewing
+	w.sndPreviewing = 0
+	// Avoid SetWindowText during close() — can hang off the UI pump
+	// (TestCHK_TRAY_07_HiddenWithoutCaps timeout). Only reset the active button.
+	if was == 0 || w.closed {
+		return
+	}
 	for _, c := range []profileCtl{w.sndWarn, w.sndErr} {
-		if c.base != 0 {
+		if c.base == was {
 			w.setSoundTestLabel(c, false)
+			break
 		}
 	}
-	w.sndPreviewing = 0
 }
 
 func (w *settingsWindow) setSoundTestLabel(c profileCtl, stopping bool) {

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -17,6 +18,33 @@ func openUXSettings(t *testing.T) *settingsWindow {
 	runtime.LockOSThread()
 	app, _ := startChromeApp(t)
 	return openChromeSettings(t, app, i18n.RU, 96, true)
+}
+
+// openUXSettingsWithSound opens chrome settings with sound preview/save hooks
+// so CHK-TRAY-81/82 can exercise real start/stop/persist paths (not label-only).
+func openUXSettingsWithSound(t *testing.T, onTest func(trayalert.SoundProfile, int), onStop func(), onSave func(trayalert.SoundPrefs) error) (*App, *settingsWindow) {
+	t.Helper()
+	runtime.LockOSThread()
+	app, _ := startChromeApp(t)
+	testDPI = 96
+	w, err := newSettingsWindow(settingsConfig{
+		lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+		hidden: true, uiMode: traysettings.UIExpert,
+		onSoundTest: onTest,
+		onSoundStop: onStop,
+		onSoundSave: onSave,
+		soundPrefs:  func() trayalert.SoundPrefs { return trayalert.DefaultSoundPrefs(nil) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Reload()
+	pumpUntil(t, "chrome caps", func() bool {
+		w.update()
+		return !w.busy && w.ed.HasProfile() && w.viberAvailable() && w.emailAvailable() &&
+			winapi.TabItemCount(w.ctl[idSetTabs]) >= 4
+	})
+	return app, w
 }
 
 // TestCHK_TRAY_74_NoSoundDupInGeneral — upper General has no freq/dur/gap;
@@ -140,34 +168,116 @@ func TestCHK_TRAY_80_PollColumnNotInChecks(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_81_SoundStopLabel — «Остановить» toggle helpers.
+// TestCHK_TRAY_81_SoundStopLabel — «Прослушать» really starts preview for
+// Warning and Error, Stop halts it (onSoundStop), label returns to «Прослушать».
+// setSoundTestLabel alone is not enough (CHK-TRAY-81).
 func TestCHK_TRAY_81_SoundStopLabel(t *testing.T) {
 	if i18n.T(i18n.KeySoundStop, i18n.RU) != "Остановить" {
 		t.Fatalf("KeySoundStop RU=%q", i18n.T(i18n.KeySoundStop, i18n.RU))
 	}
-	w := openUXSettings(t)
+	listen := i18n.T(i18n.KeySoundTest, i18n.RU)
+	stop := i18n.T(i18n.KeySoundStop, i18n.RU)
+
+	var started []trayalert.SoundProfile
+	var stops int
+	previewing := false
+	_, w := openUXSettingsWithSound(t,
+		func(p trayalert.SoundProfile, _ int) {
+			started = append(started, p)
+			previewing = true
+			// Do not auto-end: keep «playing» until stopSoundPreview / onSoundStop.
+		},
+		func() {
+			stops++
+			previewing = false
+		},
+		nil,
+	)
 	defer w.close()
+
 	if w.sndWarn.test == 0 || w.sndErr.test == 0 {
 		t.Fatal("missing Прослушать buttons")
 	}
-	w.setSoundTestLabel(w.sndWarn, true)
-	if got := winapi.GetWindowText(w.sndWarn.test); got != i18n.T(i18n.KeySoundStop, w.cfg.lang) {
-		t.Fatalf("stop label=%q", got)
-	}
-	w.setSoundTestLabel(w.sndWarn, false)
-	if got := winapi.GetWindowText(w.sndWarn.test); got != i18n.T(i18n.KeySoundTest, w.cfg.lang) {
-		t.Fatalf("listen label=%q", got)
+
+	for _, tc := range []struct {
+		name string
+		id   int32
+		ctl  profileCtl
+	}{
+		{"Warning", idSndWarn + idSndTest, w.sndWarn},
+		{"Error", idSndErr + idSndTest, w.sndErr},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			started = nil
+			stops = 0
+			previewing = false
+			btn := tc.ctl.test
+			if got := winapi.GetWindowText(btn); got != listen {
+				t.Fatalf("initial label=%q want %q", got, listen)
+			}
+			before := len(started)
+			w.click(t, tc.id)
+			if len(started) != before+1 {
+				t.Fatalf("previewSound/onSoundTest not called: started=%d", len(started))
+			}
+			if !previewing {
+				t.Fatal("preview flag false after start")
+			}
+			if got := winapi.GetWindowText(btn); got != stop {
+				t.Fatalf("playing label=%q want %q", got, stop)
+			}
+			w.click(t, tc.id) // «Остановить»
+			if stops != 1 {
+				t.Fatalf("onSoundStop calls=%d want 1", stops)
+			}
+			if previewing {
+				t.Fatal("preview still running after stop")
+			}
+			if got := winapi.GetWindowText(btn); got != listen {
+				t.Fatalf("after stop label=%q want %q", got, listen)
+			}
+		})
 	}
 }
 
-// TestCHK_TRAY_82_NoSoundSaveButton — no idSndSave; persist via Settings Save.
+// TestCHK_TRAY_82_NoSoundSaveButton — no idSndSave; window Save / persistSoundSection writes prefs.
 func TestCHK_TRAY_82_NoSoundSaveButton(t *testing.T) {
-	w := openUXSettings(t)
+	var saved []trayalert.SoundPrefs
+	_, w := openUXSettingsWithSound(t, nil, nil, func(p trayalert.SoundPrefs) error {
+		saved = append(saved, p)
+		return nil
+	})
 	defer w.close()
 	if w.ctl[idSndSave] != 0 || w.sndSave != 0 {
 		t.Fatal("«Сохранить» must leave the Звук frame")
 	}
-	_ = w.persistSoundSection()
+	if w.sndWarn.freq == 0 || w.sndErr.freq == 0 {
+		t.Fatal("missing sound profile fields")
+	}
+
+	winapi.SetWindowText(w.sndWarn.freq, "1234")
+	winapi.SetWindowText(w.sndErr.freq, "2345")
+	if bad := w.persistSoundSection(); bad != "" {
+		t.Fatalf("persistSoundSection: %s", bad)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("onSoundSave via persistSoundSection: calls=%d want 1", len(saved))
+	}
+	if saved[0].Warning.FreqHz != 1234 || saved[0].Error.FreqHz != 2345 {
+		t.Fatalf("saved prefs warn=%d err=%d", saved[0].Warning.FreqHz, saved[0].Error.FreqHz)
+	}
+
+	// Window Save also routes through persistSoundSection (CHK-TRAY-82).
+	saved = nil
+	winapi.SetWindowText(w.sndWarn.freq, "1500")
+	w.click(t, idSetSave)
+	pumpUntil(t, "sound saved via window Save", func() bool { return len(saved) >= 1 })
+	if len(saved) < 1 {
+		t.Fatal("window Save did not call onSoundSave")
+	}
+	if saved[0].Warning.FreqHz != 1500 {
+		t.Fatalf("window Save prefs warn freq=%d want 1500", saved[0].Warning.FreqHz)
+	}
 }
 
 // TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke — Language directly under Theme.
@@ -185,14 +295,4 @@ func TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke(t *testing.T) {
 	if themeAt < 0 || langAt != themeAt+1 {
 		t.Fatalf("theme@%d lang@%d menu=%+v", themeAt, langAt, m)
 	}
-}
-
-// TestCHK_TRAY_74_82_SourceContracts — erase paths 65–73 untouched; UX symbols present.
-func TestCHK_TRAY_74_82_SourceContracts(t *testing.T) {
-	// Non-windows-safe string contracts via trayui/i18n only.
-	if traysettings.FieldWarnFreq == "" {
-		t.Fatal("field consts")
-	}
-	_ = idGenBeep
-	_ = idSndSave
 }

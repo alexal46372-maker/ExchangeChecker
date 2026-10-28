@@ -1241,6 +1241,11 @@ func (w *settingsWindow) ask(text string) bool {
 	ok := confirm(w.hwnd, text, w.t(i18n.KeyAppName))
 	eraseRepaint(w.hwnd)
 	eraseRepaint(w.host)
+	if w.page >= 0 && w.page < len(w.pagePanel) {
+		if pan := w.pagePanel[w.page]; pan != 0 {
+			eraseRepaint(pan)
+		}
+	}
 	return ok && !w.exiting // the exit message came while it was open
 }
 

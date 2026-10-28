@@ -53,3 +53,22 @@ func contentErase(hdc, hwnd uintptr) uintptr {
 	winapi.FillRect(hdc, winapi.GetClientRect(hwnd), page)
 	return 1
 }
+
+// contentPaint fills hwnd with the page brush on WM_PAINT (installer
+// wizard_chrome pattern). Required on Win7 when uncover delivers
+// WM_PAINT with fErase=FALSE — WM_ERASEBKGND alone never runs, and
+// TRANSPARENT STATICs leave vertical smear trails (CHK-TRAY-71).
+func contentPaint(hwnd uintptr) {
+	if hwnd == 0 || !winapi.IsWindow(hwnd) {
+		return
+	}
+	var ps winapi.PAINTSTRUCT
+	dc := winapi.BeginPaint(hwnd, &ps)
+	if dc == 0 {
+		return
+	}
+	_, page := ensureThemeBrushes()
+	winapi.FillRect(dc, winapi.GetClientRect(hwnd), page)
+	winapi.EndPaint(hwnd, &ps)
+}
+

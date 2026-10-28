@@ -962,6 +962,8 @@ Wizard Win32 (страницы):
 
 204. **Глобальный erase/redraw трея (фаза 13d, `CHK-TRAY-68`/`69`/`70`):** катастрофический smear/ghost на Win7 при scroll/MessageBox во всех tray GUI (кроме installer). Один контракт: `MoveWindowNoRedraw` (`SetWindowPos`|`SWP_NOREDRAW`) в scroll-batch (settingsfit + winscroll), затем `eraseRepaint` (InvalidateRect+RedrawWindow RDW_INVALIDATE|ERASE|ALLCHILDREN|UPDATENOW); опционально WM_SETREDRAW вокруг batch; запрет ScrollWindow; ScrollHost WS_CLIPCHILDREN|WS_CLIPSIBLINGS + contentErase(page brush); ensureClass Background=0; persistent ensureChromeBrushes; contentCtlColor page brush для STATIC контента; ask()/MessageBox → eraseRepaint(frame+host). Installer без изменений. Tests: `TestCHK_TRAY_68_*`, `TestCHK_TRAY_69_*`, `TestCHK_TRAY_70_*`; harden CHK-TRAY-66 (source-grep ≠ smear proof).
 
+205. **Settings page-host erase still broken on live Win7 after v0.12.7 (фаза 13e, `CHK-TRAY-71`/`72`/`73`):** CHK-TRAY-68…70 (PR #15) мимо — smear/ghost на **всех** вкладках при scroll и uncover. Корень: (1) `MoveWindowNoRedraw` = SWP_NOREDRAW без **SWP_NOCOPYBITS** → Win7 копирует stale bits; (2) `eraseRepaint` только host + WS_CLIPCHILDREN → не чистит под pagePanel; (3) Background:0 + нет WM_PAINT FillRect (installer красит в WM_PAINT) → uncover с fErase=FALSE = ghost; (4) `SetScroll` bRedraw=1 в batch → partial invalidate. Фикс: NOCOPYBITS; `SetScrollNoRedraw` в batch; `eraseRepaint(host+active pagePanel)`; `contentPaint` на host/pagePanel; RDW_ERASENOW; ask() erase panel. Тесты: CaptureScreen/BitBlt (не только PrintWindow), все 4 вкладки, uncover overlay. Base `main@445e1a08`.
+
 
 ## 14. Что не делаем в v1
 

@@ -80,6 +80,9 @@ func fitForm(hwnd uintptr, content, bar ui.Node, minW int32, keep bool) (int32, 
 				case winapi.WM_ERASEBKGND:
 					// page brush, not panel — matches content STATICs (CHK-TRAY-68)
 					return contentErase(wp, hw), true
+				case winapi.WM_PAINT:
+					contentPaint(hw)
+					return 0, true
 				case winapi.WM_CTLCOLOREDIT, winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLORBTN, winapi.WM_CTLCOLORLISTBOX:
 					if r, ok := contentCtlColor(msg, wp); ok {
 						return r, true

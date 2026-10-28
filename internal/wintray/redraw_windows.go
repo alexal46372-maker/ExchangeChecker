@@ -4,13 +4,15 @@ package wintray
 
 import "github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 
-// eraseRedrawFlags is the one coherent host repaint contract for every
-// tray scroll / custom window (CHK-TRAY-68). Installer never scrolls child
-// HWNDs and keeps its own persistent brushes.
-const eraseRedrawFlags = winapi.RDW_INVALIDATE | winapi.RDW_ERASE | winapi.RDW_ALLCHILDREN | winapi.RDW_UPDATENOW
+// eraseRedrawFlags is the coherent host/panel repaint contract (CHK-TRAY-68/71).
+// RDW_ERASENOW forces WM_ERASEBKGND before return so Win7 uncover/scroll
+// cannot skip the page brush fill when fErase would be false on WM_PAINT.
+const eraseRedrawFlags = winapi.RDW_INVALIDATE | winapi.RDW_ERASE | winapi.RDW_ERASENOW | winapi.RDW_ALLCHILDREN | winapi.RDW_UPDATENOW
 
 // eraseRepaint forces a full erase + child repaint of hwnd now.
 // Call once after a MoveWindowNoRedraw batch — never ScrollWindow.
+// Settings scroll also eraseRepaints the active pagePanel (host CLIPCHILDREN
+// does not paint under the panel).
 func eraseRepaint(hwnd uintptr) {
 	if hwnd == 0 || !winapi.IsWindow(hwnd) {
 		return

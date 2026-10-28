@@ -111,9 +111,10 @@ func MoveWindow(hwnd uintptr, x, y, w, h int32) {
 }
 
 // MoveWindowNoRedraw moves / resizes without an intermediate repaint
-// (SetWindowPos|SWP_NOREDRAW). Scroll batches must call a single
-// erase+repaint on the host afterwards (CHK-TRAY-68) — per-child
-// MoveWindow(TRUE) / SetWindowPos without NOREDRAW smears on Windows 7.
+// and without copying stale client bits (SetWindowPos|SWP_NOREDRAW|
+// SWP_NOCOPYBITS). Win7 with NOREDRAW alone still BitBlts old pixels
+// into the new position — vertical smear on pagePanel scroll (CHK-TRAY-71).
+// Scroll batches must eraseRepaint(host) and the active pagePanel after.
 func MoveWindowNoRedraw(hwnd uintptr, x, y, w, h int32) {
-	SetWindowPos(hwnd, 0, x, y, w, h, SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOREDRAW)
+	SetWindowPos(hwnd, 0, x, y, w, h, SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOREDRAW|SWP_NOCOPYBITS)
 }

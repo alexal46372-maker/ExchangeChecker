@@ -41,8 +41,11 @@ func TestCHK_TRAY_60_BasesChromeOnlyOnDatabases(t *testing.T) {
 			t.Fatalf("bases control %d not visible on Databases", id)
 		}
 	}
-	if !w.underPagePanel(w.ctl[idSetList]) || !w.underPagePanel(w.ctl[idSetAdd]) {
-		t.Fatal("list/Add must be parented under pagePanel[0], not left chrome")
+	// CHK-TRAY-78: list/Add may be host-pinned (not under pagePanel) so they do not scroll.
+	if w.underPagePanel(w.ctl[idSetList]) && w.underPagePanel(w.ctl[idSetAdd]) {
+		// classic parenting still OK
+	} else if !(w.pinnedHost[w.ctl[idSetList]] && w.pinnedHost[w.ctl[idSetAdd]]) {
+		t.Fatal("list/Add must be under pagePanel[0] or host-pinned (CHK-TRAY-78)")
 	}
 	if why := assertSamePageNoOverlap(w); why != "" {
 		t.Fatal("Databases same-page:", why)
@@ -123,8 +126,8 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 		t.Fatalf("Simple must keep General active, page=%d", w.page)
 	}
 	n := winapi.TabItemCount(w.ctl[idSetTabs])
-	if n < 2 || w.tabPageAt(0) != 0 || w.tabPageAt(1) != 1 {
-		t.Fatalf("Simple tabs want Databases+General, got %d pages=%v", n, w.tabPages)
+	if n < 2 || w.tabPageAt(0) != 1 || w.tabPageAt(1) != 0 {
+		t.Fatalf("Simple tabs want General+Databases (CHK-TRAY-75), got %d pages=%v", n, w.tabPages)
 	}
 	for _, p := range w.tabPages {
 		if p == pageViber {
@@ -135,8 +138,11 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 	if !visible(w.ctl[idGenLang]) || !visible(w.ctl[idGenWarn]) {
 		t.Fatal("Simple General: language / warn threshold must stay")
 	}
-	if visible(w.ctl[idGenPoll]) || visible(w.ctl[idGenWarnFreq]) {
-		t.Fatal("Simple General: expert poll/freq must hide")
+	if visible(w.ctl[idGenPoll]) {
+		t.Fatal("Simple General: expert poll must hide")
+	}
+	if w.ctl[idGenWarnFreq] != 0 && visible(w.ctl[idGenWarnFreq]) {
+		t.Fatal("Simple General: sound freq dup must stay removed/hidden (CHK-TRAY-74)")
 	}
 	// Export/Import/UIMode still common
 	for _, id := range common {
@@ -159,7 +165,7 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
 		hidden: true, uiMode: traysettings.UIExpert,
 		stores: trayStores{Sound: store},
-		onSoundSave: app.SaveSoundPrefs, onSoundTest: app.testSound,
+		onSoundSave: app.SaveSoundPrefs, onSoundTest: app.testSound, onSoundStop: app.stopTestSound,
 		soundPrefs: func() trayalert.SoundPrefs { return app.SoundPrefs() },
 	})
 	if err != nil {
@@ -170,26 +176,33 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() })
 
 	w.setPage(1)
-	if w.sndWarn.freq == 0 || w.sndErr.freq == 0 || w.sndSave == 0 {
+	if w.sndWarn.freq == 0 || w.sndErr.freq == 0 {
 		t.Fatal("sound section controls missing on General")
 	}
-	if !w.underPagePanel(w.sndWarn.freq) || !w.underPagePanel(w.sndSave) {
+	if !w.underPagePanel(w.sndWarn.freq) {
 		t.Fatal("sound controls must be under General page panel")
+	}
+	if w.sndSave != 0 || w.ctl[idSndSave] != 0 {
+		t.Fatal("CHK-TRAY-82: sound Save button must be removed")
 	}
 	if winapi.GetWindowText(w.sndWarn.vol) != "80" || winapi.GetWindowText(w.sndErr.vol) != "100" {
 		t.Fatalf("defaults warn=%q err=%q", winapi.GetWindowText(w.sndWarn.vol), winapi.GetWindowText(w.sndErr.vol))
 	}
-	// invalid → not saved
+	// invalid → not saved (persist via shared path / persistSoundSection)
 	winapi.SetWindowText(w.sndErr.freq, "5")
-	winapi.SendMessage(w.sndSave, winapi.BM_CLICK, 0, 0)
-	if store.saves != 0 || !strings.Contains(winapi.GetWindowText(w.sndInfo), "Ошибка") {
+	if bad := w.persistSoundSection(); bad == "" || store.saves != 0 {
 		t.Fatalf("invalid saved: %q saves=%d", winapi.GetWindowText(w.sndInfo), store.saves)
+	}
+	if !strings.Contains(winapi.GetWindowText(w.sndInfo), "Ошибка") {
+		t.Fatalf("want error status, got %q", winapi.GetWindowText(w.sndInfo))
 	}
 	winapi.SetWindowText(w.sndErr.freq, "1500")
 	winapi.SetWindowText(w.sndErr.vol, "60")
-	winapi.SendMessage(w.sndSave, winapi.BM_CLICK, 0, 0)
-	if store.saves != 1 || app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Volume != 60 {
-		t.Fatalf("save failed saves=%d prefs=%+v", store.saves, app.SoundPrefs())
+	if bad := w.persistSoundSection(); bad != "" || store.saves != 1 {
+		t.Fatalf("save failed bad=%q saves=%d prefs=%+v", bad, store.saves, app.SoundPrefs())
+	}
+	if app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Volume != 60 {
+		t.Fatalf("prefs=%+v", app.SoundPrefs())
 	}
 	// menu: no CmdSound; Theme present (CHK-TRAY-63 also)
 	var sound, theme bool

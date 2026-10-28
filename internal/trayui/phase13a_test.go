@@ -61,6 +61,21 @@ func TestCHK_TRAY_63_MenuOrder(t *testing.T) {
 		if themeAt < 0 || themeAt >= aboutAt {
 			t.Fatalf("%s: Theme must be above About (theme@%d about@%d)", lang, themeAt, aboutAt)
 		}
+
+		// CHK-TRAY-79: Language submenu sits directly under Theme.
+		langAt := -1
+		for i, it := range m {
+			if len(it.Sub) == 3 && (it.Sub[0].ID == CmdLangAuto || it.Sub[1].ID == CmdLangRU) {
+				langAt = i
+				break
+			}
+		}
+		if langAt < 0 || langAt != themeAt+1 {
+			t.Fatalf("%s: Language must follow Theme (theme@%d lang@%d)", lang, themeAt, langAt)
+		}
+		if aboutAt != langAt+2 || !m[langAt+1].Separator {
+			t.Fatalf("%s: Language, sep, About (lang@%d about@%d)", lang, langAt, aboutAt)
+		}
 		// Volume / Pin stay; Summary present
 		var vol, pin, sum bool
 		for _, it := range m {
@@ -88,5 +103,35 @@ func TestCHK_TRAY_62_Phase10OmitsSound(t *testing.T) {
 	}
 	if len(Phase10Items(i18n.EN)) != 2 {
 		t.Fatalf("want Volume+PinHelp, got %+v", Phase10Items(i18n.EN))
+	}
+}
+
+// TestCHK_TRAY_79_LanguageUnderTheme — bottom→top: Exit → sep → About → sep → Language → Theme → sep → rest.
+func TestCHK_TRAY_79_LanguageUnderTheme(t *testing.T) {
+	m := BuildTrayRightMenu(RightMenuOpts{Lang: i18n.RU, Theme: ThemeLight, Connected: true})
+	if len(m) < 6 || m[len(m)-1].ID != CmdExit {
+		t.Fatalf("Exit must be last: %+v", m)
+	}
+	themeAt, langAt, aboutAt := -1, -1, -1
+	for i, it := range m {
+		if len(it.Sub) == 2 && it.Sub[0].ID == CmdThemeLight {
+			themeAt = i
+		}
+		if len(it.Sub) >= 2 && it.Sub[0].ID == CmdLangAuto {
+			langAt = i
+		}
+		if it.ID == CmdAbout {
+			aboutAt = i
+		}
+	}
+	if !(themeAt >= 0 && langAt == themeAt+1 && aboutAt == langAt+2) {
+		t.Fatalf("want Theme, Language, sep, About; got theme=%d lang=%d about=%d menu=%+v", themeAt, langAt, aboutAt, m)
+	}
+	// Language must not appear in the upper work block (before Theme separator).
+	for i := 0; i < themeAt; i++ {
+		it := m[i]
+		if len(it.Sub) >= 2 && it.Sub[0].ID == CmdLangAuto {
+			t.Fatalf("Language still in work block at %d", i)
+		}
 	}
 }

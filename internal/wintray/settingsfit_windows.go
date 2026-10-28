@@ -188,6 +188,11 @@ func (w *settingsWindow) scrollTo(x, y int32) {
 			if w.ctl[idSetTabs] != 0 && h == w.ctl[idSetTabs] {
 				continue
 			}
+			// CHK-TRAY-78: DB list + Add/Remove/Clone stay fixed on the host.
+			if w.pinnedHost[h] {
+				winapi.MoveWindowNoRedraw(h, r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top)
+				continue
+			}
 			winapi.MoveWindowNoRedraw(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
 		}
 		// bRedraw=FALSE inside batch — SetScrollInfo(TRUE) partial-invalidates on Win7.
@@ -246,12 +251,12 @@ func (w *settingsWindow) layoutFit() {
 	// Fixed tab chrome (frame child) — never inside the scroll host.
 	tabH := px(settingsTabChromeH)
 	if w.ctl[idSetTabs] != 0 {
-		// brand accent (3px) + pad above tabs
+		// brand accent (3px) + pad above tabs; no pad under tabs (CHK-TRAY-76)
 		winapi.MoveWindow(w.ctl[idSetTabs], m, 3+gap/2, cw-2*m, tabH)
 		winapi.ShowWindow(w.ctl[idSetTabs], winapi.SW_SHOWNA)
 		delete(w.hostRect, w.ctl[idSetTabs])
 	}
-	w.tabChromeH = 3 + gap/2 + tabH + gap/2
+	w.tabChromeH = 3 + gap/2 + tabH // flush host under SysTabControl (CHK-TRAY-76)
 	type btn struct {
 		h     uintptr
 		width int32
@@ -398,7 +403,7 @@ func (w *settingsWindow) layoutFit() {
 				break
 			}
 		}
-		if !isPan {
+		if !isPan && !w.pinnedHost[h] {
 			delete(w.hostRect, h)
 		}
 	}
@@ -424,8 +429,8 @@ type barButton struct {
 // (CHK-TRAY-61). Pages share one slot (Col Gap:-1). SW_HIDE(panel) stops ghosts.
 func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
 	// Tabs are frame chrome (layoutFit); host content is pages only.
-	body := &ui.Pad{Top: 6, Child: &ui.Col{Gap: -1, Items: pages}}
-	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8, Child: body}
+	body := &ui.Pad{Top: 2, Child: &ui.Col{Gap: -1, Items: pages}} // CHK-TRAY-76: minimal gap under tabs
+	w.root = &ui.Pad{Left: ui.P12, Top: 0, Right: ui.P12, Bottom: ui.P8, Child: body}
 	w.rootM = m
 	syncCues(w.root)
 	w.ctlOf = map[uintptr]*ui.Ctl{}
@@ -461,10 +466,16 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
 			break
 		}
 	}
+	// CHK-TRAY-77: stretch every tab to the host width when content is narrower
+	// (do not force minW above natural width — that caused HSCROLL at 144 dpi).
+	wid := min32(max32(w.pageW, allW), maxW)
+	if w.pageW < wid {
+		w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, wid)
+	}
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	w.syncPagePanels()
-	x, y, ww, wh := settingsRectPx(style, min32(max32(w.pageW, allW), maxW), w.pageH+px(setBarH)+px(settingsTabChromeH)+px(gridGap))
+	x, y, ww, wh := settingsRectPx(style, wid, w.pageH+px(setBarH)+px(settingsTabChromeH)+px(gridGap))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 }
 
@@ -506,6 +517,10 @@ func (w *settingsWindow) relayoutAll() {
 		if over := w.pageW - avail; over <= 0 || !ui.Shrink(w.root, unpx(over)+1) && !w.stackPairs() {
 			break
 		}
+	}
+	// CHK-TRAY-77: fill host width when content is narrower than the host.
+	if w.pageW < avail {
+		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, avail)
 	}
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
@@ -558,6 +573,9 @@ func (w *settingsWindow) syncPagePanels() {
 		ui.Walk(n, func(c *ui.Ctl) {
 			if c == nil || c.H == 0 || !c.Placed || c.Hidden {
 				return
+			}
+			if w.pinnedHost[c.H] {
+				return // CHK-TRAY-78: left chrome is host-pinned, not in scrolling slot
 			}
 			// slot uses layout height only — comboDrop is a MoveWindow quirk of
 			// CBS_DROPDOWNLIST, not painted panel content (would blow hostExtent)
@@ -648,6 +666,7 @@ func (w *settingsWindow) syncPagePanels() {
 	w.scrollTo(w.scrollX, w.scrollY)
 }
 
+
 // fitWrap sets the height of the wrapped text boxes to their text at
 // the width of the last layout (an empty box takes almost no room) and
 // lays the tree out again when a height changed.
@@ -667,7 +686,10 @@ func (w *settingsWindow) fitWrap() {
 		}
 	}
 	if changed {
-		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+		// Keep current stretch width so wrap height matches the painted width
+		// (CHK-TRAY-42: GenNote Static must fit after Layout minW=avail).
+		minW := w.pageW
+		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, minW)
 	}
 }
 

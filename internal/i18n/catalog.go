@@ -116,6 +116,7 @@ const (
 	KeySetTLS10             = "set.tls10"
 	KeySetTrust             = "set.trust"
 	KeySetEnabled           = "set.enabled"
+	KeySetColPoll           = "set.col_poll" // CHK-TRAY-80 DB list column
 	KeySetMapYes            = "set.map_yes"
 	KeySetMapNo             = "set.map_no"
 	KeySetThresholds        = "set.thresholds"
@@ -1042,6 +1043,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySetTLS10:               {"Разрешить TLS 1.0 (SQL Server 2008)", "Allow TLS 1.0 (SQL Server 2008)"},
 	KeySetTrust:               {"Доверять сертификату сервера без проверки", "Trust the server certificate without validation"},
 	KeySetEnabled:             {"Опрашивать эту базу", "Monitor this database"},
+	KeySetColPoll:             {"Опрос", "Poll"},
 	KeySetMapYes:              {"Таблицы обмена: настроены", "Exchange tables: configured"},
 	KeySetMapNo:               {"Таблицы обмена: не настроены — найдите их кнопкой «Таблицы обмена…»", "Exchange tables: not configured — find them with «Exchange tables…»"},
 	KeySetThresholds:          {"Свои пороги: предупреждение %d мин, ошибка %d мин", "Own thresholds: warning %d min, error %d min"},
@@ -1525,7 +1527,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeySoundLoop:          {"Повторять до подтверждения", "Repeat until acknowledged"},
 	KeySoundGap:           {"Пауза между повторами, мс:", "Pause between repeats, ms:"},
 	KeySoundTest:          {"Прослушать", "Listen"},
-	KeySoundStop:          {"Стоп", "Stop"},
+	KeySoundStop:          {"Остановить", "Stop"},
 	KeySoundSave:          {"Сохранить", "Save"},
 	KeySoundCancel:        {"Отмена", "Cancel"},
 	KeySoundFilterAudio:   {"Звуковые файлы (*.wav; *.mp3; *.wma; *.mid)", "Sound files (*.wav; *.mp3; *.wma; *.mid)"},

@@ -37,7 +37,13 @@ const (
 	LVM_SETITEMTEXTW             = 0x1074
 
 	LVS_EX_GRIDLINES     = 0x00000001
+	LVS_EX_CHECKBOXES    = 0x00000004
 	LVS_EX_FULLROWSELECT = 0x00000020
+
+	LVIS_STATEIMAGEMASK = 0xF000
+	LVIF_STATE          = 0x0008
+
+	LVM_GETITEMSTATE = 0x102C // LVM_FIRST+44
 
 	LVCF_FMT   = 0x1
 	LVCF_WIDTH = 0x2
@@ -242,4 +248,44 @@ const LVM_SETCOLUMNWIDTH = 0x101E
 // ListViewSetColumnWidth sets the width (pixels) of column i.
 func ListViewSetColumnWidth(lv uintptr, i int, width int32) {
 	SendMessage(lv, LVM_SETCOLUMNWIDTH, uintptr(i), uintptr(width))
+}
+
+// NMLISTVIEW is the LVN_ITEMCHANGED payload (subset used by settings).
+type NMLISTVIEW struct {
+	Hdr       NMHDR
+	Item      int32
+	SubItem   int32
+	NewState  uint32
+	OldState  uint32
+	Changed   uint32
+	PtAction  POINT
+	Param     uintptr
+}
+
+// ReadNMLISTVIEW copies NMLISTVIEW at lp.
+func ReadNMLISTVIEW(lp uintptr) NMLISTVIEW {
+	var n NMLISTVIEW
+	if lp != 0 {
+		callProc(procRtlMoveMemory, uintptr(unsafe.Pointer(&n)), lp, unsafe.Sizeof(n))
+	}
+	return n
+}
+
+// indexToStateImage packs a state-image index into LVIS_STATEIMAGEMASK.
+func indexToStateImage(i int) uint32 { return uint32(i) << 12 }
+
+// ListViewSetChecked sets the LVS_EX_CHECKBOXES mark on row i.
+func ListViewSetChecked(lv uintptr, i int, on bool) {
+	img := 1 // unchecked
+	if on {
+		img = 2
+	}
+	it := LVITEMW{State: indexToStateImage(img), StateMask: LVIS_STATEIMAGEMASK}
+	callSend(lv, LVM_SETITEMSTATE, uintptr(i), uintptr(unsafe.Pointer(&it)))
+}
+
+// ListViewChecked reports the LVS_EX_CHECKBOXES mark on row i.
+func ListViewChecked(lv uintptr, i int) bool {
+	st := uint32(SendMessage(lv, LVM_GETITEMSTATE, uintptr(i), LVIS_STATEIMAGEMASK))
+	return (st >> 12) == 2
 }

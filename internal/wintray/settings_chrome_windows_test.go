@@ -143,12 +143,13 @@ func assertScrollChromeFlags(t *testing.T) {
 			t.Fatalf("%s: missing RedrawWindow RDW combo or eraseRepaint", name)
 		}
 	}
-	combo := winapi.RDW_INVALIDATE | winapi.RDW_ERASE | winapi.RDW_ALLCHILDREN | winapi.RDW_UPDATENOW
+	combo := winapi.RDW_INVALIDATE | winapi.RDW_ERASE | winapi.RDW_ERASENOW | winapi.RDW_ALLCHILDREN | winapi.RDW_UPDATENOW
 	if combo != eraseRedrawFlags {
 		t.Fatalf("RDW combo %#x eraseRedrawFlags %#x", combo, eraseRedrawFlags)
 	}
-	if eraseRedrawFlags != 0x0001|0x0004|0x0080|0x0100 {
-		t.Fatalf("eraseRedrawFlags %#x want 0x185", eraseRedrawFlags)
+	// 0x385 = INVALIDATE|ERASE|ALLCHILDREN|ERASENOW|UPDATENOW (CHK-TRAY-71)
+	if eraseRedrawFlags != 0x0001|0x0004|0x0080|0x0200|0x0100 {
+		t.Fatalf("eraseRedrawFlags %#x want 0x385", eraseRedrawFlags)
 	}
 }
 

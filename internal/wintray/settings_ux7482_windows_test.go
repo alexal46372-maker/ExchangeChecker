@@ -49,8 +49,9 @@ func TestCHK_TRAY_75_TabOrderGeneralFirst(t *testing.T) {
 	if len(w.tabPages) < 2 || w.tabPageAt(0) != 1 || w.tabPageAt(1) != 0 {
 		t.Fatalf("want General then Databases, got %v", w.tabPages)
 	}
-	if w.page != 1 {
-		t.Fatalf("default page=%d want General(1)", w.page)
+	// Tab order is General-first; open on Databases (working tab).
+	if w.page != 0 || !w.navTabSelected(0) {
+		t.Fatalf("default page=%d want Databases(0)", w.page)
 	}
 }
 
@@ -83,7 +84,7 @@ func TestCHK_TRAY_77_TabsFillHostWidth(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_78_DBListNotScrolled — left list chrome is pinnedHost.
+// TestCHK_TRAY_78_DBListNotScrolled — left list chrome stays fixed while form scrolls.
 func TestCHK_TRAY_78_DBListNotScrolled(t *testing.T) {
 	w := openUXSettings(t)
 	defer w.close()
@@ -92,6 +93,9 @@ func TestCHK_TRAY_78_DBListNotScrolled(t *testing.T) {
 	if lv == 0 || !w.pinnedHost[lv] {
 		t.Fatalf("list pinned=%v hwnd=%v", w.pinnedHost[lv], lv)
 	}
+	if !w.underPagePanel(lv) {
+		t.Fatal("list must stay under pagePanel[0] (CHK-TRAY-60)")
+	}
 	for _, id := range []int32{idSetAdd, idSetDelete, idSetClone} {
 		if h := w.ctl[id]; h != 0 && !w.pinnedHost[h] {
 			t.Fatalf("id %d not pinned", id)
@@ -99,6 +103,18 @@ func TestCHK_TRAY_78_DBListNotScrolled(t *testing.T) {
 	}
 	if h := w.ctl[idSetHost]; h != 0 && w.pinnedHost[h] {
 		t.Fatal("host field must scroll with right panel")
+	}
+	before := winapi.GetWindowRect(lv)
+	hostBefore := winapi.GetWindowRect(w.ctl[idSetHost])
+	w.scrollTo(0, 1<<20)
+	_, sy := w.ScrollPos()
+	after := winapi.GetWindowRect(lv)
+	hostAfter := winapi.GetWindowRect(w.ctl[idSetHost])
+	if after.Top != before.Top {
+		t.Fatalf("list scrolled with sy=%d: before=%v after=%v", sy, before, after)
+	}
+	if sy > 0 && hostAfter.Top == hostBefore.Top {
+		t.Fatalf("host field did not scroll sy=%d: %v", sy, hostBefore)
 	}
 }
 

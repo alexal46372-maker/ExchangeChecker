@@ -132,10 +132,10 @@
 | `CHK-TRAY-73` | **implemented (fix/tray-settings-erase-still-broken)**; **hardened (tests)** | Uncover/repaint: **DestroyWindow** foreign TOPMOST overlay is primary proof (InvalidateRect secondary only); CaptureScreen vs baseline all 4 tabs; test does **not** call eraseRepaint; tight diff ≤0.01 + share ≥0.05; `len` mismatch FAIL. Test: `TestCHK_TRAY_73_UncoverScreenRepaint`. |
 
 | `CHK-TRAY-74` | **implemented (fix/tray-settings-ux-cleanup)** | Общие: убрать дубли звука — частота/длительность/пауза warning+error только в «Звук»; чекбокс «звуковой сигнал тревоги» перенесён в «Звук»; верх: застой/журнал/автозапуск/язык службы. Тесты: `TestCHK_TRAY_74_*`. |
-| `CHK-TRAY-75` | **implemented (fix/tray-settings-ux-cleanup)** | Порядок вкладок: Общие → Базы → Viber → e-mail (page indices те же; default page=General). Тесты: `TestCHK_TRAY_75_*`, обновлён nav. |
+| `CHK-TRAY-75` | **implemented (fix/tray-settings-ux-cleanup)** | Порядок вкладок: Общие → Базы → Viber → e-mail (page indices те же; открытие на Базы/page 0). Тесты: `TestCHK_TRAY_75_*`, обновлён nav/mode. |
 | `CHK-TRAY-76` | **implemented (fix/tray-settings-ux-cleanup)** | Убрана белая полоса под SysTabControl — host flush под вкладками (tabChromeH без нижнего pad). Тест: `TestCHK_TRAY_76_*`. |
-| `CHK-TRAY-77` | **implemented (fix/tray-settings-ux-cleanup)** | Все вкладки на полную ширину host (Layout minW=avail; Grow GroupBox/Col). Тест: `TestCHK_TRAY_77_*`. |
-| `CHK-TRAY-78` | **implemented (fix/tray-settings-ux-cleanup)** | Databases split scroll: список БД+Add/Remove/Clone pinnedHost (не скроллится); правая форма в pagePanel скроллится. Тест: `TestCHK_TRAY_78_*`. |
+| `CHK-TRAY-77` | **implemented (fix/tray-settings-ux-cleanup)** | Все вкладки на полную ширину host (Layout minW=avail только если pageW < avail; без принудительного HSCROLL). Тест: `TestCHK_TRAY_77_*`. |
+| `CHK-TRAY-78` | **implemented (fix/tray-settings-ux-cleanup)** | Databases split scroll: список+Add/Remove/Clone под pagePanel[0] (CHK-TRAY-60), pin-компенсация scrollY (экран Y фиксирован); форма скроллится. Тест: `TestCHK_TRAY_78_*`. |
 | `CHK-TRAY-79` | **implemented (fix/tray-settings-ux-cleanup)** | ПКМ: под «Тема» — «Язык». bottom→top: Выход→sep→О программе→sep→Язык→Тема→sep→rest. Тесты: `TestCHK_TRAY_79_*`, обновлён 63. |
 | `CHK-TRAY-80` | **implemented (fix/tray-settings-ux-cleanup)** | Колонка «Опрос» (checkbox) в списке БД (SysListView32); чекбокс убран из «Опрос и пороги»; новая БД default ON; Save. Тест: `TestCHK_TRAY_80_*`. |
 | `CHK-TRAY-81` | **implemented (fix/tray-settings-ux-cleanup)** | «Прослушать»↔«Остановить» в «Звук»; Stop реально останавливает playback (Warning и Error). Тест: `TestCHK_TRAY_81_*`. |

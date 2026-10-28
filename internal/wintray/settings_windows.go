@@ -552,9 +552,9 @@ func (w *settingsWindow) build() {
 	w.ensurePagePanels()
 
 	// Bases tab ONLY: profile list + Add / Delete / Clone / Discover (CHK-TRAY-60).
-	// CHK-TRAY-78: list chrome is a HOST child (pinned — does not scroll);
-	// only the right-hand form lives under pagePanel[0] and scrolls.
-	w.pageParent = 0 // host
+	// Parent under pagePanel[0]; CHK-TRAY-78 pins left chrome so scroll moves
+	// only the right-hand form (local Y += scrollY inside the panel).
+	w.pageParent = w.pagePanel[0]
 	w.cur = &w.pageCtl[0]
 	w.pinnedHost = map[uintptr]bool{}
 	pin := func(c *ui.Ctl) *ui.Ctl {
@@ -586,7 +586,7 @@ func (w *settingsWindow) build() {
 	}
 	basesChrome := &ui.Col{Gap: ui.P8 - 2, Items: basesLeft}
 
-	// profile form: children of pagePanel[0] (scrolls — CHK-TRAY-78)
+	// profile form: same pagePanel[0]; scrolls while left chrome is pin-compensated
 	w.pageParent = w.pagePanel[0]
 	// four group boxes (phase 10 D3); phase 11 (CHK-TRAY-47): one field
 	// column (ui.Share), «Порт» on its own row, TLS in one row, hints/info
@@ -738,7 +738,9 @@ func (w *settingsWindow) build() {
 	w.pageParent = 0
 	// page roots: setPage hides inactive ones via ui.SetHidden (wizard pattern)
 	w.pages = [4]ui.Node{profilePage, generalPage, viberPage, emailPage}
-	w.page = 1 // CHK-TRAY-75: open on «Общие настройки» (first tab)
+	// CHK-TRAY-75: tab order is General→Databases; open on Databases (page 0)
+	// so profile Save/list tests and primary workflow stay on the working tab.
+	w.page = 0
 	// cues from traysettings.UIFields (phase 11, CHK-TRAY-50/51): before
 	// the layout so boxes are at least as wide as their cues; Viber
 	// reminder keeps the STATIC hint only (no duplicate cue banner)

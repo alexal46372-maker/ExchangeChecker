@@ -407,7 +407,7 @@ func TestCHK_TRAY_06_SettingsSave(t *testing.T) {
 	svc := newCfgService()
 	app := startCfgApp(t, svc, true, nil)
 	w := openAdmin(t, app)
-	if n := winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCOUNT, 0, 0); n != 1 || w.text(idSetHost) != "srv" || w.text(idSetInstance) != "SQL1" {
+	if n := winapi.SendMessage(w.ctl[idSetList], winapi.LVM_GETITEMCOUNT, 0, 0); n != 1 || w.text(idSetHost) != "srv" || w.text(idSetInstance) != "SQL1" {
 		t.Fatalf("list %d host %q inst %q", n, w.text(idSetHost), w.text(idSetInstance))
 	}
 	if !strings.Contains(winapi.GetWindowText(w.ctl[idSetHints]), "db_datareader") {
@@ -491,7 +491,7 @@ func TestCHK_TRAY_06_SettingsSave(t *testing.T) {
 
 	// new profile with a password
 	w.click(t, idSetAdd)
-	if !w.ed.IsNew || winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCOUNT, 0, 0) != 2 {
+	if !w.ed.IsNew || winapi.SendMessage(w.ctl[idSetList], winapi.LVM_GETITEMCOUNT, 0, 0) != 2 {
 		t.Fatal("new profile row")
 	}
 	w.set(idSetHost, "h2")
@@ -717,8 +717,8 @@ func TestCHK_TRAY_04_SettingsDiscardPrompt(t *testing.T) {
 	app := startCfgApp(t, svc, true, nil, conf)
 	w := openAdmin(t, app)
 	sel := func(i int) {
-		winapi.SendMessage(w.ctl[idSetList], winapi.LB_SETCURSEL, uintptr(i), 0)
-		w.command(idSetList, winapi.LBN_SELCHANGE)
+		winapi.ListViewSelect(w.ctl[idSetList], i)
+		w.selectFromList()
 	}
 	want := func(n int, what string) {
 		t.Helper()
@@ -737,7 +737,7 @@ func TestCHK_TRAY_04_SettingsDiscardPrompt(t *testing.T) {
 	conf.no = true
 	sel(1)
 	want(1, "switch with edits")
-	if w.ed.Sel != 0 || w.text(idSetName) != "правка" || int(winapi.SendMessage(w.ctl[idSetList], winapi.LB_GETCURSEL, 0, 0)) != 0 {
+	if w.ed.Sel != 0 || w.text(idSetName) != "правка" || winapi.ListViewSelected(w.ctl[idSetList]) != 0 {
 		t.Error("«Нет» must keep the edits and the selection")
 	}
 	w.click(t, idSetAdd)

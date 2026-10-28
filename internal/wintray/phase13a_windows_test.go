@@ -173,26 +173,33 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() })
 
 	w.setPage(1)
-	if w.sndWarn.freq == 0 || w.sndErr.freq == 0 || w.sndSave == 0 {
+	if w.sndWarn.freq == 0 || w.sndErr.freq == 0 {
 		t.Fatal("sound section controls missing on General")
 	}
-	if !w.underPagePanel(w.sndWarn.freq) || !w.underPagePanel(w.sndSave) {
+	if !w.underPagePanel(w.sndWarn.freq) {
 		t.Fatal("sound controls must be under General page panel")
+	}
+	if w.sndSave != 0 || w.ctl[idSndSave] != 0 {
+		t.Fatal("CHK-TRAY-82: sound Save button must be removed")
 	}
 	if winapi.GetWindowText(w.sndWarn.vol) != "80" || winapi.GetWindowText(w.sndErr.vol) != "100" {
 		t.Fatalf("defaults warn=%q err=%q", winapi.GetWindowText(w.sndWarn.vol), winapi.GetWindowText(w.sndErr.vol))
 	}
-	// invalid → not saved
+	// invalid → not saved (persist via shared path / persistSoundSection)
 	winapi.SetWindowText(w.sndErr.freq, "5")
-	winapi.SendMessage(w.sndSave, winapi.BM_CLICK, 0, 0)
-	if store.saves != 0 || !strings.Contains(winapi.GetWindowText(w.sndInfo), "Ошибка") {
+	if bad := w.persistSoundSection(); bad == "" || store.saves != 0 {
 		t.Fatalf("invalid saved: %q saves=%d", winapi.GetWindowText(w.sndInfo), store.saves)
+	}
+	if !strings.Contains(winapi.GetWindowText(w.sndInfo), "Ошибка") {
+		t.Fatalf("want error status, got %q", winapi.GetWindowText(w.sndInfo))
 	}
 	winapi.SetWindowText(w.sndErr.freq, "1500")
 	winapi.SetWindowText(w.sndErr.vol, "60")
-	winapi.SendMessage(w.sndSave, winapi.BM_CLICK, 0, 0)
-	if store.saves != 1 || app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Volume != 60 {
-		t.Fatalf("save failed saves=%d prefs=%+v", store.saves, app.SoundPrefs())
+	if bad := w.persistSoundSection(); bad != "" || store.saves != 1 {
+		t.Fatalf("save failed bad=%q saves=%d prefs=%+v", bad, store.saves, app.SoundPrefs())
+	}
+	if app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Volume != 60 {
+		t.Fatalf("prefs=%+v", app.SoundPrefs())
 	}
 	// menu: no CmdSound; Theme present (CHK-TRAY-63 also)
 	var sound, theme bool

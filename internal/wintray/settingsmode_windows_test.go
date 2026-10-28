@@ -85,7 +85,7 @@ func TestCHK_TRAY_41_SettingsModes(t *testing.T) {
 	if w.page != 1 || w.UIMode() != traysettings.UISimple {
 		t.Errorf("simple mode must keep General tab active, page=%d mode=%v", w.page, w.UIMode())
 	}
-	if winapi.TabItemCount(w.ctl[idSetTabs]) < 2 || w.tabPageAt(1) != 1 {
-		t.Errorf("simple mode must keep General tab, pages=%v", w.tabPages)
+	if winapi.TabItemCount(w.ctl[idSetTabs]) < 2 || w.tabPageAt(0) != 1 || w.tabPageAt(1) != 0 {
+		t.Errorf("simple mode must keep General tab (CHK-TRAY-75 order), pages=%v", w.tabPages)
 	}
 }

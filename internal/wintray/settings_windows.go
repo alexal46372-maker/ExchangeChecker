@@ -672,7 +672,7 @@ func (w *settingsWindow) build() {
 	// a wrapped check box: the page width, not its one-line text (phase 11)
 	auto.Grow, auto.NoShrink = true, true
 	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 300, 32)
-	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 300, 100)
+	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 300, 120)
 	autoErr.Grow, note.Grow = true, true
 	// phase 11 (CHK-TRAY-48): as high as their text, an empty error box
 	// takes no room (no gap under the autostart check box)

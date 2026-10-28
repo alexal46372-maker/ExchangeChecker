@@ -686,7 +686,10 @@ func (w *settingsWindow) fitWrap() {
 		}
 	}
 	if changed {
-		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, 0)
+		// Keep current stretch width so wrap height matches the painted width
+		// (CHK-TRAY-42: GenNote Static must fit after Layout minW=avail).
+		minW := w.pageW
+		w.pageW, w.pageH = ui.Layout(w.root, w.rootM, 0, 0, minW)
 	}
 }
 

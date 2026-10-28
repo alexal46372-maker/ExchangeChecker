@@ -41,8 +41,11 @@ func TestCHK_TRAY_60_BasesChromeOnlyOnDatabases(t *testing.T) {
 			t.Fatalf("bases control %d not visible on Databases", id)
 		}
 	}
-	if !w.underPagePanel(w.ctl[idSetList]) || !w.underPagePanel(w.ctl[idSetAdd]) {
-		t.Fatal("list/Add must be parented under pagePanel[0], not left chrome")
+	// CHK-TRAY-78: list/Add may be host-pinned (not under pagePanel) so they do not scroll.
+	if w.underPagePanel(w.ctl[idSetList]) && w.underPagePanel(w.ctl[idSetAdd]) {
+		// classic parenting still OK
+	} else if !(w.pinnedHost[w.ctl[idSetList]] && w.pinnedHost[w.ctl[idSetAdd]]) {
+		t.Fatal("list/Add must be under pagePanel[0] or host-pinned (CHK-TRAY-78)")
 	}
 	if why := assertSamePageNoOverlap(w); why != "" {
 		t.Fatal("Databases same-page:", why)

@@ -84,7 +84,7 @@ func TestCHK_TRAY_77_TabsFillHostWidth(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_78_DBListNotScrolled — left list chrome stays fixed while form scrolls.
+// TestCHK_TRAY_78_DBListNotScrolled — left list chrome is host-pinned; form scrolls.
 func TestCHK_TRAY_78_DBListNotScrolled(t *testing.T) {
 	w := openUXSettings(t)
 	defer w.close()
@@ -93,8 +93,8 @@ func TestCHK_TRAY_78_DBListNotScrolled(t *testing.T) {
 	if lv == 0 || !w.pinnedHost[lv] {
 		t.Fatalf("list pinned=%v hwnd=%v", w.pinnedHost[lv], lv)
 	}
-	if !w.underPagePanel(lv) {
-		t.Fatal("list must stay under pagePanel[0] (CHK-TRAY-60)")
+	if w.underPagePanel(lv) {
+		t.Fatal("pinned list must be host child, not under pagePanel")
 	}
 	for _, id := range []int32{idSetAdd, idSetDelete, idSetClone} {
 		if h := w.ctl[id]; h != 0 && !w.pinnedHost[h] {

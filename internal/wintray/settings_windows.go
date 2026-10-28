@@ -551,10 +551,10 @@ func (w *settingsWindow) build() {
 	delete(w.hostRect, tabH) // belt: never scroll the tab strip
 	w.ensurePagePanels()
 
-	// Bases tab ONLY: profile list + Add / Delete / Clone / Discover (CHK-TRAY-60).
-	// Parent under pagePanel[0]; CHK-TRAY-78 pins left chrome so scroll moves
-	// only the right-hand form (local Y += scrollY inside the panel).
-	w.pageParent = w.pagePanel[0]
+	// Bases tab ONLY: profile list + Add / Delete / Clone / Discover (CHK-TRAY-60/78).
+	// List chrome is a HOST child (pinnedHost — does not scroll with the form);
+	// the right-hand form lives under pagePanel[0] and scrolls.
+	w.pageParent = 0 // host (pageParent==0 → add() parents to w.host)
 	w.cur = &w.pageCtl[0]
 	w.pinnedHost = map[uintptr]bool{}
 	pin := func(c *ui.Ctl) *ui.Ctl {
@@ -586,7 +586,7 @@ func (w *settingsWindow) build() {
 	}
 	basesChrome := &ui.Col{Gap: ui.P8 - 2, Items: basesLeft}
 
-	// profile form: same pagePanel[0]; scrolls while left chrome is pin-compensated
+	// profile form: children of pagePanel[0] (scrolls — CHK-TRAY-78)
 	w.pageParent = w.pagePanel[0]
 	// four group boxes (phase 10 D3); phase 11 (CHK-TRAY-47): one field
 	// column (ui.Share), «Порт» on its own row, TLS in one row, hints/info

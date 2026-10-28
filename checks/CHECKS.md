@@ -135,7 +135,7 @@
 | `CHK-TRAY-75` | **implemented (fix/tray-settings-ux-cleanup)** | Порядок вкладок: Общие → Базы → Viber → e-mail (page indices те же; открытие на Базы/page 0). Тесты: `TestCHK_TRAY_75_*`, обновлён nav/mode. |
 | `CHK-TRAY-76` | **implemented (fix/tray-settings-ux-cleanup)** | Убрана белая полоса под SysTabControl — host flush под вкладками (tabChromeH без нижнего pad). Тест: `TestCHK_TRAY_76_*`. |
 | `CHK-TRAY-77` | **implemented (fix/tray-settings-ux-cleanup)** | Все вкладки на полную ширину host (Layout minW=avail только если pageW < avail; без принудительного HSCROLL). Тест: `TestCHK_TRAY_77_*`. |
-| `CHK-TRAY-78` | **implemented (fix/tray-settings-ux-cleanup)** | Databases split scroll: список+Add/Remove/Clone под pagePanel[0] (CHK-TRAY-60), pin-компенсация scrollY (экран Y фиксирован); форма скроллится. Тест: `TestCHK_TRAY_78_*`. |
+| `CHK-TRAY-78` | **implemented (fix/tray-settings-ux-cleanup)** | Databases split scroll: список+Add/Remove/Clone host-pinned (не скроллится); правая форма в pagePanel[0] скроллится; видимость только на вкладке Базы (CHK-TRAY-60). Тест: `TestCHK_TRAY_78_*`. |
 | `CHK-TRAY-79` | **implemented (fix/tray-settings-ux-cleanup)** | ПКМ: под «Тема» — «Язык». bottom→top: Выход→sep→О программе→sep→Язык→Тема→sep→rest. Тесты: `TestCHK_TRAY_79_*`, обновлён 63. |
 | `CHK-TRAY-80` | **implemented (fix/tray-settings-ux-cleanup)** | Колонка «Опрос» (checkbox) в списке БД (SysListView32); чекбокс убран из «Опрос и пороги»; новая БД default ON; Save. Тест: `TestCHK_TRAY_80_*`. |
 | `CHK-TRAY-81` | **implemented (fix/tray-settings-ux-cleanup)** | «Прослушать»↔«Остановить» в «Звук»; Stop реально останавливает playback (Warning и Error). Тест: `TestCHK_TRAY_81_*`. |

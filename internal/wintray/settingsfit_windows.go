@@ -188,11 +188,13 @@ func (w *settingsWindow) scrollTo(x, y int32) {
 			if w.ctl[idSetTabs] != 0 && h == w.ctl[idSetTabs] {
 				continue
 			}
+			// CHK-TRAY-78: DB list + Add/Remove/Clone stay fixed on the host.
+			if w.pinnedHost[h] {
+				winapi.MoveWindowNoRedraw(h, r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top)
+				continue
+			}
 			winapi.MoveWindowNoRedraw(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
 		}
-		// CHK-TRAY-78: left DB chrome is under pagePanel[0]; counteract scroll
-		// so list/Add stay fixed while the form moves with the panel.
-		w.repositionPinnedInPanelNoRedraw()
 		// bRedraw=FALSE inside batch — SetScrollInfo(TRUE) partial-invalidates on Win7.
 		winapi.SetScrollNoRedraw(w.host, winapi.SB_VERT, w.contentH, w.viewH, y)
 		winapi.SetScrollNoRedraw(w.host, winapi.SB_HORZ, w.contentW, w.viewW, x)
@@ -401,7 +403,7 @@ func (w *settingsWindow) layoutFit() {
 				break
 			}
 		}
-		if !isPan {
+		if !isPan && !w.pinnedHost[h] {
 			delete(w.hostRect, h)
 		}
 	}
@@ -572,6 +574,9 @@ func (w *settingsWindow) syncPagePanels() {
 			if c == nil || c.H == 0 || !c.Placed || c.Hidden {
 				return
 			}
+			if w.pinnedHost[c.H] {
+				return // CHK-TRAY-78: left chrome is host-pinned, not in scrolling slot
+			}
 			// slot uses layout height only — comboDrop is a MoveWindow quirk of
 			// CBS_DROPDOWNLIST, not painted panel content (would blow hostExtent)
 			h := c.Rect.H
@@ -644,13 +649,7 @@ func (w *settingsWindow) syncPagePanels() {
 			if c.Kind == ui.Combo {
 				hgt += px(comboDrop)
 			}
-			lx, ly := c.Rect.X-slot.Left, c.Rect.Y-slot.Top
-			// CHK-TRAY-78: pin left chrome against panel scroll (screen Y fixed).
-			if w.pinnedHost[h] && i == 0 {
-				lx += w.scrollX
-				ly += w.scrollY
-			}
-			winapi.MoveWindow(h, lx, ly, c.Rect.W, hgt)
+			winapi.MoveWindow(h, c.Rect.X-slot.Left, c.Rect.Y-slot.Top, c.Rect.W, hgt)
 			if i == w.page {
 				winapi.ShowWindow(h, winapi.SW_SHOWNA)
 			}
@@ -667,27 +666,6 @@ func (w *settingsWindow) syncPagePanels() {
 	w.scrollTo(w.scrollX, w.scrollY)
 }
 
-
-// repositionPinnedInPanelNoRedraw keeps DB list chrome fixed on screen while
-// pagePanel[0] scrolls (CHK-TRAY-78). List stays parented under the panel
-// (CHK-TRAY-60); local Y is contentY - slot.Top + scrollY.
-func (w *settingsWindow) repositionPinnedInPanelNoRedraw() {
-	if w.page != 0 || len(w.pagePanel) == 0 || w.pagePanel[0] == 0 || len(w.pinnedHost) == 0 {
-		return
-	}
-	slot := w.pageSlot
-	for h := range w.pinnedHost {
-		c := w.ctlOf[h]
-		if c == nil || c.H == 0 || !c.Placed || c.Hidden {
-			continue
-		}
-		hgt := c.Rect.H
-		if c.Kind == ui.Combo {
-			hgt += px(comboDrop)
-		}
-		winapi.MoveWindowNoRedraw(h, c.Rect.X-slot.Left+w.scrollX, c.Rect.Y-slot.Top+w.scrollY, c.Rect.W, hgt)
-	}
-}
 
 // fitWrap sets the height of the wrapped text boxes to their text at
 // the width of the last layout (an empty box takes almost no room) and

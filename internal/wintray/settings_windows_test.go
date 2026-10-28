@@ -336,6 +336,9 @@ func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ..
 	if et, ok := h.(ipc.EmailTester); ok {
 		srv.Email = et // capability email (CHK-TRAY-64)
 	}
+	if at, ok := h.(ipc.AlarmTester); ok {
+		srv.AlarmTest = at // capability alarm_test (CHK-TRAY-67)
+	}
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }

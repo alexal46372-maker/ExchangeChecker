@@ -160,3 +160,46 @@ func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 		}
 	}
 }
+
+// TestCHK_TRAY_65_PaletteExact — exact installer hex (COLORREF BGR) and
+// dark Brand/Accent mappings (CHK-TRAY-65). Pure Go; Linux OK.
+func TestCHK_TRAY_65_PaletteExact(t *testing.T) {
+	t.Cleanup(func() { SetTheme(ThemeLight) })
+	// #0F2744 / #FAFBFC / #F1F5F9 / #0677D9 as COLORREF (0x00BBGGRR)
+	if BrandDark != 0x0044270F {
+		t.Fatalf("BrandDark %#x want 0x0044270F (#0F2744)", BrandDark)
+	}
+	if Page != 0x00FCFBFA {
+		t.Fatalf("Page %#x want 0x00FCFBFA (#FAFBFC)", Page)
+	}
+	if Panel != 0x00F9F5F1 {
+		t.Fatalf("Panel %#x want 0x00F9F5F1 (#F1F5F9)", Panel)
+	}
+	if Accent != 0x00D97706 {
+		t.Fatalf("Accent %#x want 0x00D97706 (#0677D9)", Accent)
+	}
+	if Page == 0x00F0F0F0 || Panel == 0x00F0F0F0 {
+		t.Fatal("Page/Panel must not be COLOR_BTNFACE gray")
+	}
+	SetTheme(ThemeLight)
+	if ChromeBrandDark() != BrandDark || ChromeAccent() != Accent {
+		t.Fatal("light ChromeBrandDark/Accent must match constants")
+	}
+	if ChromePage() != Page || ChromePanel() != Panel {
+		t.Fatal("light ChromePage/Panel must match constants")
+	}
+	SetTheme(ThemeDark)
+	if ChromeBrandDark() != darkPanel {
+		t.Fatalf("dark Brand %#x want darkPanel %#x", ChromeBrandDark(), darkPanel)
+	}
+	if ChromeAccent() != StateOK {
+		t.Fatalf("dark Accent %#x want StateOK %#x", ChromeAccent(), StateOK)
+	}
+	if ChromePage() != darkPage || ChromePanel() != darkPanel {
+		t.Fatal("dark Page/Panel helpers")
+	}
+	if ChromeBrandDark() == BrandDark || ChromeAccent() == Accent {
+		t.Fatal("dark Brand/Accent must differ from light constants")
+	}
+}
+

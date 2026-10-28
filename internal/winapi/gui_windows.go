@@ -40,6 +40,7 @@ var (
 	procGetSubMenu               = moduser32.NewProc("GetSubMenu")
 	procSetForegroundWindow      = moduser32.NewProc("SetForegroundWindow")
 	procGetCursorPos             = moduser32.NewProc("GetCursorPos")
+	procWindowFromPoint          = moduser32.NewProc("WindowFromPoint")
 	procRegisterWindowMessageW   = moduser32.NewProc("RegisterWindowMessageW")
 	procGetDlgItem               = moduser32.NewProc("GetDlgItem")
 	procGetWindowTextW           = moduser32.NewProc("GetWindowTextW")
@@ -405,6 +406,22 @@ func GetCursorPos() POINT {
 	callProc(procGetCursorPos, uintptr(unsafe.Pointer(&p)))
 	return p
 }
+
+// WindowFromPoint returns the window containing screen point p (or 0).
+// NT 4.0+ / Win95+ (CHK-TRAY-67 hit-test).
+func WindowFromPoint(p POINT) uintptr {
+	r, _, _ := callProc(procWindowFromPoint, *(*uintptr)(unsafe.Pointer(&p)))
+	return r
+}
+
+// GetDC returns a device context for hwnd (0 = screen). Pair with ReleaseDC.
+func GetDC(hwnd uintptr) uintptr {
+	dc, _, _ := callProc(procGetDC, hwnd)
+	return dc
+}
+
+// ReleaseDC releases a DC from GetDC / GetWindowDC.
+func ReleaseDC(hwnd, dc uintptr) { callProc(procReleaseDC, hwnd, dc) }
 
 // RegisterWindowMessage returns the message ID for name (0 on error).
 func RegisterWindowMessage(name string) uint32 {

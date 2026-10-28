@@ -92,13 +92,16 @@ func (s *scroller) scrollTo(x, y int32) {
 		s.capture()
 	}
 	s.x, s.y = x, y
-	for h, r := range s.rects {
-		if winapi.IsWindow(h) {
-			winapi.MoveWindow(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
+	// NoRedraw batch + one eraseRepaint — InvalidateRect alone left Win7
+	// smear on every ScrollHost (status, wizard, alarm, discovery, …).
+	withSetRedraw(s.hwnd, func() {
+		for h, r := range s.rects {
+			if winapi.IsWindow(h) {
+				winapi.MoveWindowNoRedraw(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
+			}
 		}
-	}
-	s.bars()
-	winapi.InvalidateRect(s.hwnd, true)
+		s.bars()
+	})
 }
 
 // handle: the window's own scroll bars and the wheel (a control's

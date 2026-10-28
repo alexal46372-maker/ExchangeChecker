@@ -3,7 +3,6 @@
 package wintray
 
 import (
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -21,19 +20,13 @@ var pageActionIDs = []int32{idSetTest, idSetCancelTest, idSetAlarmTest, idSetPol
 
 // settingsChromeErase paints content + footer bar (installer look).
 // Not COLOR_BTNFACE. Dark theme keeps trayui dark palette (CHK-TRAY-55).
+// Persistent brushes via ensureChromeBrushes (no Create+Delete per erase).
 func (w *settingsWindow) settingsChromeErase(hdc uintptr) uintptr {
 	if w == nil || w.hwnd == 0 {
 		return themeErase(hdc, 0)
 	}
 	rc := winapi.GetClientRect(w.hwnd)
-	page := winapi.CreateSolidBrush(trayui.ChromePage())
-	panel := winapi.CreateSolidBrush(trayui.ChromePanel())
-	line := winapi.CreateSolidBrush(trayui.ChromeCardFrame())
-	defer func() {
-		winapi.DeleteObject(page)
-		winapi.DeleteObject(panel)
-		winapi.DeleteObject(line)
-	}()
+	panel, page, line, brand := ensureChromeBrushes()
 	winapi.FillRect(hdc, rc, page)
 	ft := w.footerTop
 	if ft <= 0 || ft >= rc.Bottom {
@@ -47,18 +40,16 @@ func (w *settingsWindow) settingsChromeErase(hdc uintptr) uintptr {
 	winapi.FillRect(hdc, br, panel)
 	// thin brand accent under the title area / above tabs
 	if th := w.tabChromeH; th > 0 {
-		acc := winapi.CreateSolidBrush(trayui.ChromeBrandDark())
 		ar := winapi.RECT{Left: 0, Top: 0, Right: rc.Right, Bottom: 3}
-		winapi.FillRect(hdc, ar, acc)
-		winapi.DeleteObject(acc)
+		winapi.FillRect(hdc, ar, brand)
 	}
 	return 1
 }
 
-// contentErase fills a host / page panel with the content background.
+// contentErase fills a host / page panel with the content background
+// using the persistent page brush (CHK-TRAY-68).
 func contentErase(hdc, hwnd uintptr) uintptr {
-	br := winapi.CreateSolidBrush(trayui.ChromePage())
-	winapi.FillRect(hdc, winapi.GetClientRect(hwnd), br)
-	winapi.DeleteObject(br)
+	_, page := ensureThemeBrushes()
+	winapi.FillRect(hdc, winapi.GetClientRect(hwnd), page)
 	return 1
 }

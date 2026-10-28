@@ -85,6 +85,9 @@ func (w *settingsWindow) hostProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uin
 	switch msg {
 	case winapi.WM_ERASEBKGND:
 		return contentErase(wp, hwnd), true
+	case winapi.WM_PAINT:
+		contentPaint(hwnd)
+		return 0, true
 	case winapi.WM_COMMAND:
 		// focus (also by Tab): scroll the control into the view; the
 		// buttons have BS_NOTIFY for BN_SETFOCUS, so their BN_DBLCLK is
@@ -175,7 +178,8 @@ func (w *settingsWindow) scrollTo(x, y int32) {
 	}
 	// Move children from unscrolled hostRect without per-child repaint
 	// (Win7 intermediate paints trail — CHK-TRAY-68). Never touch the frame
-	// tab strip; never ScrollWindow. One eraseRepaint(host) after the batch.
+	// tab strip; never ScrollWindow. eraseRepaint(host) then active pagePanel
+	// (CHK-TRAY-71: panel must fill under STATICs — no WS_CLIPCHILDREN).
 	withSetRedraw(w.host, func() {
 		for h, r := range w.hostRect {
 			if h == 0 || !winapi.IsWindow(h) {
@@ -186,9 +190,19 @@ func (w *settingsWindow) scrollTo(x, y int32) {
 			}
 			winapi.MoveWindowNoRedraw(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
 		}
-		winapi.SetScroll(w.host, winapi.SB_VERT, w.contentH, w.viewH, y)
-		winapi.SetScroll(w.host, winapi.SB_HORZ, w.contentW, w.viewW, x)
+		// bRedraw=FALSE inside batch — SetScrollInfo(TRUE) partial-invalidates on Win7.
+		winapi.SetScrollNoRedraw(w.host, winapi.SB_VERT, w.contentH, w.viewH, y)
+		winapi.SetScrollNoRedraw(w.host, winapi.SB_HORZ, w.contentW, w.viewW, x)
 	})
+	// Host CLIPCHILDREN does not erase under pagePanel — must erase panel too.
+	if w.page >= 0 && w.page < len(w.pagePanel) {
+		if pan := w.pagePanel[w.page]; pan != 0 {
+			eraseRepaint(pan)
+		}
+	}
+	// Refresh scrollbar thumb after erase (was NoRedraw in batch).
+	winapi.SetScroll(w.host, winapi.SB_VERT, w.contentH, w.viewH, y)
+	winapi.SetScroll(w.host, winapi.SB_HORZ, w.contentW, w.viewW, x)
 }
 
 // ScrollPos is the page scroll position in pixels (test hook).
@@ -499,8 +513,7 @@ func (w *settingsWindow) relayoutAll() {
 	w.hideInactiveTabControls()
 	w.layoutFit()
 	if w.host != 0 {
-		winapi.InvalidateRect(w.host, true)
-		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+		eraseRepaint(w.host) // eraseRedrawFlags incl. RDW_ERASENOW (CHK-TRAY-71)
 	}
 }
 
@@ -625,8 +638,7 @@ func (w *settingsWindow) syncPagePanels() {
 		}
 		if i == w.page {
 			winapi.ShowWindow(pan, winapi.SW_SHOWNA)
-			winapi.InvalidateRect(pan, true)
-			winapi.RedrawWindow(pan, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+			eraseRepaint(pan) // eraseRedrawFlags incl. RDW_ERASENOW (CHK-TRAY-71)
 		} else {
 			hideWindowTree(pan)
 		}

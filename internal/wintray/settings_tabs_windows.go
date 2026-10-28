@@ -41,6 +41,11 @@ func (w *settingsWindow) pagePanelProc(hwnd uintptr, msg uint32, wp, lp uintptr)
 	switch msg {
 	case winapi.WM_ERASEBKGND:
 		return contentErase(wp, hwnd), true
+	case winapi.WM_PAINT:
+		// Installer-style: always FillRect on paint so uncover (fErase=0)
+		// and scroll leave no ghost under TRANSPARENT STATICs (all tabs).
+		contentPaint(hwnd)
+		return 0, true
 	case winapi.WM_CTLCOLOREDIT, winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLORLISTBOX, winapi.WM_CTLCOLORBTN:
 		// content page brush (installer ctlColor); required edit via hostProc
 		return w.hostProc(w.host, msg, wp, lp)
@@ -52,7 +57,8 @@ func (w *settingsWindow) pagePanelProc(hwnd uintptr, msg uint32, wp, lp uintptr)
 }
 
 // ensurePagePanels creates one WS_EX_CONTROLPARENT child per tab under
-// the scrolled host. Idempotent.
+// the scrolled host. No WS_CLIPCHILDREN: contentErase/contentPaint must
+// fill under TRANSPARENT STATICs (CHK-TRAY-71; installer has none). Idempotent.
 func (w *settingsWindow) ensurePagePanels() {
 	if w.host == 0 {
 		return
@@ -62,7 +68,7 @@ func (w *settingsWindow) ensurePagePanels() {
 			continue
 		}
 		h, err := createWindowPx(SettingsTabPanelClass, "", winapi.WS_EX_CONTROLPARENT,
-			winapi.WS_CHILD|winapi.WS_CLIPCHILDREN|winapi.WS_CLIPSIBLINGS, 0, 0, 10, 10, w.host, w.pagePanelProc)
+			winapi.WS_CHILD|winapi.WS_CLIPSIBLINGS, 0, 0, 10, 10, w.host, w.pagePanelProc)
 		if err != nil {
 			continue
 		}

@@ -162,11 +162,27 @@ type scrollInfo struct {
 }
 
 // SetScroll sets the range 0..max-1, the page and the position of a
-// scroll bar (a page >= max hides it).
+// scroll bar (a page >= max hides it) and redraws the bar.
 func SetScroll(hwnd uintptr, bar int32, max, page, pos int32) {
+	setScroll(hwnd, bar, max, page, pos, true)
+}
+
+// SetScrollNoRedraw is SetScroll with bRedraw=FALSE — use inside a
+// MoveWindowNoRedraw scroll batch so SetScrollInfo does not fire a
+// partial invalidate under Win7 (CHK-TRAY-71). Call SetScroll once after
+// eraseRepaint if the thumb must refresh immediately.
+func SetScrollNoRedraw(hwnd uintptr, bar int32, max, page, pos int32) {
+	setScroll(hwnd, bar, max, page, pos, false)
+}
+
+func setScroll(hwnd uintptr, bar int32, max, page, pos int32, redraw bool) {
 	si := scrollInfo{Mask: SIF_RANGE | SIF_PAGE | SIF_POS, Max: max - 1, Page: uint32(page), Pos: pos}
 	si.Size = uint32(unsafe.Sizeof(si))
-	callProc(procSetScrollInfo, hwnd, uintptr(bar), uintptr(unsafe.Pointer(&si)), 1)
+	r := uintptr(0)
+	if redraw {
+		r = 1
+	}
+	callProc(procSetScrollInfo, hwnd, uintptr(bar), uintptr(unsafe.Pointer(&si)), r)
 }
 
 // ClientOrigin is the screen position of the client area of hwnd.

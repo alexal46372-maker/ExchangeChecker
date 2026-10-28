@@ -63,6 +63,12 @@ func (s *scroller) bars() {
 	winapi.SetScroll(s.hwnd, winapi.SB_HORZ, s.cw, vw, s.x)
 }
 
+func (s *scroller) barsNoRedraw() {
+	vw, vh := s.view()
+	winapi.SetScrollNoRedraw(s.hwnd, winapi.SB_VERT, s.ch, vh, s.y)
+	winapi.SetScrollNoRedraw(s.hwnd, winapi.SB_HORZ, s.cw, vw, s.x)
+}
+
 // capture records the children at scroll position 0 (first scroll).
 func (s *scroller) capture() {
 	s.rects = map[uintptr]winapi.RECT{}
@@ -100,8 +106,9 @@ func (s *scroller) scrollTo(x, y int32) {
 				winapi.MoveWindowNoRedraw(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
 			}
 		}
-		s.bars()
+		s.barsNoRedraw()
 	})
+	s.bars() // thumb refresh after eraseRepaint
 }
 
 // handle: the window's own scroll bars and the wheel (a control's

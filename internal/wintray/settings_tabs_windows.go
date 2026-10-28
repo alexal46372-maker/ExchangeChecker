@@ -4,6 +4,7 @@ package wintray
 
 import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
@@ -38,6 +39,8 @@ func hideWindowTree(h uintptr) {
 // (controls are children of the tab panel, not of the scrolled host).
 func (w *settingsWindow) pagePanelProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 	switch msg {
+	case winapi.WM_ERASEBKGND:
+		return contentErase(wp, hwnd), true
 	case winapi.WM_COMMAND, winapi.WM_CTLCOLOREDIT, winapi.WM_NOTIFY:
 		// via hostProc: BN_SETFOCUS / EN_SETFOCUS still scrollIntoView
 		return w.hostProc(w.host, msg, wp, lp)
@@ -56,7 +59,7 @@ func (w *settingsWindow) ensurePagePanels() {
 			continue
 		}
 		h, err := createWindowPx(SettingsTabPanelClass, "", winapi.WS_EX_CONTROLPARENT,
-			winapi.WS_CHILD|winapi.WS_CLIPCHILDREN, 0, 0, 10, 10, w.host, w.pagePanelProc)
+			winapi.WS_CHILD|winapi.WS_CLIPCHILDREN|winapi.WS_CLIPSIBLINGS, 0, 0, 10, 10, w.host, w.pagePanelProc)
 		if err != nil {
 			continue
 		}
@@ -66,9 +69,9 @@ func (w *settingsWindow) ensurePagePanels() {
 }
 
 // hideInactiveTabControls SW_HIDEs every inactive pagePanel (entire
-// child tree) and marks the ui page roots Hidden. Also SW_HIDEs
-// pageCtl HWNDs that are not under a panel (bar Test/… on page 0).
-// Call before and after applyUIMode / update.
+// child tree) and marks the ui page roots Hidden. Page-action buttons
+// (Test/…) are NOT pageCtl leftovers — showPageActions owns them
+// (CHK-TRAY-67). Call before and after applyUIMode / update.
 func (w *settingsWindow) hideInactiveTabControls() {
 	for i, n := range w.pages {
 		if i == w.page || n == nil {
@@ -97,11 +100,60 @@ func (w *settingsWindow) hideInactiveTabControls() {
 			continue
 		}
 		for _, h := range hs {
+			if w.isPageAction(h) {
+				continue // showPageActions owns visibility
+			}
 			if c := w.ctlOf[h]; c != nil {
 				c.Hidden = true
 			}
-			// bar / non-panel leftovers (Test, AlarmTest, …)
 			if !w.underPagePanel(h) {
+				hideWindowTree(h)
+			}
+		}
+	}
+	w.showPageActions(w.page)
+}
+
+// isPageAction reports whether h is a footer Databases action button.
+func (w *settingsWindow) isPageAction(h uintptr) bool {
+	if h == 0 {
+		return false
+	}
+	for _, a := range w.pageActions {
+		if a == h {
+			return true
+		}
+	}
+	for _, id := range pageActionIDs {
+		if w.ctl[id] == h {
+			return true
+		}
+	}
+	return false
+}
+
+// showPageActions shows Test/Cancel/Alarm/Poll only on Databases (page 0).
+// Must run after every tab / Simple↔Expert switch (CHK-TRAY-67).
+func (w *settingsWindow) showPageActions(page int) {
+	on := page == 0
+	for _, id := range pageActionIDs {
+		h := w.ctl[id]
+		if h == 0 {
+			continue
+		}
+		if on {
+			winapi.ShowWindow(h, winapi.SW_SHOWNA)
+		} else {
+			hideWindowTree(h)
+		}
+	}
+	// AlarmTest additionally needs capability — update() sets EnableWindow;
+	// if capability missing keep hidden even on Databases.
+	if on {
+		if h := w.ctl[idSetAlarmTest]; h != 0 {
+			sess := w.cfg.session
+			hasAlarm := sess != nil && (sess.Supported(model.CmdAlarmTest) || sess.Status().Has(model.CapAlarmTest))
+			if !hasAlarm {
 				hideWindowTree(h)
 			}
 		}

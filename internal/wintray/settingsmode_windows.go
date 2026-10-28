@@ -136,9 +136,12 @@ func (w *settingsWindow) toggleUIMode() {
 	w.applyUIMode()
 	w.update()
 	w.hideInactiveTabControls() // update must not leave other tabs Visible
+	w.showPageActions(w.page)
 	if w.host != 0 {
-		winapi.InvalidateRect(w.host, true)
 		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+	}
+	if w.hwnd != 0 {
+		winapi.RedrawWindow(w.hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
 	}
 }
 

@@ -591,7 +591,7 @@ func mustCaptureScreen(t *testing.T, hwnd uintptr, what string) []byte {
 // NOT only PrintWindow. FAIL when PrintWindow looks clean but screen is dirty
 // (the #15 CI blind spot on live Win7). Tight thresholds catch ~1–3% button
 // trails (Обзор/Прослушать); size mismatch is FAIL not silent skip;
-// short-tab maxY<8 → explicit Skip (subtest), never silent soft-out.
+// short-tab maxY<8 → explicit Log SKIP (no t.Run — LockOSThread deadlock), never silent soft-out.
 func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -614,70 +614,75 @@ func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 	}
 	pageCol := trayui.ChromePage()
 
+	// No t.Run: Win32 GUI is LockOSThread; subtests deadlock on ShowWindow/setPage.
+	scrolled := 0
 	for _, page := range pages {
 		tag := "page" + strconv.Itoa(page)
-		t.Run(tag, func(t *testing.T) {
-			w.setPage(page)
-			w.layoutFit()
-			pumpN(8)
-			host := w.host
-			if host == 0 {
-				t.Fatalf("no host")
-			}
-			maxY := max32(0, w.contentH-w.viewH)
-			if maxY < 8 {
-				// Explicit Skip (not silent soft-out): short tab cannot prove scroll smear.
-				t.Skipf("content not tall enough to scroll (maxY=%d); scroll smear N/A on this tab", maxY)
-			}
-			winapi.SetFocus(host)
-			pumpN(5)
-			w.scrollTo(0, 0)
-			pumpN(8)
-			winapi.DwmFlush()
-			baseScreen := mustCaptureScreen(t, host, "screen baseline")
+		w.setPage(page)
+		w.layoutFit()
+		pumpN(8)
+		host := w.host
+		if host == 0 {
+			t.Fatalf("%s: no host", tag)
+		}
+		maxY := max32(0, w.contentH-w.viewH)
+		if maxY < 8 {
+			// Explicit skip (logged) — never silent soft-out at y=0 alone.
+			t.Logf("%s: explicit SKIP scroll smear — content not tall enough (maxY=%d)", tag, maxY)
+			continue
+		}
+		scrolled++
+		winapi.SetFocus(host)
+		pumpN(5)
+		w.scrollTo(0, 0)
+		pumpN(8)
+		winapi.DwmFlush()
+		baseScreen := mustCaptureScreen(t, host, tag+" screen baseline")
 
-			for _, y := range []int32{maxY / 4, maxY / 2, maxY} {
-				w.scrollTo(0, y)
-				pumpN(10)
-				winapi.DwmFlush()
-				scr := mustCaptureScreen(t, host, "screen y="+strconv.Itoa(int(y)))
-				share := pageColorShare(scr, pageCol)
-				// 0.02 was too soft — ghost bands under buttons (~1–3%) still pass.
-				if share < 0.05 {
-					t.Fatalf("y=%d: CaptureScreen pageColorShare=%.3f (ghost/uncovered band under controls)", y, share)
-				}
-				// PrintWindow vs screen: if PW is "clean" (high page share) but
-				// screen collapsed, #15-style false green — hard fail.
-				cw, ch, pwPix, pwOK := winapi.CaptureWindow(host)
-				if pwOK && cw > 0 && ch > 0 && len(pwPix) == len(scr) {
-					pwShare := pageColorShare(pwPix, pageCol)
-					scrShare := share
-					if pwShare >= 0.10 && scrShare < pwShare*0.55 {
-						t.Fatalf("y=%d: PrintWindow clean (share=%.3f) but CaptureScreen dirty (%.3f) — PW≠screen smear", y, pwShare, scrShare)
-					}
-				}
-			}
-			w.scrollTo(0, 0)
+		for _, y := range []int32{maxY / 4, maxY / 2, maxY} {
+			w.scrollTo(0, y)
 			pumpN(10)
 			winapi.DwmFlush()
-			after := mustCaptureScreen(t, host, "screen return")
-			if len(after) != len(baseScreen) {
-				t.Fatalf("return CaptureScreen size %d != baseline %d", len(after), len(baseScreen))
+			scr := mustCaptureScreen(t, host, tag+" screen y="+strconv.Itoa(int(y)))
+			share := pageColorShare(scr, pageCol)
+			// 0.02 was too soft — ghost bands under buttons (~1–3%) still pass.
+			if share < 0.05 {
+				t.Fatalf("%s y=%d: CaptureScreen pageColorShare=%.3f (ghost/uncovered band under controls)", tag, y, share)
 			}
-			diff := pixelDiffRatio(baseScreen, after)
-			shareBase := pageColorShare(baseScreen, pageCol)
-			shareAfter := pageColorShare(after, pageCol)
-			if shareAfter < 0.05 || (shareBase >= 0.10 && shareAfter < shareBase*0.70) {
-				t.Fatalf("return: screen pageColorShare after=%.3f base=%.3f (smear)", shareAfter, shareBase)
+			// PrintWindow vs screen: if PW is "clean" (high page share) but
+			// screen collapsed, #15-style false green — hard fail.
+			cw, ch, pwPix, pwOK := winapi.CaptureWindow(host)
+			if pwOK && cw > 0 && ch > 0 && len(pwPix) == len(scr) {
+				pwShare := pageColorShare(pwPix, pageCol)
+				scrShare := share
+				if pwShare >= 0.10 && scrShare < pwShare*0.55 {
+					t.Fatalf("%s y=%d: PrintWindow clean (share=%.3f) but CaptureScreen dirty (%.3f) — PW≠screen smear", tag, y, pwShare, scrShare)
+				}
 			}
-			// Catch button trails (~1–3% pixels). Old ceiling 0.20–0.25 let them pass.
-			if diff > 0.01 {
-				t.Fatalf("return: CaptureScreen round-trip diff=%.3f (smear/ghost; incl. button trails)", diff)
-			}
-			if why := w.assertPageClear(); why != "" {
-				t.Fatalf("pageClear: %s", why)
-			}
-		})
+		}
+		w.scrollTo(0, 0)
+		pumpN(10)
+		winapi.DwmFlush()
+		after := mustCaptureScreen(t, host, tag+" screen return")
+		if len(after) != len(baseScreen) {
+			t.Fatalf("%s: return CaptureScreen size %d != baseline %d", tag, len(after), len(baseScreen))
+		}
+		diff := pixelDiffRatio(baseScreen, after)
+		shareBase := pageColorShare(baseScreen, pageCol)
+		shareAfter := pageColorShare(after, pageCol)
+		if shareAfter < 0.05 || (shareBase >= 0.10 && shareAfter < shareBase*0.70) {
+			t.Fatalf("%s return: screen pageColorShare after=%.3f base=%.3f (smear)", tag, shareAfter, shareBase)
+		}
+		// Catch button trails (~1–3% pixels). Old ceiling 0.20–0.25 let them pass.
+		if diff > 0.01 {
+			t.Fatalf("%s return: CaptureScreen round-trip diff=%.3f (smear/ghost; incl. button trails)", tag, diff)
+		}
+		if why := w.assertPageClear(); why != "" {
+			t.Fatalf("%s pageClear: %s", tag, why)
+		}
+	}
+	if scrolled < 2 {
+		t.Fatalf("only %d tab(s) tall enough for scroll smear proof; need ≥2", scrolled)
 	}
 }
 

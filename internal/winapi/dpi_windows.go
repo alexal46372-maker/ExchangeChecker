@@ -131,6 +131,7 @@ var (
 
 const (
 	WS_CLIPCHILDREN     = 0x02000000
+	WS_CLIPSIBLINGS     = 0x04000000
 	WS_EX_CONTROLPARENT = 0x00010000
 	SB_HORZ             = 0
 	SB_VERT             = 1

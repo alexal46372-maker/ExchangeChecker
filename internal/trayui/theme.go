@@ -172,18 +172,21 @@ func ColorRefOf(c Color) uint32 {
 // Chrome colours (COLORREF) — light theme constants (CHK-TRAY-51).
 // Active painting / HTML must use Chrome*() helpers so dark theme applies.
 const (
-	Text          = 0x00404040 // body text
+	Text          = 0x001E293B // body text (#1E293B, installer)
 	White         = 0x00FFFFFF
 	Black         = 0x00000000
 	Axis          = 0x00808080
 	Grid          = 0x00E0E0E0
-	Panel         = 0x00F0F0F0 // card panel / page background
-	CardFace      = 0x00F8F8F8 // card without a state
+	Panel         = 0x00F9F5F1 // #F1F5F9 footer/panel (installer bar; was BTNFACE)
+	Page          = 0x00FCFBFA // #FAFBFC content (installer; CHK-TRAY-65)
+	CardFace      = 0x00FFFFFF // card without a state
 	CardFrame     = 0x00A0A0A0
 	CardStripeOff = 0x00C0C0C0
 	RequiredField = 0x00D0D0FF // empty required edit (light red)
-	HeaderRow     = 0x00EEEEEE // HTML th
-	Border        = 0x00999999 // HTML table border
+	HeaderRow     = 0x00EEEEEE // HTML th (CHK-TRAY-56)
+	Border        = 0x00999999 // HTML table border (CHK-TRAY-56)
+	BrandDark     = 0x0044270F // #0F2744 installer brand
+	Accent        = 0x00D97706 // #0677D9 installer accent
 )
 
 // Dark chrome (CHK-TRAY-55): readable text on a dark panel, muted borders.
@@ -214,7 +217,7 @@ func ChromePage() uint32 {
 	if IsDark() {
 		return darkPage
 	}
-	return White
+	return Page
 }
 
 // ChromePanel is the card panel / window client background.
@@ -287,6 +290,23 @@ func ChromeGrid() uint32 {
 		return darkGrid
 	}
 	return Grid
+}
+
+
+// ChromeBrandDark is the installer brand navy (settings header accent).
+func ChromeBrandDark() uint32 {
+	if IsDark() {
+		return darkPanel
+	}
+	return BrandDark
+}
+
+// ChromeAccent is the brand accent (#0677D9 light).
+func ChromeAccent() uint32 {
+	if IsDark() {
+		return StateOK
+	}
+	return Accent
 }
 
 // Chart line colours (history window) — same in both themes (on pale/dark page).

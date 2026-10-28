@@ -255,9 +255,13 @@ type settingsWindow struct {
 	pageParent                       uintptr      // CreateWindow parent while building a page
 	pageSlot                         winapi.RECT  // shared Gap:-1 slot (host coords) for panels
 	pages                            [4]ui.Node   // page roots for SetHidden on switch (no overlay)
-	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs
+	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs (frame child; fixed)
 	tabPages                         []int        // tab index → page index
 	tabSync                          bool         // ignore TCN_SELCHANGE while syncing
+	tabChromeH                       int32        // fixed tab strip height (px); not scrolled
+	footerTop                        int32        // y of footer bar in client (paint)
+	scrollPos                        [4]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
+	pageActions                      []uintptr    // Test/Cancel/Alarm/Poll — footer, not pageCtl
 	cur                              *[]uintptr   // page of the controls being created
 	connected                        bool         // service session state seen by onSessionState
 	loaded                           bool         // get_config (or a snapshot) loaded at least once
@@ -383,7 +387,7 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 		class = SettingsClass
 	}
 	// client 774×706 (controls up to 755 / 694), clamped to the work area
-	const style = winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | winapi.WS_MINIMIZEBOX
+	const style = winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | winapi.WS_MINIMIZEBOX | winapi.WS_CLIPCHILDREN
 	x, y, ww, wh := settingsRect(style)
 	hwnd, err := createWindowPx(class, title, 0, style, x, y, ww, wh, 0, w.wndProc)
 	if err != nil {
@@ -534,13 +538,16 @@ func (w *settingsWindow) build() {
 		return &ui.GroupBox{Box: g, Child: child}
 	}
 	const cw = 390 // edit / combo boxes
-	// Section tabs (SysTabControl32) on top; page host under tabs is
-	// panel-per-tab only (CHK-TRAY-60). Window-common Export/Import/UIMode
-	// live in the bottom bar (CHK-TRAY-61).
+	// Section tabs (SysTabControl32) are a FRAME child — never under the
+	// scroll host (CHK-TRAY-66: tab chrome must not move with scroll).
+	// Window-common Export/Import/UIMode live in the bottom bar (CHK-TRAY-61).
 	w.cur = nil
 	winapi.InitTooltips() // ICC_WIN95_CLASSES registers SysTabControl32
-	tabH := w.add(wcTabControl, "", 0, winapi.WS_TABSTOP|tcsHotTrack, idSetTabs, 0, 0, 600, 28)
-	w.tabCtl = &ui.Ctl{H: tabH, Kind: ui.Box, W: 600, Hgt: 28, Grow: true, NoShrink: true}
+	w.inBar = true // parent = frame
+	tabH := w.add(wcTabControl, "", 0, winapi.WS_TABSTOP|tcsHotTrack|winapi.WS_CLIPSIBLINGS, idSetTabs, 0, 0, 600, 28)
+	w.inBar = false
+	w.tabCtl = &ui.Ctl{H: tabH, Kind: ui.Box, W: 600, Hgt: settingsTabChromeH, Grow: true, NoShrink: true}
+	delete(w.hostRect, tabH) // belt: never scroll the tab strip
 	w.ensurePagePanels()
 
 	// Bases tab ONLY: profile list + Add / Delete / Clone / Discover (CHK-TRAY-60)
@@ -675,12 +682,18 @@ func (w *settingsWindow) build() {
 			w.barLeft = append(w.barLeft, barButton{id, width})
 		}
 	}
-	w.cur = &w.pageCtl[0]
+	// Databases page-actions in the footer — NOT pageCtl (hideInactive used
+	// to SW_HIDE them as "leftovers" and layoutFit dropped WS_VISIBLE — bug 3).
+	w.cur = nil
 	button(idSetTest, i18n.KeySetTest, 150, false)
 	button(idSetCancelTest, i18n.KeySetCancelTest, 120, false)
 	button(idSetAlarmTest, i18n.KeyAlarmTest, 150, false)
 	button(idSetPoll, i18n.KeySetPoll, 110, false)
-	w.cur = nil
+	for _, id := range pageActionIDs {
+		if h := w.ctl[id]; h != 0 {
+			w.pageActions = append(w.pageActions, h)
+		}
+	}
 	button(idSetReload, i18n.KeySetReload, 90, false)
 	if w.cfg.mode == traysettings.ReadOnly {
 		button(idSetElevate, i18n.KeySetElevate, 165, false)
@@ -768,6 +781,11 @@ func (w *settingsWindow) post(f func()) {
 
 func (w *settingsWindow) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 	switch msg {
+	case winapi.WM_ERASEBKGND:
+		return w.settingsChromeErase(wp), true
+	case winapi.WM_SIZE:
+		w.layoutFit()
+		return 0, true
 	case msgSetTask:
 		w.qmu.Lock()
 		tasks := w.tasks
@@ -1057,20 +1075,17 @@ func (w *settingsWindow) update() {
 	winapi.EnableWindow(w.ctl[idSetCancelTest], testing)
 	if h := w.ctl[idSetAlarmTest]; h != 0 {
 		hasAlarm := sess.Supported(model.CmdAlarmTest) || sess.Status().Has(model.CapAlarmTest)
-		// bar control is on pageCtl[0] — never SW_SHOW on another tab (overlay)
-		if hasAlarm && w.page == 0 {
-			winapi.ShowWindow(h, winapi.SW_SHOW)
-			admin := w.cfg.mode == traysettings.Admin
-			winapi.EnableWindow(h, admin && !w.busy)
+		// page-action: visibility via showPageActions (not pageCtl leftovers)
+		admin := w.cfg.mode == traysettings.Admin
+		winapi.EnableWindow(h, hasAlarm && admin && !w.busy && w.page == 0)
+		// Keep catalog tip (CHK-TRAY-15); Denied only when the control is
+		// shown to a non-admin (capability present). Hidden → default tip.
+		if w.tips != nil {
 			tip := i18n.KeyAlarmTestTip
-			if !admin {
+			if hasAlarm && !admin {
 				tip = i18n.KeyAlarmTestTipDenied
 			}
-			if w.tips != nil {
-				w.tips.set(h, w.t(tip))
-			}
-		} else {
-			hideWindowTree(h)
+			w.tips.set(h, w.t(tip))
 		}
 	}
 	saved := has && !ed.IsNew
@@ -1127,6 +1142,7 @@ func (w *settingsWindow) update() {
 	w.updateViber()
 	w.updateEmail()
 	w.updateRequired()
+	w.showPageActions(w.page)
 }
 
 func boolPtr(b bool) uintptr {
@@ -1251,6 +1267,10 @@ func (w *settingsWindow) setPage(p int) {
 	if p < 0 || p > pageEmail {
 		return
 	}
+	// remember scroll of the page we leave
+	if w.page >= 0 && w.page < len(w.scrollPos) {
+		w.scrollPos[w.page].x, w.scrollPos[w.page].y = w.scrollX, w.scrollY
+	}
 	w.page = p
 	for i, n := range w.pages {
 		if n != nil {
@@ -1260,12 +1280,18 @@ func (w *settingsWindow) setPage(p int) {
 	w.hideInactiveTabControls()
 	w.syncTabSelection()
 	w.applyUIMode() // lays the page out (relayoutAll)
+	// restore this page's scroll (host only — tabs stay fixed)
+	sx, sy := w.scrollPos[p].x, w.scrollPos[p].y
+	w.scrollSet = false
+	w.scrollTo(sx, sy)
 	w.update()
-	// update() may SW_SHOW page-0 bar controls — clear inactive again
 	w.hideInactiveTabControls()
+	w.showPageActions(w.page)
 	if w.host != 0 {
-		winapi.InvalidateRect(w.host, true)
 		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+	}
+	if w.hwnd != 0 {
+		winapi.RedrawWindow(w.hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
 	}
 }
 

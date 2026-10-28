@@ -61,6 +61,14 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 		if oy+ext[1] > bounds.Bottom {
 			bounds.Bottom = oy + ext[1]
 		}
+		// Scrolled host (CHK-TRAY-66): pagePanel may sit above the client
+		// origin by up to contentH-viewH. Expand the top so a non-zero
+		// scroll does not false-fail "outside the window".
+		if ext[1] > cr.Bottom {
+			if top := oy - (ext[1] - cr.Bottom); top < bounds.Top {
+				bounds.Top = top
+			}
+		}
 	}
 	var cs []laidCtl
 	for _, h := range winapi.Children(hwnd) {

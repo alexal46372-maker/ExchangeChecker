@@ -118,7 +118,7 @@ var winAPIMinVersion = map[string]float64{
 	// user32
 	"CreateIconIndirect": 5.0, "CreatePopupMenu": 5.0, "CreateWindowExW": 5.0, "DefWindowProcW": 5.0,
 	"DestroyIcon": 5.0, "DestroyMenu": 5.0, "DestroyWindow": 5.0, "DispatchMessageW": 5.0,
-	"FindWindowW": 5.0, "FindWindowExW": 5.0, "GetWindowThreadProcessId": 5.0, "GetCursorPos": 5.0, "GetDlgItem": 5.0, "GetMenuItemCount": 5.0,
+	"FindWindowW": 5.0, "FindWindowExW": 5.0, "GetWindowThreadProcessId": 5.0, "GetCursorPos": 5.0, "WindowFromPoint": 5.0, "GetDlgItem": 5.0, "GetMenuItemCount": 5.0,
 	"GetMenuItemInfoW": 5.0, "GetMessageW": 5.0, "GetSubMenu": 5.0, "GetSystemMetrics": 5.0,
 	"GetWindowTextLengthW": 5.0, "GetWindowTextW": 5.0, "InsertMenuItemW": 5.0, "IsWindow": 5.0,
 	"LoadCursorW": 5.0, "PeekMessageW": 5.0, "PostMessageW": 5.0, "PostQuitMessage": 5.0,

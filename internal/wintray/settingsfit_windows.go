@@ -71,7 +71,7 @@ func settingsRectPx(style uint32, cw, ch int32) (x, y, w, h int32) {
 func (w *settingsWindow) createHost() error {
 	w.hostRect = map[uintptr]winapi.RECT{}
 	h, err := createWindowPx(SettingsPageClass, "", winapi.WS_EX_CONTROLPARENT,
-		winapi.WS_CHILD|winapi.WS_VISIBLE|winapi.WS_VSCROLL|winapi.WS_HSCROLL|winapi.WS_CLIPCHILDREN, 0, 0, 10, 10, w.hwnd, w.hostProc)
+		winapi.WS_CHILD|winapi.WS_VISIBLE|winapi.WS_VSCROLL|winapi.WS_HSCROLL|winapi.WS_CLIPCHILDREN|winapi.WS_CLIPSIBLINGS, 0, 0, 10, 10, w.hwnd, w.hostProc)
 	if err != nil {
 		return err
 	}
@@ -83,6 +83,8 @@ func (w *settingsWindow) createHost() error {
 // window and scrolls.
 func (w *settingsWindow) hostProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 	switch msg {
+	case winapi.WM_ERASEBKGND:
+		return contentErase(wp, hwnd), true
 	case winapi.WM_COMMAND:
 		// focus (also by Tab): scroll the control into the view; the
 		// buttons have BS_NOTIFY for BN_SETFOCUS, so their BN_DBLCLK is
@@ -155,12 +157,26 @@ func (w *settingsWindow) scrollTo(x, y int32) {
 		return
 	}
 	w.scrollX, w.scrollY, w.scrollSet = x, y, true
+	if w.page >= 0 && w.page < len(w.scrollPos) {
+		w.scrollPos[w.page].x, w.scrollPos[w.page].y = x, y
+	}
+	// Move children from unscrolled hostRect; never touch the frame tab strip
+	// (tabs are not in hostRect). Then force a full child repaint — MoveWindow
+	// alone left ghosts/overlap on Win7 (CHK-TRAY-66).
 	for h, r := range w.hostRect {
+		if h == 0 || !winapi.IsWindow(h) {
+			continue
+		}
+		if w.ctl[idSetTabs] != 0 && h == w.ctl[idSetTabs] {
+			continue
+		}
 		winapi.MoveWindow(h, r.Left-x, r.Top-y, r.Right-r.Left, r.Bottom-r.Top)
 	}
 	winapi.SetScroll(w.host, winapi.SB_VERT, w.contentH, w.viewH, y)
 	winapi.SetScroll(w.host, winapi.SB_HORZ, w.contentW, w.viewW, x)
-	winapi.InvalidateRect(w.host, true)
+	if w.host != 0 {
+		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+	}
 }
 
 // ScrollPos is the page scroll position in pixels (test hook).
@@ -201,13 +217,37 @@ func (w *settingsWindow) layoutFit() {
 	rc := winapi.GetClientRect(w.hwnd)
 	cw, ch := rc.Right-rc.Left, rc.Bottom-rc.Top
 	m, gap, bh := px(gridMargin), px(gridGap), px(gridButtonH)
+	// Fixed tab chrome (frame child) — never inside the scroll host.
+	tabH := px(settingsTabChromeH)
+	if w.ctl[idSetTabs] != 0 {
+		// brand accent (3px) + pad above tabs
+		winapi.MoveWindow(w.ctl[idSetTabs], m, 3+gap/2, cw-2*m, tabH)
+		winapi.ShowWindow(w.ctl[idSetTabs], winapi.SW_SHOWNA)
+		delete(w.hostRect, w.ctl[idSetTabs])
+	}
+	w.tabChromeH = 3 + gap/2 + tabH + gap/2
 	type btn struct {
 		h     uintptr
 		width int32
 	}
 	var left, right []btn
+	isPageAct := func(id int32) bool {
+		for _, a := range pageActionIDs {
+			if a == id {
+				return true
+			}
+		}
+		return false
+	}
 	for _, b := range w.barLeft {
-		if h := w.ctl[b.id]; h != 0 && winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0 {
+		h := w.ctl[b.id]
+		if h == 0 {
+			continue
+		}
+		// Always reserve layout slots for page-actions on Databases so a
+		// later showPageActions can paint them (CHK-TRAY-67).
+		vis := winapi.WindowStyle(h)&winapi.WS_VISIBLE != 0
+		if vis || (w.page == 0 && isPageAct(b.id)) {
 			left = append(left, btn{h, px(b.width)})
 		}
 	}
@@ -244,25 +284,70 @@ func (w *settingsWindow) layoutFit() {
 	if barH > ch/2 {
 		barH = ch / 2
 	}
-	top := ch - barH
-	winapi.MoveWindow(w.ctl[idSetStatus], m, top+gap, cw-2*m, px(40))
-	by := top + gap + px(40) + gap
+	footer := ch - barH
+	w.footerTop = footer
+	winapi.MoveWindow(w.ctl[idSetStatus], m, footer+gap, cw-2*m, px(40))
+	by := footer + gap + px(40) + gap
 	for _, s := range spots {
 		winapi.MoveWindow(s.b.h, s.x, by+s.row*(bh+gap), s.b.width, bh)
 	}
-	x = cw - m
+	// Right buttons: wrap to extra rows when they do not fit on one line
+	// (144 dpi EN Export/Import/Mode/Save/Close overflowed left of client).
+	rx, rrow := cw-m, row
 	for i := len(right) - 1; i >= 0; i-- {
-		x -= right[i].width
-		winapi.MoveWindow(right[i].h, x, by+row*(bh+gap), right[i].width, bh)
-		x -= gap
+		if rx < m+right[i].width && rx < cw-m {
+			rrow++
+			rx = cw - m
+		}
+		rx -= right[i].width
+		if rx < m {
+			rx = m
+		}
+		winapi.MoveWindow(right[i].h, rx, by+rrow*(bh+gap), right[i].width, bh)
+		rx -= gap
 	}
-	winapi.MoveWindow(w.host, 0, 0, cw, top)
+	if rrow > row {
+		rows = rrow + 1
+		barH = px(setBarH) + (rows-1)*(bh+gap)
+		if barH > ch/2 {
+			barH = ch / 2
+		}
+		footer = ch - barH
+		w.footerTop = footer
+		winapi.MoveWindow(w.ctl[idSetStatus], m, footer+gap, cw-2*m, px(40))
+		by = footer + gap + px(40) + gap
+		// re-place left spots for the new footer top
+		for _, s := range spots {
+			winapi.MoveWindow(s.b.h, s.x, by+s.row*(bh+gap), s.b.width, bh)
+		}
+		// re-place right on the updated by
+		rx, rrow = cw-m, row
+		for i := len(right) - 1; i >= 0; i-- {
+			if rx < m+right[i].width && rx < cw-m {
+				rrow++
+				rx = cw - m
+			}
+			rx -= right[i].width
+			if rx < m {
+				rx = m
+			}
+			winapi.MoveWindow(right[i].h, rx, by+rrow*(bh+gap), right[i].width, bh)
+			rx -= gap
+		}
+	}
+	// Middle scroll host only (between fixed tabs and fixed footer).
+	hostTop := w.tabChromeH
+	hostH := footer - hostTop
+	if hostH < 40 {
+		hostH = 40
+	}
+	winapi.MoveWindow(w.host, 0, hostTop, cw, hostH)
 	w.contentW, w.contentH = px(setContentW), px(setContentH)
 	if w.pageW > 0 { // laid out by the framework (phase 11)
 		w.contentW, w.contentH = w.pageW, w.pageH
 	}
 	// the client of the host without its scroll bars
-	w.viewW, w.viewH = cw, top
+	w.viewW, w.viewH = cw, hostH
 	if w.contentH > w.viewH {
 		w.viewW -= winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
 	}
@@ -273,8 +358,32 @@ func (w *settingsWindow) layoutFit() {
 		}
 	}
 	hostExtent[w.host] = [2]int32{w.contentW, w.contentH}
+	// Drop stale hostRect entries (e.g. pre-chrome leftovers) then re-sync
+	// panels against the final host size so scroll 0 ⇒ child y ≥ 0.
+	for h := range w.hostRect {
+		if h == w.host {
+			delete(w.hostRect, h)
+			continue
+		}
+		isPan := false
+		for _, pan := range w.pagePanel {
+			if pan == h {
+				isPan = true
+				break
+			}
+		}
+		if !isPan {
+			delete(w.hostRect, h)
+		}
+	}
 	w.scrollSet = false
-	w.scrollTo(0, 0)
+	sx, sy := int32(0), int32(0)
+	if w.page >= 0 && w.page < len(w.scrollPos) {
+		sx, sy = w.scrollPos[w.page].x, w.scrollPos[w.page].y
+	}
+	// syncPagePanels writes hostRect[pan]=slot and scrollTo's
+	w.scrollX, w.scrollY = sx, sy
+	w.syncPagePanels()
 }
 
 // barButton is a button of the bottom row and its grid width.
@@ -288,12 +397,9 @@ type barButton struct {
 // pagePanel[0]; Export/Import/UIMode are window-common bar buttons
 // (CHK-TRAY-61). Pages share one slot (Col Gap:-1). SW_HIDE(panel) stops ghosts.
 func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
+	// Tabs are frame chrome (layoutFit); host content is pages only.
 	body := &ui.Pad{Top: 6, Child: &ui.Col{Gap: -1, Items: pages}}
-	var child ui.Node = body
-	if w.tabCtl != nil {
-		child = &ui.Col{Gap: ui.P4, Items: []ui.Node{w.tabCtl, body}}
-	}
-	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8, Child: child}
+	w.root = &ui.Pad{Left: ui.P12, Top: ui.P4, Right: ui.P12, Bottom: ui.P8, Child: body}
 	w.rootM = m
 	syncCues(w.root)
 	w.ctlOf = map[uintptr]*ui.Ctl{}
@@ -332,7 +438,7 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	w.syncPagePanels()
-	x, y, ww, wh := settingsRectPx(style, min32(max32(w.pageW, allW), maxW), w.pageH+px(setBarH))
+	x, y, ww, wh := settingsRectPx(style, min32(max32(w.pageW, allW), maxW), w.pageH+px(setBarH)+px(settingsTabChromeH)+px(gridGap))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 }
 

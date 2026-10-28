@@ -953,6 +953,10 @@ Wizard Win32 (страницы):
 
 202. **Страница «Уведомления e-mail» (фаза 13a, `CHK-TRAY-64`, контракт feat/svc-email):** вкладка только при capability `email` и экспертном режиме (простой скрывает, как Viber). Поля: enabled, host, port, tlsMode (none/starttls/tls), from, recipients[{id,addr,name}], events, schedule, hasPassword (read-only). Сохранение — save_settings + smtpPassword/clearSmtpPassword (write-only). **tlsMode UI:** none → поле пароля выключено (AUTH нет); starttls/tls → пароль обязателен при enabled; AUTH username = From. «Тест» — email_test {recipientId?, addr?} async. Экспорт/импорт — includeEmailRecipients / containsEmailRecipients без пароля. Свой pagePanel. Tests: `TestCHK_TRAY_64_*`.
 
+
+203. **Современный chrome окна настроек (фаза 13c, `CHK-TRAY-65`/`66`/`67`):** взять installer GUI (CHK-SETUP-14) как образец. Frame WS_CLIPCHILDREN; палитра #0F2744/#FAFBFC/#F1F5F9/#0677D9; Segoe UI; свои кисти erase/ctlcolor (не COLOR_BTNFACE); тёмная тема CHK-TRAY-55. **Верх фиксирован:** SysTabControl32 — прямой потомок frame, никогда не в hostRect. **Низ фиксирован:** footer bar (#F1F5F9 + линия) — status + Save/Close/Export/Import/Simple|Expert. **Середина:** scroll host (WS_CLIPCHILDREN|WS_CLIPSIBLINGS), pagePanel на вкладку, scroll pos на вкладку; scroll — MoveWindow + RedrawWindow(RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN|RDW_UPDATENOW). Test/Cancel/Alarm/Poll — footer page-actions через `showPageActions(page)`, не pageCtl leftovers. IA вкладок Базы/Общие/Viber/Email + Simple/Expert без смены. Tests: `TestCHK_TRAY_65_*`, `TestCHK_TRAY_66_*`, `TestCHK_TRAY_67_*`; расширяют 42/47/60/61.
+
+
 ## 14. Что не делаем в v1
 
 - Веб-морда, Electron, WPF, tray на сторонних UI-kit

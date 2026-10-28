@@ -45,8 +45,6 @@ const (
 
 	LVM_GETITEMSTATE = 0x102C // LVM_FIRST+44
 
-	LVN_ITEMCHANGED = 0xFFFFFF9B // (uint32)(-101)
-
 	LVCF_FMT   = 0x1
 	LVCF_WIDTH = 0x2
 	LVCF_TEXT  = 0x4
@@ -263,9 +261,6 @@ type NMLISTVIEW struct {
 	PtAction  POINT
 	Param     uintptr
 }
-
-// POINT is a Win32 POINT.
-type POINT struct{ X, Y int32 }
 
 // ReadNMLISTVIEW copies NMLISTVIEW at lp.
 func ReadNMLISTVIEW(lp uintptr) NMLISTVIEW {

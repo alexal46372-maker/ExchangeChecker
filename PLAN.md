@@ -958,7 +958,7 @@ Wizard Win32 (страницы):
 
 
 
-204. **Глобальный erase/redraw трея (фаза 13d, `CHK-TRAY-68`/`69`/`70`):** катастрофический smear/ghost на Win7 при scroll/MessageBox во всех tray GUI (кроме installer). Один контракт: `MoveWindowNoRedraw` в scroll-batch (settingsfit + winscroll), затем `eraseRepaint` (InvalidateRect+RedrawWindow RDW_INVALIDATE|ERASE|ALLCHILDREN|UPDATENOW); опционально WM_SETREDRAW вокруг batch; запрет ScrollWindow; ScrollHost WS_CLIPCHILDREN|WS_CLIPSIBLINGS + contentErase(page brush); ensureClass Background=0; persistent ensureChromeBrushes; contentCtlColor page brush для STATIC контента; ask()/MessageBox → eraseRepaint(frame+host). Installer без изменений. Tests: `TestCHK_TRAY_68_*`, `TestCHK_TRAY_69_*`, `TestCHK_TRAY_70_*`; harden CHK-TRAY-66 (source-grep ≠ smear proof).
+204. **Глобальный erase/redraw трея (фаза 13d, `CHK-TRAY-68`/`69`/`70`):** катастрофический smear/ghost на Win7 при scroll/MessageBox во всех tray GUI (кроме installer). Один контракт: `MoveWindowNoRedraw` (`SetWindowPos`|`SWP_NOREDRAW`) в scroll-batch (settingsfit + winscroll), затем `eraseRepaint` (InvalidateRect+RedrawWindow RDW_INVALIDATE|ERASE|ALLCHILDREN|UPDATENOW); опционально WM_SETREDRAW вокруг batch; запрет ScrollWindow; ScrollHost WS_CLIPCHILDREN|WS_CLIPSIBLINGS + contentErase(page brush); ensureClass Background=0; persistent ensureChromeBrushes; contentCtlColor page brush для STATIC контента; ask()/MessageBox → eraseRepaint(frame+host). Installer без изменений. Tests: `TestCHK_TRAY_68_*`, `TestCHK_TRAY_69_*`, `TestCHK_TRAY_70_*`; harden CHK-TRAY-66 (source-grep ≠ smear proof).
 
 
 ## 14. Что не делаем в v1

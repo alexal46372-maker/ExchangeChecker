@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -121,9 +122,22 @@ func TestCHK_TRAY_68_GlobalEraseRedrawContract(t *testing.T) {
 	if !bytes.Contains(shell, []byte("MoveWindowNoRedraw")) {
 		t.Fatal("winapi.MoveWindowNoRedraw missing")
 	}
-	if !bytes.Contains(shell, []byte(", 0)")) {
-		// bRepaint=FALSE
-		t.Fatal("MoveWindowNoRedraw must pass bRepaint=0")
+	if !bytes.Contains(shell, []byte("SetWindowPos")) || !bytes.Contains(shell, []byte("SWP_NOREDRAW")) {
+		t.Fatal("MoveWindowNoRedraw must use SetWindowPos|SWP_NOREDRAW")
+	}
+	// body of MoveWindowNoRedraw must call SetWindowPos with SWP_NOREDRAW
+	s := string(shell)
+	i := strings.Index(s, "func MoveWindowNoRedraw")
+	if i < 0 {
+		t.Fatal("MoveWindowNoRedraw func missing")
+	}
+	end := strings.Index(s[i+1:], "\nfunc ")
+	body := s[i:]
+	if end >= 0 {
+		body = s[i : i+1+end]
+	}
+	if !strings.Contains(body, "SetWindowPos") || !strings.Contains(body, "SWP_NOREDRAW") {
+		t.Fatal("MoveWindowNoRedraw body must call SetWindowPos(...SWP_NOREDRAW)")
 	}
 }
 
@@ -143,9 +157,11 @@ func minInt(a, b int) int {
 	return b
 }
 
-// TestCHK_TRAY_69_SettingsScrollSmear — CaptureWindow of host/pagePanel
-// after multi-step scroll on Databases + General must stay stable (Alex
-// photo AC: no diagonal/vertical ghost trails). Source-grep is NOT proof.
+// TestCHK_TRAY_69_SettingsScrollSmear — Alex photo AC: CaptureWindow host
+// baseline at y=0 → scroll mid/max/steps → return y=0 → CaptureWindow ≈
+// baseline (same-pos erase idempotency alone is insufficient: two smeared
+// frames can be equal). Capture fail on Windows CI = FAIL; else Skip.
+// Hard-fail low pageColorShare on the returned frame.
 func TestCHK_TRAY_69_SettingsScrollSmear(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -159,68 +175,47 @@ func TestCHK_TRAY_69_SettingsScrollSmear(t *testing.T) {
 	w := openChromeSettings(t, app, i18n.RU, 96, false)
 	defer w.close()
 
-	assertHostStableAfterScroll := func(tag string, page int) {
+	assertScrollReturnBaseline := func(tag string, page int) {
 		t.Helper()
 		w.setPage(page)
 		w.layoutFit()
 		host := w.host
-		pan := w.pagePanel[page]
 		if host == 0 {
 			t.Fatalf("%s: no host", tag)
 		}
 		maxY := max32(0, w.contentH-w.viewH)
-		steps := []int32{0, maxY / 4, maxY / 2, (3 * maxY) / 4, maxY, maxY / 3, 0}
-		var lastHost, lastPan []byte
+		if maxY < 8 {
+			t.Skipf("%s: content not tall enough to scroll (maxY=%d)", tag, maxY)
+		}
+		w.scrollTo(0, 0)
+		pumpN(10)
+		baseline := mustCaptureWindow(t, host, tag+" baseline y=0")
+
+		steps := []int32{maxY / 4, maxY / 2, (3 * maxY) / 4, maxY, maxY / 3}
 		for i, y := range steps {
 			w.scrollTo(0, y)
-			// pump a few messages so UPDATENOW paints settle
 			pumpN(10)
-			cw, ch, hostPix, ok := winapi.CaptureWindow(host)
-			if !ok || cw <= 0 || ch <= 0 || len(hostPix) == 0 {
-				continue // PrintWindow may fail off-screen / headless — HWND path still ran
-			}
-			if lastHost != nil && len(lastHost) == len(hostPix) {
-				// Consecutive captures at SAME scroll pos must be identical
-				// after eraseRepaint; first check: re-capture without scrolling.
-				eraseRepaint(host)
-				pumpN(5)
-				_, _, hostPix2, ok2 := winapi.CaptureWindow(host)
-				if ok2 && len(hostPix2) == len(hostPix) && !bytes.Equal(hostPix, hostPix2) {
-					diff := pixelDiffRatio(hostPix, hostPix2)
-					if diff > 0.02 {
-						t.Fatalf("%s step %d y=%d: host capture unstable after eraseRepaint (diff=%.3f)", tag, i, y, diff)
-					}
-				}
-			}
-			lastHost = hostPix
-			if pan != 0 && winapi.IsWindowVisible(pan) {
-				_, _, panPix, okp := winapi.CaptureWindow(pan)
-				if okp && len(panPix) > 0 {
-					if lastPan != nil && len(lastPan) == len(panPix) {
-						eraseRepaint(pan)
-						pumpN(5)
-						_, _, panPix2, okp2 := winapi.CaptureWindow(pan)
-						if okp2 && len(panPix2) == len(panPix) && !bytes.Equal(panPix, panPix2) {
-							diff := pixelDiffRatio(panPix, panPix2)
-							if diff > 0.02 {
-								t.Fatalf("%s step %d y=%d: pagePanel unstable after eraseRepaint (diff=%.3f)", tag, i, y, diff)
-							}
-						}
-					}
-					lastPan = panPix
-				}
-			}
-			// page-colour dominance on host: smeared text leaves non-page pixels
-			// cascading; a clean host after scroll+erase has a large page-bg share
-			// in the uncovered bands (heuristic; skip if capture tiny).
-			if len(hostPix) >= 4*50*50 {
-				page := trayui.ChromePage()
-				share := pageColorShare(hostPix, page)
-				if share < 0.05 {
-					// very low page share after erase is suspicious (ghost fill)
-					t.Logf("%s step %d: page-color share=%.3f (informational)", tag, i, share)
-				}
-			}
+			// mid-scroll capture must succeed on CI (proves path ran); no
+			// baseline compare here — smear proof is return-to-zero below.
+			_ = mustCaptureWindow(t, host, tag+" step "+strconv.Itoa(i)+" y="+strconv.FormatInt(int64(y), 10))
+		}
+
+		w.scrollTo(0, 0)
+		pumpN(10)
+		after := mustCaptureWindow(t, host, tag+" return y=0")
+		if len(after) != len(baseline) {
+			t.Fatalf("%s: return capture size %d != baseline %d", tag, len(after), len(baseline))
+		}
+		diff := pixelDiffRatio(baseline, after)
+		if diff > 0.02 {
+			t.Fatalf("%s: host after scroll round-trip != baseline (diff=%.3f); smear/ghost", tag, diff)
+		}
+		pageCol := trayui.ChromePage()
+		shareBase := pageColorShare(baseline, pageCol)
+		shareAfter := pageColorShare(after, pageCol)
+		// Uncovered host band is page-coloured; collapse vs baseline = ghost fill.
+		if shareAfter+0.05 < shareBase || shareAfter < 0.05 {
+			t.Fatalf("%s: pageColorShare after=%.3f baseline=%.3f (uncovered-band/ghost)", tag, shareAfter, shareBase)
 		}
 		if why := w.assertPageClear(); why != "" {
 			t.Fatalf("%s pageClear: %s", tag, why)
@@ -230,13 +225,15 @@ func TestCHK_TRAY_69_SettingsScrollSmear(t *testing.T) {
 		}
 	}
 
-	assertHostStableAfterScroll("Databases", 0)
-	assertHostStableAfterScroll("General", 1)
+	assertScrollReturnBaseline("Databases", 0)
+	assertScrollReturnBaseline("General", 1)
 }
 
-// TestCHK_TRAY_70_ModalOverSettingsSmear — discard MessageBox must not
-// leave parent settings content smeared; ask() forces eraseRepaint of
-// frame + host during/after the modal.
+// TestCHK_TRAY_70_ModalOverSettingsSmear — product ask() must eraseRepaint
+// frame+host AFTER the modal returns. The test must NOT call eraseRepaint
+// itself beforehand; proof is CaptureWindow immediately after ask (and
+// discardOK) vs pre-modal baseline. «During» is not asserted (confirm
+// stub cannot honestly see parent under a real MessageBox).
 func TestCHK_TRAY_70_ModalOverSettingsSmear(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -249,22 +246,17 @@ func TestCHK_TRAY_70_ModalOverSettingsSmear(t *testing.T) {
 	w.setPage(0)
 	w.layoutFit()
 	w.scrollTo(0, max32(0, w.contentH-w.viewH)/2)
+	pumpN(10)
 
-	var duringHost []byte
-	var duringOK bool
+	baseline := mustCaptureWindow(t, w.host, "pre-modal host")
+
 	w.cfg.confirm = func(owner uintptr, text, caption string) bool {
 		if owner != w.hwnd {
 			t.Errorf("confirm owner %#x want settings %#x", owner, w.hwnd)
 		}
-		if !strings.Contains(text, "Отмен") && !strings.Contains(strings.ToLower(caption), "exchange") {
-			// RU discard prompt; caption is app name — either is fine
-			_ = text
-		}
-		// parent must be erase-able while modal is "up"
-		eraseRepaint(w.hwnd)
-		eraseRepaint(w.host)
-		pumpN(5)
-		_, _, duringHost, duringOK = winapi.CaptureWindow(w.host)
+		_ = text
+		_ = caption
+		// Do NOT eraseRepaint here — product ask() must do it after return.
 		return false // «Нет»
 	}
 
@@ -272,19 +264,37 @@ func TestCHK_TRAY_70_ModalOverSettingsSmear(t *testing.T) {
 	if ok {
 		t.Fatal("ask returned true (confirm stub said No)")
 	}
-	pumpN(10)
-	// after return: forced redraw in ask() — host capture must be stable
-	eraseRepaint(w.hwnd)
-	eraseRepaint(w.host)
 	pumpN(5)
-	_, _, after, okA := winapi.CaptureWindow(w.host)
-	if duringOK && okA && len(duringHost) == len(after) && len(after) > 0 {
-		diff := pixelDiffRatio(duringHost, after)
-		if diff > 0.05 {
-			t.Fatalf("host smeared across modal: during vs after diff=%.3f", diff)
-		}
+	// Immediate capture: product ask() already ran eraseRepaint(frame+host).
+	after := mustCaptureWindow(t, w.host, "post-ask host")
+	if len(after) != len(baseline) {
+		t.Fatalf("post-ask capture size %d != baseline %d", len(after), len(baseline))
 	}
-	// second path via discardOK with dirty form
+	diff := pixelDiffRatio(baseline, after)
+	if diff > 0.05 {
+		t.Fatalf("host smeared after modal: vs pre-modal baseline diff=%.3f", diff)
+	}
+
+	// Source contract: ask() body must eraseRepaint frame+host (no test call).
+	askSrc, err := os.ReadFile("settings_windows.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := string(askSrc)
+	ai := strings.Index(as, "func (w *settingsWindow) ask(")
+	if ai < 0 {
+		t.Fatal("ask() missing")
+	}
+	aend := strings.Index(as[ai+1:], "\nfunc ")
+	abody := as[ai:]
+	if aend >= 0 {
+		abody = as[ai : ai+1+aend]
+	}
+	if !strings.Contains(abody, "eraseRepaint(w.hwnd)") || !strings.Contains(abody, "eraseRepaint(w.host)") {
+		t.Fatal("ask() must eraseRepaint(frame+host) after confirm returns")
+	}
+
+	// discardOK path — still no eraseRepaint in the confirm stub.
 	w.set(idSetName, "smear-edit")
 	w.readForm()
 	if !w.ed.Unsaved() {
@@ -293,8 +303,9 @@ func TestCHK_TRAY_70_ModalOverSettingsSmear(t *testing.T) {
 	calls := 0
 	w.cfg.confirm = func(owner uintptr, text, caption string) bool {
 		calls++
-		eraseRepaint(w.hwnd)
-		eraseRepaint(w.host)
+		_ = owner
+		_ = text
+		_ = caption
 		return false
 	}
 	if w.discardOK() {
@@ -302,6 +313,14 @@ func TestCHK_TRAY_70_ModalOverSettingsSmear(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("confirm calls=%d want 1", calls)
+	}
+	pumpN(5)
+	after2 := mustCaptureWindow(t, w.host, "post-discardOK host")
+	if len(after2) == len(baseline) {
+		diff2 := pixelDiffRatio(baseline, after2)
+		if diff2 > 0.05 {
+			t.Fatalf("host smeared after discardOK: vs baseline diff=%.3f", diff2)
+		}
 	}
 	if why := w.assertPageClear(); why != "" {
 		t.Fatalf("pageClear after modal: %s", why)
@@ -338,6 +357,22 @@ func pageColorShare(bgra []byte, page uint32) float64 {
 	}
 	return float64(match) / float64(n)
 }
+
+
+// mustCaptureWindow CaptureWindow's hwnd or hard-fails on Windows CI /
+// explicitly Skips when capture is unavailable locally.
+func mustCaptureWindow(t *testing.T, hwnd uintptr, what string) []byte {
+	t.Helper()
+	cw, ch, pix, ok := winapi.CaptureWindow(hwnd)
+	if !ok || cw <= 0 || ch <= 0 || len(pix) == 0 {
+		if os.Getenv("GITHUB_ACTIONS") != "" {
+			t.Fatalf("%s: CaptureWindow failed on Windows CI (cw=%d ch=%d ok=%v)", what, cw, ch, ok)
+		}
+		t.Skipf("%s: CaptureWindow unavailable (not CI)", what)
+	}
+	return pix
+}
+
 
 // pumpN drains up to n pending UI messages.
 func pumpN(n int) {

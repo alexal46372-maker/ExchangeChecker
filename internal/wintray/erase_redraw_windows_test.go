@@ -381,11 +381,12 @@ func TestCHK_TRAY_70_ModalOverSettingsSmear(t *testing.T) {
 	}
 	pumpN(5)
 	after2 := mustCaptureWindow(t, w.host, "post-discardOK host")
-	if len(after2) == len(baseline) {
-		diff2 := pixelDiffRatio(baseline, after2)
-		if diff2 > 0.05 {
-			t.Fatalf("host smeared after discardOK: vs baseline diff=%.3f", diff2)
-		}
+	if len(after2) != len(baseline) {
+		t.Fatalf("post-discardOK capture size %d != baseline %d", len(after2), len(baseline))
+	}
+	diff2 := pixelDiffRatio(baseline, after2)
+	if diff2 > 0.05 {
+		t.Fatalf("host smeared after discardOK: vs baseline diff=%.3f", diff2)
 	}
 	if why := w.assertPageClear(); why != "" {
 		t.Fatalf("pageClear after modal: %s", why)
@@ -537,7 +538,25 @@ func TestCHK_TRAY_71_PageHostEraseContract(t *testing.T) {
 	if !bytes.Contains(read("settings_chrome_windows.go"), []byte("func contentPaint")) {
 		t.Fatal("contentPaint missing")
 	}
+	// relayoutAll / syncPagePanels must use eraseRepaint (ERASENOW), not a
+	// RedrawWindow flag set that omits RDW_ERASENOW.
+	if !strings.Contains(fit, "eraseRepaint(w.host)") {
+		t.Fatal("relayoutAll must eraseRepaint(w.host) with eraseRedrawFlags/ERASENOW")
+	}
+	if strings.Count(fit, "eraseRepaint(pan)") < 1 {
+		t.Fatal("settingsfit must eraseRepaint(pan) (scrollTo and/or syncPagePanels)")
+	}
+	for _, line := range strings.Split(fit, "\n") {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "//") {
+			continue
+		}
+		if strings.Contains(trim, "RedrawWindow(") && strings.Contains(trim, "RDW_ERASE") && !strings.Contains(trim, "RDW_ERASENOW") && !strings.Contains(trim, "eraseRedrawFlags") {
+			t.Fatalf("settingsfit RedrawWindow erase path missing ERASENOW: %s", trim)
+		}
+	}
 }
+
 
 // bringSettingsOnScreen places the settings frame on-screen topmost so
 // CaptureScreen (BitBlt) sees real pixels — PrintWindow alone masked #15.
@@ -568,9 +587,10 @@ func mustCaptureScreen(t *testing.T, hwnd uintptr, what string) []byte {
 }
 
 // TestCHK_TRAY_72_AllTabsScrollScreenSmear — scroll every settings tab
-// (Databases/General/Viber/Email); proof is CaptureScreen BitBlt, NOT only
-// PrintWindow. FAIL when PrintWindow looks clean but screen is dirty
-// (the #15 CI blind spot on live Win7).
+// (Databases/General/Viber/Email — all 4 hard); proof is CaptureScreen BitBlt,
+// NOT only PrintWindow. FAIL when PrintWindow looks clean but screen is dirty
+// (the #15 CI blind spot on live Win7). Tight thresholds catch ~1–3% button
+// trails (Обзор/Прослушать); size mismatch is FAIL not silent skip.
 func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -587,8 +607,9 @@ func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 	defer undo()
 
 	pages := chromePages(w)
-	if len(pages) < 3 {
-		t.Fatalf("need ≥3 tabs, got %v", pages)
+	// CapEmail forced by openChromeSettings — all 4 tabs hard (no ≥3 soft-out).
+	if len(pages) != 4 {
+		t.Fatalf("need exactly 4 tabs (Databases/General/Viber/Email), got %v", pages)
 	}
 	pageCol := trayui.ChromePage()
 
@@ -603,8 +624,9 @@ func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 		}
 		maxY := max32(0, w.contentH-w.viewH)
 		if maxY < 8 {
-			// still exercise erase path at y=0 / small nudge
-			maxY = 0
+			// Explicit fail — soft-continuing at y=0 alone does not prove scroll smear
+			// (button trails under Обзор/Прослушать and analogs).
+			t.Fatalf("%s: content not tall enough to scroll (maxY=%d); cannot prove smear", tag, maxY)
 		}
 		winapi.SetFocus(host)
 		pumpN(5)
@@ -612,23 +634,16 @@ func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 		pumpN(8)
 		winapi.DwmFlush()
 		baseScreen := mustCaptureScreen(t, host, tag+" screen baseline")
-		basePrint, _, _, _ := func() ([]byte, int32, int32, bool) {
-			cw, ch, pix, ok := winapi.CaptureWindow(host)
-			return pix, cw, ch, ok
-		}()
-		_ = basePrint
 
 		for _, y := range []int32{maxY / 4, maxY / 2, maxY} {
-			if maxY == 0 && y != 0 {
-				continue
-			}
 			w.scrollTo(0, y)
 			pumpN(10)
 			winapi.DwmFlush()
 			scr := mustCaptureScreen(t, host, tag+" screen y="+strconv.Itoa(int(y)))
 			share := pageColorShare(scr, pageCol)
-			if share < 0.02 {
-				t.Fatalf("%s y=%d: CaptureScreen pageColorShare=%.3f (ghost/uncovered band)", tag, y, share)
+			// 0.02 was too soft — ghost bands under buttons (~1–3%) still pass.
+			if share < 0.05 {
+				t.Fatalf("%s y=%d: CaptureScreen pageColorShare=%.3f (ghost/uncovered band under controls)", tag, y, share)
 			}
 			// PrintWindow vs screen: if PW is "clean" (high page share) but
 			// screen collapsed, #15-style false green — hard fail.
@@ -636,7 +651,7 @@ func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 			if pwOK && cw > 0 && ch > 0 && len(pwPix) == len(scr) {
 				pwShare := pageColorShare(pwPix, pageCol)
 				scrShare := share
-				if pwShare >= 0.15 && scrShare < pwShare*0.4 {
+				if pwShare >= 0.10 && scrShare < pwShare*0.55 {
 					t.Fatalf("%s y=%d: PrintWindow clean (share=%.3f) but CaptureScreen dirty (%.3f) — PW≠screen smear", tag, y, pwShare, scrShare)
 				}
 			}
@@ -645,16 +660,18 @@ func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 		pumpN(10)
 		winapi.DwmFlush()
 		after := mustCaptureScreen(t, host, tag+" screen return")
-		if len(after) == len(baseScreen) {
-			diff := pixelDiffRatio(baseScreen, after)
-			shareBase := pageColorShare(baseScreen, pageCol)
-			shareAfter := pageColorShare(after, pageCol)
-			if shareAfter < 0.02 || (shareBase >= 0.15 && shareAfter < shareBase*0.45) {
-				t.Fatalf("%s return: screen pageColorShare after=%.3f base=%.3f (smear)", tag, shareAfter, shareBase)
-			}
-			if diff > 0.22 {
-				t.Fatalf("%s return: CaptureScreen round-trip diff=%.3f (smear/ghost)", tag, diff)
-			}
+		if len(after) != len(baseScreen) {
+			t.Fatalf("%s: return CaptureScreen size %d != baseline %d", tag, len(after), len(baseScreen))
+		}
+		diff := pixelDiffRatio(baseScreen, after)
+		shareBase := pageColorShare(baseScreen, pageCol)
+		shareAfter := pageColorShare(after, pageCol)
+		if shareAfter < 0.05 || (shareBase >= 0.10 && shareAfter < shareBase*0.70) {
+			t.Fatalf("%s return: screen pageColorShare after=%.3f base=%.3f (smear)", tag, shareAfter, shareBase)
+		}
+		// Catch button trails (~1–3% pixels). Old ceiling 0.20–0.25 let them pass.
+		if diff > 0.01 {
+			t.Fatalf("%s return: CaptureScreen round-trip diff=%.3f (smear/ghost; incl. button trails)", tag, diff)
 		}
 		if why := w.assertPageClear(); why != "" {
 			t.Fatalf("%s pageClear: %s", tag, why)
@@ -663,9 +680,10 @@ func TestCHK_TRAY_72_AllTabsScrollScreenSmear(t *testing.T) {
 }
 
 // TestCHK_TRAY_73_UncoverScreenRepaint — foreign TOPMOST window covers the
-// settings host then is destroyed; product must repaint via WM_PAINT/
-// erase path without the test calling eraseRepaint. CaptureScreen proof
-// on every tab. Also exercises InvalidateRect(erase) uncover path.
+// settings host then is DestroyWindow'd (primary uncover proof); product must
+// repaint via WM_PAINT/erase without the test calling eraseRepaint.
+// InvalidateRect(erase) is secondary only — not a substitute for DestroyWindow.
+// CaptureScreen on all 4 tabs; size mismatch FAIL; tight diff catches button trails.
 func TestCHK_TRAY_73_UncoverScreenRepaint(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -688,7 +706,12 @@ func TestCHK_TRAY_73_UncoverScreenRepaint(t *testing.T) {
 		winapi.DwmFlush()
 	}
 
-	for _, page := range chromePages(w) {
+	pages := chromePages(w)
+	if len(pages) != 4 {
+		t.Fatalf("need exactly 4 tabs for uncover proof, got %v", pages)
+	}
+	pageCol := trayui.ChromePage()
+	for _, page := range pages {
 		tag := "uncover-page" + strconv.Itoa(page)
 		w.setPage(page)
 		w.layoutFit()
@@ -697,52 +720,60 @@ func TestCHK_TRAY_73_UncoverScreenRepaint(t *testing.T) {
 		winapi.DwmFlush()
 		baseline := mustCaptureScreen(t, w.host, tag+" pre")
 
-		// Foreign overlay (not product ask/MessageBox) — covers host.
+		// Primary uncover proof: DestroyWindow foreign TOPMOST overlay.
+		// Do NOT treat InvalidateRect(erase) alone as sufficient «paint» proof
+		// (#15 CI green / live smear). Test must not call eraseRepaint.
 		over, err := winapi.CreateWindowEx(winapi.WS_EX_TOPMOST, "STATIC", "cover",
 			winapi.WS_POPUP|winapi.WS_VISIBLE, 0, 0, 40, 40, 0, 0, winapi.GetModuleHandle())
 		if err != nil || over == 0 {
 			t.Fatalf("%s: overlay create: %v", tag, err)
 		}
 		cover(over)
-		// Destroy overlay — system uncover; do NOT eraseRepaint from the test.
 		winapi.DestroyWindow(over)
 		pumpN(12)
 		winapi.DwmFlush()
 		after := mustCaptureScreen(t, w.host, tag+" post-destroy")
-		if len(after) == len(baseline) {
-			diff := pixelDiffRatio(baseline, after)
-			if diff > 0.20 {
-				t.Fatalf("%s: CaptureScreen after foreign uncover diff=%.3f (ghost; test did not eraseRepaint)", tag, diff)
-			}
+		if len(after) != len(baseline) {
+			t.Fatalf("%s: post-destroy CaptureScreen size %d != baseline %d", tag, len(after), len(baseline))
+		}
+		diff := pixelDiffRatio(baseline, after)
+		shareAfter := pageColorShare(after, pageCol)
+		shareBase := pageColorShare(baseline, pageCol)
+		if shareAfter < 0.05 || (shareBase >= 0.10 && shareAfter < shareBase*0.70) {
+			t.Fatalf("%s: post-destroy pageColorShare after=%.3f base=%.3f (ghost after DestroyWindow uncover)", tag, shareAfter, shareBase)
+		}
+		// Catch button-trail ghosts (~1–3%); old 0.20 ceiling missed them.
+		if diff > 0.01 {
+			t.Fatalf("%s: CaptureScreen after foreign DestroyWindow uncover diff=%.3f (ghost; test did not eraseRepaint)", tag, diff)
 		}
 
-		// InvalidateRect(erase) uncover path — still no test eraseRepaint helper
-		// beyond what the product WM_PAINT/ERASE handlers do when pumped.
+		// Secondary: InvalidateRect(erase) must not make the frame worse —
+		// still not a substitute for DestroyWindow uncover proof above.
 		base2 := mustCaptureScreen(t, w.host, tag+" pre-inv")
 		winapi.InvalidateRect(w.host, true)
 		winapi.InvalidateRect(w.pagePanel[page], true)
 		pumpN(12)
 		winapi.DwmFlush()
 		after2 := mustCaptureScreen(t, w.host, tag+" post-inv")
-		if len(after2) == len(base2) {
-			diff2 := pixelDiffRatio(base2, after2)
-			// after invalidate+pump, frame must stay coherent (not worse smear)
-			share := pageColorShare(after2, trayui.ChromePage())
-			if share < 0.02 {
-				t.Fatalf("%s: after InvalidateRect screen page share=%.3f", tag, share)
-			}
-			if diff2 > 0.25 {
-				t.Fatalf("%s: after InvalidateRect screen diff=%.3f", tag, diff2)
-			}
+		if len(after2) != len(base2) {
+			t.Fatalf("%s: post-inv CaptureScreen size %d != baseline %d", tag, len(after2), len(base2))
+		}
+		diff2 := pixelDiffRatio(base2, after2)
+		share := pageColorShare(after2, pageCol)
+		if share < 0.05 {
+			t.Fatalf("%s: after InvalidateRect screen page share=%.3f", tag, share)
+		}
+		if diff2 > 0.05 {
+			t.Fatalf("%s: after InvalidateRect screen diff=%.3f", tag, diff2)
 		}
 
 		// PW vs screen divergence check at rest
 		_, _, pwPix, pwOK := winapi.CaptureWindow(w.host)
 		scr := mustCaptureScreen(t, w.host, tag+" pw-vs-scr")
 		if pwOK && len(pwPix) == len(scr) {
-			pwShare := pageColorShare(pwPix, trayui.ChromePage())
-			scrShare := pageColorShare(scr, trayui.ChromePage())
-			if pwShare >= 0.15 && scrShare < pwShare*0.4 {
+			pwShare := pageColorShare(pwPix, pageCol)
+			scrShare := pageColorShare(scr, pageCol)
+			if pwShare >= 0.10 && scrShare < pwShare*0.55 {
 				t.Fatalf("%s: PrintWindow clean (%.3f) screen dirty (%.3f)", tag, pwShare, scrShare)
 			}
 		}

@@ -513,8 +513,7 @@ func (w *settingsWindow) relayoutAll() {
 	w.hideInactiveTabControls()
 	w.layoutFit()
 	if w.host != 0 {
-		winapi.InvalidateRect(w.host, true)
-		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+		eraseRepaint(w.host) // eraseRedrawFlags incl. RDW_ERASENOW (CHK-TRAY-71)
 	}
 }
 
@@ -639,8 +638,7 @@ func (w *settingsWindow) syncPagePanels() {
 		}
 		if i == w.page {
 			winapi.ShowWindow(pan, winapi.SW_SHOWNA)
-			winapi.InvalidateRect(pan, true)
-			winapi.RedrawWindow(pan, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
+			eraseRepaint(pan) // eraseRedrawFlags incl. RDW_ERASENOW (CHK-TRAY-71)
 		} else {
 			hideWindowTree(pan)
 		}

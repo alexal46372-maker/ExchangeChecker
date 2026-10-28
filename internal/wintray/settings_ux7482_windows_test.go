@@ -225,9 +225,12 @@ func TestCHK_TRAY_81_SoundStopLabel(t *testing.T) {
 		if got := winapi.GetWindowText(btn); got != stop {
 			t.Fatalf("%s playing label=%q want %q", tc.name, got, stop)
 		}
+		// previewSound preemptively calls stopSoundPreview (onSoundStop) before start;
+		// assert an *additional* stop on «Остановить».
+		stopsAtPlay := stops
 		w.click(t, tc.id) // «Остановить»
-		if stops != 1 {
-			t.Fatalf("%s onSoundStop calls=%d want 1", tc.name, stops)
+		if stops != stopsAtPlay+1 {
+			t.Fatalf("%s onSoundStop after halt=%d want %d", tc.name, stops, stopsAtPlay+1)
 		}
 		if previewing {
 			t.Fatalf("%s preview still running after stop", tc.name)

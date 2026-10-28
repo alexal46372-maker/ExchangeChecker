@@ -500,7 +500,7 @@ func TestCHK_TRAY_66_LayoutFitWrap144EN(t *testing.T) {
 	if w.tabChromeH <= 0 || w.footerTop <= w.tabChromeH {
 		t.Fatalf("band tabChromeH=%d footerTop=%d", w.tabChromeH, w.footerTop)
 	}
-	ox, oy := winapi.ClientOrigin(w.hwnd)
+	_, oy := winapi.ClientOrigin(w.hwnd)
 	hr := winapi.GetWindowRect(w.host)
 	hostTop := hr.Top - oy
 	hostBot := hr.Bottom - oy
@@ -564,7 +564,7 @@ func checkTestFooter(t *testing.T, w *settingsWindow, tag string) {
 	}
 	r := winapi.GetWindowRect(h)
 	cr := winapi.GetClientRect(w.hwnd)
-	ox, oy := winapi.ClientOrigin(w.hwnd)
+	_, oy := winapi.ClientOrigin(w.hwnd)
 	cl := winapi.RECT{Left: r.Left - ox, Top: r.Top - oy, Right: r.Right - ox, Bottom: r.Bottom - oy}
 	if cl.Left < 0 || cl.Top < 0 || cl.Right > cr.Right || cl.Bottom > cr.Bottom {
 		t.Fatalf("%s: Test rect %v outside client %v", tag, cl, cr)

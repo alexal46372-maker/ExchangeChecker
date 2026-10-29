@@ -79,7 +79,7 @@ func TestCHK_SQL_08_AutoPick(t *testing.T) {
 		{"none", nil, MsgSQLAutoPickNone},
 		{"one", []DiscoveryCandidate{cand(148, "_Node1")}, MsgSQLAutoPickOK},
 		{"margin", []DiscoveryCandidate{cand(102, "_Node1"), cand(148, "_Node1")}, MsgSQLAutoPickOK},
-		{"plans", []DiscoveryCandidate{cand(155, "_Node1"), cand(148, "_Node2")}, MsgSQLAutoPickMultiplePlans},
+		{"plans", []DiscoveryCandidate{cand(155, "_Node1"), cand(148, "_Node2")}, MsgSQLAutoPickOK}, // CHK-SQL-16: merged
 		{"low", []DiscoveryCandidate{cand(117, ""), cand(50, "")}, MsgSQLAutoPickLowScore},
 		{"ambiguous", []DiscoveryCandidate{cand(140, ""), cand(120, "")}, MsgSQLAutoPickAmbiguous},
 		{"tie", []DiscoveryCandidate{cand(150, ""), cand(150, "")}, MsgSQLAutoPickAmbiguous},

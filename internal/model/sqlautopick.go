@@ -1,5 +1,7 @@
 package model
 
+import "strings"
+
 // Phase 9 (PLAN §12 p. 107, CHK-SQL-08): automatic choice of the Discovery
 // candidate. The wizard may apply a candidate without asking only when the
 // result is unambiguous: one exchange plan, a strong best candidate and a
@@ -20,12 +22,17 @@ const (
 const (
 	MsgSQLAutoPickOK            = "sql.autopick_ok"             // applied automatically
 	MsgSQLAutoPickNone          = "sql.autopick_none"           // no candidate
-	MsgSQLAutoPickMultiplePlans = "sql.autopick_multiple_plans" // several exchange plans: the user chooses
+	MsgSQLAutoPickMultiplePlans = "sql.autopick_multiple_plans" // kept for old services (CHK-SQL-16: plans are merged, no longer emitted)
+	MsgSQLAutoPickCountersOK    = "sql.autopick_counters_ok"    // counters-only 1C 8.1 plans applied automatically (CHK-SQL-16)
 	MsgSQLAutoPickCounters      = "sql.autopick_counters"       // best is the counters fallback
 	MsgSQLAutoPickIncomplete    = "sql.autopick_incomplete"     // best lacks send+recv, points, or the search was cut short
 	MsgSQLAutoPickLowScore      = "sql.autopick_low_score"      // best scores below SQLAutoPickMinScore
-	MsgSQLAutoPickAmbiguous     = "sql.autopick_ambiguous"      // runner-up within SQLAutoPickMinMargin (or a tie)
+	MsgSQLAutoPickAmbiguous     = "sql.autopick_ambiguous"      // non-plan runner-up for the same table within SQLAutoPickMinMargin (or a tie)
 )
+
+// CapAutoPickPlans: the service's discover autoPick carries Plans and
+// merges exchange plans (CHK-SQL-16; auto-pick version 2).
+const CapAutoPickPlans = "autopick_plans_v2"
 
 // SQLAutoPick is the auto-pick decision for a Discovery result.
 type SQLAutoPick struct {
@@ -45,6 +52,10 @@ type SQLAutoPick struct {
 	AutoPickMin float64 `json:"autoPickMin"`
 	// Ranks: one entry per candidate, same order as the input list.
 	Ranks []SQLCandidateRank `json:"ranks"`
+	// Plans: index of the chosen candidate of every exchange plan, main
+	// plan first (= Index); empty without _NodeNNN candidates
+	// (CHK-SQL-16, capability CapAutoPickPlans).
+	Plans []int `json:"plans,omitempty"`
 }
 
 // SQLCandidateRank annotates one Discovery candidate for the wizard
@@ -126,15 +137,117 @@ func sqlCandidateRanks(cands []DiscoveryCandidate) []SQLCandidateRank {
 	return out
 }
 
+// planOf is the exchange plan of a candidate: PlanTable, or the times
+// table's plan for a linked candidate whose point table is a _NodeNNN.
+func planOf(c DiscoveryCandidate) string { return c.PlanTable }
+
+// planPref orders candidates inside one plan (CHK-SQL-16): a complete
+// linked/single time candidate first, then counters, then an incomplete
+// time candidate; higher score wins inside each class.
+func planPref(c DiscoveryCandidate) int {
+	switch {
+	case c.Mode != CandidateCounters && !candIncomplete(c):
+		return 0
+	case c.Mode == CandidateCounters:
+		return 1
+	}
+	return 2
+}
+
 // SQLAutoPickFor decides on the candidates of one Discovery run (any
-// order). It never applies when candidates come from more than one
-// exchange plan table, when the best one is the counters fallback, lacks
-// a send or recv column, read no points, carries truncated /
-// no_timestamps / future_dates / single_series hints, scores below
-// SQLAutoPickMinScore or leads by less than SQLAutoPickMinMargin.
+// order; CHK-SQL-08, CHK-SQL-16..18). Candidates of exchange plans
+// (_NodeNNN) are grouped by PlanTable and the best one of each plan is
+// kept (planPref, then score); several plans are merged, not ambiguous:
+// the main plan has the highest score, then more points, then the lower
+// PlanNo; Plans lists the chosen candidate of each plan, main first. A
+// complete time candidate or a counters-only plan (1C 8.1 without time
+// registers, reason autopick_counters_ok) is applied automatically.
+// Without plans the old rules hold (complete, SQLAutoPickMinScore), and
+// ambiguity is reported only when a runner-up for the SAME table is
+// within SQLAutoPickMinMargin.
 func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 	if len(cands) == 0 {
 		return SQLAutoPick{Index: -1, ReasonKey: MsgSQLAutoPickNone, AutoPickMin: SQLAutoPickMinConfidence, Ranks: []SQLCandidateRank{}}
+	}
+	ranks := sqlCandidateRanks(cands)
+	// best candidate per plan
+	perPlan := map[string]int{}
+	var order []string
+	for i, c := range cands {
+		pl := planOf(c)
+		if pl == "" {
+			continue
+		}
+		j, ok := perPlan[pl]
+		if !ok {
+			perPlan[pl] = i
+			order = append(order, pl)
+			continue
+		}
+		o := cands[j]
+		if pc, po := planPref(c), planPref(o); pc < po || pc == po && c.Score > o.Score {
+			perPlan[pl] = i
+		}
+	}
+	margin := func(best int) int {
+		second, has := 0, false
+		for i, c := range cands {
+			if i != best && (!has || c.Score > second) {
+				second, has = c.Score, true
+			}
+		}
+		if !has {
+			return cands[best].Score
+		}
+		return cands[best].Score - second
+	}
+	mk := func(best int) SQLAutoPick {
+		b := cands[best]
+		return SQLAutoPick{Index: best, CandidateKey: b.Key(), Score: b.Score, Margin: margin(best),
+			Confidence: SQLConfidence(b.Score), AutoPickMin: SQLAutoPickMinConfidence, Ranks: ranks}
+	}
+	if len(perPlan) > 0 {
+		idx := make([]int, 0, len(order))
+		for _, pl := range order {
+			idx = append(idx, perPlan[pl])
+		}
+		// main plan first: class, score, points, lower PlanNo, table name
+		less := func(a, b DiscoveryCandidate) bool {
+			if pa, pb := planPref(a), planPref(b); pa != pb {
+				return pa < pb
+			}
+			if a.Score != b.Score {
+				return a.Score > b.Score
+			}
+			if a.Points != b.Points {
+				return a.Points > b.Points
+			}
+			if a.PlanNo != b.PlanNo {
+				return a.PlanNo < b.PlanNo
+			}
+			return a.PlanTable < b.PlanTable
+		}
+		for i := 1; i < len(idx); i++ { // insertion sort: stable, deterministic
+			for j := i; j > 0 && less(cands[idx[j]], cands[idx[j-1]]); j-- {
+				idx[j], idx[j-1] = idx[j-1], idx[j]
+			}
+		}
+		res := mk(idx[0])
+		res.Plans = idx
+		b := cands[idx[0]]
+		switch {
+		case b.Mode == CandidateCounters:
+			if b.Points == 0 {
+				res.ReasonKey = MsgSQLAutoPickIncomplete
+			} else {
+				res.AutoApply, res.ReasonKey = true, MsgSQLAutoPickCountersOK
+			}
+		case candIncomplete(b):
+			res.ReasonKey = MsgSQLAutoPickIncomplete
+		default:
+			res.AutoApply, res.ReasonKey = true, MsgSQLAutoPickOK
+		}
+		return res
 	}
 	best := 0
 	for i, c := range cands {
@@ -142,35 +255,22 @@ func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 			best = i
 		}
 	}
-	second, has2 := 0, false
-	for i, c := range cands {
-		if i != best && (!has2 || c.Score > second) {
-			second, has2 = c.Score, true
-		}
-	}
+	res := mk(best)
 	b := cands[best]
-	res := SQLAutoPick{Index: best, CandidateKey: b.Key(), Score: b.Score, Margin: b.Score,
-		Confidence: SQLConfidence(b.Score), AutoPickMin: SQLAutoPickMinConfidence, Ranks: sqlCandidateRanks(cands)}
-	if has2 {
-		res.Margin = b.Score - second
-	}
-	plans := map[string]bool{}
-	for _, c := range cands {
-		if c.PlanTable != "" {
-			plans[c.PlanTable] = true
+	ambiguous := false
+	for i, c := range cands {
+		if i != best && strings.EqualFold(c.Schema, b.Schema) && strings.EqualFold(c.Table, b.Table) && b.Score-c.Score < SQLAutoPickMinMargin {
+			ambiguous = true
 		}
 	}
-	incomplete := candIncomplete(b)
 	switch {
-	case len(plans) > 1:
-		res.ReasonKey = MsgSQLAutoPickMultiplePlans
 	case b.Mode == CandidateCounters:
 		res.ReasonKey = MsgSQLAutoPickCounters
-	case incomplete:
+	case candIncomplete(b):
 		res.ReasonKey = MsgSQLAutoPickIncomplete
 	case b.Score < SQLAutoPickMinScore:
 		res.ReasonKey = MsgSQLAutoPickLowScore
-	case res.Margin < SQLAutoPickMinMargin:
+	case ambiguous:
 		res.ReasonKey = MsgSQLAutoPickAmbiguous
 	default:
 		res.AutoApply, res.ReasonKey = true, MsgSQLAutoPickOK

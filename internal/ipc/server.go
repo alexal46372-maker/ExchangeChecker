@@ -428,7 +428,8 @@ func (s *Server) Capabilities() []string {
 		caps = append(caps, model.CapStalled) // phase 11 (CHK-MON-18)
 	}
 	if wiz {
-		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript)
+		// CapAutoPickPlans: discover autoPick v2 (Plans, merged plans; CHK-SQL-16)
+		caps = append(caps, model.CapSQLBrowse, model.CapSQLDatabases, model.CapSQLDiagnose, model.CapSQLGrantScript, model.CapAutoPickPlans)
 		if _, ok := s.H.(SQLWizardV2); ok { // phase 11 (CHK-IPC-12/13)
 			caps = append(caps, model.CapBrowseSubnet, model.CapBrowseLocal, model.CapTestSteps)
 		}

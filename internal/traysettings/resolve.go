@@ -11,11 +11,13 @@ import (
 // ResolveDiscovery is the one decision on a Discovery result shared by the
 // «Добавить базу» wizard and the expert «Таблицы обмена…» dialog
 // (fix/tray-wizard-autofind, CHK-TRAY-83/84): model.SQLAutoPickFor over
-// the candidates (computed here, never trusted from a reply), the main
-// mapping and one mapping per other exchange plan (autoPick Plans; 1C 8.1
-// counters plans are part of it, CHK-SQL-16). A problem is returned only
-// when there is really nothing to apply: no candidate (ProblemNone) or
-// two equally good candidates for the same table (ProblemAmbiguous).
+// the candidates (computed here, never trusted from a reply). Only an
+// autoPick with AutoApply is applied: the main mapping and one mapping per
+// other exchange plan (autoPick Plans; 1C 8.1 counters plans are part of
+// it, CHK-SQL-16). Otherwise a Problem: none (no candidate), ambiguous
+// (two equally good candidates for one table), low_score (below the
+// threshold) or incomplete (no send/receive time, no points — e.g. a
+// counters plan with 0 points — or the search was cut short).
 func ResolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapping, []model.Mapping, *Problem) {
 	main, plans, _, pr := resolveDiscovery(cands, lang)
 	return main, plans, pr
@@ -25,18 +27,46 @@ func ResolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapp
 const (
 	ProblemNone           = "none"
 	ProblemAmbiguous      = "ambiguous"
+	ProblemLowScore       = "low_score"
+	ProblemIncomplete     = "incomplete"
 	ProblemWindowsUnsaved = "windows_unsaved"
 	ProblemTruncated      = "truncated"
 )
 
-// resolveDiscovery also returns the candidate index of the main mapping
-// (-1 with a problem).
+// resolveDiscovery also returns the best candidate: the main one when
+// applied, else the one to preselect under «Подробнее» (-1: none).
 func resolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapping, []model.Mapping, int, *Problem) {
 	lang = i18n.Normalize(lang)
 	if len(cands) == 0 {
 		return model.Mapping{}, nil, -1, &Problem{Code: ProblemNone, Text: i18n.T(i18n.KeyWizErrNone, lang)}
 	}
 	p := model.SQLAutoPickFor(cands)
+	if p.Index < 0 || p.Index >= len(cands) {
+		return model.Mapping{}, nil, -1, &Problem{Code: ProblemNone, Text: i18n.T(i18n.KeyWizErrNone, lang)}
+	}
+	if !p.AutoApply {
+		switch p.ReasonKey {
+		case model.MsgSQLAutoPickAmbiguous:
+			b := cands[p.Index]
+			other := -1
+			for i, c := range cands {
+				if i != p.Index && strings.EqualFold(c.Schema, b.Schema) && strings.EqualFold(c.Table, b.Table) &&
+					(other < 0 || c.Score > cands[other].Score) {
+					other = i
+				}
+			}
+			if other >= 0 {
+				d := Discovery{Lang: lang}
+				return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemAmbiguous,
+					Text: fmt.Sprintf(i18n.T(i18n.KeyWizErrAmbiguous, lang), ambiguousName(d, b), ambiguousName(d, cands[other]))}
+			}
+		case model.MsgSQLAutoPickLowScore:
+			return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemLowScore, Text: i18n.T(i18n.KeyWizErrLowScore, lang)}
+		}
+		// incomplete, a counters fallback outside 1C plans, or any other
+		// reason: never applied without the user
+		return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemIncomplete, Text: i18n.T(i18n.KeyWizErrIncomplete, lang)}
+	}
 	if len(p.Plans) > 0 {
 		main := cands[p.Plans[0]].Mapping()
 		var plans []model.Mapping
@@ -52,24 +82,6 @@ func resolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapp
 			plans = plans[:model.MaxMappings-1]
 		}
 		return main, plans, p.Plans[0], nil
-	}
-	if p.Index < 0 || p.Index >= len(cands) {
-		return model.Mapping{}, nil, -1, &Problem{Code: ProblemNone, Text: i18n.T(i18n.KeyWizErrNone, lang)}
-	}
-	if p.ReasonKey == model.MsgSQLAutoPickAmbiguous {
-		b := cands[p.Index]
-		other := -1
-		for i, c := range cands {
-			if i != p.Index && strings.EqualFold(c.Schema, b.Schema) && strings.EqualFold(c.Table, b.Table) &&
-				(other < 0 || c.Score > cands[other].Score) {
-				other = i
-			}
-		}
-		if other >= 0 {
-			d := Discovery{Lang: lang}
-			return model.Mapping{}, nil, -1, &Problem{Code: ProblemAmbiguous,
-				Text: fmt.Sprintf(i18n.T(i18n.KeyWizErrAmbiguous, lang), ambiguousName(d, b), ambiguousName(d, cands[other]))}
-		}
 	}
 	return cands[p.Index].Mapping(), nil, p.Index, nil
 }

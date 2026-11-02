@@ -64,12 +64,15 @@ type Wizard struct {
 	Plans   []model.Mapping
 	Problem *Problem
 	mainIdx int
+	// Best: the candidate to preselect under «Подробнее» when nothing was
+	// applied (low_score / incomplete / ambiguous; -1 = none).
+	Best int
 }
 
 // NewWizard starts with the defaults of a new profile.
 func NewWizard(lang string) *Wizard {
 	f := FromProfile(model.NewProfile(""))
-	return &Wizard{Lang: i18n.Normalize(lang), Encrypt: f.Encrypt, Chosen: -1, mainIdx: -1}
+	return &Wizard{Lang: i18n.Normalize(lang), Encrypt: f.Encrypt, Chosen: -1, mainIdx: -1, Best: -1}
 }
 
 func (z *Wizard) t(key string) string { return i18n.T(key, z.Lang) }
@@ -210,7 +213,7 @@ func (z *Wizard) PickDatabase(i int) bool {
 	}
 	z.Database = z.Databases[i].Name
 	z.Candidates, z.Pick, z.Chosen, z.Tested = nil, nil, -1, false
-	z.Main, z.Plans, z.Problem, z.mainIdx = model.Mapping{}, nil, nil, -1
+	z.Main, z.Plans, z.Problem, z.mainIdx, z.Best = model.Mapping{}, nil, nil, -1, -1
 	return true
 }
 
@@ -220,18 +223,23 @@ func (z *Wizard) PickDatabase(i int) bool {
 // of every other exchange plan (autoPick Plans, 1C 8.1 counters
 // included); the returned candidate is the main one, applied without
 // asking (Choose). -1 only for a real problem (Problem: none, ambiguous,
-// truncated); the text is «Найдено: план X (+N), поля …» or the problem.
+// truncated, low_score, incomplete; Best is then the candidate to
+// preselect); the text is «Найдено: план X (+N), поля …» or the problem.
 func (z *Wizard) DiscoveryDone(m model.IPCMessage) (int, string) {
 	z.Candidates = append([]model.DiscoveryCandidate(nil), m.Candidates...)
 	z.Pick = m.AutoPick
 	z.Chosen = -1
 	z.Main, z.Plans, z.Problem = model.Mapping{}, nil, nil
 	main, plans, idx, pr := resolveDiscovery(z.Candidates, z.Lang)
+	z.Best = idx
 	if pr != nil {
 		if pr.Code == ProblemNone && m.Truncated {
 			pr = &Problem{Code: ProblemTruncated, Text: z.t(i18n.KeyWizErrTruncated)}
 		}
 		z.Problem = pr
+		// nothing applied; a candidate picked under «Подробнее» keeps the
+		// other plans (offered, as in the expert dialog)
+		z.Main, z.Plans = offeredPlans(z.Candidates)
 		return -1, pr.Text
 	}
 	z.Main, z.Plans, z.mainIdx = main, plans, idx

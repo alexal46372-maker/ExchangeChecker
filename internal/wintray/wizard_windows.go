@@ -760,8 +760,11 @@ func (wd *wizardDialog) discover(prefix string) {
 			winapi.SetFocus(wd.ctl[idWizSave])
 			return
 		}
-		if wd.z.Problem != nil && wd.z.Problem.Code == traysettings.ProblemAmbiguous {
-			wd.setDetails(true) // the two options to choose from
+		// not applied (ambiguous / low_score / incomplete): «Подробнее»
+		// opened with the best candidate preselected; the user picks
+		if b := wd.z.Best; wd.z.Problem != nil && b >= 0 && b < len(wd.z.Candidates) {
+			wd.setDetails(true)
+			winapi.SendMessage(lb, winapi.LB_SETCURSEL, uintptr(b), 0)
 		}
 		wd.setResult(text)
 	})

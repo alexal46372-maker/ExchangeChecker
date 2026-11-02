@@ -102,7 +102,7 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 	}
 	// fix/tray-wizard-autofind: the wizard decides itself (ResolveDiscovery
 	// over the candidates), whatever autoPick the reply carries
-	c := []model.DiscoveryCandidate{{Table: "_Node1", PointCol: "_Description", SendCol: "a", RecvCol: "b"}, {Table: "_Node2", PointCol: "_Description"}}
+	c := []model.DiscoveryCandidate{{Table: "_Node1", PointCol: "_Description", SendCol: "a", RecvCol: "b", Score: 150, Points: 3}, {Table: "_Node2", PointCol: "_Description"}}
 	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c, AutoPick: &model.SQLAutoPick{AutoApply: true, Index: 1}}); i != 0 {
 		t.Errorf("canned autoApply must not override the shared decision: %d", i)
 	}

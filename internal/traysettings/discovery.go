@@ -157,6 +157,10 @@ type Discovery struct {
 	// CHK-TRAY-84): the main mapping and the other plans.
 	resMain  model.Mapping
 	resPlans []model.Mapping
+	// Problem: why the selected candidate is not one to apply as is
+	// (low_score / incomplete / ambiguous / none; nil = ResolveDiscovery
+	// would apply it, CHK-TRAY-84).
+	Problem *Problem
 }
 
 // NewDiscovery starts with the mapping m of the profile.
@@ -203,10 +207,15 @@ func (d *Discovery) DiscoveryDone(m model.IPCMessage) {
 	d.Truncated, d.Reason = m.Truncated, m.TruncatedReason
 	d.Sel = -1
 	d.Check = nil
-	main, plans, idx, _ := resolveDiscovery(d.Candidates, d.Lang)
-	d.resMain, d.resPlans = main, plans
+	main, plans, idx, pr := resolveDiscovery(d.Candidates, d.Lang)
+	d.resMain, d.resPlans, d.Problem = main, plans, pr
+	if pr != nil {
+		// nothing is applied, but «все планы обмена» still offers the
+		// plans the user may apply by hand (autoPick Plans, ungated)
+		d.resMain, d.resPlans = offeredPlans(d.Candidates)
+	}
 	if idx < 0 {
-		idx = 0 // ambiguous: the first one, the user decides
+		idx = 0
 	}
 	if len(d.Candidates) > 0 && !edited {
 		d.Select(idx)
@@ -853,4 +862,18 @@ func TemplateTitles(lang string) []string {
 		out = append(out, t.Title.In(lang))
 	}
 	return out
+}
+
+// offeredPlans: the best candidate of every exchange plan (autoPick
+// Plans, main first) regardless of AutoApply — offered, never applied.
+func offeredPlans(cands []model.DiscoveryCandidate) (model.Mapping, []model.Mapping) {
+	p := model.SQLAutoPickFor(cands)
+	if len(p.Plans) == 0 {
+		return model.Mapping{}, nil
+	}
+	var plans []model.Mapping
+	for _, i := range p.Plans[1:] {
+		plans = append(plans, cands[i].Mapping())
+	}
+	return cands[p.Plans[0]].Mapping(), plans
 }

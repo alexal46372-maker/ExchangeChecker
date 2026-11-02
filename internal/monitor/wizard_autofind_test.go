@@ -23,15 +23,24 @@ import (
 // in-memory 1C 8.1 store (exchange plans with message counters only, no
 // time registers). No canned AutoPick anywhere.
 
-// store81 is a 1C 8.1 database: _NodeNNN tables with _IDRRef, _Code,
-// _Description, _SentNo, _ReceivedNo; points per plan.
+// store81 is an in-memory SQL Server database for the chain: 1C 8.1
+// exchange plans with message counters only (_NodeNNN: _IDRRef, _Code,
+// _Description, _SentNo, _ReceivedNo), optionally an information
+// register linked to a plan (_InfoRgNNN: _FldNRRef → _Node._IDRRef, two
+// datetime columns), a 1C directory with its own datetime columns linked
+// from a register too (two candidates for one table), and a non-1C table
+// (generic). Statistics answer like a live database: every row matches,
+// the times are an hour old.
 type store81 struct {
-	plans map[string]int // table -> number of points
-	order []string
+	plans   map[string]int // table -> number of points
+	order   []string
+	linked  map[string]string // _InfoRgNNN -> owner table
+	dirs    map[string]int    // _ReferenceNNN with datetime columns -> rows
+	generic map[string]int    // non-1C table -> rows
 }
 
 func newStore81(plans ...interface{}) *store81 {
-	s := &store81{plans: map[string]int{}}
+	s := &store81{plans: map[string]int{}, linked: map[string]string{}, dirs: map[string]int{}, generic: map[string]int{}}
 	for i := 0; i+1 < len(plans); i += 2 {
 		t := plans[i].(string)
 		s.plans[t] = plans[i+1].(int)
@@ -40,42 +49,131 @@ func newStore81(plans ...interface{}) *store81 {
 	return s
 }
 
+// link adds _InfoRg<n> linked to owner (a plan or a directory).
+func (s *store81) link(reg, owner string) *store81 { s.linked[reg] = owner; return s }
+
+// dir adds a 1C directory with datetime columns.
+func (s *store81) dir(name string, rows int) *store81 { s.dirs[name] = rows; return s }
+
+// gen adds a non-1C exchange log table.
+func (s *store81) gen(name string, rows int) *store81 { s.generic[name] = rows; return s }
+
+func (s *store81) rowsOf(t string) int {
+	if n, ok := s.plans[t]; ok {
+		return n
+	}
+	if n, ok := s.dirs[t]; ok {
+		return n
+	}
+	if n, ok := s.generic[t]; ok {
+		return n
+	}
+	if o, ok := s.linked[t]; ok {
+		return s.rowsOf(o)
+	}
+	return 0
+}
+
+func key81(table string, i int) []byte {
+	k := make([]byte, 16)
+	copy(k, table)
+	k[15] = byte(i + 1)
+	return k
+}
+
 func (s *store81) Ping(context.Context) error { return nil }
 func (s *store81) Columns(context.Context) ([]sqlcheck.Column, error) {
 	var out []sqlcheck.Column
-	for _, t := range s.order {
-		ref := sqlcheck.TableRef{Schema: "dbo", Name: t}
-		out = append(out,
-			sqlcheck.Column{Table: ref, Name: "_IDRRef", DataType: "binary", MaxLength: 16, Ordinal: 1},
-			sqlcheck.Column{Table: ref, Name: "_Code", DataType: "nvarchar", MaxLength: 9, Ordinal: 2},
-			sqlcheck.Column{Table: ref, Name: "_Description", DataType: "nvarchar", MaxLength: 50, Ordinal: 3},
-			sqlcheck.Column{Table: ref, Name: "_SentNo", DataType: "numeric", Ordinal: 4},
-			sqlcheck.Column{Table: ref, Name: "_ReceivedNo", DataType: "numeric", Ordinal: 5})
+	col := func(t, name, typ string, ml int) {
+		out = append(out, sqlcheck.Column{Table: sqlcheck.TableRef{Schema: "dbo", Name: t}, Name: name, DataType: typ, MaxLength: ml, Ordinal: len(out) + 1})
 	}
-	// a distractor: no exchange plan
-	ref := sqlcheck.TableRef{Schema: "dbo", Name: "_Reference7"}
-	out = append(out, sqlcheck.Column{Table: ref, Name: "_IDRRef", DataType: "binary", MaxLength: 16, Ordinal: 1},
-		sqlcheck.Column{Table: ref, Name: "_Description", DataType: "nvarchar", MaxLength: 50, Ordinal: 2})
+	for _, t := range s.order {
+		col(t, "_IDRRef", "binary", 16)
+		col(t, "_Code", "nvarchar", 9)
+		col(t, "_Description", "nvarchar", 50)
+		col(t, "_SentNo", "numeric", 0)
+		col(t, "_ReceivedNo", "numeric", 0)
+	}
+	for t := range s.dirs {
+		col(t, "_IDRRef", "binary", 16)
+		col(t, "_Code", "nvarchar", 9)
+		col(t, "_Description", "nvarchar", 50)
+		col(t, "_Fld5", "datetime", 0)
+		col(t, "_Fld6", "datetime", 0)
+	}
+	for t := range s.linked {
+		col(t, "_Fld1RRef", "binary", 16)
+		col(t, "_Fld2", "datetime", 0)
+		col(t, "_Fld3", "datetime", 0)
+	}
+	for t := range s.generic {
+		col(t, "NodeName", "nvarchar", 50)
+		col(t, "LastSend", "datetime", 0)
+		col(t, "LastRecv", "datetime", 0)
+	}
+	// a distractor: no exchange data
+	col("_Reference7", "_IDRRef", "binary", 16)
+	col("_Reference7", "_Description", "nvarchar", 50)
 	return out, nil
 }
 func (s *store81) RowCounts(context.Context) (map[sqlcheck.TableRef]int64, error) {
 	out := map[sqlcheck.TableRef]int64{}
-	for t, n := range s.plans {
-		out[sqlcheck.TableRef{Schema: "dbo", Name: t}] = int64(n)
+	for _, m := range []map[string]int{s.plans, s.dirs, s.generic} {
+		for t, n := range m {
+			out[sqlcheck.TableRef{Schema: "dbo", Name: t}] = int64(n)
+		}
+	}
+	for t := range s.linked {
+		out[sqlcheck.TableRef{Schema: "dbo", Name: t}] = int64(s.rowsOf(t))
 	}
 	return out, nil
 }
-func (s *store81) SampleColumns(context.Context, sqlcheck.TableRef, []string, int) ([][]interface{}, error) {
-	return nil, nil
+func (s *store81) SampleColumns(_ context.Context, t sqlcheck.TableRef, cols []string, limit int) ([][]interface{}, error) {
+	owner, isReg := s.linked[t.Name], false
+	if owner != "" {
+		isReg = true
+	} else {
+		owner = t.Name
+	}
+	var out [][]interface{}
+	for i := 0; i < s.rowsOf(t.Name) && (limit <= 0 || i < limit); i++ {
+		r := make([]interface{}, len(cols))
+		for j, c := range cols {
+			if (!isReg && c == "_IDRRef") || (isReg && c == "_Fld1RRef") {
+				r[j] = key81(owner, i)
+			}
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
-func (s *store81) LinkStats(context.Context, sqlcheck.LinkQuery) (sqlcheck.LinkStats, error) {
-	return sqlcheck.LinkStats{}, nil
+func (s *store81) hourOld(n int) []*time.Time {
+	at := t0.Add(-time.Hour)
+	out := make([]*time.Time, n)
+	for i := range out {
+		v := at.Add(-time.Duration(i) * time.Minute)
+		out[i] = &v
+	}
+	return out
 }
-func (s *store81) SingleStats(context.Context, sqlcheck.SingleQuery) (sqlcheck.SingleStats, error) {
-	return sqlcheck.SingleStats{}, nil
+func (s *store81) LinkStats(_ context.Context, q sqlcheck.LinkQuery) (sqlcheck.LinkStats, error) {
+	if s.linked[q.Times.Name] != q.Points.Name {
+		return sqlcheck.LinkStats{}, nil
+	}
+	n := int64(s.rowsOf(q.Points.Name))
+	return sqlcheck.LinkStats{Sampled: n, Matched: n, Points: n, Max: s.hourOld(len(q.DateCols))}, nil
 }
-func (s *store81) Points(context.Context, model.Mapping, int) ([]sqlcheck.RawPoint, error) {
-	return nil, nil
+func (s *store81) SingleStats(_ context.Context, q sqlcheck.SingleQuery) (sqlcheck.SingleStats, error) {
+	n := int64(s.rowsOf(q.Table.Name))
+	return sqlcheck.SingleStats{Sampled: n, Points: n, Max: s.hourOld(len(q.DateCols))}, nil
+}
+func (s *store81) Points(_ context.Context, m model.Mapping, limit int) ([]sqlcheck.RawPoint, error) {
+	var out []sqlcheck.RawPoint
+	for i := 0; i < s.rowsOf(m.Table) && (limit <= 0 || i < limit); i++ {
+		ts := s.hourOld(2)
+		out = append(out, sqlcheck.RawPoint{Key: key81(m.Table, i), Name: fmt.Sprintf("%s point %d", m.Table, i+1), Send: ts[0], Recv: ts[1]})
+	}
+	return out, nil
 }
 func (s *store81) SearchText(context.Context, sqlcheck.TableRef, []string, []string, string, int) ([][]interface{}, error) {
 	return nil, nil
@@ -90,9 +188,7 @@ func (s *store81) Counters(_ context.Context, m model.Mapping, limit int) ([]sql
 	n := s.plans[m.Table]
 	var out []sqlcheck.RawCounter
 	for i := 0; i < n && (limit <= 0 || i < limit); i++ {
-		key := make([]byte, 16)
-		key[15] = byte(i + 1)
-		out = append(out, sqlcheck.RawCounter{Key: key, Name: fmt.Sprintf("%s point %d", m.Table, i+1), ID: fmt.Sprint(i + 1),
+		out = append(out, sqlcheck.RawCounter{Key: key81(m.Table, i), Name: fmt.Sprintf("%s point %d", m.Table, i+1), ID: fmt.Sprint(i + 1),
 			SentNo: int64(100 + i), ReceivedNo: int64(90 + i)})
 	}
 	return out, nil
@@ -291,7 +387,8 @@ func TestCHK_TRAY_83_WizardFindsAll81Plans(t *testing.T) {
 // «Таблицы обмена…» dialog selects the same main mapping and offers the
 // same other plans («все планы обмена») as the wizard applies.
 func TestCHK_TRAY_84_WizardEqualsExpert(t *testing.T) {
-	for _, st := range []*store81{newStore81("_Node12", 5, "_Node34", 3, "_Node56", 2), newStore81("_Node7", 1), newStore81("_Node40", 2, "_Node41", 9)} {
+	linked := newStore81("_Node12", 4, "_Node34", 3).link("_InfoRg100", "_Node12") // like CHK-SQL-17
+	for _, st := range []*store81{newStore81("_Node12", 5, "_Node34", 3, "_Node56", 2), newStore81("_Node7", 1), newStore81("_Node40", 2, "_Node41", 9), linked} {
 		e := newChain(t, st)
 		ed := e.editor(i18n.RU)
 		z := traysettings.NewWizard(i18n.RU)
@@ -311,6 +408,10 @@ func TestCHK_TRAY_84_WizardEqualsExpert(t *testing.T) {
 		rm, rp, pr := traysettings.ResolveDiscovery(m.Candidates, i18n.RU)
 		if pr != nil || rm != *ed.MapEdit || len(rp) != len(ed.MapsEdit) {
 			t.Errorf("%v: ResolveDiscovery %+v %d %+v", st.order, rm, len(rp), pr)
+		}
+		if st == linked && (ed.MapEdit.Mode != model.MappingAuto || ed.MapEdit.Table != "_Node12" || ed.MapEdit.TimesTable != "_InfoRg100" ||
+			len(ed.MapsEdit) != 1 || ed.MapsEdit[0].Table != "_Node34" || ed.MapsEdit[0].Mode != model.MappingCounters) {
+			t.Errorf("linked + counters plan: main %+v extra %+v", *ed.MapEdit, ed.MapsEdit)
 		}
 		if len(z.Plans)+1 != len(st.order) {
 			t.Errorf("%v: plans lost: %d of %d", st.order, len(z.Plans)+1, len(st.order))
@@ -367,6 +468,21 @@ func TestCHK_TRAY_85_WizardErrorTexts(t *testing.T) {
 			t.Errorf("%s: ambiguous must name both candidates: %q", lang, apr.Text)
 		}
 		texts[lang]["ambiguous"] = apr.Text
+		texts[lang]["low_score"] = i18n.T(i18n.KeyWizErrLowScore, lang)
+		texts[lang]["incomplete"] = i18n.T(i18n.KeyWizErrIncomplete, lang)
+		// ambiguous through the chain: a 1C directory with its own times
+		// and a register linked to it — two candidates for one table
+		e3 := newChain(t, newStore81().dir("_Reference20", 4).link("_InfoRg200", "_Reference20"))
+		ed3 := e3.editor(lang)
+		z3 := traysettings.NewWizard(lang)
+		_, m3 := e3.wizardDiscover(ed3, z3, false)
+		if idx, txt := z3.DiscoveryDone(m3); idx != -1 || z3.Problem == nil || z3.Problem.Code != traysettings.ProblemAmbiguous ||
+			!strings.Contains(txt, "_Fld2") || !strings.Contains(txt, "_Fld5") || z3.Best < 0 || ed3.MapEdit != nil {
+			t.Errorf("%s: chain ambiguous %d %q best %d", lang, idx, txt, z3.Best)
+		}
+		if texts[lang]["ambiguous"] == z3.Problem.Text {
+			t.Errorf("%s: ambiguous texts must name the candidates", lang)
+		}
 		// a single good candidate is no error
 		if _, _, p := traysettings.ResolveDiscovery([]model.DiscoveryCandidate{a}, lang); p != nil {
 			t.Errorf("%s: single candidate refused: %+v", lang, p)
@@ -391,6 +507,53 @@ func TestCHK_TRAY_85_WizardErrorTexts(t *testing.T) {
 		ru, en := i18n.Message(key, i18n.RU), i18n.Message(key, i18n.EN)
 		if ru == "" || en == "" || ru == en || strings.Contains(ru, key) {
 			t.Errorf("%s: RU %q EN %q", key, ru, en)
+		}
+	}
+}
+
+// TestCHK_TRAY_83_NotAutoAppliedWithoutAutoApply — only an autoPick with
+// AutoApply is applied: a non-1C table below the threshold (low_score) and
+// a 1C 8.1 counters plan with 0 points (incomplete) are NOT applied, through
+// the wizard and the expert dialog alike: a problem with its own RU/EN
+// text, the best candidate preselected, no mapping put into the profile.
+func TestCHK_TRAY_83_NotAutoAppliedWithoutAutoApply(t *testing.T) {
+	cases := []struct {
+		name string
+		st   *store81
+		code string
+		key  string
+	}{
+		{"generic", newStore81().gen("ExchangeNodeLog", 4), traysettings.ProblemLowScore, i18n.KeyWizErrLowScore},
+		{"counters 0 points", newStore81("_Node12", 0), traysettings.ProblemIncomplete, i18n.KeyWizErrIncomplete},
+	}
+	for _, lang := range []string{i18n.RU, i18n.EN} {
+		for _, tc := range cases {
+			e := newChain(t, tc.st)
+			ed := e.editor(lang)
+			z := traysettings.NewWizard(lang)
+			_, m := e.wizardDiscover(ed, z, false)
+			if m.Type != model.MsgDiscovery || len(m.Candidates) == 0 || m.AutoPick == nil || m.AutoPick.AutoApply {
+				t.Fatalf("%s/%s: reply %+v", lang, tc.name, m)
+			}
+			idx, text := z.DiscoveryDone(m)
+			if idx != -1 || z.Problem == nil || z.Problem.Code != tc.code || text != i18n.T(tc.key, lang) {
+				t.Errorf("%s/%s: wizard applied or wrong text: %d %+v %q", lang, tc.name, idx, z.Problem, text)
+			}
+			if z.Best != m.AutoPick.Index || z.Best < 0 || ed.MapEdit != nil || z.Chosen != -1 {
+				t.Errorf("%s/%s: best %d (autoPick %d) map %+v chosen %d", lang, tc.name, z.Best, m.AutoPick.Index, ed.MapEdit, z.Chosen)
+			}
+			if strings.Contains(text, fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlan, lang), "")) {
+				t.Errorf("%s/%s: «Найдено» shown for an unapplied result", lang, tc.name)
+			}
+			// expert: same decision, best preselected, nothing applied
+			d := traysettings.NewDiscovery(lang, model.Mapping{})
+			d.DiscoveryDone(m)
+			if d.Problem == nil || d.Problem.Code != tc.code || d.Sel != z.Best {
+				t.Errorf("%s/%s: expert problem %+v sel %d", lang, tc.name, d.Problem, d.Sel)
+			}
+			if _, _, pr := traysettings.ResolveDiscovery(m.Candidates, lang); pr == nil || pr.Code != tc.code {
+				t.Errorf("%s/%s: ResolveDiscovery %+v", lang, tc.name, pr)
+			}
 		}
 	}
 }

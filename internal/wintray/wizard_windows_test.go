@@ -113,6 +113,7 @@ func TestCHK_TRAY_30_Wizard(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	svc := newWizService()
+	svc.cands = []model.DiscoveryCandidate{goodCandidate("_Node10"), goodCandidate("_Node20")}
 	w, wd := openWiz(t, svc)
 	wd.set(idWizServer, "np:srv")
 	wd.set(idWizLogin, "mon")
@@ -208,7 +209,7 @@ func TestCHK_TRAY_30_WizardAutoPick(t *testing.T) {
 	wd.z.Server, wd.z.Database, wd.z.Step = `srv`, "ut", traysettings.WizFinish
 	wd.set(idWizServer, "srv")
 	wd.set(idWizLogin, "mon")
-	m := model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{testCandidate("_Node10"), testCandidate("_Node20")},
+	m := model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{goodCandidate("_Node10"), goodCandidate("_Node20")},
 		AutoPick: &model.SQLAutoPick{Index: 1, AutoPickMin: 0.6, ReasonKey: model.MsgSQLAutoPickOK,
 			Ranks: []model.SQLCandidateRank{{Rank: 2, Confidence: 0.2}, {Rank: 1, Confidence: 0.9}}}}
 	// the shared decision (ResolveDiscovery), not the canned autoPick
@@ -310,4 +311,46 @@ func TestCHK_TRAY_32_Clipboard(t *testing.T) {
 	if err := winapi.SetClipboardText(0, "SELECT 1 -- тест"); err != nil {
 		t.Skipf("no clipboard: %v", err)
 	}
+}
+
+// goodCandidate is testCandidate above the auto-pick threshold.
+func goodCandidate(table string) model.DiscoveryCandidate {
+	c := testCandidate(table)
+	c.Score = 150
+	return c
+}
+
+// TestCHK_TRAY_83_WizardLowScoreNotApplied — candidates below the
+// auto-pick threshold are never applied: the low_score text, «Подробнее»
+// opened with the best candidate preselected, «Сохранить» disabled until
+// the user picks one (then all plans are kept).
+func TestCHK_TRAY_83_WizardLowScoreNotApplied(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newWizService() // default candidates: score 50
+	_, wd := openWiz(t, svc)
+	wd.set(idWizServer, "srv")
+	wd.set(idWizLogin, "mon")
+	wd.set(idWizPassword, "pw")
+	wd.click(t, idWizNext)
+	pumpUntil(t, "databases", func() bool { return wd.idle() && len(wd.z.Databases) == 2 })
+	wd.pick(idWizDBs, 1)
+	wd.click(t, idWizNext)
+	pumpUntil(t, "discovered", func() bool { return wd.idle() && len(wd.z.Candidates) == 2 })
+	if wd.z.Chosen != -1 || wd.w.ed.MapEdit != nil || winapi.IsWindowEnabled(wd.ctl[idWizSave]) {
+		t.Fatalf("low score applied: chosen %d %q", wd.z.Chosen, wd.text())
+	}
+	if wd.z.Problem == nil || wd.z.Problem.Code != traysettings.ProblemLowScore || !strings.Contains(wd.text(), i18n.T(i18n.KeyWizErrLowScore, i18n.RU)) {
+		t.Errorf("text %q", wd.text())
+	}
+	if !wd.detailsShown || wd.candsCtl[1].Hidden || wd.sel(idWizCands) != wd.z.Best || wd.z.Best != 0 {
+		t.Errorf("details %v sel %d best %d", wd.detailsShown, wd.sel(idWizCands), wd.z.Best)
+	}
+	wd.pick(idWizCands, 0)
+	wd.show()
+	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" ||
+		len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
+		t.Errorf("manual pick: %+v %+v", wd.w.ed.MapEdit, wd.w.ed.MapsEdit)
+	}
+	wd.click(t, idWizCancel)
 }

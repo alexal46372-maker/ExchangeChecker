@@ -153,6 +153,10 @@ type Discovery struct {
 	// candidate). Unapplied / Edited compare the form with them
 	// (questions on close / a new search).
 	orig, initial, loaded model.Mapping
+	// ResolveDiscovery of the last list (shared with the wizard,
+	// CHK-TRAY-84): the main mapping and the other plans.
+	resMain  model.Mapping
+	resPlans []model.Mapping
 }
 
 // NewDiscovery starts with the mapping m of the profile.
@@ -189,9 +193,9 @@ func (d *Discovery) AcceptOverwrite() { d.loaded = d.Map.Mapping() }
 func (d *Discovery) t(key string) string { return i18n.T(key, d.Lang) }
 
 // DiscoveryDone takes a discovery reply (discover / discover_by_value):
-// a missing list is an empty one; the best candidate is selected unless
-// the form was edited by hand meanwhile (the edits are kept, nothing is
-// selected).
+// a missing list is an empty one; the candidate ResolveDiscovery picks as
+// main (the wizard's choice, CHK-TRAY-84) is selected unless the form was
+// edited by hand meanwhile (the edits are kept, nothing is selected).
 func (d *Discovery) DiscoveryDone(m model.IPCMessage) {
 	edited := d.Edited()
 	d.Gen++
@@ -199,8 +203,13 @@ func (d *Discovery) DiscoveryDone(m model.IPCMessage) {
 	d.Truncated, d.Reason = m.Truncated, m.TruncatedReason
 	d.Sel = -1
 	d.Check = nil
+	main, plans, idx, _ := resolveDiscovery(d.Candidates, d.Lang)
+	d.resMain, d.resPlans = main, plans
+	if idx < 0 {
+		idx = 0 // ambiguous: the first one, the user decides
+	}
 	if len(d.Candidates) > 0 && !edited {
-		d.Select(0)
+		d.Select(idx)
 	}
 }
 
@@ -794,21 +803,12 @@ func (d *Discovery) CandidateDetails(c model.DiscoveryCandidate) string {
 	return strings.Join(b, "\r\n")
 }
 
-// PlanMappings is «все планы обмена»: SuggestPlanMappings of the found
-// candidates without the plan table of the chosen mapping (Profile.Mappings).
+// PlanMappings is «все планы обмена»: the plans ResolveDiscovery found
+// (main + other plans, 1C 8.1 counters plans included — the same set the
+// wizard saves) without the plan table of the chosen mapping
+// (Profile.Mappings).
 func (d *Discovery) PlanMappings(chosen model.Mapping) []model.Mapping {
-	var out []model.Mapping
-	ck := PlanKey(chosen)
-	seen := map[string]bool{}
-	for _, m := range model.SuggestPlanMappings(d.Candidates) {
-		k := PlanKey(m)
-		if k == "" || k == ck || seen[k] {
-			continue
-		}
-		seen[k] = true
-		out = append(out, m)
-	}
-	return out
+	return otherPlans(chosen, d.resMain, d.resPlans)
 }
 
 // InteractiveProblem renders the error of a discover / discover_by_value

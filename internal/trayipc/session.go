@@ -546,6 +546,11 @@ func (s *Session) connectOnce(ctx context.Context) bool {
 	}
 }
 
+// ClientHelloCaps are the capabilities the tray declares in client_hello;
+// CapAutoPickPlans: the tray applies every plan of autoPick Plans (main +
+// additional mappings, fix/tray-wizard-autofind, CHK-TRAY-83).
+var ClientHelloCaps = []string{model.ClientCapAlarmTest, model.CapSummary, model.CapAckEvent, model.CapAutoPickPlans}
+
 // sendClientHello declares tray capabilities (alarm_test) so the service
 // can push test alerts only to us (CHK-TRAY-53 / CHK-IPC-11). Skipped on
 // version 1 or when the service has no client_hello / alarm_test.
@@ -554,7 +559,7 @@ func (s *Session) sendClientHello(ctx context.Context, c *ipc.Client) {
 	if st.Version < 2 || !(st.Has(model.CapClientHello) || st.Has(model.CapAlarmTest)) {
 		return
 	}
-	m, err := c.Do(ctx, model.IPCRequest{Cmd: model.CmdClientHello, Capabilities: []string{model.ClientCapAlarmTest, model.CapSummary, model.CapAckEvent}})
+	m, err := c.Do(ctx, model.IPCRequest{Cmd: model.CmdClientHello, Capabilities: append([]string(nil), ClientHelloCaps...)})
 	if err != nil || m.Type == model.MsgError {
 		return // older service / unknown_command: stay silent
 	}

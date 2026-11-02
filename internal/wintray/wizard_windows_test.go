@@ -146,17 +146,28 @@ func TestCHK_TRAY_30_Wizard(t *testing.T) {
 	wd.pick(idWizDBs, 1)
 	wd.click(t, idWizNext)
 	pumpUntil(t, "discovered", func() bool { return wd.idle() && len(wd.z.Candidates) == 2 })
-	if svc.count("test") != 1 || winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.z.Chosen != -1 {
+	// fix/tray-wizard-autofind: found and applied without asking (both
+	// plans), «Сохранить» right away; the list only behind «Подробнее»
+	if svc.count("test") != 1 || !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.z.Chosen != 0 ||
+		wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" || len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
 		t.Fatalf("finish: tests %d chosen %d %q", svc.count("test"), wd.z.Chosen, wd.text())
 	}
-	if !strings.Contains(wd.text(), i18n.T(i18n.KeyWizTestOK, i18n.RU)) {
+	if !strings.Contains(wd.text(), i18n.T(i18n.KeyWizTestOK, i18n.RU)) || !strings.Contains(wd.text(), "_Node10 (+1)") {
 		t.Errorf("result %q", wd.text())
+	}
+	if !wd.candsCtl[1].Hidden {
+		t.Error("candidate list shown without «Подробнее»")
+	}
+	wd.click(t, idWizDetails)
+	if !wd.detailsShown || wd.candsCtl[1].Hidden {
+		t.Error("«Подробнее» does not show the list")
 	}
 	wd.pick(idWizCands, 1)
 	wd.click(t, idWizSave)
 	pumpUntil(t, "saved", func() bool { return w.wiz == nil && svc.count("save") == 1 })
 	sc := svc.lastSave()
-	if sc.p.Server != `SRV\SQL1` || sc.p.Database != "ut" || sc.p.Name != "ut" || sc.p.Mapping.Table != "_Node20" || sc.password != "s3cret" || sc.rev != "r1" {
+	if sc.p.Server != `SRV\SQL1` || sc.p.Database != "ut" || sc.p.Name != "ut" || sc.p.Mapping.Table != "_Node20" || sc.password != "s3cret" || sc.rev != "r1" ||
+		len(sc.p.Mappings) != 1 || sc.p.Mappings[0].Table != "_Node10" {
 		t.Errorf("saved %+v", sc)
 	}
 	if !winapi.IsWindowEnabled(w.hwnd) || w.ed.IsNew || len(w.ed.Profiles) != 2 {
@@ -200,12 +211,14 @@ func TestCHK_TRAY_30_WizardAutoPick(t *testing.T) {
 	m := model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{testCandidate("_Node10"), testCandidate("_Node20")},
 		AutoPick: &model.SQLAutoPick{Index: 1, AutoPickMin: 0.6, ReasonKey: model.MsgSQLAutoPickOK,
 			Ranks: []model.SQLCandidateRank{{Rank: 2, Confidence: 0.2}, {Rank: 1, Confidence: 0.9}}}}
+	// the shared decision (ResolveDiscovery), not the canned autoPick
 	idx, _ := wd.z.DiscoveryDone(m)
-	if idx != 1 || !wd.z.Choose(wd.w.ed, idx) {
+	if idx != 0 || !wd.z.Choose(wd.w.ed, idx) {
 		t.Fatalf("auto %d", idx)
 	}
 	wd.show()
-	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node20" {
+	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" ||
+		len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
 		t.Error("auto pick not applied")
 	}
 	wd.click(t, idWizCancel)

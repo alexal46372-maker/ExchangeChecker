@@ -141,8 +141,9 @@ func TestCHK_IPC_02_ServiceAckAndTest(t *testing.T) {
 	// CHK-IPC-08/09) discover, discover_by_value, node_points,
 	// check_mapping; phase 9 (CHK-SVC-03/04/05) history, check_now,
 	// events_since; CHK-IPC-10 sql_browse, sql_databases, sql_diagnose,
-	// sql_grant_script; phase 12 (CHK-IPC-14) export_viber_recipients, (CHK-IPC-15) mute_profile, (CHK-CFG-08) clone_profile
-	if hello.Version != 2 || len(hello.Capabilities) != 35 || hello.Heartbeat == nil {
+	// sql_grant_script; phase 12 (CHK-IPC-14) export_viber_recipients, (CHK-IPC-15) mute_profile, (CHK-CFG-08) clone_profile;
+	// CHK-SQL-16 autopick_plans_v2
+	if hello.Version != 2 || len(hello.Capabilities) != 36 || hello.Heartbeat == nil {
 		t.Fatalf("hello %+v", hello)
 	}
 	snap := s.polled(t)

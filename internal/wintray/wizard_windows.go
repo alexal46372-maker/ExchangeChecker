@@ -21,6 +21,13 @@ import (
 // when the service has the wizard commands.
 const WizardClass = "ExchangeCheckerTrayWizard"
 
+// List box messages / notifications not in winapi (CHK-TRAY-83).
+const (
+	lbSetTopIndex   = 0x0197 // LB_SETTOPINDEX
+	lbSetCaretIndex = 0x019E // LB_SETCARETINDEX
+	lbnDblClk       = 2      // LBN_DBLCLK
+)
+
 // Wizard control IDs.
 const (
 	idWizStep = 700 + iota
@@ -346,7 +353,8 @@ func (wd *wizardDialog) command(id int32, code uint32) {
 			wd.show()
 		}
 	case idWizCands:
-		if code == winapi.LBN_SELCHANGE {
+		// a double click on the selected row chooses it as well
+		if code == winapi.LBN_SELCHANGE || code == lbnDblClk {
 			if i := wd.sel(idWizCands); wd.z.Choose(wd.w.ed, i) {
 				wd.setResult(fmt.Sprintf(wd.t(i18n.KeyWizChosen), wd.z.CandidateLine(i)))
 			}
@@ -762,9 +770,15 @@ func (wd *wizardDialog) discover(prefix string) {
 		}
 		// not applied (ambiguous / low_score / incomplete): «Подробнее»
 		// opened with the best candidate preselected; the user picks
+		// The best one is highlighted (caret + scrolled into view) but NOT
+		// selected: a click on it is then a selection change (LBN_SELCHANGE)
+		// and chooses it — a preselected item would ignore that click.
 		if b := wd.z.Best; wd.z.Problem != nil && b >= 0 && b < len(wd.z.Candidates) {
 			wd.setDetails(true)
-			winapi.SendMessage(lb, winapi.LB_SETCURSEL, uintptr(b), 0)
+			winapi.SendMessage(lb, winapi.LB_SETCURSEL, ^uintptr(0), 0)
+			winapi.SendMessage(lb, lbSetTopIndex, uintptr(b), 0)
+			winapi.SendMessage(lb, lbSetCaretIndex, uintptr(b), 0)
+			winapi.SetFocus(lb)
 		}
 		wd.setResult(text)
 	})

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -343,14 +344,35 @@ func TestCHK_TRAY_83_WizardLowScoreNotApplied(t *testing.T) {
 	if wd.z.Problem == nil || wd.z.Problem.Code != traysettings.ProblemLowScore || !strings.Contains(wd.text(), i18n.T(i18n.KeyWizErrLowScore, i18n.RU)) {
 		t.Errorf("text %q", wd.text())
 	}
-	if !wd.detailsShown || wd.candsCtl[1].Hidden || wd.sel(idWizCands) != wd.z.Best || wd.z.Best != 0 {
-		t.Errorf("details %v sel %d best %d", wd.detailsShown, wd.sel(idWizCands), wd.z.Best)
+	lb := wd.ctl[idWizCands]
+	caret := int(int32(winapi.SendMessage(lb, 0x019F /* LB_GETCARETINDEX */, 0, 0)))
+	if !wd.detailsShown || wd.candsCtl[1].Hidden || wd.sel(idWizCands) != -1 || caret != wd.z.Best || wd.z.Best != 0 {
+		t.Errorf("details %v sel %d caret %d best %d", wd.detailsShown, wd.sel(idWizCands), caret, wd.z.Best)
 	}
-	wd.pick(idWizCands, 0)
+	// a REAL mouse click on the highlighted row (no synthetic LBN_SELCHANGE):
+	// the list box itself notifies the wizard
+	var rc winapi.RECT
+	winapi.SendMessage(lb, 0x0198 /* LB_GETITEMRECT */, uintptr(wd.z.Best), uintptr(unsafe.Pointer(&rc)))
+	pos := uintptr(uint16(rc.Left+5)) | uintptr(uint16((rc.Top+rc.Bottom)/2))<<16
+	winapi.SendMessage(lb, 0x0201 /* WM_LBUTTONDOWN */, 1 /* MK_LBUTTON */, pos)
+	winapi.SendMessage(lb, winapi.WM_LBUTTONUP, 0, pos)
+	PumpPending()
+	if wd.z.Chosen != wd.z.Best {
+		t.Fatalf("click on the highlighted row did not choose it: chosen %d sel %d", wd.z.Chosen, wd.sel(idWizCands))
+	}
+	// clicking the now selected row again changes nothing
+	winapi.SendMessage(lb, 0x0201, 1, pos)
+	winapi.SendMessage(lb, winapi.WM_LBUTTONUP, 0, pos)
+	PumpPending()
 	wd.show()
 	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" ||
 		len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
 		t.Errorf("manual pick: %+v %+v", wd.w.ed.MapEdit, wd.w.ed.MapsEdit)
 	}
-	wd.click(t, idWizCancel)
+	// saved with every plan
+	wd.click(t, idWizSave)
+	pumpUntil(t, "saved", func() bool { return wd.w.wiz == nil && svc.count("save") == 1 })
+	if sc := svc.lastSave(); sc.p.Mapping.Table != "_Node10" || len(sc.p.Mappings) != 1 || sc.p.Mappings[0].Table != "_Node20" {
+		t.Errorf("saved %+v / %+v", sc.p.Mapping, sc.p.Mappings)
+	}
 }

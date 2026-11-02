@@ -30,9 +30,24 @@ func TestCHK_SQL_08_AutoPickFixtures(t *testing.T) {
 			t.Errorf("%s: %+v", c.name, p)
 			continue
 		}
-		if p.AutoApply && len(p.Plans) < 2 {
-			if cands[p.Index].Key() != p.CandidateKey || p.Score < model.SQLAutoPickMinScore || p.Margin < model.SQLAutoPickMinMargin {
-				t.Errorf("%s: %+v", c.name, p)
+		if p.AutoApply {
+			// main candidate: the key, score floor and Plans[0] (several plans)
+			if p.Index < 0 || cands[p.Index].Key() != p.CandidateKey || p.Score < model.SQLAutoPickMinScore || cands[p.Index].Score != p.Score {
+				t.Errorf("%s main: %+v", c.name, p)
+			}
+			if len(p.Plans) < 2 && p.Margin < model.SQLAutoPickMinMargin {
+				t.Errorf("%s margin: %+v", c.name, p)
+			}
+			if len(p.Plans) >= 2 {
+				m := cands[p.Index]
+				if p.Plans[0] != p.Index || m.PlanTable == "" || m.Mode == model.CandidateCounters || m.SendCol == "" || m.RecvCol == "" {
+					t.Errorf("%s plans main: %+v %+v", c.name, p.Plans, m)
+				}
+				for _, ix := range p.Plans[1:] {
+					if cands[ix].PlanTable == m.PlanTable {
+						t.Errorf("%s: plan %s twice", c.name, m.PlanTable)
+					}
+				}
 			}
 		}
 	}
@@ -110,6 +125,9 @@ func TestCHK_SQL_16_AutoPick81Counters(t *testing.T) {
 			rev[len(cands)-1-i] = cands[i]
 		}
 		q := AutoPick(rev)
+		if !q.AutoApply || q.ReasonKey != model.MsgSQLAutoPickCountersOK || len(q.Plans) != len(want) || q.Plans[0] != q.Index {
+			t.Fatalf("three=%v reversed: %+v", three, q)
+		}
 		for i, ix := range q.Plans {
 			if rev[ix].Table != want[i] {
 				t.Errorf("three=%v reversed plan %d: %s", three, i, rev[ix].Table)
@@ -140,16 +158,23 @@ func TestCHK_SQL_17_AutoPickLinkedPlusPlan(t *testing.T) {
 // within the margin) → autopick_ambiguous; an empty database →
 // autopick_none; two different non-plan tables are not ambiguous.
 func TestCHK_SQL_18_AutoPickAmbiguousEmpty(t *testing.T) {
-	c := func(table, times string, score int) model.DiscoveryCandidate {
-		return model.DiscoveryCandidate{Mode: model.CandidateLinked, Schema: "dbo", Table: table, PointCol: "_Description",
-			TimesTable: times, LinkCol: "_Fld89RRef", SendCol: "_Fld90", RecvCol: "_Fld91", Points: 4, Score: score}
+	// Discover on a real fixture: two _InfoRg registers on one _Reference77
+	amb := discoverFx(t, newFake(fx1CCustomTwoRegs(2000)...), DiscoverOptions{TopN: 20})
+	regs := map[string]bool{}
+	for _, c := range amb {
+		if c.Table == "_Reference77" && c.Mode == model.CandidateLinked {
+			regs[c.TimesTable] = true
+		}
 	}
-	p := AutoPick([]model.DiscoveryCandidate{c("_Reference77", "_InfoRg88", 140), c("_Reference77", "_InfoRg95", 125)})
-	if p.AutoApply || p.ReasonKey != model.MsgSQLAutoPickAmbiguous || len(p.Plans) != 0 {
+	if !regs["_InfoRg88"] || !regs["_InfoRg95"] {
+		t.Fatalf("fixture: %v", regs)
+	}
+	if p := AutoPick(amb); p.AutoApply || p.ReasonKey != model.MsgSQLAutoPickAmbiguous || len(p.Plans) != 0 || amb[p.Index].Table != "_Reference77" {
 		t.Errorf("ambiguous: %+v", p)
 	}
-	if p := AutoPick([]model.DiscoveryCandidate{c("_Reference77", "_InfoRg88", 140), c("_Reference80", "_InfoRg95", 125)}); !p.AutoApply || p.ReasonKey != model.MsgSQLAutoPickOK {
-		t.Errorf("different tables: %+v", p)
+	// one register only (same directory): not ambiguous
+	if p := AutoPick(discoverFx(t, newFake(fx1CCustom(2000, "_Reference77")...), DiscoverOptions{TopN: 20})); p.ReasonKey == model.MsgSQLAutoPickAmbiguous {
+		t.Errorf("single register: %+v", p)
 	}
 	// empty database: no tables at all
 	cands, err := Discover(context.Background(), newFake(), DiscoverOptions{TopN: 20}, fixNow)

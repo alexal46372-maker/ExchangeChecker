@@ -137,8 +137,10 @@ func sqlCandidateRanks(cands []DiscoveryCandidate) []SQLCandidateRank {
 	return out
 }
 
-// planOf is the exchange plan of a candidate: PlanTable, or the times
-// table's plan for a linked candidate whose point table is a _NodeNNN.
+// planOf is the exchange plan of a candidate: its PlanTable, which
+// Discovery sets to the _NodeNNN point table for every candidate on an
+// exchange plan (single, linked to an _InfoRg, composite or counters);
+// "" for non-plan candidates.
 func planOf(c DiscoveryCandidate) string { return c.PlanTable }
 
 // planPref orders candidates inside one plan (CHK-SQL-16): a complete
@@ -244,6 +246,10 @@ func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 			}
 		case candIncomplete(b):
 			res.ReasonKey = MsgSQLAutoPickIncomplete
+		case b.Score < SQLAutoPickMinScore:
+			// a time candidate of a plan obeys the score floor too;
+			// counters-only plans are exempt (their score is by design low)
+			res.ReasonKey = MsgSQLAutoPickLowScore
 		default:
 			res.AutoApply, res.ReasonKey = true, MsgSQLAutoPickOK
 		}
@@ -268,12 +274,35 @@ func SQLAutoPickFor(cands []DiscoveryCandidate) SQLAutoPick {
 		res.ReasonKey = MsgSQLAutoPickCounters
 	case candIncomplete(b):
 		res.ReasonKey = MsgSQLAutoPickIncomplete
+	case ambiguous:
+		// two registers on one directory: the user must choose either way,
+		// ambiguity is the more useful reason (before the score floor)
+		res.ReasonKey = MsgSQLAutoPickAmbiguous
 	case b.Score < SQLAutoPickMinScore:
 		res.ReasonKey = MsgSQLAutoPickLowScore
-	case ambiguous:
-		res.ReasonKey = MsgSQLAutoPickAmbiguous
 	default:
 		res.AutoApply, res.ReasonKey = true, MsgSQLAutoPickOK
 	}
 	return res
+}
+
+// SQLAutoPickForClient is SQLAutoPickFor for an IPC client: v2 = the
+// client announced CapAutoPickPlans in client_hello. An old client gets
+// the pre-CHK-SQL-16 contract so no plan is silently dropped: several
+// plans → AutoApply=false + autopick_multiple_plans; a counters-only
+// plan → AutoApply=false + autopick_counters (keys it already knows);
+// Plans is omitted.
+func SQLAutoPickForClient(cands []DiscoveryCandidate, v2 bool) SQLAutoPick {
+	p := SQLAutoPickFor(cands)
+	if v2 {
+		return p
+	}
+	switch {
+	case len(p.Plans) > 1:
+		p.AutoApply, p.ReasonKey = false, MsgSQLAutoPickMultiplePlans
+	case p.ReasonKey == MsgSQLAutoPickCountersOK:
+		p.AutoApply, p.ReasonKey = false, MsgSQLAutoPickCounters
+	}
+	p.Plans = nil
+	return p
 }

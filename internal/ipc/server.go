@@ -1007,7 +1007,7 @@ func (s *Server) startInteractive(c *conn, d Discoverer, req model.IPCRequest) b
 			}
 			fitInteractiveReply(&m, model.IPCMaxInteractiveReply)
 			if m.Type == model.MsgDiscovery {
-				fitAutoPick(&m, model.IPCMaxInteractiveReply)
+				fitAutoPick(&m, model.IPCMaxInteractiveReply, c.hasClientCap(model.CapAutoPickPlans))
 			}
 		}
 		return m, err
@@ -1093,10 +1093,11 @@ func fitInteractiveReply(m *model.IPCMessage, max int) {
 // fitAutoPick adds AutoPick (model.SQLAutoPickFor over the candidates of
 // the reply, phase 9 CHK-IPC-10) to a discovery reply; if that no longer
 // fits, the last candidates are dropped (reason size) and AutoPick is
-// recomputed.
-func fitAutoPick(m *model.IPCMessage, max int) {
+// recomputed. v2: the client announced model.CapAutoPickPlans
+// (model.SQLAutoPickForClient; old clients keep the old contract).
+func fitAutoPick(m *model.IPCMessage, max int, v2 bool) {
 	for {
-		ap := model.SQLAutoPickFor(m.Candidates)
+		ap := model.SQLAutoPickForClient(m.Candidates, v2)
 		m.AutoPick = &ap
 		b, err := json.Marshal(m)
 		if err != nil || len(b) <= max || len(m.Candidates) == 0 {

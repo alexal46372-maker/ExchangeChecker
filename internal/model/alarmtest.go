@@ -51,7 +51,7 @@ const (
 )
 
 // KnownClientCaps lists the client capabilities the service acts on.
-var KnownClientCaps = map[string]bool{ClientCapAlarmTest: true}
+var KnownClientCaps = map[string]bool{ClientCapAlarmTest: true, CapAutoPickPlans: true}
 
 // AlarmTestResult is the reply of alarm_test (contract with EC Tray):
 // OK = the test alert was pushed; Viber (viber:true only) per recipient,

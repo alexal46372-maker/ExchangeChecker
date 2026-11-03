@@ -51,6 +51,8 @@ func (stubSystem) SetEventSource(string) error                 { return ErrNotWi
 func (stubSystem) DeleteEventSource() error                    { return ErrNotWindows }
 func (stubSystem) ApplyTrayRun(string, string) (string, error) { return "", ErrNotWindows }
 func (stubSystem) DeleteTrayRun() error                        { return ErrNotWindows }
+func (stubSystem) ReadTrayRun() (string, bool, error)          { return "", false, ErrNotWindows }
+func (stubSystem) WriteTrayRun(string) error                   { return ErrNotWindows }
 func (stubSystem) StopTray(string) ([]string, error)           { return nil, ErrNotWindows }
 func (stubSystem) WriteUninstallKey([]RegValue) error          { return ErrNotWindows }
 func (stubSystem) ReadUninstallKey() ([]RegValue, error)       { return nil, ErrNotWindows }
@@ -58,5 +60,6 @@ func (stubSystem) DeleteUninstallKey() error                   { return ErrNotWi
 func (stubSystem) ReadInstalled() (Installed, error)           { return Installed{}, ErrNotWindows }
 func (stubSystem) DeleteUserKey() error                        { return ErrNotWindows }
 
-func (stubSystem) MigrateInstallDir(string, string) error { return ErrNotWindows }
-func (stubSystem) DeleteLegacyShortcuts() error           { return ErrNotWindows }
+func (stubSystem) MigrateInstallDir(string, string) ([]string, error) { return nil, ErrNotWindows }
+func (stubSystem) RemoveLegacyInstallDir(string) error                { return ErrNotWindows }
+func (stubSystem) DeleteLegacyShortcuts() error                       { return ErrNotWindows }

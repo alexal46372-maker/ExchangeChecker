@@ -188,7 +188,7 @@ jobs:
         run: |
           export EC_SVC_EXE="$RUNNER_TEMP/release/ExchangeCheckerSvc.exe"
           go test ./checks -run TestCHK_SVC_01_RealSCM -count=1 -v
-      - name: setup silent E2E (CHK-SETUP-12 + upgrade + CHK-SETUP-03/04/05 windows)
+      - name: setup silent E2E (CHK-SETUP-12 + CHK-SETUP-17 migrate + upgrade + CHK-SETUP-03/04/05 windows)
         env:
           EC_SETUP_E2E: "1"
         run: |
@@ -213,7 +213,7 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -tags e2efault -trimpath -o "$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe" ./cmd/exchsvc
           export EC_SVC_FAULT_EXE="$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe"
           go test ./internal/wininstall -run 'TestCHK_SETUP_03_RealSCM|TestCHK_SETUP_04_EventSourceWindows|TestCHK_SETUP_05_ACLWindows|TestCHK_SETUP_13_FirewallRoundTrip' -count=1 -v
-          go test ./checks -run TestCHK_SETUP_12_E2E -count=1 -timeout 20m -v
+          go test ./checks -run 'TestCHK_SETUP_12_E2E|TestCHK_SETUP_17_MigrateE2E' -count=1 -timeout 25m -v
 
   linux:
     name: linux / go1.20.14 vet + pure-Go tests + SQL Server integration

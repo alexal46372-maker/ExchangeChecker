@@ -23,6 +23,7 @@ type recordingSystem struct {
 	Owners         map[string]bool // path -> takeOwnership called
 	EventSrc       string
 	TrayRun        string
+	TrayRunCmd     string // full Run command for Read/WriteTrayRun
 	Uninst         []RegValue
 	UserKey        bool
 	FixedOK        bool
@@ -386,6 +387,7 @@ func (f *recordingSystem) ApplyTrayRun(serviceExe, dataDir string) (string, erro
 		return "", err
 	}
 	f.TrayRun = serviceExe
+	f.TrayRunCmd = serviceExe
 	return "written", nil
 }
 
@@ -402,6 +404,33 @@ func (f *recordingSystem) DeleteTrayRun() error {
 		return err
 	}
 	f.TrayRun = ""
+	f.TrayRunCmd = ""
+	return nil
+}
+
+func (f *recordingSystem) ReadTrayRun() (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_ = f.step("ReadTrayRun")
+	if f.TrayRunCmd != "" {
+		return f.TrayRunCmd, true, nil
+	}
+	if f.TrayRun == "" {
+		return "", false, nil
+	}
+	return f.TrayRun, true, nil
+}
+
+func (f *recordingSystem) WriteTrayRun(cmd string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("WriteTrayRun|%s", cmd); err != nil {
+		return err
+	}
+	f.TrayRunCmd = cmd
+	if cmd == "" {
+		f.TrayRun = ""
+	}
 	return nil
 }
 
@@ -472,40 +501,52 @@ func (m *memLog) Printf(format string, args ...interface{}) {
 	m.lines = append(m.lines, fmt.Sprintf(format, args...))
 }
 
-func (f *recordingSystem) MigrateInstallDir(oldDir, newDir string) error {
+func (f *recordingSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.step("MigrateInstallDir|%s|%s", oldDir, newDir); err != nil {
-		return err
+		return nil, err
+	}
+	if err := ValidateLegacyMigrateDir(oldDir); err != nil {
+		return nil, err
 	}
 	oldDir, newDir = CleanDir(oldDir), CleanDir(newDir)
 	prefix := strings.ToLower(oldDir) + `\`
+	var copied []string
 	for path, data := range f.Files {
 		lp := strings.ToLower(CleanDir(path))
 		if lp == strings.ToLower(oldDir) || !strings.HasPrefix(lp, prefix) {
 			continue
 		}
 		rel := path[len(oldDir)+1:]
-		base := rel
-		if i := strings.LastIndex(rel, `\`); i >= 0 {
-			base = rel[i+1:]
-		}
-		skip := false
-		for _, n := range PayloadFiles {
-			if strings.EqualFold(base, n) || strings.EqualFold(base, n+".bak") || strings.EqualFold(base, n+".old") {
-				skip = true
-				break
-			}
-		}
-		if skip {
-			continue
-		}
 		dst := joinDir(newDir, rel)
 		if _, ok := f.Files[dst]; ok {
 			continue
 		}
 		f.Files[dst] = append([]byte(nil), data...)
+		copied = append(copied, dst)
 	}
+	return copied, nil
+}
+
+func (f *recordingSystem) RemoveLegacyInstallDir(dir string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("RemoveLegacyInstallDir|%s", dir); err != nil {
+		return err
+	}
+	if err := ValidateLegacyMigrateDir(dir); err != nil {
+		return err
+	}
+	dir = CleanDir(dir)
+	prefix := strings.ToLower(dir) + `\`
+	for path := range f.Files {
+		lp := strings.ToLower(CleanDir(path))
+		if lp == strings.ToLower(dir) || strings.HasPrefix(lp, prefix) {
+			delete(f.Files, path)
+		}
+	}
+	delete(f.Dirs, dir)
 	return nil
 }
 

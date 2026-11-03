@@ -83,3 +83,17 @@ func IsLegacyInstallDir(dir string) bool {
 func MigratedInstallDir(legacyDir string) string {
 	return joinDir(ParentDir(legacyDir), config.InstallDirName)
 }
+
+// ValidateLegacyMigrateDir ensures dir is a safe legacy install folder to
+// migrate/delete: last component LegacyInstallDirName, absolute, not a
+// drive root.
+func ValidateLegacyMigrateDir(dir string) error {
+	d := CleanDir(dir)
+	if !IsLegacyInstallDir(d) {
+		return fmt.Errorf("setup: not a legacy install folder %q", dir)
+	}
+	if len(d) <= 3 {
+		return fmt.Errorf("setup: legacy folder must not be a drive root: %q", dir)
+	}
+	return nil
+}

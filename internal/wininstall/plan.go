@@ -115,13 +115,20 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	var legacyDir string
 	if inst.Present {
 		old := CleanDir(inst.Dir)
-		if dir != "" && !strings.EqualFold(dir, old) && !IsLegacyInstallDir(old) {
-			warn("already installed in %s: /DIR=%s ignored (uninstall first to move)", inst.Dir, dir)
+		if dir != "" && !strings.EqualFold(dir, old) {
+			if IsLegacyInstallDir(old) {
+				warn("/DIR=%s игнорирован: выполняется миграция из %s", dir, old)
+			} else {
+				warn("already installed in %s: /DIR=%s ignored (uninstall first to move)", inst.Dir, dir)
+			}
 		}
 		dir = old
 		// CHK-SETUP-17: one-word Program Files\ExchangeChecker → two-word
 		// sibling Exchange Checker (config/data under ProgramData stay put).
 		if IsLegacyInstallDir(dir) {
+			if err := ValidateLegacyMigrateDir(dir); err != nil {
+				return fail(err)
+			}
 			legacyDir = dir
 			dir = MigratedInstallDir(dir)
 			log.Printf("migrating install folder %s -> %s", legacyDir, dir)
@@ -203,14 +210,19 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			}
 		}
 	}
-	// 3c. CHK-SETUP-17: copy leftover non-payload files from the legacy
-	// folder into the new two-word folder before writing payload exes.
+	// 3c. CHK-SETUP-17: copy the whole legacy tree (no reparse follow) into
+	// the new folder before writing payload exes. Rollback deletes only
+	// paths we created. Payload files are overwritten by step 4.
 	if legacyDir != "" {
-		if err := sys.MigrateInstallDir(legacyDir, dir); err != nil {
-			warn("migrate %s -> %s: %v", legacyDir, dir, err)
-		} else {
-			log.Printf("migrated non-payload files from %s", legacyDir)
+		copied, err := sys.MigrateInstallDir(legacyDir, dir)
+		if err != nil {
+			return failRollback(errf("migrate "+legacyDir+" -> "+dir, err))
 		}
+		for _, cp := range copied {
+			path := cp
+			undo.push(func() error { _, err := sys.RemoveFile(path); return err })
+		}
+		log.Printf("migrated %d file(s) from %s", len(copied), legacyDir)
 	}
 	// 4. files (upgrade: *.bak then atomic replace; rollback restores bak
 	// or deletes a file that did not exist before)
@@ -290,23 +302,44 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		undo.push(func() error { return sys.SetEventSource(prevExe) })
 	}
 	// 7. HKLM Run of the tray — the service's own rule (CHK-CFG-04)
+	prevRun, prevRunOK, _ := sys.ReadTrayRun()
 	if act, err := sys.ApplyTrayRun(svcExe, c.DataDir); err != nil {
 		warn("tray autostart: %v", err)
 	} else {
 		log.Printf("tray autostart: %s", act)
 		if fresh {
 			undo.push(sys.DeleteTrayRun)
+		} else {
+			had, cmd := prevRunOK, prevRun
+			undo.push(func() error {
+				if !had {
+					return sys.WriteTrayRun("")
+				}
+				return sys.WriteTrayRun(cmd)
+			})
 		}
 	}
 	// 7b. Start-menu shortcut (§6.3) — not fatal; kept on upgrade unless
 	// re-created; /NOSHORTCUT leaves an existing one alone
 	if !c.Opts.NoShortcut {
-		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, T(c.Lang, "setup.shortcut.desc")); err != nil {
+		desc := T(c.Lang, "setup.shortcut.desc")
+		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
 			warn("start menu shortcut: %v", err)
 		} else {
 			log.Printf("shortcut %s", lnk)
 			if fresh {
 				undo.push(sys.DeleteStartShortcut)
+			} else {
+				// Restore previous target (legacy folder on migrate; same dir otherwise).
+				restoreDir := dir
+				if legacyDir != "" {
+					restoreDir = legacyDir
+				}
+				rd, rdesc := restoreDir, desc
+				undo.push(func() error {
+					_, err := sys.CreateStartShortcut(joinDir(rd, config.TrayExeName), rd, rdesc)
+					return err
+				})
 			}
 		}
 	}
@@ -314,12 +347,23 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// Uninstall\DesktopShortcut; /NODESKTOPSHORTCUT or saved 0 skips create
 	// and removes an existing desktop .lnk on upgrade.
 	if !c.Opts.NoDesktopShortcut {
-		if lnk, err := sys.CreateDesktopShortcut(joinDir(dir, config.TrayExeName), dir, T(c.Lang, "setup.shortcut.desc")); err != nil {
+		desc := T(c.Lang, "setup.shortcut.desc")
+		if lnk, err := sys.CreateDesktopShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
 			warn("desktop shortcut: %v", err)
 		} else {
 			log.Printf("desktop shortcut %s", lnk)
 			if fresh {
 				undo.push(sys.DeleteDesktopShortcut)
+			} else {
+				restoreDir := dir
+				if legacyDir != "" {
+					restoreDir = legacyDir
+				}
+				rd, rdesc := restoreDir, desc
+				undo.push(func() error {
+					_, err := sys.CreateDesktopShortcut(joinDir(rd, config.TrayExeName), rd, rdesc)
+					return err
+				})
 			}
 		}
 	} else if !fresh {
@@ -402,23 +446,14 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			}
 		}
 	}
-	// CHK-SETUP-17: after a successful migrate, drop legacy shortcuts and
-	// the old one-word install folder (payload + empties). Config under
-	// ProgramData is untouched. Failures are warnings — product already runs
-	// from the new ImagePath.
+	// CHK-SETUP-17 commit: only after StartService (or no-start path) succeeded
+	// so rollback is no longer needed — drop legacy shortcuts and the entire
+	// old folder (including non-package files). ProgramData untouched.
 	if legacyDir != "" {
 		if err := sys.DeleteLegacyShortcuts(); err != nil {
 			warn("delete legacy shortcuts: %v", err)
 		}
-		for _, n := range PayloadFiles {
-			for _, suf := range []string{"", ".bak", ".old"} {
-				p := joinDir(legacyDir, n+suf)
-				if _, err := sys.RemoveFile(p); err != nil {
-					warn("remove legacy %s: %v", p, err)
-				}
-			}
-		}
-		if _, err := sys.RemoveDirIfEmpty(legacyDir); err != nil {
+		if err := sys.RemoveLegacyInstallDir(legacyDir); err != nil {
 			warn("remove legacy folder %s: %v", legacyDir, err)
 		} else {
 			log.Printf("legacy install folder removed: %s", legacyDir)

@@ -33,12 +33,8 @@ func folderHintFits(hint uintptr, text string) error {
 	return nil
 }
 
-func startFolderHintWizard(t *testing.T) (hwnd, hint uintptr, done <-chan struct{}, cancel func()) {
+func startFolderHintWizard(t *testing.T) (hwnd, hint uintptr, cancel func()) {
 	t.Helper()
-	text := T("setup.folder.upgrade")
-	if text == "" || text == "setup.folder.upgrade" {
-		t.Fatal("missing Russian setup.folder.upgrade")
-	}
 	st := NewWizardState("1.1.0", ModeUpgrade, "1.0.0", `C:\Program Files\Exchange Checker`, true, `C:\ProgramData\ExchangeChecker`, false)
 	ch := make(chan struct{})
 	go func() {
@@ -68,7 +64,7 @@ func startFolderHintWizard(t *testing.T) (hwnd, hint uintptr, done <-chan struct
 			t.Fatal("wizard did not exit")
 		}
 	}
-	return hwnd, hint, ch, cancel
+	return hwnd, hint, cancel
 }
 
 // TestCHK_SETUP_15_FolderHintFits drives a real wizard Folder page with
@@ -78,8 +74,8 @@ func startFolderHintWizard(t *testing.T) (hwnd, hint uintptr, done <-chan struct
 //
 // 144 dpi: testHintFontPx scales the hint font by 144/96; the live control
 // grows (hh = need+4) and GetClientRect must still fit TextSize.
-// Negative case of the same check: after shrinking the control to
-// FolderHintMinH, folderHintFits must report clipping.
+// Negative case of the same check: shrink to FolderHintMinH (where the larger
+// font needs more than minH) — folderHintFits must report clipping.
 func TestCHK_SETUP_15_FolderHintFits(t *testing.T) {
 	text := T("setup.folder.upgrade")
 	if text == "" || text == "setup.folder.upgrade" {
@@ -87,16 +83,36 @@ func TestCHK_SETUP_15_FolderHintFits(t *testing.T) {
 	}
 
 	t.Run("live_default", func(t *testing.T) {
-		_, hint, _, cancel := startFolderHintWizard(t)
+		_, hint, cancel := startFolderHintWizard(t)
 		defer cancel()
 		if err := folderHintFits(hint, text); err != nil {
 			t.Fatal(err)
 		}
 		rc := winapi.GetClientRect(hint)
 		t.Logf("default: clientH=%d clientW=%d", rc.Bottom-rc.Top, rc.Right-rc.Left)
+	})
+
+	t.Run("live_144dpi_font", func(t *testing.T) {
+		testHintFontPx = int32(int(float64(FolderHintFontPx)*144.0/96.0 + 0.5))
+		defer func() { testHintFontPx = 0 }()
+		if testHintFontPx <= FolderHintFontPx {
+			t.Fatalf("144dpi font px %d not larger than default %d", testHintFontPx, FolderHintFontPx)
+		}
+		_, hint, cancel := startFolderHintWizard(t)
+		defer cancel()
+		if err := folderHintFits(hint, text); err != nil {
+			t.Fatal(err)
+		}
+		rc := winapi.GetClientRect(hint)
+		font := winapi.SendMessage(hint, winapi.WM_GETFONT, 0, 0)
+		_, need := winapi.TextSize(font, text, rc.Right-rc.Left)
+		t.Logf("144dpi font px=%d: need=%d clientH=%d clientW=%d", testHintFontPx, need, rc.Bottom-rc.Top, rc.Right-rc.Left)
+		if need <= FolderHintMinH {
+			t.Fatalf("144dpi TextSize need=%d must exceed FolderHintMinH=%d so the negative case is meaningful", need, FolderHintMinH)
+		}
 
 		// Negative case of THE SAME check: force height = FolderHintMinH
-		// (no growth). Text must clip so folderHintFits returns an error.
+		// (no growth). With the 144dpi font the text must clip.
 		hx, hy, hw, _ := FolderHintRect()
 		winapi.MoveWindow(hint, hx, hy, hw, FolderHintMinH)
 		rc = winapi.GetClientRect(hint)
@@ -106,28 +122,8 @@ func TestCHK_SETUP_15_FolderHintFits(t *testing.T) {
 		}
 		err := folderHintFits(hint, text)
 		if err == nil {
-			t.Fatalf("expected clip at FolderHintMinH=%d (same GetClientRect vs TextSize check must fail)", FolderHintMinH)
+			t.Fatalf("expected clip at FolderHintMinH=%d (same GetClientRect vs TextSize check must fail; need was %d)", FolderHintMinH, need)
 		}
 		t.Logf("negative FolderHintMinH: %v", err)
-	})
-
-	t.Run("live_144dpi_font", func(t *testing.T) {
-		testHintFontPx = int32(int(float64(FolderHintFontPx)*144.0/96.0 + 0.5))
-		defer func() { testHintFontPx = 0 }()
-		if testHintFontPx <= FolderHintFontPx {
-			t.Fatalf("144dpi font px %d not larger than default %d", testHintFontPx, FolderHintFontPx)
-		}
-		_, hint, _, cancel := startFolderHintWizard(t)
-		defer cancel()
-		if err := folderHintFits(hint, text); err != nil {
-			t.Fatal(err)
-		}
-		rc := winapi.GetClientRect(hint)
-		font := winapi.SendMessage(hint, winapi.WM_GETFONT, 0, 0)
-		_, need := winapi.TextSize(font, text, rc.Right-rc.Left)
-		t.Logf("144dpi font px=%d: need=%d clientH=%d clientW=%d", testHintFontPx, need, rc.Bottom-rc.Top, rc.Right-rc.Left)
-		if rc.Bottom-rc.Top < need {
-			t.Fatalf("144dpi GetClientRect h=%d < TextSize need=%d", rc.Bottom-rc.Top, need)
-		}
 	})
 }

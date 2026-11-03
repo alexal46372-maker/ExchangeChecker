@@ -38,7 +38,7 @@ func newSetupChrome() *setupChrome {
 	c.fontBrand = fontOr("Segoe UI", "Tahoma", -16, winapi.FW_BOLD)
 	c.fontStep = fontOr("Segoe UI", "Tahoma", -12, winapi.FW_NORMAL)
 	c.fontStepOn = fontOr("Segoe UI", "Tahoma", -12, winapi.FW_SEMIBOLD)
-	c.fontHint = fontOr("Segoe UI", "Tahoma", -int32(FolderHintFontPx), winapi.FW_NORMAL)
+	c.fontHint = fontOr("Segoe UI", "Tahoma", -hintFontPx(), winapi.FW_NORMAL)
 	return c
 }
 

@@ -50,6 +50,18 @@ const (
 	FolderHintFontPx = 11 // small body (negative CreateFont height)
 )
 
+// testHintFontPx overrides FolderHintFontPx in newSetupChrome when non-zero
+// (CHK-SETUP-15 windows tests: simulate 144 dpi font cell).
+var testHintFontPx int32
+
+func hintFontPx() int32 {
+	if testHintFontPx != 0 {
+		return testHintFontPx
+	}
+	return FolderHintFontPx
+}
+
+
 // FolderHintTop is y of the hint STATIC (below the path EDIT).
 func FolderHintTop() int32 { return ContentTop() + FolderEditOffset + WizardEditH + FolderHintGap }
 

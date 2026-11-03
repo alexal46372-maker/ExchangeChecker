@@ -118,7 +118,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			if IsLegacyInstallDir(old) {
 				warn("/DIR=%s игнорирован: выполняется миграция из %s", dir, old)
 			} else {
-				warn("already installed in %s: /DIR=%s ignored (uninstall first to move)", inst.Dir, dir)
+				warn("/DIR=%s игнорирован: уже установлено в %s (сначала удалите, чтобы перенести)", dir, inst.Dir)
 			}
 		}
 		dir = old
@@ -301,21 +301,27 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		undo.push(func() error { return sys.SetEventSource(prevExe) })
 	}
 	// 7. HKLM Run of the tray — the service's own rule (CHK-CFG-04)
-	prevRun, prevRunOK, _ := sys.ReadTrayRun()
+	prevRun, prevRunOK, readRunErr := sys.ReadTrayRun()
+	if readRunErr != nil {
+		warn("tray autostart (ReadTrayRun): %v", readRunErr)
+	}
 	if act, err := sys.ApplyTrayRun(svcExe, c.DataDir); err != nil {
 		warn("tray autostart: %v", err)
 	} else {
 		log.Printf("tray autostart: %s", act)
-		if fresh {
-			undo.push(sys.DeleteTrayRun)
-		} else {
-			had, cmd := prevRunOK, prevRun
-			undo.push(func() error {
-				if !had {
-					return sys.WriteTrayRun("")
-				}
-				return sys.WriteTrayRun(cmd)
-			})
+		// Undo only when we know the previous value (ReadTrayRun OK).
+		if readRunErr == nil {
+			if fresh {
+				undo.push(sys.DeleteTrayRun)
+			} else {
+				had, cmd := prevRunOK, prevRun
+				undo.push(func() error {
+					if !had {
+						return sys.WriteTrayRun("")
+					}
+					return sys.WriteTrayRun(cmd)
+				})
+			}
 		}
 	}
 	// 7b. Start-menu shortcut (§6.3) — not fatal; kept on upgrade unless
@@ -409,7 +415,13 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	if start {
 		log.Printf("starting service %s", model.ServiceName)
-		if err := sys.StartService(model.ServiceName, StartTimeout); err != nil {
+		var err error
+		if setupTestFailStartService() {
+			err = fmt.Errorf("setup test fail at StartService")
+		} else {
+			err = sys.StartService(model.ServiceName, StartTimeout)
+		}
+		if err != nil {
 			res.Err = errf("start service (see "+joinDir(c.DataDir, `logs\exchsvc.log`)+")", err)
 			log.Printf("ERROR: %v", res.Err)
 			if !fresh {

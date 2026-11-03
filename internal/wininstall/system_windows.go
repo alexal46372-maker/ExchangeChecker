@@ -11,7 +11,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -546,17 +545,22 @@ func (winSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
 	err := walkNoReparse(oldDir, "", func(rel, src string, dir bool) error {
 		dst := filepath.Join(newDir, filepath.FromSlash(rel))
 		if dir {
+			if _, err := os.Lstat(dst); err == nil {
+				return nil // already present
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("stat %s: %w", dst, err)
+			}
 			if err := os.MkdirAll(dst, 0o755); err != nil {
 				return err
 			}
+			// Track new dirs so migrate rollback can RemoveFile them after files
+			// (reverse undo leaves the new tree empty for RemoveDirIfEmpty).
+			copied = append(copied, dst)
 			return nil
 		}
-		st, err := os.Lstat(dst)
-		if err == nil {
-			_ = st
+		if _, err := os.Lstat(dst); err == nil {
 			return nil // keep existing target (WriteFile may replace payload next)
-		}
-		if !os.IsNotExist(err) {
+		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("stat %s: %w", dst, err)
 		}
 		if err := copyFile(src, dst); err != nil {
@@ -571,14 +575,6 @@ func (winSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
 	return copied, err
 }
 
-// migrateTestFailAfter reads EC_MIGRATE_FAIL_AFTER (test-only injection).
-func migrateTestFailAfter() int {
-	n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("EC_MIGRATE_FAIL_AFTER")))
-	if n < 0 {
-		return 0
-	}
-	return n
-}
 
 // walkNoReparse walks root without descending into reparse points/junctions
 // (os.Lstat + ModeSymlink). rel is slash-separated relative to root.

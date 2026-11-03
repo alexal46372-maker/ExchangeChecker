@@ -203,7 +203,8 @@ jobs:
             GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerUninstall.exe" ./cmd/exchsetup
             rm -rf cmd/exchsetup/payload
             go run ./tools/mkzip gz -o cmd/exchsetup/payload "$pay/ExchangeCheckerSvc.exe" "$pay/ExchangeCheckerTray.exe" "$pay/ExchangeCheckerUninstall.exe"
-            GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+            # e2efault: EC_MIGRATE_FAIL_AFTER / EC_SETUP_FAIL_AT for CHK-SETUP-17 E2E only
+            GOOS=windows GOARCH=amd64 go build -tags "payload,e2efault" -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
           }
           build_setup "1.0.0" "$RUNNER_TEMP/e2e-v1"
           build_setup "1.1.0" "$RUNNER_TEMP/e2e-v2"

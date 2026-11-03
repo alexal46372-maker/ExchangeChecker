@@ -46,7 +46,8 @@ func readTrayRun(t *testing.T) (string, bool) {
 
 // TestCHK_SETUP_17_MigrateE2E: silent install into …\ExchangeChecker, then
 // upgrade migrates to …\Exchange Checker. Also covers mid-migrate rollback
-// (EC_MIGRATE_FAIL_AFTER) and uninstall cleanup. Gated like CHK-SETUP-12.
+// (EC_MIGRATE_FAIL_AFTER / EC_SETUP_FAIL_AT on e2efault setup build) and
+// uninstall cleanup. Gated like CHK-SETUP-12.
 func TestCHK_SETUP_17_MigrateE2E(t *testing.T) {
 	if os.Getenv("EC_SETUP_E2E") != "1" {
 		t.Skip("set EC_SETUP_E2E=1")
@@ -81,7 +82,7 @@ func TestCHK_SETUP_17_MigrateE2E(t *testing.T) {
 	}
 
 	log1 := filepath.Join(os.TempDir(), "ec-setup17-install.log")
-	code := run(setup, "/S", "/DIR="+legacyArg, "/LOG="+log1, "/LANG=ru")
+	code := run(setup, "/S", "/DIR="+legacyArg, "/LOG="+log1)
 	if code != 0 {
 		dumpLog(t, log1)
 		t.Fatalf("legacy install exit %d", code)
@@ -145,7 +146,7 @@ func TestCHK_SETUP_17_MigrateE2E(t *testing.T) {
 
 	// --- mid-migrate failure + rollback ---
 	logFail := filepath.Join(os.TempDir(), "ec-setup17-fail.log")
-	code = runFailEnv(setupV2, "/S", "/LOG="+logFail, "/LANG=ru")
+	code = runFailEnv(setupV2, "/S", "/LOG="+logFail)
 	if code == 0 || code == 3010 {
 		dumpLog(t, logFail)
 		t.Fatalf("injected migrate failure must not succeed (exit %d)", code)
@@ -179,10 +180,59 @@ func TestCHK_SETUP_17_MigrateE2E(t *testing.T) {
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("legacy keep-me missing after rollback: %v", err)
 	}
+	if _, err := os.Stat(nested); err != nil {
+		t.Fatalf("legacy nested note missing after rollback: %v", err)
+	}
+	// Copied leftovers and the new folder itself must be gone after undo.
+	if _, err := os.Stat(filepath.Join(neuPath, "keep-me.txt")); !os.IsNotExist(err) {
+		t.Fatalf("new keep-me.txt must not remain after migrate rollback: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(neuPath, "extra", "note.txt")); !os.IsNotExist(err) {
+		t.Fatalf("new extra/note.txt must not remain after migrate rollback: %v", err)
+	}
+	if _, err := os.Stat(neuPath); !os.IsNotExist(err) {
+		t.Fatalf("new install folder must be removed after migrate rollback: %v", err)
+	}
+
+	// --- late failure after shortcuts + Run (StartService), then rollback ---
+	logFailStart := filepath.Join(os.TempDir(), "ec-setup17-fail-start.log")
+	code = runSetupExe(t, setupV2, []string{"EC_SETUP_FAIL_AT=StartService"}, "/S", "/LOG="+logFailStart)
+	if code == 0 || code == 3010 {
+		dumpLog(t, logFailStart)
+		t.Fatalf("injected StartService failure must not succeed (exit %d)", code)
+	}
+	infoStart, err := sys.QueryService(model.ServiceName)
+	if err != nil || !infoStart.Exists || !infoStart.Running {
+		t.Fatalf("service after StartService rollback: %+v err=%v", infoStart, err)
+	}
+	if !strings.EqualFold(strings.Trim(infoStart.ImagePath, `"`), strings.Trim(oldImg, `"`)) &&
+		!strings.Contains(strings.ToLower(infoStart.ImagePath), strings.ToLower(filepath.Join(legacy, config.ServiceExeName))) {
+		t.Fatalf("ImagePath after StartService rollback=%q want legacy %q", infoStart.ImagePath, oldImg)
+	}
+	runStart, _ := readTrayRun(t)
+	if !strings.Contains(strings.ToLower(runStart), strings.ToLower(legacy)) {
+		t.Fatalf("Run after StartService rollback=%q want legacy", runStart)
+	}
+	legacyStartLnk := filepath.Join(progs, wininstall.StartMenuFolder, wininstall.ShortcutFile)
+	legacyDeskLnk := filepath.Join(desk, wininstall.ShortcutFile)
+	// After rollback shortcuts must target the legacy folder again.
+	if sc, err := readShortcut(t, legacyStartLnk); err != nil {
+		t.Fatalf("start shortcut after StartService rollback: %v", err)
+	} else if !strings.Contains(strings.ToLower(sc), strings.ToLower(legacy)) {
+		t.Fatalf("start shortcut after StartService rollback=%q want legacy %q", sc, legacy)
+	}
+	if sc, err := readShortcut(t, legacyDeskLnk); err != nil {
+		t.Fatalf("desktop shortcut after StartService rollback: %v", err)
+	} else if !strings.Contains(strings.ToLower(sc), strings.ToLower(legacy)) {
+		t.Fatalf("desktop shortcut after StartService rollback=%q want legacy %q", sc, legacy)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("legacy keep-me missing after StartService rollback: %v", err)
+	}
 
 	// --- successful migrate ---
 	logU := filepath.Join(os.TempDir(), "ec-setup17-upgrade.log")
-	code = run(setupV2, "/S", "/LOG="+logU, "/LANG=ru")
+	code = run(setupV2, "/S", "/LOG="+logU)
 	if code != 0 && code != 3010 {
 		dumpLog(t, logU)
 		t.Fatalf("migrate upgrade exit %d", code)

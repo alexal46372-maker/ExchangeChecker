@@ -286,6 +286,23 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			}
 		}
 	}
+	// 7b2. Public Desktop shortcut (CHK-SETUP-16). Preference persisted in
+	// Uninstall\DesktopShortcut; /NODESKTOPSHORTCUT or saved 0 skips create
+	// and removes an existing desktop .lnk on upgrade.
+	if !c.Opts.NoDesktopShortcut {
+		if lnk, err := sys.CreateDesktopShortcut(joinDir(dir, config.TrayExeName), dir, T(c.Lang, "setup.shortcut.desc")); err != nil {
+			warn("desktop shortcut: %v", err)
+		} else {
+			log.Printf("desktop shortcut %s", lnk)
+			if fresh {
+				undo.push(sys.DeleteDesktopShortcut)
+			}
+		}
+	} else if !fresh {
+		if err := sys.DeleteDesktopShortcut(); err != nil {
+			warn("delete desktop shortcut: %v", err)
+		}
+	}
 	// 7c. Windows Firewall inbound UDP for SQL Browser (SSRP) replies
 	// (CHK-SETUP-13). Application = service exe (ImagePath); RemotePorts
 	// 1434; LocalPorts any; RemoteAddresses LocalSubnet; Domain|Private
@@ -314,7 +331,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			undo.push(func() error { return sys.WriteUninstallKey(pv) })
 		}
 	}
-	vals := UninstallValues(dir, joinDir(dir, config.UninstallExeName), joinDir(dir, config.TrayExeName), c.Version, sizeKB(total), c.Now)
+	vals := UninstallValues(dir, joinDir(dir, config.UninstallExeName), joinDir(dir, config.TrayExeName), c.Version, sizeKB(total), c.Now, !c.Opts.NoDesktopShortcut)
 	if err := sys.WriteUninstallKey(vals); err != nil {
 		return failRollback(errf("Uninstall key", err))
 	}
@@ -441,6 +458,7 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	step("delete HKLM Run "+config.TrayRunValue, sys.DeleteTrayRun())
 	step("delete event log source", sys.DeleteEventSource())
 	step("delete start menu shortcut", sys.DeleteStartShortcut())
+	step("delete desktop shortcut", sys.DeleteDesktopShortcut())
 	// Firewall rule: WARNING only — a stopped MpsSvc / COM failure must
 	// not block uninstall (CHK-SETUP-13).
 	if err := sys.RemoveSQLBrowserFirewallRule(); err != nil {

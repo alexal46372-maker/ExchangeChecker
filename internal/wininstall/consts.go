@@ -72,8 +72,12 @@ type RegValue struct {
 
 // UninstallValues: the Uninstall key (docs/PHASE7.md §6.1); no Publisher
 // (decision 5). uninstallExe is the full path of the uninstaller.
-func UninstallValues(dir, uninstallExe, trayExe, ver string, sizeKB uint32, now time.Time) []RegValue {
+func UninstallValues(dir, uninstallExe, trayExe, ver string, sizeKB uint32, now time.Time, desktopShortcut bool) []RegValue {
 	q := `"` + uninstallExe + `"`
+	desk := uint32(0)
+	if desktopShortcut {
+		desk = 1
+	}
 	return []RegValue{
 		{Name: "DisplayName", Str: version.ProductName},
 		{Name: "DisplayVersion", Str: ver},
@@ -85,7 +89,33 @@ func UninstallValues(dir, uninstallExe, trayExe, ver string, sizeKB uint32, now 
 		{Name: "EstimatedSize", DWord: true, Num: sizeKB},
 		{Name: "NoModify", DWord: true, Num: 1},
 		{Name: "NoRepair", DWord: true, Num: 1},
+		// DesktopShortcut: persist Options-page / silent preference (CHK-SETUP-16).
+		{Name: "DesktopShortcut", DWord: true, Num: desk},
 	}
+}
+
+// DesktopShortcutPref reads the saved desktop-shortcut DWORD from Uninstall
+// values. ok is false when the value was never written (pre-phase-13 installs).
+func DesktopShortcutPref(vals []RegValue) (want bool, ok bool) {
+	for _, v := range vals {
+		if v.Name == "DesktopShortcut" && v.DWord {
+			return v.Num != 0, true
+		}
+	}
+	return false, false
+}
+
+// ApplyDesktopShortcutPref merges /NODESKTOPSHORTCUT with the saved
+// Uninstall preference. Explicit CLI wins; otherwise the registry default
+// applies; if neither is set, the shortcut stays wanted (create).
+func ApplyDesktopShortcutPref(o Options, vals []RegValue) Options {
+	if o.NoDesktopShortcut {
+		return o
+	}
+	if want, ok := DesktopShortcutPref(vals); ok && !want {
+		o.NoDesktopShortcut = true
+	}
+	return o
 }
 
 // ServiceImagePath quotes the exe path (no unquoted-service-path hole).

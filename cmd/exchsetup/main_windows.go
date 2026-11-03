@@ -126,7 +126,11 @@ func run(args []string) int {
 		return res
 	}
 	if opts.Silent {
-		// silent: no window, no message box, no tray launch (§1.3, §D.8)
+		// silent: no window, no message box, no tray launch (§1.3, §D.8).
+		// Desktop shortcut preference: /NODESKTOPSHORTCUT or saved Uninstall DWORD.
+		if vals, err := sys.ReadUninstallKey(); err == nil {
+			opts = wininstall.ApplyDesktopShortcutPref(opts, vals)
+		}
 		return install(opts, printfLogger(logf)).Code
 	}
 	return runWizard(sys, opts, lang, defaultDir, install, logf)
@@ -148,6 +152,14 @@ func runWizard(sys wininstall.System, opts wininstall.Options, lang, defaultDir 
 	st := wininstall.NewWizardState(lang, version.Version, mode, inst.Version, dir, locked, config.DefaultDir(), svc.Running)
 	st.CheckDrive = sys.CheckFixedDrive
 	st.AllowDowngrade = opts.AllowDowngrade
+	if vals, err := sys.ReadUninstallKey(); err == nil {
+		if want, ok := wininstall.DesktopShortcutPref(vals); ok {
+			st.DesktopShortcut = want
+		}
+	}
+	if opts.NoDesktopShortcut {
+		st.DesktopShortcut = false
+	}
 	out, err := wininstall.RunWizard(wininstall.WizardConfig{
 		State: st, Base: opts, LogPath: logPath,
 		Run: func(o wininstall.Options, progress func(string)) wininstall.Result {

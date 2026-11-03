@@ -17,20 +17,21 @@ const (
 
 // Options is the parsed command line.
 //
-// Install: [/S] [/DIR=<folder>] [/NOSTART] [/NOSHORTCUT] [/LOG=<file>]
-// [/ALLOWDOWNGRADE] [/LANG=ru|en]. Uninstall: /uninstall [/S] [/PURGEDATA]
+// Install: [/S] [/DIR=<folder>] [/NOSTART] [/NOSHORTCUT] [/NODESKTOPSHORTCUT]
+// [/LOG=<file>] [/ALLOWDOWNGRADE] [/LANG=ru|en]. Uninstall: /uninstall [/S] [/PURGEDATA]
 // [/LOG=<file>] [/LANG=ru|en]. Switches are case-insensitive; "-" works
 // like "/".
 type Options struct {
-	Silent         bool
-	Uninstall      bool
-	Dir            string
-	NoStart        bool // the checkbox "start the service and start it automatically" off
-	NoShortcut     bool
-	Log            string
-	AllowDowngrade bool
-	PurgeData      bool
-	Lang           string // "", "ru", "en"
+	Silent            bool
+	Uninstall         bool
+	Dir               string
+	NoStart           bool // the checkbox "start the service and start it automatically" off
+	NoShortcut        bool
+	NoDesktopShortcut bool // /NODESKTOPSHORTCUT (CHK-SETUP-16)
+	Log               string
+	AllowDowngrade    bool
+	PurgeData         bool
+	Lang              string // "", "ru", "en"
 }
 
 // ErrUsage: an unknown or malformed switch.
@@ -71,6 +72,8 @@ func ParseArgs(args []string) (Options, error) {
 			err, o.NoStart = noVal(), true
 		case "NOSHORTCUT":
 			err, o.NoShortcut = noVal(), true
+		case "NODESKTOPSHORTCUT":
+			err, o.NoDesktopShortcut = noVal(), true
 		case "ALLOWDOWNGRADE":
 			err, o.AllowDowngrade = noVal(), true
 		case "PURGEDATA":
@@ -92,7 +95,7 @@ func ParseArgs(args []string) (Options, error) {
 			return o, err
 		}
 	}
-	if o.Uninstall && (o.Dir != "" || o.NoStart || o.NoShortcut || o.AllowDowngrade) {
+	if o.Uninstall && (o.Dir != "" || o.NoStart || o.NoShortcut || o.NoDesktopShortcut || o.AllowDowngrade) {
 		return o, fmt.Errorf("%w: /uninstall takes only /S, /PURGEDATA, /LOG, /LANG", ErrUsage)
 	}
 	if !o.Uninstall && o.PurgeData {

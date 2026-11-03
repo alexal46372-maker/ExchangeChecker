@@ -35,6 +35,7 @@ type recordingSystem struct {
 	Long        map[string]string
 	TrayWarn    []string
 	Shortcut    string // target of the start-menu shortcut ("" = none)
+	DesktopLnk  string // target of the Public Desktop shortcut ("" = none)
 	Firewall    string // service exe of the SQL Browser firewall rule ("" = none)
 	FwProfiles  int32  // active firewall profiles (FirewallCurrentProfiles)
 }
@@ -288,6 +289,26 @@ func (f *recordingSystem) DeleteStartShortcut() error {
 		return err
 	}
 	f.Shortcut = ""
+	return nil
+}
+
+func (f *recordingSystem) CreateDesktopShortcut(trayExe, workDir, description string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("CreateDesktopShortcut|%s", trayExe); err != nil {
+		return "", err
+	}
+	f.DesktopLnk = trayExe
+	return `C:\Users\Public\Desktop\Exchange Checker.lnk`, nil
+}
+
+func (f *recordingSystem) DeleteDesktopShortcut() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("DeleteDesktopShortcut"); err != nil {
+		return err
+	}
+	f.DesktopLnk = ""
 	return nil
 }
 

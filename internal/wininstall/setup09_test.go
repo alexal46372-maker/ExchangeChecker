@@ -230,7 +230,7 @@ func TestCHK_SETUP_09_StartServiceFailureRollsBack(t *testing.T) {
 	}
 	oldSvc := []byte("old-svc-bytes")
 	f.Files[`C:\EC\`+config.ServiceExeName] = append([]byte(nil), oldSvc...)
-	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now())
+	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now(), true)
 	f.FailAt = "StartService|"
 	f.FailOnce = true
 	res := Install(f, InstallConfig{
@@ -292,7 +292,7 @@ func TestCHK_SETUP_09_RegistryJournalOnUpgrade(t *testing.T) {
 		ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`, Description: "Exchange Checker",
 	}
 	f.Files[`C:\EC\`+config.ServiceExeName] = []byte("old")
-	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now())
+	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now(), true)
 	res := Install(f, InstallConfig{
 		Opts: Options{Silent: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
 		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
@@ -349,7 +349,7 @@ func TestCHK_SETUP_09_RollbackIncompleteReported(t *testing.T) {
 		ImagePath: `"C:\EC\ExchangeCheckerSvc.exe"`, // description unreadable
 	}
 	f.Files[`C:\EC\`+config.ServiceExeName] = []byte("old")
-	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now())
+	f.Uninst = UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.0.0", 1, time.Now(), true)
 	f.FailAt = "StartService|"
 	f.FailOnce = true
 	f.FailAlso = "RestoreBackup|"

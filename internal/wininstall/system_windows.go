@@ -487,6 +487,46 @@ func (winSystem) DeleteStartShortcut() error {
 	return nil
 }
 
+// Desktop shortcut (CHK-SETUP-16): Public Desktop because setup is
+// per-machine (requireAdministrator, Program Files, HKLM Uninstall).
+// CSIDL_COMMON_DESKTOPDIRECTORY == FOLDERID_PublicDesktop on Win7+.
+func publicDesktopLnk() (string, error) {
+	desk, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_DESKTOPDIRECTORY)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(desk, ShortcutFile), nil
+}
+
+func (winSystem) CreateDesktopShortcut(trayExe, workDir, desc string) (string, error) {
+	lnk, err := publicDesktopLnk()
+	if err != nil {
+		return "", err
+	}
+	err = winapi.WithCOM(func() error {
+		return winapi.CreateShortcut(lnk, winapi.ShortcutSpec{
+			Target: trayExe, WorkDir: workDir, Description: desc, Icon: trayExe, IconIndex: 0,
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+	winapi.SHChangeNotifyDir(filepath.Dir(lnk))
+	return lnk, nil
+}
+
+func (winSystem) DeleteDesktopShortcut() error {
+	lnk, err := publicDesktopLnk()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(lnk); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	winapi.SHChangeNotifyDir(filepath.Dir(lnk))
+	return nil
+}
+
 func (winSystem) AddSQLBrowserFirewallRule(serviceExe string) error {
 	return winapi.WithCOM(func() error {
 		return winapi.AddSQLBrowserFirewallRule(serviceExe)
@@ -658,7 +698,7 @@ func (winSystem) ReadUninstallKey() ([]RegValue, error) {
 			out = append(out, RegValue{Name: name, Str: s})
 		}
 	}
-	for _, name := range []string{"EstimatedSize", "NoModify", "NoRepair"} {
+	for _, name := range []string{"EstimatedSize", "NoModify", "NoRepair", "DesktopShortcut"} {
 		n, present, err := winapi.RegGetDWORDView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, name, view)
 		if err != nil {
 			return nil, err

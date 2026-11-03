@@ -103,19 +103,20 @@ var StepKeys = []string{
 // Control IDs (tests / E2E drive them with SendMessage). Shared with the
 // Windows window; do not renumber — CHK-SETUP-10/12/14 contract.
 const (
-	IDBack       = 101
-	IDNext       = 102
-	IDCancel     = 103
-	IDBrowse     = 104
-	IDDir        = 105
-	IDShortcut   = 106
-	IDService    = 107
-	IDTray       = 108
-	IDText       = 109
-	IDProgress   = 110
-	IDStatus     = 111
-	IDError      = 112
-	IDPurge      = 113
-	IDUninstall  = 114
-	IDFolderHint = 115 // multiline hint under folder field (CHK-SETUP-15)
+	IDBack            = 101
+	IDNext            = 102
+	IDCancel          = 103
+	IDBrowse          = 104
+	IDDir             = 105
+	IDShortcut        = 106
+	IDService         = 107
+	IDTray            = 108
+	IDText            = 109
+	IDProgress        = 110
+	IDStatus          = 111
+	IDError           = 112
+	IDPurge           = 113
+	IDUninstall       = 114
+	IDFolderHint      = 115 // multiline hint under folder field (CHK-SETUP-15)
+	IDDesktopShortcut = 116 // Options: Public Desktop .lnk (CHK-SETUP-16)
 )

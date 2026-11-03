@@ -38,6 +38,10 @@ func (stubSystem) CreateStartShortcut(string, string, string) (string, error) {
 	return "", ErrNotWindows
 }
 func (stubSystem) DeleteStartShortcut() error                  { return ErrNotWindows }
+func (stubSystem) CreateDesktopShortcut(string, string, string) (string, error) {
+	return "", ErrNotWindows
+}
+func (stubSystem) DeleteDesktopShortcut() error                { return ErrNotWindows }
 func (stubSystem) AddSQLBrowserFirewallRule(string) error      { return ErrNotWindows }
 func (stubSystem) RemoveSQLBrowserFirewallRule() error         { return ErrNotWindows }
 func (stubSystem) FirewallCurrentProfiles() (int32, error)     { return 0, ErrNotWindows }

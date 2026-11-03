@@ -19,17 +19,18 @@ const (
 
 // WizardState is the wizard's data.
 type WizardState struct {
-	Page       Page
-	Lang       string
-	Version    string
-	Mode       Mode
-	Installed  string // installed version (upgrade/reinstall)
-	Dir        string
-	DirLocked  bool // upgrade/reinstall: folder is fixed
-	DataDir    string
-	Shortcut   bool // default on
-	Service    bool // "start the service and start it automatically", default on (§D.1)
-	LaunchTray bool // Finish page, default on (§D.8)
+	Page            Page
+	Lang            string
+	Version         string
+	Mode            Mode
+	Installed       string // installed version (upgrade/reinstall)
+	Dir             string
+	DirLocked       bool // upgrade/reinstall: folder is fixed
+	DataDir         string
+	Shortcut        bool // Start menu, default on
+	DesktopShortcut bool // Public Desktop, default on (CHK-SETUP-16)
+	Service         bool // "start the service and start it automatically", default on (§D.1)
+	LaunchTray      bool // Finish page, default on (§D.8)
 	// SvcWasRunning: state before the upgrade (the locked checkbox value).
 	SvcWasRunning bool
 	// AllowDowngrade (/ALLOWDOWNGRADE): otherwise a downgrade is refused on
@@ -46,7 +47,7 @@ func NewWizardState(lang, ver string, mode Mode, installed, dir string, locked b
 	s := &WizardState{
 		Lang: NormLang(lang), Version: ver, Mode: mode, Installed: installed,
 		Dir: dir, DirLocked: locked, DataDir: dataDir,
-		Shortcut: true, Service: true, LaunchTray: true,
+		Shortcut: true, DesktopShortcut: true, Service: true, LaunchTray: true,
 	}
 	s.SvcWasRunning = svcWasRunning
 	if s.ServiceLocked() {
@@ -133,6 +134,7 @@ func (s *WizardState) Options(base Options) Options {
 		o.Dir = CleanDir(s.Dir)
 	}
 	o.NoShortcut = !s.Shortcut
+	o.NoDesktopShortcut = !s.DesktopShortcut
 	o.NoStart = !s.Service
 	if s.ServiceLocked() {
 		o.NoStart = !s.SvcWasRunning // never differs from the previous state

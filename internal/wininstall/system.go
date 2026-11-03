@@ -83,6 +83,11 @@ type System interface {
 	CreateStartShortcut(trayExe, workDir, description string) (lnk string, err error)
 	// DeleteStartShortcut removes the .lnk and its folder (missing = ok).
 	DeleteStartShortcut() error
+	// CreateDesktopShortcut writes Exchange Checker.lnk on the Public Desktop
+	// (CSIDL_COMMON_DESKTOPDIRECTORY) — per-machine install (CHK-SETUP-16).
+	CreateDesktopShortcut(trayExe, workDir, description string) (lnk string, err error)
+	// DeleteDesktopShortcut removes the Public Desktop .lnk (missing = ok).
+	DeleteDesktopShortcut() error
 	// AddSQLBrowserFirewallRule adds (or replaces) the inbound UDP rule for
 	// SSRP replies to the service exe (CHK-SETUP-13). Missing firewall
 	// service / COM failure is returned to the caller (plan logs WARNING).

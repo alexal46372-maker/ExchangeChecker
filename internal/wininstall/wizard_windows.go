@@ -201,7 +201,9 @@ func (w *wizard) build() {
 	// Options
 	w.ctl[IDShortcut] = child(h, "BUTTON", T(L, "setup.options.shortcut"), winapi.WS_TABSTOP|bsAutoCheckbox, IDShortcut, cx, top+8, cw, 24)
 	w.chrome.applyFont(w.ctl[IDShortcut], false)
-	w.ctl[IDService] = child(h, "BUTTON", T(L, "setup.options.service"), winapi.WS_TABSTOP|bsAutoCheckbox, IDService, cx, top+8+32, cw, 24)
+	w.ctl[IDDesktopShortcut] = child(h, "BUTTON", T(L, "setup.options.desktop"), winapi.WS_TABSTOP|bsAutoCheckbox, IDDesktopShortcut, cx, top+8+32, cw, 24)
+	w.chrome.applyFont(w.ctl[IDDesktopShortcut], false)
+	w.ctl[IDService] = child(h, "BUTTON", T(L, "setup.options.service"), winapi.WS_TABSTOP|bsAutoCheckbox, IDService, cx, top+8+64, cw, 24)
 	w.chrome.applyFont(w.ctl[IDService], false)
 	// Progress
 	w.ctl[IDStatus] = child(h, "STATIC", "", winapi.SS_LEFT, IDStatus, cx, top+8, cw, 40)
@@ -223,6 +225,7 @@ func (w *wizard) build() {
 		w.chrome.applyFont(w.ctl[id], false)
 	}
 	setCheck(w.ctl[IDShortcut], w.cfg.State.Shortcut)
+	setCheck(w.ctl[IDDesktopShortcut], w.cfg.State.DesktopShortcut)
 	setCheck(w.ctl[IDService], w.cfg.State.Service)
 	setCheck(w.ctl[IDTray], w.cfg.State.LaunchTray)
 	if w.cfg.State.DirLocked {
@@ -258,7 +261,7 @@ func (w *wizard) render() {
 	s, L := w.cfg.State, w.cfg.State.Lang
 	cx, cw := ContentLeft(), ContentWidth()
 	top := ContentTop()
-	w.show([]int{IDText, IDDir, IDBrowse, IDFolderHint, IDError, IDShortcut, IDService, IDStatus, IDProgress, IDTray}, false)
+	w.show([]int{IDText, IDDir, IDBrowse, IDFolderHint, IDError, IDShortcut, IDDesktopShortcut, IDService, IDStatus, IDProgress, IDTray}, false)
 	winapi.SetWindowText(w.ctl[IDNext], T(L, "setup.btn.next"))
 	switch s.Page {
 	case PageWelcome:
@@ -291,8 +294,9 @@ func (w *wizard) render() {
 		w.show([]int{IDFolderHint}, hint != "")
 	case PageOptions:
 		winapi.MoveWindow(w.ctl[IDShortcut], cx, top+8, cw, 24)
-		winapi.MoveWindow(w.ctl[IDService], cx, top+8+32, cw, 24)
-		w.show([]int{IDShortcut, IDService}, true)
+		winapi.MoveWindow(w.ctl[IDDesktopShortcut], cx, top+8+32, cw, 24)
+		winapi.MoveWindow(w.ctl[IDService], cx, top+8+64, cw, 24)
+		w.show([]int{IDShortcut, IDDesktopShortcut, IDService}, true)
 		winapi.SetWindowText(w.ctl[IDNext], T(L, "setup.btn.install"))
 	case PageProgress:
 		winapi.MoveWindow(w.ctl[IDStatus], cx, top+8, cw, 40)
@@ -408,6 +412,7 @@ func (w *wizard) onNext() {
 		winapi.SetWindowText(w.ctl[IDError], "")
 	case PageOptions:
 		s.Shortcut = checked(w.ctl[IDShortcut])
+		s.DesktopShortcut = checked(w.ctl[IDDesktopShortcut])
 		if !s.ServiceLocked() {
 			s.Service = checked(w.ctl[IDService])
 		}

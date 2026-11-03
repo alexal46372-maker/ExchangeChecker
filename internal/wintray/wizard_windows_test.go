@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -113,6 +114,7 @@ func TestCHK_TRAY_30_Wizard(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	svc := newWizService()
+	svc.cands = []model.DiscoveryCandidate{goodCandidate("_Node10"), goodCandidate("_Node20")}
 	w, wd := openWiz(t, svc)
 	wd.set(idWizServer, "np:srv")
 	wd.set(idWizLogin, "mon")
@@ -146,17 +148,28 @@ func TestCHK_TRAY_30_Wizard(t *testing.T) {
 	wd.pick(idWizDBs, 1)
 	wd.click(t, idWizNext)
 	pumpUntil(t, "discovered", func() bool { return wd.idle() && len(wd.z.Candidates) == 2 })
-	if svc.count("test") != 1 || winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.z.Chosen != -1 {
+	// fix/tray-wizard-autofind: found and applied without asking (both
+	// plans), «Сохранить» right away; the list only behind «Подробнее»
+	if svc.count("test") != 1 || !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.z.Chosen != 0 ||
+		wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" || len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
 		t.Fatalf("finish: tests %d chosen %d %q", svc.count("test"), wd.z.Chosen, wd.text())
 	}
-	if !strings.Contains(wd.text(), i18n.T(i18n.KeyWizTestOK, i18n.RU)) {
+	if !strings.Contains(wd.text(), i18n.T(i18n.KeyWizTestOK, i18n.RU)) || !strings.Contains(wd.text(), "_Node10 (+1)") {
 		t.Errorf("result %q", wd.text())
+	}
+	if !wd.candsCtl[1].Hidden {
+		t.Error("candidate list shown without «Подробнее»")
+	}
+	wd.click(t, idWizDetails)
+	if !wd.detailsShown || wd.candsCtl[1].Hidden {
+		t.Error("«Подробнее» does not show the list")
 	}
 	wd.pick(idWizCands, 1)
 	wd.click(t, idWizSave)
 	pumpUntil(t, "saved", func() bool { return w.wiz == nil && svc.count("save") == 1 })
 	sc := svc.lastSave()
-	if sc.p.Server != `SRV\SQL1` || sc.p.Database != "ut" || sc.p.Name != "ut" || sc.p.Mapping.Table != "_Node20" || sc.password != "s3cret" || sc.rev != "r1" {
+	if sc.p.Server != `SRV\SQL1` || sc.p.Database != "ut" || sc.p.Name != "ut" || sc.p.Mapping.Table != "_Node20" || sc.password != "s3cret" || sc.rev != "r1" ||
+		len(sc.p.Mappings) != 1 || sc.p.Mappings[0].Table != "_Node10" {
 		t.Errorf("saved %+v", sc)
 	}
 	if !winapi.IsWindowEnabled(w.hwnd) || w.ed.IsNew || len(w.ed.Profiles) != 2 {
@@ -197,15 +210,17 @@ func TestCHK_TRAY_30_WizardAutoPick(t *testing.T) {
 	wd.z.Server, wd.z.Database, wd.z.Step = `srv`, "ut", traysettings.WizFinish
 	wd.set(idWizServer, "srv")
 	wd.set(idWizLogin, "mon")
-	m := model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{testCandidate("_Node10"), testCandidate("_Node20")},
+	m := model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{goodCandidate("_Node10"), goodCandidate("_Node20")},
 		AutoPick: &model.SQLAutoPick{Index: 1, AutoPickMin: 0.6, ReasonKey: model.MsgSQLAutoPickOK,
 			Ranks: []model.SQLCandidateRank{{Rank: 2, Confidence: 0.2}, {Rank: 1, Confidence: 0.9}}}}
+	// the shared decision (ResolveDiscovery), not the canned autoPick
 	idx, _ := wd.z.DiscoveryDone(m)
-	if idx != 1 || !wd.z.Choose(wd.w.ed, idx) {
+	if idx != 0 || !wd.z.Choose(wd.w.ed, idx) {
 		t.Fatalf("auto %d", idx)
 	}
 	wd.show()
-	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node20" {
+	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" ||
+		len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
 		t.Error("auto pick not applied")
 	}
 	wd.click(t, idWizCancel)
@@ -296,5 +311,68 @@ func TestCHK_TRAY_32_Clipboard(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	if err := winapi.SetClipboardText(0, "SELECT 1 -- тест"); err != nil {
 		t.Skipf("no clipboard: %v", err)
+	}
+}
+
+// goodCandidate is testCandidate above the auto-pick threshold.
+func goodCandidate(table string) model.DiscoveryCandidate {
+	c := testCandidate(table)
+	c.Score = 150
+	return c
+}
+
+// TestCHK_TRAY_83_WizardLowScoreNotApplied — candidates below the
+// auto-pick threshold are never applied: the low_score text, «Подробнее»
+// opened with the best candidate preselected, «Сохранить» disabled until
+// the user picks one (then all plans are kept).
+func TestCHK_TRAY_83_WizardLowScoreNotApplied(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newWizService() // default candidates: score 50
+	_, wd := openWiz(t, svc)
+	wd.set(idWizServer, "srv")
+	wd.set(idWizLogin, "mon")
+	wd.set(idWizPassword, "pw")
+	wd.click(t, idWizNext)
+	pumpUntil(t, "databases", func() bool { return wd.idle() && len(wd.z.Databases) == 2 })
+	wd.pick(idWizDBs, 1)
+	wd.click(t, idWizNext)
+	pumpUntil(t, "discovered", func() bool { return wd.idle() && len(wd.z.Candidates) == 2 })
+	if wd.z.Chosen != -1 || wd.w.ed.MapEdit != nil || winapi.IsWindowEnabled(wd.ctl[idWizSave]) {
+		t.Fatalf("low score applied: chosen %d %q", wd.z.Chosen, wd.text())
+	}
+	if wd.z.Problem == nil || wd.z.Problem.Code != traysettings.ProblemLowScore || !strings.Contains(wd.text(), i18n.T(i18n.KeyWizErrLowScore, i18n.RU)) {
+		t.Errorf("text %q", wd.text())
+	}
+	lb := wd.ctl[idWizCands]
+	caret := int(int32(winapi.SendMessage(lb, 0x019F /* LB_GETCARETINDEX */, 0, 0)))
+	if !wd.detailsShown || wd.candsCtl[1].Hidden || wd.sel(idWizCands) != -1 || caret != wd.z.Best || wd.z.Best != 0 {
+		t.Errorf("details %v sel %d caret %d best %d", wd.detailsShown, wd.sel(idWizCands), caret, wd.z.Best)
+	}
+	// a REAL mouse click on the highlighted row (no synthetic LBN_SELCHANGE):
+	// the list box itself notifies the wizard
+	var rc winapi.RECT
+	winapi.SendMessage(lb, 0x0198 /* LB_GETITEMRECT */, uintptr(wd.z.Best), uintptr(unsafe.Pointer(&rc)))
+	pos := uintptr(uint16(rc.Left+5)) | uintptr(uint16((rc.Top+rc.Bottom)/2))<<16
+	winapi.SendMessage(lb, 0x0201 /* WM_LBUTTONDOWN */, 1 /* MK_LBUTTON */, pos)
+	winapi.SendMessage(lb, winapi.WM_LBUTTONUP, 0, pos)
+	PumpPending()
+	if wd.z.Chosen != wd.z.Best {
+		t.Fatalf("click on the highlighted row did not choose it: chosen %d sel %d", wd.z.Chosen, wd.sel(idWizCands))
+	}
+	// clicking the now selected row again changes nothing
+	winapi.SendMessage(lb, 0x0201, 1, pos)
+	winapi.SendMessage(lb, winapi.WM_LBUTTONUP, 0, pos)
+	PumpPending()
+	wd.show()
+	if !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" ||
+		len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
+		t.Errorf("manual pick: %+v %+v", wd.w.ed.MapEdit, wd.w.ed.MapsEdit)
+	}
+	// saved with every plan
+	wd.click(t, idWizSave)
+	pumpUntil(t, "saved", func() bool { return wd.w.wiz == nil && svc.count("save") == 1 })
+	if sc := svc.lastSave(); sc.p.Mapping.Table != "_Node10" || len(sc.p.Mappings) != 1 || sc.p.Mappings[0].Table != "_Node20" {
+		t.Errorf("saved %+v / %+v", sc.p.Mapping, sc.p.Mappings)
 	}
 }

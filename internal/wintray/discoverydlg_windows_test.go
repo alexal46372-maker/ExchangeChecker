@@ -30,6 +30,9 @@ type discService struct {
 	// the error of the next Discover
 	hold    chan struct{}
 	failErr error
+	// cands: the candidates of Discover (nil = the two testCandidate
+	// plans, score 50: below the auto-pick threshold)
+	cands []model.DiscoveryCandidate
 }
 
 func newDiscService() *discService {
@@ -93,6 +96,12 @@ func (d *discService) Discover(ctx context.Context, req model.IPCRequest) ([]mod
 	d.dmu.Unlock()
 	if err != nil {
 		return nil, "", err
+	}
+	d.dmu.Lock()
+	cands := d.cands
+	d.dmu.Unlock()
+	if cands != nil {
+		return cands, model.TruncatedBudget, nil
 	}
 	return []model.DiscoveryCandidate{testCandidate("_Node10"), testCandidate("_Node20")}, model.TruncatedBudget, nil
 }

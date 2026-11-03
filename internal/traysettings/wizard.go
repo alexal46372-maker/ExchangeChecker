@@ -57,12 +57,22 @@ type Wizard struct {
 	Candidates []model.DiscoveryCandidate
 	Pick       *model.SQLAutoPick
 	Chosen     int // candidate taken into the profile (-1 = none)
+	// ResolveDiscovery of the last discover reply (CHK-TRAY-83): the main
+	// mapping, the other plans, the main candidate; Problem when nothing
+	// could be applied.
+	Main    model.Mapping
+	Plans   []model.Mapping
+	Problem *Problem
+	mainIdx int
+	// Best: the candidate to preselect under «Подробнее» when nothing was
+	// applied (low_score / incomplete / ambiguous; -1 = none).
+	Best int
 }
 
 // NewWizard starts with the defaults of a new profile.
 func NewWizard(lang string) *Wizard {
 	f := FromProfile(model.NewProfile(""))
-	return &Wizard{Lang: i18n.Normalize(lang), Encrypt: f.Encrypt, Chosen: -1}
+	return &Wizard{Lang: i18n.Normalize(lang), Encrypt: f.Encrypt, Chosen: -1, mainIdx: -1, Best: -1}
 }
 
 func (z *Wizard) t(key string) string { return i18n.T(key, z.Lang) }
@@ -203,51 +213,67 @@ func (z *Wizard) PickDatabase(i int) bool {
 	}
 	z.Database = z.Databases[i].Name
 	z.Candidates, z.Pick, z.Chosen, z.Tested = nil, nil, -1, false
+	z.Main, z.Plans, z.Problem, z.mainIdx, z.Best = model.Mapping{}, nil, nil, -1, -1
 	return true
 }
 
-// DiscoveryDone takes the discover reply and returns the candidate to
-// apply without asking: autoPick.autoApply, or exactly one candidate
-// with confidence ≥ autoPickMin; -1 = the user chooses (or «Расширенные
-// настройки»). The text explains the decision (autoPick reasonKey).
+// DiscoveryDone takes the discover reply and decides by itself
+// (fix/tray-wizard-autofind, CHK-TRAY-83): ResolveDiscovery — the same
+// decision as the expert dialog — gives the main mapping and the mappings
+// of every other exchange plan (autoPick Plans, 1C 8.1 counters
+// included); the returned candidate is the main one, applied without
+// asking (Choose). -1 only for a real problem (Problem: none, ambiguous,
+// truncated, low_score, incomplete; Best is then the candidate to
+// preselect); the text is «Найдено: план X (+N), поля …» or the problem.
 func (z *Wizard) DiscoveryDone(m model.IPCMessage) (int, string) {
 	z.Candidates = append([]model.DiscoveryCandidate(nil), m.Candidates...)
 	z.Pick = m.AutoPick
 	z.Chosen = -1
-	if len(z.Candidates) == 0 {
-		return -1, i18n.Message(model.MsgSQLAutoPickNone, z.Lang)
+	z.Main, z.Plans, z.Problem = model.Mapping{}, nil, nil
+	main, plans, idx, pr := resolveDiscovery(z.Candidates, z.Lang)
+	z.Best = idx
+	if pr != nil {
+		if pr.Code == ProblemNone && m.Truncated {
+			pr = &Problem{Code: ProblemTruncated, Text: z.t(i18n.KeyWizErrTruncated)}
+		}
+		z.Problem = pr
+		// nothing applied; a candidate picked under «Подробнее» keeps the
+		// other plans (offered, as in the expert dialog)
+		z.Main, z.Plans = offeredPlans(z.Candidates)
+		return -1, pr.Text
 	}
-	p := z.Pick
-	if p == nil {
-		return -1, z.t(i18n.KeyWizChoose)
+	z.Main, z.Plans, z.mainIdx = main, plans, idx
+	text := FoundText(main, plans, z.Lang)
+	if main.Mode == model.MappingCounters || anyCounters(plans) {
+		text += "\r\n" + i18n.Message(model.MsgSQLAutoPickCountersOK, z.Lang)
 	}
-	why := i18n.Message(p.ReasonKey, z.Lang)
-	if p.AutoApply && p.Index >= 0 && p.Index < len(z.Candidates) {
-		return p.Index, why
+	if m.Truncated {
+		text += "\r\n" + z.t(i18n.KeyWizNoteTruncated)
 	}
-	min := p.AutoPickMin
-	if min <= 0 {
-		min = model.SQLAutoPickMinConfidence
-	}
-	one := -1
-	for i, r := range p.Ranks {
-		if i < len(z.Candidates) && r.Confidence >= min {
-			if one >= 0 {
-				one = -2
-				break
-			}
-			one = i
+	return idx, text
+}
+
+func anyCounters(ms []model.Mapping) bool {
+	for _, m := range ms {
+		if m.Mode == model.MappingCounters {
+			return true
 		}
 	}
-	if one >= 0 {
-		return one, why
+	return false
+}
+
+// TestProblem is the wizard text of a failed test_profile that is not a
+// connection problem: Windows login of an unsaved profile
+// (monitor.test_windows_unsaved, CHK-TRAY-85); nil = show the diagnosis.
+func (z *Wizard) TestProblem(m model.IPCMessage) *Problem {
+	key := m.ErrorKey
+	if m.Test != nil && m.Test.ErrorKey != "" {
+		key = m.Test.ErrorKey
 	}
-	if why == "" {
-		why = z.t(i18n.KeyWizChoose)
-	} else {
-		why += " " + z.t(i18n.KeyWizChoose)
+	if key == model.MsgTestWindowsUnsaved {
+		return &Problem{Code: ProblemWindowsUnsaved, Text: z.t(i18n.KeyWizErrWinUnsaved)}
 	}
-	return -1, why
+	return nil
 }
 
 // CandidateLine is a row of the candidate list with its confidence.
@@ -260,15 +286,41 @@ func (z *Wizard) CandidateLine(i int) string {
 	return s
 }
 
-// Choose puts candidate i into the edited profile (main mapping only;
-// more plans: «Расширенные настройки» → «Таблицы обмена…»).
+// Choose puts candidate i into the edited profile with the mappings of
+// all other exchange plans: the resolved main candidate gives exactly
+// ResolveDiscovery's (main, plans); another candidate picked under
+// «Подробнее» becomes the main mapping and the resolved plans other than
+// its own stay additional mappings (no plan is lost).
 func (z *Wizard) Choose(e *Editor, i int) bool {
 	if i < 0 || i >= len(z.Candidates) {
 		return false
 	}
 	z.Chosen = i
-	e.SetMapping(z.Candidates[i].Mapping(), nil)
+	if z.Problem == nil && i == z.mainIdx && z.Main.Configured() {
+		e.SetMapping(z.Main, z.Plans)
+		return true
+	}
+	m := z.Candidates[i].Mapping()
+	e.SetMapping(m, otherPlans(m, z.Main, z.Plans))
 	return true
+}
+
+// otherPlans: the resolved mappings (main + plans) without the plan of m.
+func otherPlans(m, main model.Mapping, plans []model.Mapping) []model.Mapping {
+	var out []model.Mapping
+	seen := map[string]bool{PlanKey(m): true}
+	for _, x := range append([]model.Mapping{main}, plans...) {
+		k := PlanKey(x)
+		if !x.Configured() || k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, x)
+	}
+	if len(out)+1 > model.MaxMappings {
+		out = out[:model.MaxMappings-1]
+	}
+	return out
 }
 
 // IsLocalServer: the SQL Server runs on this computer (the service then
@@ -305,6 +357,8 @@ func (z *Wizard) GrantRequest(computer, domain string) model.IPCRequest {
 	req := model.IPCRequest{Cmd: model.CmdSQLGrantScript, Principal: z.GrantPrincipal(computer, domain), Windows: z.Windows, Database: z.Database}
 	if z.Chosen >= 0 && z.Chosen < len(z.Candidates) {
 		m := z.Candidates[z.Chosen].Mapping()
+		ms := append([]model.Mapping{m}, otherPlans(m, z.Main, z.Plans)...)
+		seen := map[string]bool{}
 		add := func(schema, table string) {
 			if table == "" {
 				return
@@ -312,14 +366,17 @@ func (z *Wizard) GrantRequest(computer, domain string) model.IPCRequest {
 			if schema == "" {
 				schema = "dbo"
 			}
-			req.Tables = append(req.Tables, schema+"."+table)
+			if k := strings.ToLower(schema + "." + table); !seen[k] {
+				seen[k] = true
+				req.Tables = append(req.Tables, schema+"."+table)
+			}
 		}
-		add(m.Schema, m.Table)
-		ts := m.TimesSchema
-		if ts == "" {
-			ts = m.Schema
-		}
-		if m.TimesTable != m.Table || ts != m.Schema {
+		for _, m := range ms { // every plan the profile will poll
+			add(m.Schema, m.Table)
+			ts := m.TimesSchema
+			if ts == "" {
+				ts = m.Schema
+			}
 			add(ts, m.TimesTable)
 		}
 	}

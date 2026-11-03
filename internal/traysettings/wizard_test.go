@@ -100,22 +100,23 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 	if e2.Form.Name != "ut (2)" {
 		t.Errorf("form name %q", e2.Form.Name)
 	}
-	// autoPick: autoApply; a single candidate ≥ autoPickMin; several -> ask
-	c := []model.DiscoveryCandidate{{Table: "_Node1", PointCol: "_Description", SendCol: "a", RecvCol: "b"}, {Table: "_Node2", PointCol: "_Description"}}
-	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c, AutoPick: &model.SQLAutoPick{AutoApply: true, Index: 1}}); i != 1 {
-		t.Errorf("autoApply %d", i)
+	// fix/tray-wizard-autofind: the wizard decides itself (ResolveDiscovery
+	// over the candidates), whatever autoPick the reply carries
+	c := []model.DiscoveryCandidate{{Table: "_Node1", PointCol: "_Description", SendCol: "a", RecvCol: "b", Score: 150, Points: 3}, {Table: "_Node2", PointCol: "_Description"}}
+	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c, AutoPick: &model.SQLAutoPick{AutoApply: true, Index: 1}}); i != 0 {
+		t.Errorf("canned autoApply must not override the shared decision: %d", i)
 	}
-	ranks := []model.SQLCandidateRank{{Rank: 1, Confidence: 0.7}, {Rank: 2, Confidence: 0.3}}
-	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c, AutoPick: &model.SQLAutoPick{Index: 0, AutoPickMin: 0.6, Ranks: ranks}}); i != 0 {
-		t.Errorf("single %d", i)
+	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c}); i != 0 {
+		t.Error("no autoPick (older service)")
 	}
-	ranks[1].Confidence = 0.65
-	i, why := z.DiscoveryDone(model.IPCMessage{Candidates: c, AutoPick: &model.SQLAutoPick{ReasonKey: model.MsgSQLAutoPickAmbiguous, AutoPickMin: 0.6, Ranks: ranks}})
-	if i != -1 || !strings.Contains(why, i18n.Message(model.MsgSQLAutoPickAmbiguous, i18n.RU)) {
+	amb := []model.DiscoveryCandidate{{Table: "_Node1", PointCol: "_Description", SendCol: "a", RecvCol: "b", Score: 150, Points: 3},
+		{Table: "_Node1", PointCol: "_Code", SendCol: "a", RecvCol: "b", Score: 150, Points: 3}}
+	i, why := z.DiscoveryDone(model.IPCMessage{Candidates: amb})
+	if i != -1 || z.Problem == nil || z.Problem.Code != ProblemAmbiguous || why != z.Problem.Text {
 		t.Errorf("ambiguous %d %q", i, why)
 	}
-	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c}); i != -1 {
-		t.Error("no autoPick (older service)")
+	if i, _ := z.DiscoveryDone(model.IPCMessage{Candidates: c}); i != 0 {
+		t.Error("again")
 	}
 	if !strings.HasPrefix(z.CandidateLine(0), "") || !z.Choose(e, 0) || e.MapEdit == nil || e.MapEdit.Table != "_Node1" {
 		t.Error("choose")

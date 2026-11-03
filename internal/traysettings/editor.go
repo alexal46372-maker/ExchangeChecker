@@ -323,6 +323,8 @@ type Problem struct {
 	Text   string
 	Field  Field
 	Reload bool
+	// Code: kind of a wizard / discovery problem (Problem* of resolve.go)
+	Code   string
 }
 
 // fieldLabel is the localized name of a JSON path ({0} of validation

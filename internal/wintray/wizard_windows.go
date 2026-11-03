@@ -21,6 +21,13 @@ import (
 // when the service has the wizard commands.
 const WizardClass = "ExchangeCheckerTrayWizard"
 
+// List box messages / notifications not in winapi (CHK-TRAY-83).
+const (
+	lbSetTopIndex   = 0x0197 // LB_SETTOPINDEX
+	lbSetCaretIndex = 0x019E // LB_SETCARETINDEX
+	lbnDblClk       = 2      // LBN_DBLCLK
+)
+
 // Wizard control IDs.
 const (
 	idWizStep = 700 + iota
@@ -43,6 +50,7 @@ const (
 	idWizSave
 	idWizGrant
 	idWizAdvanced
+	idWizDetails
 	idWizCancel = winapi.IDCANCEL
 )
 
@@ -54,6 +62,7 @@ var wizardTips = map[int32]string{
 	idWizRefresh: i18n.KeyTipWizRefresh, idWizCands: i18n.KeyTipWizCands, idWizResult: i18n.KeyTipWizResult,
 	idWizBack: i18n.KeyTipWizBack, idWizNext: i18n.KeyTipWizNext, idWizSave: i18n.KeyTipWizSave,
 	idWizGrant: i18n.KeyTipWizGrant, idWizAdvanced: i18n.KeyTipWizAdvanced, idWizCancel: i18n.KeyTipWizCancel,
+	idWizDetails: i18n.KeyTipWizDetails,
 }
 
 // wizardOutputs are the static texts (no tooltip).
@@ -108,7 +117,8 @@ type wizardDialog struct {
 	retryCode    string
 	retryTimer   bool
 	closed       bool
-	pwTyped      bool
+	detailsShown bool // «Подробнее»: the candidate list is shown (CHK-TRAY-83)
+	candsCtl     []*ui.Ctl
 	result       string
 	lastCmds     []string
 	// lastField: the last highlighted field (test hook)
@@ -234,13 +244,18 @@ func (wd *wizardDialog) build() {
 	wd.cur = &wd.stepCtl[traysettings.WizFinish]
 	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 300)
 	cands.Grow = true
-	step3Items := []ui.Node{label(i18n.KeyWizCands), cands}
+	// fix/tray-wizard-autofind: the candidates only behind «Подробнее»
+	details := c("BUTTON", wd.t(i18n.KeyWizDetails), 0, winapi.WS_TABSTOP, idWizDetails, ui.Button, 0, 0)
+	candsL := label(i18n.KeyWizCands)
+	candsL.Hidden, cands.Hidden = true, true
+	wd.candsCtl = []*ui.Ctl{candsL, cands}
+	step3Items := []ui.Node{details, candsL, cands}
 	if traysettings.HasTestSteps(wd.capHas) {
 		stepsLb := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizSteps, ui.Box, 736, 140)
 		stepsLb.Grow = true
 		wd.stepsCtl = stepsLb
 		cands.Hgt = 220
-		step3Items = []ui.Node{label(i18n.KeyWizCheckSteps), stepsLb, label(i18n.KeyWizCands), cands}
+		step3Items = []ui.Node{label(i18n.KeyWizCheckSteps), stepsLb, details, candsL, cands}
 	}
 	step3 := &ui.Col{Items: step3Items}
 	wd.cur = nil
@@ -320,10 +335,8 @@ func (wd *wizardDialog) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintp
 
 func (wd *wizardDialog) command(id int32, code uint32) {
 	switch id {
-	case idWizPassword:
-		if code == winapi.EN_CHANGE {
-			wd.pwTyped = winapi.GetWindowTextLength(wd.ctl[idWizPassword]) > 0
-		}
+	case idWizDetails:
+		wd.toggleDetails()
 	case idWizAuth:
 		if code == winapi.CBN_SELCHANGE {
 			wd.read()
@@ -340,7 +353,8 @@ func (wd *wizardDialog) command(id int32, code uint32) {
 			wd.show()
 		}
 	case idWizCands:
-		if code == winapi.LBN_SELCHANGE {
+		// a double click on the selected row chooses it as well
+		if code == winapi.LBN_SELCHANGE || code == lbnDblClk {
 			if i := wd.sel(idWizCands); wd.z.Choose(wd.w.ed, i) {
 				wd.setResult(fmt.Sprintf(wd.t(i18n.KeyWizChosen), wd.z.CandidateLine(i)))
 			}
@@ -393,8 +407,12 @@ func (wd *wizardDialog) read() {
 
 // password returns the password box text for one request (the UTF-16
 // copy is wiped; nothing is kept).
+//
+// The box itself is read every time (fix/tray-wizard-autofind): a
+// password pasted or set without EN_CHANGE reaching the dialog was sent
+// empty when only an EN_CHANGE flag was trusted.
 func (wd *wizardDialog) password() string {
-	if !wd.pwTyped || wd.z.Windows {
+	if !wd.passwordTyped() || wd.z.Windows {
 		return ""
 	}
 	buf := winapi.GetWindowTextUTF16(wd.ctl[idWizPassword])
@@ -410,8 +428,34 @@ func (wd *wizardDialog) password() string {
 // form puts the wizard input into the editor; returns the password.
 func (wd *wizardDialog) form() string {
 	wd.read()
-	wd.z.ToForm(wd.w.ed, wd.pwTyped)
+	wd.z.ToForm(wd.w.ed, wd.passwordTyped())
 	return wd.password()
+}
+
+// passwordTyped: the password box holds text right now.
+func (wd *wizardDialog) passwordTyped() bool {
+	return winapi.GetWindowTextLength(wd.ctl[idWizPassword]) > 0
+}
+
+// toggleDetails shows / hides the candidate list («Подробнее»).
+func (wd *wizardDialog) toggleDetails() {
+	wd.setDetails(!wd.detailsShown)
+}
+
+func (wd *wizardDialog) setDetails(on bool) {
+	if wd.detailsShown == on {
+		return
+	}
+	wd.detailsShown = on
+	for _, x := range wd.candsCtl {
+		x.Hidden = !on
+		if !on {
+			winapi.ShowWindow(x.H, winapi.SW_HIDE)
+		}
+	}
+	if wd.content != nil && wd.laidStep >= 0 {
+		fitForm(wd.hwnd, wd.content, wd.bar, 0, true)
+	}
 }
 
 // show refreshes the step: visible controls, header, enabled buttons.
@@ -422,6 +466,9 @@ func (wd *wizardDialog) show() {
 		// hole for the others), the window keeps its position
 		for i, n := range wd.steps {
 			ui.SetHidden(n, traysettings.WizardStep(i) != z.Step)
+		}
+		for _, x := range wd.candsCtl { // «Подробнее» (CHK-TRAY-83)
+			x.Hidden = x.Hidden || !wd.detailsShown
 		}
 		wd.grantCtl.Hidden = z.Step == traysettings.WizServer
 		fitForm(wd.hwnd, wd.content, wd.bar, 0, wd.laidStep >= 0)
@@ -648,6 +695,7 @@ func (wd *wizardDialog) loadDatabases() {
 func (wd *wizardDialog) finish() {
 	pw := wd.form()
 	winapi.SendMessage(wd.ctl[idWizCands], winapi.LB_RESETCONTENT, 0, 0)
+	wd.setDetails(false)
 	if h := wd.ctl[idWizSteps]; h != 0 {
 		winapi.SendMessage(h, winapi.LB_RESETCONTENT, 0, 0)
 	}
@@ -679,6 +727,12 @@ func (wd *wizardDialog) finishTest(pw string) {
 	}
 	wd.setResult(wd.t(i18n.KeyWizTesting))
 	wd.run(req, traysettings.TestTimeout, func(m model.IPCMessage, err error) {
+		if err == nil {
+			if pr := wd.z.TestProblem(m); pr != nil {
+				wd.setResult(pr.Text)
+				return
+			}
+		}
 		if err != nil || m.Type != model.MsgTestResult || m.Test == nil || !m.Test.OK {
 			wd.failRetry(m, err, "")
 			return
@@ -708,11 +762,23 @@ func (wd *wizardDialog) discover(prefix string) {
 		}
 		text := prefix + "\r\n" + why
 		if idx >= 0 && wd.z.Choose(wd.w.ed, idx) {
+			// found: applied with all plans, straight to «Сохранить»
 			winapi.SendMessage(lb, winapi.LB_SETCURSEL, uintptr(idx), 0)
-			text = prefix + "\r\n" + fmt.Sprintf(wd.t(i18n.KeyWizApplied), wd.z.CandidateLine(idx))
-			if why != "" {
-				text += "\r\n" + why
-			}
+			wd.setResult(text)
+			winapi.SetFocus(wd.ctl[idWizSave])
+			return
+		}
+		// not applied (ambiguous / low_score / incomplete): «Подробнее»
+		// opened with the best candidate preselected; the user picks
+		// The best one is highlighted (caret + scrolled into view) but NOT
+		// selected: a click on it is then a selection change (LBN_SELCHANGE)
+		// and chooses it — a preselected item would ignore that click.
+		if b := wd.z.Best; wd.z.Problem != nil && b >= 0 && b < len(wd.z.Candidates) {
+			wd.setDetails(true)
+			winapi.SendMessage(lb, winapi.LB_SETCURSEL, ^uintptr(0), 0)
+			winapi.SendMessage(lb, lbSetTopIndex, uintptr(b), 0)
+			winapi.SendMessage(lb, lbSetCaretIndex, uintptr(b), 0)
+			winapi.SetFocus(lb)
 		}
 		wd.setResult(text)
 	})

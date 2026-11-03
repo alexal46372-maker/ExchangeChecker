@@ -611,6 +611,19 @@ const (
 	KeyWizApplied          = "wiz.applied"
 	KeyWizChoose           = "wiz.choose"
 	KeyWizChosen           = "wiz.chosen"
+	// fix/tray-wizard-autofind (CHK-TRAY-83..85)
+	KeyWizFoundPlan        = "wiz.found_plan"
+	KeyWizFoundPlans       = "wiz.found_plans"
+	KeyWizFoundFields      = "wiz.found_fields"
+	KeyWizDetails          = "wiz.details"
+	KeyWizErrNone          = "wiz.err_none"
+	KeyWizErrAmbiguous     = "wiz.err_ambiguous"
+	KeyWizErrWinUnsaved    = "wiz.err_windows_unsaved"
+	KeyWizErrTruncated     = "wiz.err_truncated"
+	KeyWizNoteTruncated    = "wiz.note_truncated"
+	KeyTipWizDetails       = "tip.wiz_details"
+	KeyWizErrLowScore      = "wiz.err_low_score"
+	KeyWizErrIncomplete    = "wiz.err_incomplete"
 	KeyWizConfidence       = "wiz.confidence"
 	KeyWizCands            = "wiz.cands"
 	KeyWizSaving           = "wiz.saving"
@@ -1440,6 +1453,24 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyWizApplied:          {"Выбрано автоматически: %s", "Chosen automatically: %s"},
 	KeyWizChoose:           {"Выберите вариант в списке или откройте «Расширенные настройки».", "Choose an option in the list or open \"Advanced settings\"."},
 	KeyWizChosen:           {"Выбрано: %s", "Chosen: %s"},
+	KeyWizFoundPlan:        {"Найдено: план %s", "Found: plan %s"},
+	KeyWizFoundPlans:       {" (+%d)", " (+%d)"},
+	KeyWizFoundFields:      {"поля %s", "fields %s"},
+	KeyWizDetails:          {"Подробнее", "Details"},
+	KeyWizErrNone: {"Таблицы обмена не найдены: у учётной записи службы, вероятно, нет прав на чтение таблиц базы. Нажмите «Скопировать SQL-скрипт прав», выполните его в SQL Server Management Studio и повторите поиск.",
+		"No exchange tables were found: the service account probably cannot read the database tables. Click \"Copy the permissions SQL script\", run it in SQL Server Management Studio and search again."},
+	KeyWizErrAmbiguous: {"Найдены два равноценных варианта: %s и %s. Откройте «Подробнее» и выберите нужный.",
+		"Two equally good options were found: %s and %s. Open \"Details\" and choose one."},
+	KeyWizErrWinUnsaved: {"Вход Windows для новой базы служба проверяет только после сохранения профиля. Выберите вход SQL Server или сохраните базу через «Расширенные настройки» и запустите поиск таблиц там.",
+		"The service checks a Windows login only for a saved profile. Choose SQL Server login, or save the database via \"Advanced settings\" and run the table search there."},
+	KeyWizErrTruncated: {"Поиск таблиц прерван по времени или объёму, ничего не найдено. Повторите поиск; если повторится — откройте «Расширенные настройки».",
+		"The table search was cut short (time or size) and found nothing. Search again; if it repeats, open \"Advanced settings\"."},
+	KeyWizErrLowScore: {"Найденные таблицы не похожи на таблицы обмена с достаточной уверенностью — автоматически ничего не применено. Лучший вариант выделен в списке «Подробнее»: проверьте его и нажмите на него, чтобы выбрать.",
+		"The tables found do not look like exchange tables with enough confidence — nothing was applied automatically. The best option is highlighted under \"Details\": check it and click it to choose."},
+	KeyWizErrIncomplete: {"Лучший найденный вариант неполный (нет времени отправки или приёма, нет точек или поиск прерван) — автоматически ничего не применено. Он выделен в списке «Подробнее»: выберите его или другой вариант.",
+		"The best option found is incomplete (no send or receive time, no points, or the search was cut short) — nothing was applied automatically. It is highlighted under \"Details\": choose it or another option."},
+	KeyTipWizDetails:       {"Показать все найденные варианты таблиц обмена и выбрать другой вручную.", "Show every exchange table option found and choose another one by hand."},
+	KeyWizNoteTruncated:    {"Поиск был прерван, результат может быть неполным.", "The search was cut short, the result may be incomplete."},
 	KeyWizConfidence:       {"[%d%%]", "[%d%%]"},
 	KeyWizCands:            {"Найденные таблицы обмена:", "Exchange tables found:"},
 	KeyWizSaving:           {"Сохранение…", "Saving…"},

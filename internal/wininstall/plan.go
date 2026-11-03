@@ -21,7 +21,7 @@ var ErrNoPayload = errors.New("setup: this build carries no product files (built
 // InstallConfig is the input of Install.
 type InstallConfig struct {
 	Opts       Options
-	DefaultDir string // %ProgramFiles%\ExchangeChecker
+	DefaultDir string // %ProgramFiles%\Exchange Checker
 	DataDir    string // %ProgramData%\ExchangeChecker
 	Files      map[string][]byte
 	Version    string
@@ -112,11 +112,20 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	if dir != "" {
 		dir = CleanDir(sys.LongPath(dir)) // /DIR may be an 8.3 name
 	}
+	var legacyDir string
 	if inst.Present {
-		if dir != "" && !strings.EqualFold(dir, CleanDir(inst.Dir)) {
+		old := CleanDir(inst.Dir)
+		if dir != "" && !strings.EqualFold(dir, old) && !IsLegacyInstallDir(old) {
 			warn("already installed in %s: /DIR=%s ignored (uninstall first to move)", inst.Dir, dir)
 		}
-		dir = CleanDir(inst.Dir)
+		dir = old
+		// CHK-SETUP-17: one-word Program Files\ExchangeChecker → two-word
+		// sibling Exchange Checker (config/data under ProgramData stay put).
+		if IsLegacyInstallDir(dir) {
+			legacyDir = dir
+			dir = MigratedInstallDir(dir)
+			log.Printf("migrating install folder %s -> %s", legacyDir, dir)
+		}
 	} else if dir == "" {
 		dir = CleanDir(c.DefaultDir)
 	}
@@ -179,13 +188,28 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	// 3b. stop tray before replacing its image (upgrade / reinstall)
 	if !fresh {
-		log.Printf("stopping tray in %s", dir)
-		tw, err := sys.StopTray(dir)
-		for _, w := range tw {
-			warn("stop tray: %s", w)
+		stopDirs := []string{dir}
+		if legacyDir != "" {
+			stopDirs = append([]string{legacyDir}, stopDirs...)
 		}
-		if err != nil {
-			warn("stop tray: %v", err)
+		for _, d := range stopDirs {
+			log.Printf("stopping tray in %s", d)
+			tw, err := sys.StopTray(d)
+			for _, w := range tw {
+				warn("stop tray: %s", w)
+			}
+			if err != nil {
+				warn("stop tray: %v", err)
+			}
+		}
+	}
+	// 3c. CHK-SETUP-17: copy leftover non-payload files from the legacy
+	// folder into the new two-word folder before writing payload exes.
+	if legacyDir != "" {
+		if err := sys.MigrateInstallDir(legacyDir, dir); err != nil {
+			warn("migrate %s -> %s: %v", legacyDir, dir, err)
+		} else {
+			log.Printf("migrated non-payload files from %s", legacyDir)
 		}
 	}
 	// 4. files (upgrade: *.bak then atomic replace; rollback restores bak
@@ -378,6 +402,28 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			}
 		}
 	}
+	// CHK-SETUP-17: after a successful migrate, drop legacy shortcuts and
+	// the old one-word install folder (payload + empties). Config under
+	// ProgramData is untouched. Failures are warnings — product already runs
+	// from the new ImagePath.
+	if legacyDir != "" {
+		if err := sys.DeleteLegacyShortcuts(); err != nil {
+			warn("delete legacy shortcuts: %v", err)
+		}
+		for _, n := range PayloadFiles {
+			for _, suf := range []string{"", ".bak", ".old"} {
+				p := joinDir(legacyDir, n+suf)
+				if _, err := sys.RemoveFile(p); err != nil {
+					warn("remove legacy %s: %v", p, err)
+				}
+			}
+		}
+		if _, err := sys.RemoveDirIfEmpty(legacyDir); err != nil {
+			warn("remove legacy folder %s: %v", legacyDir, err)
+		} else {
+			log.Printf("legacy install folder removed: %s", legacyDir)
+		}
+	}
 	res.Code = ExitOK
 	if needReboot {
 		res.Code = ExitRebootRequired
@@ -459,6 +505,7 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	step("delete event log source", sys.DeleteEventSource())
 	step("delete start menu shortcut", sys.DeleteStartShortcut())
 	step("delete desktop shortcut", sys.DeleteDesktopShortcut())
+	step("delete legacy shortcuts", sys.DeleteLegacyShortcuts())
 	// Firewall rule: WARNING only — a stopped MpsSvc / COM failure must
 	// not block uninstall (CHK-SETUP-13).
 	if err := sys.RemoveSQLBrowserFirewallRule(); err != nil {

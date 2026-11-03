@@ -23,7 +23,7 @@ Check ID: **CHK-DELIV-01**
 | `ExchangeCheckerSetup.exe` | Инсталлятор (промежуточное имя сборки / OriginalFilename; в zip — версионированное имя выше) |
 | `ExchangeCheckerUninstall.exe` | Деинсталлятор: отдельная маленькая сборка того же кода без вложенных exe, кладётся инсталлятором в папку установки под этим каноническим именем (Uninstall-ключ); в zip не входит |
 
-Папка установки (по умолчанию `%ProgramFiles%\ExchangeChecker`): `ExchangeCheckerSvc.exe`, `ExchangeCheckerTray.exe`, `ExchangeCheckerUninstall.exe`; DACL всегда защищённый — SYSTEM и Administrators полный доступ, Users чтение и выполнение. Удаление: если exe деинсталлятора занят, он удаляется при перезагрузке (`MoveFileExW` с отложенным удалением), код выхода 3010.
+Папка установки (по умолчанию `%ProgramFiles%\Exchange Checker`, CHK-SETUP-17; при обновлении со старой `%ProgramFiles%\ExchangeChecker` выполняется миграция): `ExchangeCheckerSvc.exe`, `ExchangeCheckerTray.exe`, `ExchangeCheckerUninstall.exe`; DACL всегда защищённый — SYSTEM и Administrators полный доступ, Users чтение и выполнение. Удаление: если exe деинсталлятора занят, он удаляется при перезагрузке (`MoveFileExW` с отложенным удалением), код выхода 3010.
 
 Инсталлятор **не зависит от имени файла**: после переименования `ExchangeChecker-<version>.exe` ведёт себя так же (ключи командной строки из `os.Args[1:]`, путь к себе — `os.Executable`, без проверки basename). Удаление продукта — через установленный канонический `ExchangeCheckerUninstall.exe` (Uninstall-ключ / «Программы и компоненты»), а не через файл из zip.
 
@@ -40,7 +40,7 @@ Check ID: **CHK-DELIV-01**
 | Ключ | Смысл |
 |------|-------|
 | `/S` | Тихий режим: без окон и вопросов, трей после установки не запускается |
-| `/DIR=` | Папка установки (по умолчанию `%ProgramFiles%\ExchangeChecker`); при обновлении игнорируется — берётся установленная |
+| `/DIR=` | Папка установки (по умолчанию `%ProgramFiles%\Exchange Checker`); при обновлении игнорируется — берётся установленная |
 | `/NOSTART` | Не запускать службу и не ставить автозапуск (только новая установка; при обновлении состояние службы сохраняется) |
 | `/NOSHORTCUT` | Не создавать ярлык в меню «Пуск» (`Exchange Checker\Exchange Checker.lnk`) |
 | `/LOG=` | Файл журнала установки (по умолчанию в `%TEMP%`) |

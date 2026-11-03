@@ -19,3 +19,11 @@ const (
 	// canonical name of the installed copy (phase 10).
 	UninstallExeName = "ExchangeCheckerUninstall.exe"
 )
+
+// Install folder names under Program Files (CHK-SETUP-17). Visible product
+// name is two words ("Exchange Checker"); ProgramData keeps AppDirName
+// "ExchangeChecker" so existing configs/secrets paths stay valid.
+const (
+	InstallDirName       = "Exchange Checker"
+	LegacyInstallDirName = "ExchangeChecker"
+)

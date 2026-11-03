@@ -15,29 +15,30 @@ type recordingSystem struct {
 	// Log of "verb|arg" steps
 	Steps []string
 
-	Installed   Installed
-	Service     ServiceInfo
-	Dirs        map[string]bool
-	Files       map[string][]byte
-	DACLs       map[string]string
-	Owners      map[string]bool // path -> takeOwnership called
-	EventSrc    string
-	TrayRun     string
-	Uninst      []RegValue
-	UserKey     bool
-	FixedOK     bool
-	FailAt      string // step prefix that returns error
-	FailOnce    bool   // clear FailAt after the first injected error
-	RebootRm    bool
-	WriteReboot bool   // WriteFile returns reboot=true
-	FailAlso    string // second prefix that always fails (e.g. a rollback step)
-	Specs       []ServiceSpec
-	Long        map[string]string
-	TrayWarn    []string
-	Shortcut    string // target of the start-menu shortcut ("" = none)
-	DesktopLnk  string // target of the Public Desktop shortcut ("" = none)
-	Firewall    string // service exe of the SQL Browser firewall rule ("" = none)
-	FwProfiles  int32  // active firewall profiles (FirewallCurrentProfiles)
+	Installed      Installed
+	Service        ServiceInfo
+	Dirs           map[string]bool
+	Files          map[string][]byte
+	DACLs          map[string]string
+	Owners         map[string]bool // path -> takeOwnership called
+	EventSrc       string
+	TrayRun        string
+	Uninst         []RegValue
+	UserKey        bool
+	FixedOK        bool
+	FailAt         string // step prefix that returns error
+	FailOnce       bool   // clear FailAt after the first injected error
+	RebootRm       bool
+	WriteReboot    bool   // WriteFile returns reboot=true
+	FailAlso       string // second prefix that always fails (e.g. a rollback step)
+	Specs          []ServiceSpec
+	Long           map[string]string
+	TrayWarn       []string
+	Shortcut       string // target of the start-menu shortcut ("" = none)
+	DesktopLnk     string // target of the Public Desktop shortcut ("" = none)
+	LegacyShortcut bool   // pre-phase-13 ExchangeChecker.lnk still present
+	Firewall       string // service exe of the SQL Browser firewall rule ("" = none)
+	FwProfiles     int32  // active firewall profiles (FirewallCurrentProfiles)
 }
 
 func newFake() *recordingSystem {
@@ -469,4 +470,51 @@ type memLog struct{ lines []string }
 
 func (m *memLog) Printf(format string, args ...interface{}) {
 	m.lines = append(m.lines, fmt.Sprintf(format, args...))
+}
+
+func (f *recordingSystem) MigrateInstallDir(oldDir, newDir string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("MigrateInstallDir|%s|%s", oldDir, newDir); err != nil {
+		return err
+	}
+	oldDir, newDir = CleanDir(oldDir), CleanDir(newDir)
+	prefix := strings.ToLower(oldDir) + `\`
+	for path, data := range f.Files {
+		lp := strings.ToLower(CleanDir(path))
+		if lp == strings.ToLower(oldDir) || !strings.HasPrefix(lp, prefix) {
+			continue
+		}
+		rel := path[len(oldDir)+1:]
+		base := rel
+		if i := strings.LastIndex(rel, `\`); i >= 0 {
+			base = rel[i+1:]
+		}
+		skip := false
+		for _, n := range PayloadFiles {
+			if strings.EqualFold(base, n) || strings.EqualFold(base, n+".bak") || strings.EqualFold(base, n+".old") {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		dst := joinDir(newDir, rel)
+		if _, ok := f.Files[dst]; ok {
+			continue
+		}
+		f.Files[dst] = append([]byte(nil), data...)
+	}
+	return nil
+}
+
+func (f *recordingSystem) DeleteLegacyShortcuts() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("DeleteLegacyShortcuts"); err != nil {
+		return err
+	}
+	f.LegacyShortcut = false
+	return nil
 }

@@ -118,6 +118,14 @@ type System interface {
 	DeleteUninstallKey() error
 	ReadInstalled() (Installed, error)
 	DeleteUserKey() error
+	// MigrateInstallDir copies non-payload files from a legacy install
+	// folder into the new two-word folder (CHK-SETUP-17). Missing oldDir
+	// is success; existing targets in newDir are left alone.
+	MigrateInstallDir(oldDir, newDir string) error
+	// DeleteLegacyShortcuts removes pre-phase-13 one-word .lnk names
+	// (ExchangeChecker.lnk) from Public Desktop and the legacy Start
+	// Menu folder ExchangeChecker\ (CHK-SETUP-17).
+	DeleteLegacyShortcuts() error
 }
 
 // Logger receives the setup log lines.

@@ -99,9 +99,9 @@ func run(args []string) int {
 		return res.Code
 	}
 
-	defaultDir := filepath.Join(os.Getenv("ProgramFiles"), "ExchangeChecker")
+	defaultDir := filepath.Join(os.Getenv("ProgramFiles"), config.InstallDirName)
 	if pf, err := winapi.SHGetFolderPath(winapi.CSIDL_PROGRAM_FILES); err == nil && pf != "" {
-		defaultDir = filepath.Join(pf, "ExchangeChecker")
+		defaultDir = filepath.Join(pf, config.InstallDirName)
 	}
 	install := func(o wininstall.Options, lg wininstall.Logger) wininstall.Result {
 		files, perr := payloadFiles()
@@ -148,6 +148,10 @@ func runWizard(sys wininstall.System, opts wininstall.Options, lang, defaultDir 
 	}
 	if inst.Present && inst.Dir != "" {
 		dir, locked = inst.Dir, true
+		// CHK-SETUP-17: show the post-migration two-word folder as the locked path.
+		if wininstall.IsLegacyInstallDir(dir) {
+			dir = wininstall.MigratedInstallDir(dir)
+		}
 	}
 	st := wininstall.NewWizardState(lang, version.Version, mode, inst.Version, dir, locked, config.DefaultDir(), svc.Running)
 	st.CheckDrive = sys.CheckFixedDrive

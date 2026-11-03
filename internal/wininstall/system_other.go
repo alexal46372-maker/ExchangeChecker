@@ -37,7 +37,7 @@ func (stubSystem) ForceStopService(string, string) ([]string, error) { return ni
 func (stubSystem) CreateStartShortcut(string, string, string) (string, error) {
 	return "", ErrNotWindows
 }
-func (stubSystem) DeleteStartShortcut() error                  { return ErrNotWindows }
+func (stubSystem) DeleteStartShortcut() error { return ErrNotWindows }
 func (stubSystem) CreateDesktopShortcut(string, string, string) (string, error) {
 	return "", ErrNotWindows
 }
@@ -57,3 +57,6 @@ func (stubSystem) ReadUninstallKey() ([]RegValue, error)       { return nil, Err
 func (stubSystem) DeleteUninstallKey() error                   { return ErrNotWindows }
 func (stubSystem) ReadInstalled() (Installed, error)           { return Installed{}, ErrNotWindows }
 func (stubSystem) DeleteUserKey() error                        { return ErrNotWindows }
+
+func (stubSystem) MigrateInstallDir(string, string) error { return ErrNotWindows }
+func (stubSystem) DeleteLegacyShortcuts() error           { return ErrNotWindows }

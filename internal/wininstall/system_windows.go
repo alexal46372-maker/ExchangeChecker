@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -434,11 +435,7 @@ func (winSystem) StopService(name string, timeout time.Duration) error {
 	return nil
 }
 
-// StartMenuFolder / ShortcutFile: §6.3.
-const (
-	StartMenuFolder = "Exchange Checker"
-	ShortcutFile    = "Exchange Checker.lnk"
-)
+// StartMenuFolder / ShortcutFile: see shortcuts.go (§6.3, CHK-SETUP-17).
 
 func startMenuDir() (string, error) {
 	progs, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_PROGRAMS)
@@ -525,6 +522,115 @@ func (winSystem) DeleteDesktopShortcut() error {
 	}
 	winapi.SHChangeNotifyDir(filepath.Dir(lnk))
 	return nil
+}
+
+func (winSystem) MigrateInstallDir(oldDir, newDir string) error {
+	oldDir, newDir = filepath.Clean(oldDir), filepath.Clean(newDir)
+	if oldDir == "" || newDir == "" || strings.EqualFold(oldDir, newDir) {
+		return nil
+	}
+	ents, err := os.ReadDir(oldDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if err := os.MkdirAll(newDir, 0o755); err != nil {
+		return err
+	}
+	skipName := func(name string) bool {
+		for _, n := range PayloadFiles {
+			if strings.EqualFold(name, n) || strings.EqualFold(name, n+".bak") || strings.EqualFold(name, n+".old") {
+				return true
+			}
+		}
+		return false
+	}
+	for _, e := range ents {
+		name := e.Name()
+		if skipName(name) {
+			continue
+		}
+		src := filepath.Join(oldDir, name)
+		dst := filepath.Join(newDir, name)
+		if _, err := os.Stat(dst); err == nil {
+			continue // keep newer/existing target
+		}
+		if e.IsDir() {
+			if err := copyDir(src, dst); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := copyFile(src, dst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func copyDir(src, dst string) error {
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		s := filepath.Join(src, e.Name())
+		d := filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := copyDir(s, d); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := copyFile(s, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (winSystem) DeleteLegacyShortcuts() error {
+	var first error
+	note := func(err error) {
+		if err != nil && !os.IsNotExist(err) && first == nil {
+			first = err
+		}
+	}
+	if desk, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_DESKTOPDIRECTORY); err == nil {
+		note(os.Remove(filepath.Join(desk, LegacyShortcutFile)))
+		winapi.SHChangeNotifyDir(desk)
+	}
+	if progs, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_PROGRAMS); err == nil {
+		legacyDir := filepath.Join(progs, LegacyStartMenuFolder)
+		note(os.Remove(filepath.Join(legacyDir, LegacyShortcutFile)))
+		note(os.Remove(filepath.Join(legacyDir, ShortcutFile)))
+		_ = os.Remove(legacyDir) // non-empty left alone
+		winapi.SHChangeNotifyDir(progs)
+	}
+	return first
 }
 
 func (winSystem) AddSQLBrowserFirewallRule(serviceExe string) error {

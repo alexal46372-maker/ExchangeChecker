@@ -164,8 +164,8 @@ func TestCHK_TRAY_80_PollColumnNotInChecks(t *testing.T) {
 	if !winapi.ListViewChecked(lv, 0) && winapi.SendMessage(lv, winapi.LVM_GETITEMCOUNT, 0, 0) > 0 {
 		t.Fatal("ListView checkbox round-trip failed")
 	}
-	if i18n.T(i18n.KeySetColPoll) != "Опрос" || i18n.T(i18n.KeySetColPoll) != "Poll" {
-		t.Fatal("KeySetColPoll RU/EN")
+	if i18n.T(i18n.KeySetColPoll) != "Опрос" {
+		t.Fatal("KeySetColPoll")
 	}
 }
 

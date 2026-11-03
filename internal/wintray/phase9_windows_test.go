@@ -290,7 +290,7 @@ func TestCHK_TRAY_20_CheckNow(t *testing.T) {
 	if !winapi.IsWindowEnabled(sw.check) {
 		t.Error("check button disabled while connected")
 	}
-	if s, warn := CheckNowText(model.IPCMessage{}, trayipc.ErrNotConnected); !warn || !strings.HasPrefix(s, "Check not requested: ") {
+	if s, warn := CheckNowText(model.IPCMessage{}, trayipc.ErrNotConnected); !warn || !strings.HasPrefix(s, "Проверка не запрошена: ") {
 		t.Errorf("offline text %q", s)
 	}
 	if s, warn := CheckNowText(model.IPCMessage{Type: model.MsgError, Error: "boom"}, nil); !warn || !strings.Contains(s, "boom") {

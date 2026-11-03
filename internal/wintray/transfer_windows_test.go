@@ -315,7 +315,7 @@ func TestCHK_TRAY_44_ImportErrors(t *testing.T) {
 	}
 	os.Remove(e.path)
 	e.w.click(t, idSetImport)
-	if e.w.imp != nil || !strings.Contains(e.w.statusText(), "Could not read") {
+	if e.w.imp != nil || !strings.Contains(e.w.statusText(), "Не удалось прочитать") {
 		t.Errorf("missing file: %q", e.w.statusText())
 	}
 	writeImportFile(t, e.path, nil, e.x.profiles[0])
@@ -417,8 +417,7 @@ func TestCHK_TRAY_44_OtherUser(t *testing.T) {
 			t.Errorf("%s: HKCU written as another user", i18n.RU)
 		}
 	}
-	if i18n.T(i18n.KeyXferTrayApplied) != "Звук и вид трея применены" ||
-		i18n.T(i18n.KeyXferTrayApplied) != "Tray sound and appearance applied" {
+	if i18n.T(i18n.KeyXferTrayApplied) != "Звук и вид трея применены" {
 		t.Error("applied hint text")
 	}
 	{

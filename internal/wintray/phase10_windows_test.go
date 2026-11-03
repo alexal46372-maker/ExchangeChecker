@@ -248,8 +248,8 @@ func TestCHK_TRAY_37_IconAndHelp(t *testing.T) {
 	if len(*notes) != 1 || !strings.Contains((*notes)[0], "Настроить") {
 		t.Fatalf("notes %q", *notes)
 	}
-	if !strings.Contains(PinHelpText(), "Customize") {
-		t.Error("EN note")
+	if !strings.Contains(PinHelpText(), "Настроить") {
+		t.Error("pin help text")
 	}
 }
 

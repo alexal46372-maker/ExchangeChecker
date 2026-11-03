@@ -185,7 +185,8 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgViberErrorUnknown:       {"ошибка подключения или запроса", "connection or query error"},
 	MsgViberInvalid:            {"Неверные настройки Viber.", "Invalid Viber settings."},
 	MsgEmailNoPassword:         {"Не задан пароль SMTP.", "The SMTP password is not set."},
-	MsgEmailNoRecipients:       {"Не заданы получатели email.", "No email recipients are set."},
+	MsgEmailNoRecipients:       {"Нет сохранённых получателей e-mail: добавьте получателя и сохраните настройки e-mail, затем повторите тест.", "No email recipients are set."},
+	MsgEmailRecipientNotFound:  {"Получатель e-mail с таким ID не найден среди сохранённых: сохраните настройки e-mail и повторите тест.", "No saved e-mail recipient has this ID: save the e-mail settings and test again."},
 	MsgEmailNoHost:             {"Не задан SMTP-сервер.", "The SMTP host is not set."},
 	MsgEmailNoFrom:             {"Не задан адрес отправителя.", "The From address is not set."},
 	MsgEmailAuthFailed:         {"SMTP-сервер отклонил логин или пароль.", "The SMTP server rejected the login or password."},
@@ -261,5 +262,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailRecipientNotFound, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited}
 }

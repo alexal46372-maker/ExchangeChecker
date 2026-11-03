@@ -63,6 +63,9 @@ type appConfig struct {
 	// (tests: a fake server); nil = hcwinnet + chatapi.viber.com.
 	ViberClient notify.Poster
 	ViberURL    string
+	// EmailSendHook replaces the SMTP send of the email notifier (tests:
+	// fake SMTP); nil = net/smtp.
+	EmailSendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -179,7 +182,7 @@ func runService(ctx context.Context, ac appConfig) error {
 		StateDir: ac.Dir}) // viber_state.json: date of the last summary
 	vctx, vcancel := context.WithCancel(ctx)
 	vdone := make(chan struct{})
-	email := notify.NewEmail(notify.EmailOptions{Store: store, Lang: lang, Log: log, Now: ac.Now})
+	email := notify.NewEmail(notify.EmailOptions{Store: store, Lang: lang, Log: log, Now: ac.Now, SendHook: ac.EmailSendHook})
 	defer email.Close()
 	go func() { defer close(vdone); viber.Run(vctx) }()
 	defer func() { vcancel(); <-vdone }()

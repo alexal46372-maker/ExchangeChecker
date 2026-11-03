@@ -552,6 +552,17 @@ func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken 
 // save_settings with viberToken / smtpPassword (write-only) and clear*
 // flags. settings.viber / settings.email absent = keep stored.
 func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken bool, smtpPassword string, clearSmtp bool, expectedRevision, account string) (string, error) {
+	if st.Email != nil { // CHK-SVC-09: recipients sent without an id
+		e := *st.Email
+		e.Recipients = append([]model.EmailRecipient{}, e.Recipients...)
+		e.FillRecipientIDs()
+		st.Email = &e
+	}
+	if st.Email != nil && st.Email.Enabled && len(st.Email.Recipients) == 0 {
+		// clear error instead of a generic «required» (CHK-SVC-09)
+		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailNoRecipients,
+			Message: "email: enabled without recipients", Args: []string{"email.recipients", model.ValRequired}}
+	}
 	if err := requireRevision(expectedRevision); err != nil {
 		return "", err
 	}

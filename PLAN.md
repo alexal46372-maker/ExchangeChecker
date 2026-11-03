@@ -965,6 +965,8 @@ Wizard Win32 (страницы):
 
 205. **Settings page-host erase still broken on live Win7 after v0.12.7 (фаза 13e, `CHK-TRAY-71`/`72`/`73`):** CHK-TRAY-68…70 (PR #15) мимо — smear/ghost на **всех** вкладках при scroll и uncover. Корень: (1) `MoveWindowNoRedraw` = SWP_NOREDRAW без **SWP_NOCOPYBITS** → Win7 копирует stale bits; (2) `eraseRepaint` только host + WS_CLIPCHILDREN → не чистит под pagePanel; (3) Background:0 + нет WM_PAINT FillRect (installer красит в WM_PAINT) → uncover с fErase=FALSE = ghost; (4) `SetScroll` bRedraw=1 в batch → partial invalidate. Фикс: NOCOPYBITS; `SetScrollNoRedraw` в batch; `eraseRepaint(host+active pagePanel)`; `contentPaint` на host/pagePanel; RDW_ERASENOW; ask() erase panel. Тесты: CaptureScreen/BitBlt (не только PrintWindow), все 4 вкладки, uncover overlay. Base `main@445e1a08`.
 
+206. **Email: «не заданы получатели» при настроенном получателе (фаза 13, `CHK-SVC-09`).** Причина: трей разбирает поле получателей как «ID адрес имя» по строке; одиночный адрес (`alex@mail.ru`) → ошибка поля, save_settings не уходит; `a@b.ru;c@d.ru` → ошибка; `a@b.ru, c@d.ru` → тихо `id="a@b.ru,"`, `addr=c@d.ru`. Тест (email_test) шлёт только recipientId/addr и проверяет **сохранённые** получатели службы → `notify.email_no_recipients`. Служба: получатель без `id` получает стабильный id из адреса; addr со списком через `,` `;` пробел разбивается на отдельных получателей; `enabled` без получателей — ошибка `notify.email_no_recipients` («Нет сохранённых получателей e-mail…»); неизвестный `recipientId` в email_test — `notify.email_recipient_not_found`. Тесты: `TestCHK_SVC_09_*` (cmd/exchsvc: payload редактора трея → save_settings → settings.json → перезапуск → email_test и алерт через SMTP-хук).
+
 
 ## 14. Что не делаем в v1
 

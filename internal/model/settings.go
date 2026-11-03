@@ -178,6 +178,7 @@ func (s Settings) Normalized() Settings {
 	} else {
 		e := *s.Email
 		e.Recipients = append([]EmailRecipient{}, e.Recipients...)
+		e.FillRecipientIDs() // CHK-SVC-09
 		e.Events = append([]string{}, e.Events...)
 		e.Schedule.Days = append([]int{}, e.Schedule.Days...)
 		s.Email = &e

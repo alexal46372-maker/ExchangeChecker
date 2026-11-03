@@ -48,17 +48,20 @@ func NeedsSMTPAuth(tlsMode string) bool {
 const (
 	MsgEmailNoPassword   = "notify.email_no_password"
 	MsgEmailNoRecipients = "notify.email_no_recipients"
-	MsgEmailNoHost       = "notify.email_no_host"
-	MsgEmailNoFrom       = "notify.email_no_from"
-	MsgEmailAuthFailed   = "notify.email_auth_failed"
-	MsgEmailInvalidAddr  = "notify.email_invalid_addr"
-	MsgEmailNetwork      = "notify.email_network"
-	MsgEmailTLS          = "notify.email_tls"
-	MsgEmailFailed       = "notify.email_failed"
-	MsgEmailCanceled     = "notify.email_canceled"
-	MsgEmailTimeout      = "notify.email_timeout"
-	MsgEmailInvalid      = "notify.email_invalid"
-	MsgEmailRateLimited  = "notify.email_rate_limited"
+	// MsgEmailRecipientNotFound: email_test recipientId is not among the
+	// saved recipients (CHK-SVC-09), distinct from «no saved recipients».
+	MsgEmailRecipientNotFound = "notify.email_recipient_not_found"
+	MsgEmailNoHost            = "notify.email_no_host"
+	MsgEmailNoFrom            = "notify.email_no_from"
+	MsgEmailAuthFailed        = "notify.email_auth_failed"
+	MsgEmailInvalidAddr       = "notify.email_invalid_addr"
+	MsgEmailNetwork           = "notify.email_network"
+	MsgEmailTLS               = "notify.email_tls"
+	MsgEmailFailed            = "notify.email_failed"
+	MsgEmailCanceled          = "notify.email_canceled"
+	MsgEmailTimeout           = "notify.email_timeout"
+	MsgEmailInvalid           = "notify.email_invalid"
+	MsgEmailRateLimited       = "notify.email_rate_limited"
 )
 
 // EmailRecipient is one mailbox with a stable id (email_test by
@@ -146,6 +149,63 @@ func (e EmailSettings) MarshalJSON() ([]byte, error) {
 		Status      *ViberStatus     `json:"status,omitempty"`
 	}
 	return json.Marshal(wire{e.Enabled, e.Host, e.Port, e.TLSMode, e.From, e.HasPassword, e.Recipients, e.Schedule, e.Events, e.Status})
+}
+
+// FillRecipientIDs normalizes recipients (CHK-SVC-09): an addr holding a
+// list ("a@x, b@y; c@z") becomes one recipient per address, and every
+// recipient without an id gets a stable id derived from its address. A
+// client that sends only {addr, name} still gets recipients email_test can
+// address. Existing ids are kept; generated ids are unique within the list.
+func (e *EmailSettings) FillRecipientIDs() {
+	if e == nil {
+		return
+	}
+	split := func(r rune) bool { return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\r' || r == '\n' }
+	var out []EmailRecipient
+	for _, r := range e.Recipients {
+		parts := strings.FieldsFunc(r.Addr, split)
+		if len(parts) <= 1 {
+			r.Addr = strings.TrimSpace(r.Addr)
+			out = append(out, r)
+			continue
+		}
+		for i, a := range parts {
+			n := EmailRecipient{Addr: a, Name: r.Name}
+			if i == 0 {
+				n.ID = r.ID
+			}
+			out = append(out, n)
+		}
+	}
+	if out == nil {
+		out = []EmailRecipient{}
+	}
+	e.Recipients = out
+	used := map[string]bool{}
+	for _, r := range e.Recipients {
+		if r.ID != "" {
+			used[r.ID] = true
+		}
+	}
+	for i := range e.Recipients {
+		r := &e.Recipients[i]
+		if r.ID != "" || r.Addr == "" {
+			continue
+		}
+		base := strings.ToLower(r.Addr)
+		if !ValidEmailID(base) {
+			base = "r" + itoa(i+1)
+		}
+		id := base
+		for n := 2; used[id]; n++ {
+			id = base + "-" + itoa(n)
+			if len(id) > EmailMaxIDLen {
+				id = "r" + itoa(i+1) + "-" + itoa(n)
+			}
+		}
+		used[id] = true
+		r.ID = id
+	}
 }
 
 // HasEvent reports whether kind is selected.

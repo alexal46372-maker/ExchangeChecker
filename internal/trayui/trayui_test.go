@@ -108,17 +108,13 @@ func TestCHK_TRAY_01_PointsSubmenu(t *testing.T) {
 }
 
 // TestCHK_TRAY_01_ErrorAndWarnings — a database in error shows the
-// localized error first; warnings follow; empty database -> a disabled
-// "no points" line.
+// localized error; warnings («Шифрование отключено…») are not shown in the
+// menu (CHK-TRAY-91); empty database -> a disabled "no points" line.
 func TestCHK_TRAY_01_ErrorAndWarnings(t *testing.T) {
 	items := databases(BuildLeftMenu(connected(sampleSnapshot())))
 	sub := items[1].Sub
-	if len(sub) != 2 || !sub[0].Disabled || !strings.Contains(sub[0].Text, model.MonitorMessage(model.MsgMonitorConnError)) {
+	if len(sub) != 1 || !sub[0].Disabled || !strings.Contains(sub[0].Text, model.MonitorMessage(model.MsgMonitorConnError)) {
 		t.Fatalf("error line: %+v", sub)
-	}
-	// sql.* warnings are localized by model.SQLMessage (phase 6d)
-	if !strings.Contains(sub[1].Text, model.SQLMessage("sql.warn_plaintext_login")) {
-		t.Errorf("warning line %q", sub[1].Text)
 	}
 	if s := items[2].Sub; len(s) != 1 || s[0].Text != "Нет точек обмена" || !s[0].Disabled {
 		t.Errorf("empty database: %+v", s)

@@ -102,6 +102,11 @@ type ConfigManager interface {
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
 }
 
+// ProfileEnabler runs set_enabled (phase 13, CHK-IPC-18; admin only).
+type ProfileEnabler interface {
+	SetEnabled(profileID string, enabled bool, expectedRevision, account string) (string, error)
+}
+
 // ProfileCloner runs clone_profile (phase 12, CHK-CFG-08, admin only).
 // Optional beside ConfigManager; Monitor implements both.
 type ProfileCloner interface {
@@ -396,6 +401,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ProfileCloner); ok {
 		caps = append(caps, model.CapCloneProfile) // phase 12 (CHK-CFG-08)
+	}
+	if _, ok := s.H.(ProfileEnabler); ok {
+		caps = append(caps, model.CapProfileEnabled) // phase 13 (CHK-IPC-18)
 	}
 	if disc {
 		caps = append(caps, model.CapDiscover, model.CapDiscoverByValue, model.CapNodePoints, model.CapCheckMapping)
@@ -1258,6 +1266,10 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 	if req.Cmd == model.CmdCloneProfile {
 		ok = okC
 	}
+	en, okE := s.H.(ProfileEnabler)
+	if req.Cmd == model.CmdSetEnabled {
+		ok = okE
+	}
 	if !ok {
 		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 	}
@@ -1303,6 +1315,19 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 			result = model.ResultImportChecked
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: result, Reloaded: !res.DryRun, Revision: res.Revision, Import: &res}
+	case model.CmdSetEnabled: // phase 13 (CHK-IPC-18)
+		if req.ProfileID == "" || req.Enabled == nil {
+			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+				Message: "ipc: set_enabled needs profileId and enabled", Args: []string{"enabled", model.ValRequired}}, "")
+		}
+		rev, err := en.SetEnabled(req.ProfileID, *req.Enabled, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		v := *req.Enabled
+		s.broadcast(model.IPCMessage{Type: model.MsgProfileEnabled, ProfileID: req.ProfileID, Enabled: &v, Revision: rev})
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSaved, ProfileID: req.ProfileID, Enabled: &v,
+			Reloaded: true, Revision: rev}
 	case model.CmdGetConfig:
 		cfg, rev, err := cm.GetConfig()
 		if err != nil {

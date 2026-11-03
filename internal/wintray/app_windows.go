@@ -487,6 +487,10 @@ func (a *App) drain() {
 				w.onSessionState(e.Status)
 			case trayipc.EventStatus: // e.g. trayAutostartError after a reconnection
 				w.onSessionStatus()
+			case trayipc.EventProfileEnabled: // CHK-TRAY-91
+				if m := e.Message; m != nil && m.Enabled != nil {
+					w.onProfileEnabled(m.ProfileID, *m.Enabled, m.Revision)
+				}
 			}
 		}
 	}
@@ -583,36 +587,44 @@ func (a *App) Command(cmd int) {
 	case trayui.CmdPinHelp:
 		a.ShowPinHelp()
 	default:
-		if i, mute, ok := trayui.MuteProfileIndex(cmd); ok {
-			a.muteProfile(i, mute)
+		if i, ok := trayui.ToggleProfileIndex(cmd); ok {
+			a.toggleProfile(i)
 		}
 	}
 }
 
-// muteProfile sends mute_until_recovered / unmute_profile for
-// status.Snapshot.Profiles[i] (CHK-TRAY-59).
-func (a *App) muteProfile(i int, mute bool) {
-	if a.session == nil || !a.session.Supported(model.CmdMuteUntilRecovered) {
+// toggleProfile sends set_enabled with the inverted polling flag of
+// status.Snapshot.Profiles[i] (the database check mark, CHK-TRAY-91). The
+// profile_enabled push updates the menu and the settings window list.
+func (a *App) toggleProfile(i int) {
+	if a.session == nil || !trayui.CanToggle(a.session.Status()) {
 		return
 	}
 	st := a.session.Status()
 	if st.Snapshot == nil || i < 0 || i >= len(st.Snapshot.Profiles) {
 		return
 	}
-	id := st.Snapshot.Profiles[i].ProfileID
-	cmd := model.CmdMuteUntilRecovered
-	if !mute {
-		cmd = model.CmdUnmuteProfile
-	}
+	p := st.Snapshot.Profiles[i]
+	on := !p.Enabled
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
 		defer cancel()
-		m, err := a.session.Do(ctx, model.IPCRequest{Cmd: cmd, ProfileID: id})
+		m, err := a.session.Do(ctx, model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: p.ProfileID, Enabled: &on})
 		if err != nil || m.Type == model.MsgError {
-			return // menu is ephemeral; next status push refreshes the indicator
+			a.runOnUI(func() { a.toggleFailed(p, err, m) })
+			return
 		}
 		_ = a.session.Refresh(ctx)
 	}()
+}
+
+// toggleFailed reports a failed set_enabled of the database check mark.
+func (a *App) toggleFailed(p model.ProfileSnapshot, err error, m model.IPCMessage) {
+	name := p.Name
+	if name == "" {
+		name = p.ProfileID
+	}
+	a.showBalloon(trayui.ToggleFailedBalloon(name, m, err))
 }
 
 // reloadTrayPrefs rereads Sound / UIMode / balloons from

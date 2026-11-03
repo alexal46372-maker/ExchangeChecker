@@ -26,26 +26,23 @@ const (
 	CmdSettings = 1001
 	CmdAbout    = 1002
 	CmdExit     = 1003
-	// phase 12 CHK-TRAY-59: mute/unmute per profile in the left (databases) menu.
-	// CmdMuteBase+i / CmdUnmuteBase+i address snap.Profiles[i] (i < 1000).
-	CmdMuteBase   = 12000
-	CmdUnmuteBase = 13000
+	// phase 13 CHK-TRAY-91: the check mark on a database item toggles
+	// polling (set_enabled). CmdToggleBase+i addresses snap.Profiles[i]
+	// (i < 1000).
+	CmdToggleBase  = 14000
 	cmdProfileSlot = 1000
 )
 
-// MuteCmd / UnmuteCmd are the left-menu commands for snap.Profiles[i].
-func MuteCmd(i int) int   { return CmdMuteBase + i }
-func UnmuteCmd(i int) int { return CmdUnmuteBase + i }
+// ToggleCmd is the left-menu command of the check mark of snap.Profiles[i].
+func ToggleCmd(i int) int { return CmdToggleBase + i }
 
-// MuteProfileIndex reports whether cmd is mute/unmute and which profile index.
-func MuteProfileIndex(cmd int) (i int, mute bool, ok bool) {
-	if cmd >= CmdMuteBase && cmd < CmdMuteBase+cmdProfileSlot {
-		return cmd - CmdMuteBase, true, true
+// ToggleProfileIndex reports whether cmd is a database check mark and
+// which profile index it addresses.
+func ToggleProfileIndex(cmd int) (i int, ok bool) {
+	if cmd >= CmdToggleBase && cmd < CmdToggleBase+cmdProfileSlot {
+		return cmd - CmdToggleBase, true
 	}
-	if cmd >= CmdUnmuteBase && cmd < CmdUnmuteBase+cmdProfileSlot {
-		return cmd - CmdUnmuteBase, false, true
-	}
-	return 0, false, false
+	return 0, false
 }
 
 // Item is one menu item. Sub != nil makes it a submenu.
@@ -57,6 +54,12 @@ type Item struct {
 	Separator bool
 	Checked   bool
 	Sub       []Item
+	// Check (CHK-TRAY-91): a database item. Instead of the color square it
+	// shows a bold check mark of Color (red error, yellow warning, green
+	// OK) when Checked (polling on), an empty box otherwise; a click on
+	// the item (it also opens the points submenu) sends ID = ToggleCmd(i)
+	// unless ID is 0 (no profile_enabled / not elevated).
+	Check bool
 }
 
 // TimeLayout of menu times (UTC+3, PLAN §4.5).
@@ -97,43 +100,68 @@ func BuildLeftMenu(st trayipc.Status) []Item {
 	if len(snap.Profiles) == 0 {
 		return append(items, Item{Text: i18n.T(i18n.KeyDBNone), Disabled: true})
 	}
-	canMute := st.Has(model.CapMuteProfile)
+	canToggle := CanToggle(st)
 	for i, p := range snap.Profiles {
-		items = append(items, databaseItem(p, ind.Fresh, canMute, i))
+		items = append(items, databaseItem(p, ind.Fresh, canToggle, i))
 	}
 	return items
 }
 
-func databaseItem(p model.ProfileSnapshot, fresh bool, canMute bool, idx int) Item {
-	color := LevelColor(p.Level)
+// CanToggle reports whether the database check marks send set_enabled:
+// the service offers profile_enabled and this (admin-only) command is
+// allowed for the connection (clientElevated).
+func CanToggle(st trayipc.Status) bool {
+	return st.Has(model.CapProfileEnabled) && st.Elevated()
+}
+
+// CheckColor is the check mark color of a database item: red error,
+// yellow warning, green OK; grey while the data is stale, polling is off
+// or the first poll is pending.
+func CheckColor(p model.ProfileSnapshot, fresh bool) Color {
+	if !p.Enabled || !fresh || !p.Polled {
+		return ColorGrey
+	}
+	if p.ErrorKey != "" || p.Error != "" {
+		return ColorRed
+	}
+	return LevelColor(p.Level)
+}
+
+// ToggleFailedBalloon is the balloon after a failed set_enabled of the
+// database name (err: transport error; m: the MsgError reply).
+func ToggleFailedBalloon(name string, m model.IPCMessage, err error) Balloon {
+	text := i18n.T(i18n.KeyDBToggleFailed)
+	switch {
+	case err != nil:
+		text += ": " + i18n.T(i18n.KeyDBNoData)
+	case m.ErrorKey != "":
+		text += ": " + i18n.Message(m.ErrorKey)
+	case m.Error != "":
+		text += ": " + m.Error
+	}
+	return Balloon{Title: name, Text: text, Level: model.LevelWarning}
+}
+
+func databaseItem(p model.ProfileSnapshot, fresh bool, canToggle bool, idx int) Item {
 	status := levelText(p.Level)
 	switch {
 	case !p.Enabled:
-		color, status = ColorGrey, i18n.T(i18n.KeyDBDisabled)
+		status = i18n.T(i18n.KeyDBDisabled)
 	case !p.Polled:
-		color, status = ColorGrey, i18n.T(i18n.KeyDBPending)
+		status = i18n.T(i18n.KeyDBPending)
 	}
 	if !fresh {
-		color = ColorGrey
 		status += "; " + i18n.T(i18n.KeyDBStale)
-	}
-	if p.Muted {
-		status += "; " + i18n.T(i18n.KeyDBMuted)
 	}
 	name := p.Name
 	if name == "" {
 		name = p.ProfileID
 	}
-	it := Item{Text: name + " — " + status, Color: color}
-	var sub []Item
-	if canMute {
-		if p.Muted {
-			sub = append(sub, Item{ID: UnmuteCmd(idx), Text: i18n.T(i18n.KeyMenuUnmute)})
-		} else {
-			sub = append(sub, Item{ID: MuteCmd(idx), Text: i18n.T(i18n.KeyMenuMute)})
-		}
-		sub = append(sub, Item{Separator: true})
+	it := Item{Text: name + " — " + status, Color: CheckColor(p, fresh), Check: true, Checked: p.Enabled}
+	if canToggle {
+		it.ID = ToggleCmd(idx)
 	}
+	var sub []Item
 	if p.ErrorKey != "" || p.Error != "" {
 		key := p.ErrorKey
 		if key == "" {
@@ -141,9 +169,8 @@ func databaseItem(p model.ProfileSnapshot, fresh bool, canMute bool, idx int) It
 		}
 		sub = append(sub, Item{Text: levelText(model.LevelError) + ": " + i18n.Message(key), Disabled: true})
 	}
-	for _, w := range p.Warnings {
-		sub = append(sub, Item{Text: i18n.Message(w), Disabled: true})
-	}
+	// p.Warnings (e.g. «Шифрование отключено…») are not shown in the
+	// menu (CHK-TRAY-91).
 	if len(sub) > 0 && len(p.Points) > 0 {
 		sub = append(sub, Item{Separator: true})
 	}

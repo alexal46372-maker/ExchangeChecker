@@ -4,6 +4,7 @@ package wintray
 
 import (
 	"strings"
+	"syscall"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -14,7 +15,10 @@ const squareSize = 16
 
 // bitmaps caches the colored squares (MENUITEMINFO.hbmpItem, 32-bit
 // premultiplied DIB — PLAN §12: no owner-draw).
-type bitmaps struct{ m map[trayui.Color]uintptr }
+type bitmaps struct {
+	m      map[trayui.Color]uintptr
+	checks map[checkKey]uintptr
+}
 
 func (b *bitmaps) get(c trayui.Color) uintptr {
 	if c == trayui.ColorNone {
@@ -38,7 +42,10 @@ func (b *bitmaps) free() {
 	for _, h := range b.m {
 		winapi.DeleteObject(h)
 	}
-	b.m = nil
+	for _, h := range b.checks {
+		winapi.DeleteObject(h)
+	}
+	b.m, b.checks = nil, nil
 }
 
 // menuText escapes '&' (menu mnemonic prefix).
@@ -64,10 +71,14 @@ func buildMenu(items []trayui.Item, bm *bitmaps) (uintptr, error) {
 			if it.Disabled {
 				mii.State = winapi.MFS_DISABLED
 			}
-			if it.Checked {
+			if it.Checked && !it.Check {
 				mii.State |= winapi.MFS_CHECKED
 			}
-			if h := bm.get(it.Color); h != 0 {
+			h := bm.get(it.Color)
+			if it.Check {
+				h = bm.check(it.Color, it.Checked)
+			}
+			if h != 0 {
 				mii.Mask |= winapi.MIIM_BITMAP
 				mii.BmpItem = h
 			}
@@ -103,7 +114,80 @@ func trackMenu(owner uintptr, items []trayui.Item, bm *bitmaps) int {
 	// the owner must be foreground, or the menu does not close when the
 	// user clicks elsewhere (KB135788)
 	winapi.SetForegroundWindow(owner)
-	cmd := winapi.TrackPopupMenuEx(hm, winapi.TPM_RETURNCMD|winapi.TPM_RIGHTBUTTON|winapi.TPM_NONOTIFY, pt.X, pt.Y, owner)
+	menuToggle.menu, menuToggle.items, menuToggle.cmd = hm, items, 0
+	hook, _ := winapi.SetMsgFilterHook(msgFilterCallback)
+	cmd := int(winapi.TrackPopupMenuEx(hm, winapi.TPM_RETURNCMD|winapi.TPM_RIGHTBUTTON|winapi.TPM_NONOTIFY, pt.X, pt.Y, owner))
+	if hook != 0 {
+		winapi.UnhookWindowsHookEx(hook)
+	}
+	if cmd == 0 {
+		cmd = menuToggle.cmd
+	}
+	menuToggle.menu, menuToggle.items, menuToggle.cmd = 0, nil, 0
 	winapi.PostMessage(owner, winapi.WM_NULL, 0, 0)
-	return int(cmd)
+	return cmd
+}
+
+// checkKey of a database check-mark bitmap.
+type checkKey struct {
+	c  trayui.Color
+	on bool
+}
+
+// check returns the bold check mark bitmap (CHK-TRAY-91), cached like the
+// squares.
+func (b *bitmaps) check(c trayui.Color, on bool) uintptr {
+	if b.checks == nil {
+		b.checks = map[checkKey]uintptr{}
+	}
+	k := checkKey{c, on}
+	if h, ok := b.checks[k]; ok {
+		return h
+	}
+	h, err := winapi.CreateDIB32(squareSize, squareSize, trayui.CheckPixels(c, on, squareSize))
+	if err != nil {
+		return 0
+	}
+	b.checks[k] = h
+	return h
+}
+
+// menuToggle is the state of the WH_MSGFILTER hook while trackMenu runs
+// (UI thread only, one menu at a time): a left click on a top-level item
+// with a toggle command (Item.Check with ID != 0, a database whose item
+// also opens the points submenu) records the command and closes the menu.
+var menuToggle struct {
+	menu  uintptr
+	items []trayui.Item
+	cmd   int
+}
+
+var msgFilterCallback = syscall.NewCallback(msgFilterProc)
+
+func msgFilterProc(code int32, wParam, lParam uintptr) uintptr {
+	if code == winapi.MSGF_MENU && lParam != 0 && menuToggle.menu != 0 {
+		m := winapi.HookMSG(lParam)
+		if m.Message == winapi.WM_LBUTTONUP || m.Message == winapi.WM_LBUTTONDOWN {
+			if cmd := toggleAt(winapi.MenuItemFromPoint(0, menuToggle.menu, winapi.GetCursorPos())); cmd != 0 {
+				if m.Message == winapi.WM_LBUTTONUP {
+					menuToggle.cmd = cmd
+					winapi.EndMenu()
+				}
+				return 1 // swallowed: the click toggles, it does not close the submenu
+			}
+		}
+	}
+	return winapi.CallNextHookEx(code, wParam, lParam)
+}
+
+// toggleAt is the toggle command of top-level item i (0 = none).
+func toggleAt(i int) int {
+	if i < 0 || i >= len(menuToggle.items) {
+		return 0
+	}
+	it := menuToggle.items[i]
+	if !it.Check || it.ID == 0 || it.Sub == nil {
+		return 0
+	}
+	return it.ID
 }

@@ -213,6 +213,8 @@ type IPCRequest struct {
 	ClearSmtpPassword      bool   `json:"clearSmtpPassword,omitempty"`
 	Addr                   string `json:"addr,omitempty"`
 	IncludeEmailRecipients bool   `json:"includeEmailRecipients,omitempty"`
+	// Enabled: set_enabled (phase 13, CHK-IPC-18); required there.
+	Enabled *bool `json:"enabled,omitempty"`
 	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
 	Level string `json:"level,omitempty"`
 	Viber bool   `json:"viber,omitempty"`
@@ -373,6 +375,8 @@ type IPCMessage struct {
 	EmailTest *EmailTestResult `json:"emailTest,omitempty"`
 	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
 	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
+	// Enabled: set_enabled reply / profile_enabled push (CHK-IPC-18).
+	Enabled *bool `json:"enabled,omitempty"`
 	// Summary: summary reply (phase 11, CHK-SVC-07).
 	Summary *Summary `json:"summary,omitempty"`
 	// Phase 11 (CHK-IPC-12/13): progress pushes (written flat, see

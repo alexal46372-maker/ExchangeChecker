@@ -475,17 +475,6 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	winapi.ListViewSelect(st.list, 1) // phase 11 (CHK-TRAY-49): a selected row
 	st.updateHistoryButton()
 	visit("status selected", st.hwnd)
-	// CHK-TRAY-59: muted indicator on status/cards (settings expert already
-	// shows «Клонировать базу» via CapCloneProfile — CHK-TRAY-58).
-	muted := sampleDemoStatus()
-	if muted.Snapshot != nil && len(muted.Snapshot.Profiles) > 0 {
-		since := sampleNow.Add(-15 * time.Minute)
-		muted.Snapshot.Profiles[0].Muted = true
-		muted.Snapshot.Profiles[0].MutedSince = &since
-		muted.Capabilities = append(append([]string{}, muted.Capabilities...), model.CapMuteProfile)
-	}
-	st.update(muted, true)
-	visit("status muted", st.hwnd)
 	winapi.DestroyWindow(st.hwnd)
 
 	// CHK-TRAY-54: summary + alarm_test under mock CapSummary / CapAlarmTest

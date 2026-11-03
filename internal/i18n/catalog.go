@@ -18,14 +18,13 @@ const (
 	KeyLevelError   = "level.error"
 
 	KeyDBDisabled = "db.disabled"
-	KeyDBMuted              = "db.muted"
-	KeyMenuMute             = "menu.mute"
-	KeyMenuUnmute           = "menu.unmute"
-	KeyCardMuted            = "card.muted"
 	KeyDBPending  = "db.pending"
 	KeyDBStale    = "db.stale"
 	KeyDBNone     = "db.none"
 	KeyDBNoPoints = "db.no_points"
+	// KeyDBToggleFailed: balloon after a failed set_enabled from the
+	// database check mark (CHK-TRAY-91).
+	KeyDBToggleFailed = "db.toggle_failed"
 	KeyDBNoData   = "db.no_data"
 
 	KeyPtSend     = "pt.send"
@@ -888,9 +887,6 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyBalloonRecovered:      "%s: обмен снова в норме",
 	KeyBalloonSummary:        "Просрочено точек: %d, восстановлено: %d",
 	KeyMenuBalloons:          "Уведомления о просрочке",
-	KeyMenuMute:              "Приглушить до восстановления",
-	KeyMenuUnmute:            "Снять",
-	KeyCardMuted:             "Приглушена",
 	KeyMenuStatusWin:         "Состояние…",
 	KeyMenuCheckNow:          "Проверить сейчас",
 	KeyStTitle:               "Состояние",
@@ -949,12 +945,12 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyLevelWarning: "предупреждение",
 	KeyLevelError:   "ошибка",
 
-	KeyDBMuted:               "приглушена",
 	KeyDBDisabled: "выключена",
 	KeyDBPending:  "ожидание опроса",
 	KeyDBStale:    "последние известные данные",
 	KeyDBNone:     "Нет настроенных баз",
 	KeyDBNoPoints: "Нет точек обмена",
+	KeyDBToggleFailed: "Не удалось переключить опрос базы",
 	KeyDBNoData:   "Нет данных от службы",
 
 	KeyPtSend:     "отпр.",

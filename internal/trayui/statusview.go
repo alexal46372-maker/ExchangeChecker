@@ -88,20 +88,10 @@ func StatusRows(st trayipc.Status, now time.Time) []StatusRow {
 			default:
 				r.State, r.Note = levelText(p.Level), i18n.T(i18n.KeyDBNoPoints)
 			}
-			if p.Muted {
-				if r.Note != "" {
-					r.Note += "; "
-				}
-				r.Note += i18n.T(i18n.KeyCardMuted)
-			}
 			rows = append(rows, r)
 			if len(p.Points) == 0 {
 				continue
 			}
-		}
-		if p.Muted && p.Enabled && p.Error == "" && p.ErrorKey == "" && p.Polled && len(p.Points) > 0 {
-			rows = append(rows, StatusRow{Database: db, AgoMinutes: -1, Level: p.Level, Color: LevelColor(p.Level),
-				ProfileID: p.ProfileID, State: levelText(p.Level), Note: i18n.T(i18n.KeyCardMuted)})
 		}
 		ps := append([]model.PointStatus(nil), p.Points...)
 		model.SortPoints(ps)

@@ -1471,6 +1471,9 @@ func (w *settingsWindow) onListNotify(lp uintptr) bool {
 			return true
 		}
 		on := winapi.ListViewChecked(w.ctl[idSetList], i)
+		if w.setEnabledLive(i, on) {
+			return true
+		}
 		if i != w.listIndex() {
 			// select the row whose poll flag changed (may prompt discard)
 			if !w.profileDiscardOK() {
@@ -1489,6 +1492,65 @@ func (w *settingsWindow) onListNotify(lp uintptr) bool {
 		return true
 	}
 	return true
+}
+
+// setEnabledLive sends set_enabled for the «Опрос» checkbox of saved
+// profile i at once when the service offers profile_enabled (CHK-TRAY-91);
+// the reply / profile_enabled push syncs the list and the tray menu. It
+// reports false when the old behaviour (the form field) applies.
+func (w *settingsWindow) setEnabledLive(i int, on bool) bool {
+	s := w.cfg.session
+	if s == nil || !s.Status().Has(model.CapProfileEnabled) {
+		return false
+	}
+	req, ok := w.ed.SetEnabledRequest(i, on)
+	if !ok {
+		return false
+	}
+	if w.busy {
+		w.loading = true
+		winapi.ListViewSetChecked(w.ctl[idSetList], i, !on)
+		w.loading = false
+		return true
+	}
+	id := req.ProfileID
+	w.call(req, func(m model.IPCMessage, err error) {
+		if err != nil || m.Type == model.MsgError || m.Enabled == nil {
+			w.loading = true
+			winapi.ListViewSetChecked(w.ctl[idSetList], i, !on)
+			w.loading = false
+			w.status = i18n.T(i18n.KeyDBToggleFailed) + replyErrText(m, err)
+			w.update()
+			return
+		}
+		w.onProfileEnabled(id, *m.Enabled, m.Revision)
+	})
+	return true
+}
+
+// replyErrText is ": <reason>" of a failed reply ("" = none).
+func replyErrText(m model.IPCMessage, err error) string {
+	switch {
+	case err != nil:
+		return ": " + i18n.T(i18n.KeyDBNoData)
+	case m.ErrorKey != "":
+		return ": " + i18n.Message(m.ErrorKey)
+	case m.Error != "":
+		return ": " + m.Error
+	}
+	return ""
+}
+
+// onProfileEnabled applies a set_enabled reply or a profile_enabled push
+// (also from the tray menu check mark) to the list checkbox.
+func (w *settingsWindow) onProfileEnabled(id string, on bool, rev string) {
+	i := w.ed.ApplyEnabled(id, on, rev)
+	if i >= 0 && w.ctl[idSetList] != 0 && winapi.ListViewChecked(w.ctl[idSetList], i) != on {
+		w.loading = true
+		winapi.ListViewSetChecked(w.ctl[idSetList], i, on)
+		w.loading = false
+	}
+	w.update()
 }
 
 func (w *settingsWindow) newProfile() {

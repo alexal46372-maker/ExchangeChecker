@@ -776,6 +776,10 @@ const (
 	KeyVbSaved            = "set.vb_saved"
 	// Telegram page (phase 13, CHK-TRAY-94).
 	KeyTgGroup           = "set.tg_group"
+	// «Мигание экрана» on «Общие» (phase 13, CHK-TRAY-95).
+	KeyGenScreenFlash       = "gen.screen_flash"
+	KeyGenScreenFlashFailed = "gen.screen_flash_failed"
+	KeyTipGenScreenFlash    = "tip.gen_screen_flash"
 	KeyTgEnabled         = "set.tg_enabled"
 	KeyTgToken           = "set.tg_token"
 	KeyTgClearToken      = "set.tg_clear_token"
@@ -1610,6 +1614,9 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyVbLastError:        "Последняя ошибка: %s — %s",
 	KeyVbSaved:            "Настройки Viber сохранены.",
 	KeyTgGroup:           "Уведомления Telegram",
+	KeyGenScreenFlash:       "Мигание экрана при ошибке обмена",
+	KeyGenScreenFlashFailed: "Не удалось сохранить «Мигание экрана»:",
+	KeyTipGenScreenFlash:    "Пока есть ошибка обмена, весь экран (все мониторы) мигает чёрным; фокус не перехватывается. «Закрыть» в окне тревоги останавливает мигание до восстановления",
 	KeyTgEnabled:         "Отправлять уведомления в Telegram",
 	KeyTgToken:           "Токен бота:",
 	KeyTgClearToken:      "Удалить сохранённый токен",

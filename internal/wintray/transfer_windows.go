@@ -61,6 +61,7 @@ const expCW, expCH = 480, 260
 type trayStores struct {
 	Balloon BalloonStore
 	Sound   SoundStore
+	Flash   ScreenFlashStore // «Мигание экрана» (CHK-TRAY-95)
 }
 
 func (w *settingsWindow) transferAvailable() bool {

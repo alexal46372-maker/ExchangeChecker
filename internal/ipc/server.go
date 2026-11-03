@@ -102,6 +102,12 @@ type ConfigManager interface {
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
 }
 
+// FlashDismisser runs dismiss_flash (phase 13, CHK-IPC-19; any client,
+// like ack_alert).
+type FlashDismisser interface {
+	DismissFlash(eventID uint64) error
+}
+
 // ProfileEnabler runs set_enabled (phase 13, CHK-IPC-18; admin only).
 type ProfileEnabler interface {
 	SetEnabled(profileID string, enabled bool, expectedRevision, account string) (string, error)
@@ -404,6 +410,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ProfileCloner); ok {
 		caps = append(caps, model.CapCloneProfile) // phase 12 (CHK-CFG-08)
+	}
+	if _, ok := s.H.(FlashDismisser); ok {
+		caps = append(caps, model.CapFlash) // phase 13 (CHK-IPC-19)
 	}
 	if _, ok := s.H.(ProfileEnabler); ok {
 		caps = append(caps, model.CapProfileEnabled) // phase 13 (CHK-IPC-18)
@@ -1439,6 +1448,17 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 			}
 			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultAcknowledged, Acked: n}
 		}
+	case model.CmdDismissFlash: // phase 13 (CHK-IPC-19)
+		if fd, ok := s.H.(FlashDismisser); ok {
+			if req.EventID == 0 {
+				return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+					Message: "ipc: dismiss_flash needs eventId", Args: []string{"eventId", model.ValRequired}}, "")
+			}
+			if err := fd.DismissFlash(req.EventID); err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultFlashDismissed, EventID: req.EventID}
+		}
 	case model.CmdMuteUntilRecovered: // phase 12 (CHK-MON-20 / CHK-IPC-15)
 		if mu, ok := s.H.(Muter); ok {
 			if err := mu.MuteUntilRecovered(req.ProfileID); err != nil {
@@ -1501,6 +1521,16 @@ func (s *Server) Alert(e model.AlertEvent) {
 // CHK-MON-17).
 func (s *Server) AlertRepeat(e model.AlertEvent) {
 	s.broadcast(model.IPCMessage{Type: model.MsgAlertRepeat, Alert: &e})
+}
+
+// Flash pushes flash / flash_stop to all clients (phase 13, CHK-IPC-19).
+func (s *Server) Flash(f model.FlashEvent) {
+	if f.Stop {
+		s.broadcast(model.IPCMessage{Type: model.MsgFlashStop, ProfileID: f.ProfileID, PointKey: f.PointKey})
+		return
+	}
+	lvl := f.Level
+	s.broadcast(model.IPCMessage{Type: model.MsgFlash, ProfileID: f.ProfileID, PointKey: f.PointKey, EventID: f.EventID, Level: &lvl})
 }
 
 // Clients returns the number of connected clients.

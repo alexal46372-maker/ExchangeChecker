@@ -196,6 +196,7 @@ var monitorMessages = map[string]string{ // key -> text (RU)
 	MsgEmailCanceled:           "Отправка email отменена.",
 	MsgEmailTimeout:            "Время отправки email истекло.",
 	MsgEmailInvalid:            "Неверные настройки email.",
+	MsgMonitorUnknownEvent:     "Тревога не найдена или уже снята.",
 	MsgEmailRateLimited:        "Слишком частый тест email; повторите позже.",
 	MsgTelegramNoToken:         "Не задан токен бота Telegram.",
 	MsgTelegramNoChat:          "Не задан ID чата Telegram.",
@@ -265,5 +266,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramTLS, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited, MsgMonitorUnknownEvent, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramTLS, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid}
 }

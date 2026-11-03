@@ -89,6 +89,8 @@ const (
 	idSetExport    // «Экспорт…» (phase 10 E, administrator)
 	idSetImport    // «Импорт…»
 	idSetClose     = winapi.IDCANCEL
+	// idGenFlash: «Мигание экрана» (HKCU, saved at once; CHK-TRAY-95)
+	idGenFlash = 990
 )
 
 // Elevator starts the elevated settings process («Изменить
@@ -329,7 +331,7 @@ var settingsTips = map[int32]string{
 	idGenBeep: i18n.KeyTipGenBeep, idGenWarnFreq: i18n.KeyTipGenWarnFreq, idGenWarnDur: i18n.KeyTipGenWarnDur,
 	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
 	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
-	idGenAutostart: i18n.KeyTipGenAutostart,
+	idGenAutostart: i18n.KeyTipGenAutostart, idGenFlash: i18n.KeyTipGenScreenFlash,
 	// CHK-TRAY-62: General «Звук» section (same tips as soundwin)
 	idSndSave: i18n.KeyTipSoundSave,
 	idSndWarn + idSndBeep: i18n.KeyTipSoundKind, idSndWarn + idSndFile: i18n.KeyTipSoundKind,
@@ -666,13 +668,14 @@ func (w *settingsWindow) build() {
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Box, 260, 34)
 	// a wrapped check box: the page width, not its one-line text (phase 11)
 	auto.Grow, auto.NoShrink = true, true
+	flash := add("BUTTON", w.t(i18n.KeyGenScreenFlash), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idGenFlash, ui.Check, 0, 0)
 	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 300, 32)
 	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 300, 120)
 	autoErr.Grow, note.Grow = true, true
 	// phase 11 (CHK-TRAY-48): as high as their text, an empty error box
 	// takes no room (no gap under the autostart check box)
 	w.wrap = append(w.wrap, autoErr, note)
-	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
+	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: flash}, ui.GridRow{Span: true, Field: note})
 	generalBox := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
 	soundBox := w.buildSoundSection(add, label) // CHK-TRAY-62
 	generalPage := &ui.Col{Gap: ui.P12, Items: []ui.Node{generalBox, soundBox}}
@@ -862,6 +865,10 @@ func (w *settingsWindow) command(id int32, code uint32) {
 	case idGenBeep, idGenAutostart:
 		if code == winapi.BN_CLICKED && !w.loading {
 			w.readGeneral()
+		}
+	case idGenFlash:
+		if code == winapi.BN_CLICKED && !w.loading {
+			w.saveScreenFlash()
 		}
 	case idSetPage:
 		if w.page != 1 {
@@ -1061,6 +1068,7 @@ func (w *settingsWindow) fill() {
 	w.setCheck(idSetTrust, f.TrustServerCert && traysettings.TrustApplies(f.Encrypt))
 	// idSetEnabled removed from «Опрос и пороги» (CHK-TRAY-80); list checkbox owns it.
 	w.fillGeneral()
+	w.fillScreenFlash()
 	w.loadSoundSection()
 	w.fillViber()
 	w.fillEmail()
@@ -1970,6 +1978,8 @@ type SettingsOptions struct {
 	// tray block of export / import (phase 10 E; HKCU, nil = not stored)
 	BalloonStore BalloonStore
 	SoundStore   SoundStore
+	// ScreenFlashStore: «Мигание экрана» (CHK-TRAY-95).
+	ScreenFlashStore ScreenFlashStore
 	// OwnerSID: the user SID of the tray that started the elevated window
 	// (--owner-sid=; "" = unknown, treated as the same user)
 	OwnerSID string
@@ -2024,7 +2034,7 @@ func RunSettings(opt SettingsOptions) int {
 	s := trayipc.New(so)
 	w, err = newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: s,
 		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
-		stores:    trayStores{Balloon: opt.BalloonStore, Sound: opt.SoundStore},
+		stores:    trayStores{Balloon: opt.BalloonStore, Sound: opt.SoundStore, Flash: opt.ScreenFlashStore},
 		otherUser: OtherUser(opt.OwnerSID, CurrentUserSID()),
 		onSoundSave: func(p trayalert.SoundPrefs) error {
 			if opt.SoundStore == nil {
@@ -2069,4 +2079,29 @@ func (w *settingsWindow) loop() int {
 		winapi.DispatchMessage(&m)
 	}
 	return int(m.WParam)
+}
+
+// fillScreenFlash shows «Мигание экрана» from HKCU (CHK-TRAY-95; a
+// per-user tray switch: editable in both modes, nil store = on).
+func (w *settingsWindow) fillScreenFlash() {
+	on := true
+	if st := w.cfg.stores.Flash; st != nil {
+		if v, err := st.Load(); err == nil {
+			on = v
+		}
+	}
+	w.setCheck(idGenFlash, on)
+}
+
+// saveScreenFlash stores the switch at once; the tray reads it on the
+// next flash push.
+func (w *settingsWindow) saveScreenFlash() {
+	st := w.cfg.stores.Flash
+	if st == nil {
+		return
+	}
+	if err := st.Save(w.check(idGenFlash)); err != nil {
+		w.status = w.t(i18n.KeyGenScreenFlashFailed) + " " + err.Error()
+		w.update()
+	}
 }

@@ -131,6 +131,10 @@ const (
 	// new Enabled of the profile and the config revision; Message is the
 	// push (ProfileID, Enabled, Revision).
 	EventProfileEnabled
+	// EventFlash: a flash / flash_stop push (phase 13, CHK-IPC-19 /
+	// CHK-TRAY-95; capability flash); Message is the push (Type,
+	// ProfileID, PointKey, EventID, Level).
+	EventFlash
 )
 
 // Event is delivered to Options.OnEvent.
@@ -724,6 +728,11 @@ func (s *Session) onPush(m model.IPCMessage) {
 		if m.ProfileID != "" && m.Enabled != nil && s.Status().Has(model.CapProfileEnabled) {
 			cp := m
 			s.emit(Event{Kind: EventProfileEnabled, Status: s.applyEnabled(m.ProfileID, *m.Enabled, m.Revision), Message: &cp})
+		}
+	case model.MsgFlash, model.MsgFlashStop:
+		if st := s.Status(); st.Has(model.CapFlash) {
+			cp := m
+			s.emit(Event{Kind: EventFlash, Status: st, Message: &cp})
 		}
 	case model.MsgSQLBrowseProgress, model.MsgSQLTestStepsProgress:
 		s.progMu.Lock()

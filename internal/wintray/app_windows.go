@@ -112,6 +112,12 @@ type Options struct {
 	UIModeStore UIModeStore
 	// NoBlink disables the icon blinking timer (tests drive blinkTick).
 	NoBlink bool
+	// ScreenFlashStore keeps «Мигание экрана» (HKCU; nil = on, phase 13,
+	// CHK-TRAY-95).
+	ScreenFlashStore ScreenFlashStore
+	// HiddenFlash keeps the full-screen flash overlay hidden (tests); its
+	// state and timer are maintained.
+	HiddenFlash bool
 }
 
 // exitWait bounds the wait for the session goroutine in Exit (well under
@@ -177,6 +183,10 @@ type App struct {
 	// phase 9a: balloons (CHK-TRAY-18), «Состояние» (CHK-TRAY-19/21),
 	// «Проверить сейчас» results (CHK-TRAY-20, test hook)
 	balloonsOn   bool
+	// flashes: active flash pushes by profile / point; flashWin: the
+	// full-screen overlay (CHK-TRAY-95)
+	flashes  map[flashKey]flashState
+	flashWin *flashWindow
 	balloons     []trayui.Balloon
 	statusWin    *statusWindow
 	checkResults []string
@@ -298,7 +308,10 @@ func (a *App) applyAlert(v trayalert.View) {
 
 // closeAlerts: the user closed the alert window (mute until the next
 // change, PLAN §12 p.50).
-func (a *App) closeAlerts() { a.applyAlert(a.alerts.Close()) }
+func (a *App) closeAlerts() {
+	a.applyAlert(a.alerts.Close())
+	a.dismissFlashes() // «Закрыть» = dismiss_flash (CHK-TRAY-95)
+}
 
 // muteAlerts: «Звук вкл/выкл» of the current alarm (CHK-TRAY-36).
 func (a *App) muteAlerts() { a.applyAlert(a.alerts.ToggleMute()) }
@@ -516,6 +529,7 @@ func (a *App) drain() {
 	a.updateProblems()
 	a.afterDrain(q)
 	a.balloonEvents(q)
+	a.onFlashEvents(q) // CHK-TRAY-95
 	if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) {
 		sw.update(a.status, a.connected() && !a.check.Busy)
 	}
@@ -665,7 +679,7 @@ func (a *App) OpenSettings() uintptr {
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{mode: mode, session: a.session, elevator: a.opt.Elevator,
 		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
-		stores:  trayStores{Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
+		stores:  trayStores{Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore, Flash: a.opt.ScreenFlashStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onSoundSave: a.SaveSoundPrefs, onSoundTest: a.testSound,
 		onSoundStop: a.stopTestSound,

@@ -73,3 +73,36 @@ func MenuItemFromPoint(hwnd, menu uintptr, pt POINT) int {
 
 // EndMenu closes the active menu of the thread.
 func EndMenu() { callProc(procEndMenu) }
+
+// Full-screen flash overlay (phase 13 item 7, CHK-TRAY-95): a layered,
+// click-through, never-activated window over the virtual screen (all
+// monitors). Windows 2000+.
+var procSetLayeredWindowAttributes = moduser32.NewProc("SetLayeredWindowAttributes")
+
+const (
+	WS_EX_LAYERED     = 0x00080000
+	WS_EX_TRANSPARENT = 0x00000020
+	LWA_ALPHA         = 0x00000002
+	WM_MOUSEACTIVATE  = 0x0021
+	MA_NOACTIVATE     = 3
+
+	SM_XVIRTUALSCREEN  = 76
+	SM_YVIRTUALSCREEN  = 77
+	SM_CXVIRTUALSCREEN = 78
+	SM_CYVIRTUALSCREEN = 79
+)
+
+// SetLayeredWindowAttributes sets the constant alpha of a layered window.
+func SetLayeredWindowAttributes(hwnd uintptr, alpha uint8) error {
+	r, _, err := callProc(procSetLayeredWindowAttributes, hwnd, 0, uintptr(alpha), LWA_ALPHA)
+	if r == 0 {
+		return err
+	}
+	return nil
+}
+
+// VirtualScreen is the rectangle of all monitors.
+func VirtualScreen() RECT {
+	x, y := GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)
+	return RECT{Left: x, Top: y, Right: x + GetSystemMetrics(SM_CXVIRTUALSCREEN), Bottom: y + GetSystemMetrics(SM_CYVIRTUALSCREEN)}
+}

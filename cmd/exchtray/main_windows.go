@@ -37,7 +37,8 @@ func run() int {
 			// read-only window): own process, own connection
 			return wintray.RunSettings(wintray.SettingsOptions{Session: session, UIModeStore: wintray.RegistryUIModeStore{},
 				BalloonStore: wintray.RegistryBalloonStore{}, SoundStore: wintray.RegistrySoundStore{},
-				OwnerSID: wintray.OwnerSIDFromArgs(os.Args[1:])})
+				ScreenFlashStore: wintray.RegistryScreenFlashStore{},
+				OwnerSID:         wintray.OwnerSIDFromArgs(os.Args[1:])})
 		}
 	}
 	release, ok, err := wintray.SingleInstance(wintray.MutexName)
@@ -51,10 +52,11 @@ func run() int {
 	defer release()
 
 	app, err := wintray.NewApp(wintray.Options{
-		BalloonStore: wintray.RegistryBalloonStore{},
-		SoundStore:   wintray.RegistrySoundStore{},
-		UIModeStore:  wintray.RegistryUIModeStore{},
-		Session:      session,
+		BalloonStore:     wintray.RegistryBalloonStore{},
+		SoundStore:       wintray.RegistrySoundStore{},
+		ScreenFlashStore: wintray.RegistryScreenFlashStore{},
+		UIModeStore:      wintray.RegistryUIModeStore{},
+		Session:          session,
 		// %LOCALAPPDATA%\ExchangeChecker\tray.log, 1 MB + tray.log.1
 		// (phase 9b, CHK-TRAY-28); no passwords / logins are written
 		Log: (&traylog.Logger{Path: traylog.DefaultPath()}).Func(),

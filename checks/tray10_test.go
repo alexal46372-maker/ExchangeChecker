@@ -125,7 +125,9 @@ var winAPIMinVersion = map[string]float64{
 	"RegisterClassExW": 5.0, "RegisterWindowMessageW": 5.0, "SendMessageW": 5.0,
 	"SetForegroundWindow": 5.0, "ShowWindow": 5.0, "TrackPopupMenuEx": 5.0,
 	// CHK-TRAY-91: menu click hook (Windows 2000+ / XP+)
-	"SetWindowsHookExW": 5.0, "UnhookWindowsHookEx": 5.0, "CallNextHookEx": 5.0, "MenuItemFromPoint": 5.0, "EndMenu": 5.0, "GetCurrentThreadId": 5.0, "TranslateMessage": 5.0,
+	"SetWindowsHookExW": 5.0, "UnhookWindowsHookEx": 5.0, "CallNextHookEx": 5.0, "MenuItemFromPoint": 5.0, "EndMenu": 5.0, "GetCurrentThreadId": 5.0,
+	// CHK-TRAY-95: full-screen flash overlay (Windows 2000+)
+	"SetLayeredWindowAttributes": 5.0, "TranslateMessage": 5.0,
 	"UnregisterClassW": 5.0,
 	// phase 6b alert window and sound (CHK-TRAY-03)
 	"Beep": 5.0, "SetWindowTextW": 5.0, "EnableWindow": 5.0, "IsWindowEnabled": 5.0, "IsWindowVisible": 5.0,

@@ -23,6 +23,8 @@ var sqlWizardMessages = map[string]LocalizedText{
 	MsgSQLAutoPickMultiplePlans: {"В базе несколько планов обмена — выберите нужный.", "The database has several exchange plans — choose one."},
 	MsgSQLAutoPickCounters: {"Времена обмена в базе не найдены, предложены счётчики сообщений плана обмена — подтвердите выбор.",
 		"No exchange times were found; the exchange plan message counters are proposed — confirm the choice."},
+	MsgSQLAutoPickCountersOK: {"Времена обмена в базе не найдены (1С 8.1): применены счётчики сообщений планов обмена — время фиксируется службой при их изменении.",
+		"No exchange times in the database (1C 8.1): the exchange plan message counters were applied — the service records the time when they change."},
 	MsgSQLAutoPickIncomplete: {"Лучший вариант неполный (нет времени отправки или приёма, нет точек или поиск прерван) — выберите вручную.",
 		"The best option is incomplete (no send or recv time, no points, or the search was cut short) — choose manually."},
 	MsgSQLAutoPickLowScore:  {"Уверенности недостаточно — выберите вариант из списка.", "Not confident enough — choose an option from the list."},
@@ -50,7 +52,7 @@ func init() {
 // SQLWizardMessageKeys lists the phase 9 sql.* keys (auto-pick reasons,
 // candidate reasons, diagnosis titles sql.diag_*).
 func SQLWizardMessageKeys() []string {
-	return append(append(append(SQLDiagnosisKeys(), SQLCandidateReasonKeys()...), SQLBrowseAdviceKeys()...), MsgSQLAutoPickOK, MsgSQLAutoPickNone, MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters,
+	return append(append(append(SQLDiagnosisKeys(), SQLCandidateReasonKeys()...), SQLBrowseAdviceKeys()...), MsgSQLAutoPickOK, MsgSQLAutoPickNone, MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters, MsgSQLAutoPickCountersOK,
 		MsgSQLAutoPickIncomplete, MsgSQLAutoPickLowScore, MsgSQLAutoPickAmbiguous)
 }
 

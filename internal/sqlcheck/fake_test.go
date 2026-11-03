@@ -682,3 +682,16 @@ func (f *fakeStore) Counters(ctx context.Context, m model.Mapping, limit int) ([
 	}
 	return out, nil
 }
+
+// fx1CCustomTwoRegs: fx1CCustom plus a second register _InfoRg95 on the
+// same directory _Reference77 with similar dates (CHK-SQL-18: a real
+// ambiguity between two _InfoRg of one _Reference).
+func fx1CCustomTwoRegs(off int) []*fxTable {
+	base := fx1CCustom(off, "_Reference77")
+	reg := fxT("dbo", "_InfoRg95", "_Fld96RRef:binary(16)", "_Fld97:datetime", "_Fld98:datetime", "_Fld99:nvarchar(200)")
+	ago := []time.Duration{17 * time.Minute, 52 * time.Minute, day + time.Hour}
+	for i := range ago {
+		reg.add(ref16(77, byte(i+1)), dbAt(ago[i]+5*time.Minute, off), dbAt(ago[i], off), "ok")
+	}
+	return append(base, reg)
+}

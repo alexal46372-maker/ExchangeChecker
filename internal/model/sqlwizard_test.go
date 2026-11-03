@@ -79,7 +79,7 @@ func TestCHK_SQL_08_AutoPick(t *testing.T) {
 		{"none", nil, MsgSQLAutoPickNone},
 		{"one", []DiscoveryCandidate{cand(148, "_Node1")}, MsgSQLAutoPickOK},
 		{"margin", []DiscoveryCandidate{cand(102, "_Node1"), cand(148, "_Node1")}, MsgSQLAutoPickOK},
-		{"plans", []DiscoveryCandidate{cand(155, "_Node1"), cand(148, "_Node2")}, MsgSQLAutoPickMultiplePlans},
+		{"plans", []DiscoveryCandidate{cand(155, "_Node1"), cand(148, "_Node2")}, MsgSQLAutoPickOK}, // CHK-SQL-16: merged
 		{"low", []DiscoveryCandidate{cand(117, ""), cand(50, "")}, MsgSQLAutoPickLowScore},
 		{"ambiguous", []DiscoveryCandidate{cand(140, ""), cand(120, "")}, MsgSQLAutoPickAmbiguous},
 		{"tie", []DiscoveryCandidate{cand(150, ""), cand(150, "")}, MsgSQLAutoPickAmbiguous},
@@ -89,6 +89,11 @@ func TestCHK_SQL_08_AutoPick(t *testing.T) {
 		if p.ReasonKey != c.key || p.AutoApply != (c.key == MsgSQLAutoPickOK) {
 			t.Errorf("%s: %+v", c.name, p)
 		}
+	}
+	// several plans: the main candidate is checked, not only the reason
+	if p := SQLAutoPickFor([]DiscoveryCandidate{cand(148, "_Node2"), cand(155, "_Node1")}); p.Index != 1 || len(p.Plans) != 2 ||
+		p.Plans[0] != 1 || p.Plans[1] != 0 || p.Score != 155 || p.CandidateKey != cand(155, "_Node1").Key() {
+		t.Errorf("plans main: %+v", p)
 	}
 	if p := SQLAutoPickFor([]DiscoveryCandidate{cand(102, "_N"), cand(148, "_N")}); p.Index != 1 || p.Margin != 46 || p.CandidateKey == "" {
 		t.Errorf("%+v", p)
@@ -275,5 +280,71 @@ func TestCHK_SQL_09_GrantScript(t *testing.T) {
 	}
 	if _, err := SQLGrantScriptFor(SQLGrantRequest{Principal: `NT AUTHORITY\SYSTEM`, Windows: true, Database: "d"}); err != nil {
 		t.Error(err)
+	}
+}
+
+// CHK-SQL-16..18 (review): PlanNo tie-break, a non-plan candidate with
+// plans, a counters plan without points, the score floor for a plan time
+// candidate, and the old / new client contract (client_hello
+// autopick_plans_v2).
+func TestCHK_SQL_16_AutoPickReviewCases(t *testing.T) {
+	pn := func(plan string, no, score int) DiscoveryCandidate {
+		c := cand(score, plan)
+		c.PlanNo = no
+		return c
+	}
+	// only PlanNo decides: same class, score and points
+	for _, in := range [][]DiscoveryCandidate{{pn("_Node7", 7, 150), pn("_Node3", 3, 150)}, {pn("_Node3", 3, 150), pn("_Node7", 7, 150)}} {
+		p := SQLAutoPickFor(in)
+		if !p.AutoApply || len(p.Plans) != 2 || in[p.Plans[0]].PlanNo != 3 || in[p.Plans[1]].PlanNo != 7 || p.Index != p.Plans[0] {
+			t.Errorf("planNo tie-break %+v", p)
+		}
+	}
+	// a non-plan candidate with plans: plans win, the non-plan one is not in Plans
+	mix := []DiscoveryCandidate{cand(190, ""), cand(150, "_Node1"), cand(140, "_Node2")}
+	if p := SQLAutoPickFor(mix); !p.AutoApply || p.ReasonKey != MsgSQLAutoPickOK || p.Index != 1 || len(p.Plans) != 2 || p.Plans[1] != 2 {
+		t.Errorf("non-plan + plans %+v", p)
+	}
+	// counters plan with Points == 0: incomplete, not applied
+	cnt := cand(5, "_Node1")
+	cnt.Mode, cnt.Points = CandidateCounters, 0
+	if p := SQLAutoPickFor([]DiscoveryCandidate{cnt}); p.AutoApply || p.ReasonKey != MsgSQLAutoPickIncomplete {
+		t.Errorf("counters 0 points %+v", p)
+	}
+	cnt.Points = 3
+	if p := SQLAutoPickFor([]DiscoveryCandidate{cnt}); !p.AutoApply || p.ReasonKey != MsgSQLAutoPickCountersOK {
+		t.Errorf("counters %+v", p)
+	}
+	// plan time candidate below SQLAutoPickMinScore: not applied
+	if p := SQLAutoPickFor([]DiscoveryCandidate{cand(SQLAutoPickMinScore-1, "_Node1")}); p.AutoApply || p.ReasonKey != MsgSQLAutoPickLowScore {
+		t.Errorf("low plan %+v", p)
+	}
+	if p := SQLAutoPickFor([]DiscoveryCandidate{cand(SQLAutoPickMinScore, "_Node1")}); !p.AutoApply {
+		t.Errorf("plan at floor %+v", p)
+	}
+	// client contract
+	two := []DiscoveryCandidate{cand(155, "_Node1"), cand(148, "_Node2")}
+	if p := SQLAutoPickForClient(two, true); !p.AutoApply || p.ReasonKey != MsgSQLAutoPickOK || len(p.Plans) != 2 {
+		t.Errorf("new client plans %+v", p)
+	}
+	if p := SQLAutoPickForClient(two, false); p.AutoApply || p.ReasonKey != MsgSQLAutoPickMultiplePlans || p.Plans != nil || p.Index != 0 {
+		t.Errorf("old client plans %+v", p)
+	}
+	if p := SQLAutoPickForClient([]DiscoveryCandidate{cnt}, true); !p.AutoApply || p.ReasonKey != MsgSQLAutoPickCountersOK {
+		t.Errorf("new client counters %+v", p)
+	}
+	if p := SQLAutoPickForClient([]DiscoveryCandidate{cnt}, false); p.AutoApply || p.ReasonKey != MsgSQLAutoPickCounters || p.Plans != nil {
+		t.Errorf("old client counters %+v", p)
+	}
+	if p := SQLAutoPickForClient([]DiscoveryCandidate{cand(148, "_Node1")}, false); !p.AutoApply || p.ReasonKey != MsgSQLAutoPickOK {
+		t.Errorf("old client one plan %+v", p)
+	}
+	for _, k := range []string{MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters, MsgSQLAutoPickCountersOK} {
+		if SQLMessage(k, "ru") == "" || SQLMessage(k, "en") == "" {
+			t.Errorf("no text %s", k)
+		}
+	}
+	if !KnownClientCaps[CapAutoPickPlans] {
+		t.Error("client cap not known")
 	}
 }

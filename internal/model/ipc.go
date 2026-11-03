@@ -383,6 +383,11 @@ type IPCMessage struct {
 	TelegramTest *TelegramTestResult `json:"telegramTest,omitempty"`
 	// Enabled: set_enabled reply / profile_enabled push (CHK-IPC-18).
 	Enabled *bool `json:"enabled,omitempty"`
+	// PointKey / EventID / Level: flash and flash_stop pushes (phase 13,
+	// CHK-IPC-19; pointKey "" = profile-level alert).
+	PointKey string      `json:"pointKey,omitempty"`
+	EventID  uint64      `json:"eventId,omitempty"`
+	Level    *AlertLevel `json:"level,omitempty"`
 	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
 	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
 	// Summary: summary reply (phase 11, CHK-SVC-07).

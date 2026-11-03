@@ -152,6 +152,8 @@ type Options struct {
 	// the IPC clients only (not the Event Log, log file, history or
 	// events_since).
 	OnAlertRepeat func(model.AlertEvent)
+	// OnFlash receives flash / flash_stop pushes (phase 13, CHK-MON-22).
+	OnFlash func(model.FlashEvent)
 	// ViberStatus is settings.viber.status of the views (phase 10,
 	// CHK-SVC-06; notify.Notifier.Status); nil = none.
 	ViberStatus func() *model.ViberStatus
@@ -353,8 +355,12 @@ type Monitor struct {
 	acks    map[string]AckRecord
 	ackSave sync.Mutex
 	// mutes (CHK-MON-20), guarded by mu; muteSave serializes the writes
-	mutes    map[string]MuteRecord
-	muteSave sync.Mutex
+	mutes map[string]MuteRecord
+	// flash pushes (phase 13 item 7, CHK-MON-22): flashing alerts by
+	// key, suppressed (dismiss_flash) event ids
+	flashing       map[string]flashEntry
+	flashDismissed map[uint64]bool
+	muteSave       sync.Mutex
 
 	tester   *Tester
 	explorer *Explorer // interactive commands (G2/G3)
@@ -1345,6 +1351,8 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		// current state is in status.problems
 		repEvents = append(repEvents, ev)
 	}
+	flashCands := append(append([]model.AlertEvent{}, events...), repeats...)
+	flashes := m.flashesLocked(flashCands, alerts)
 	m.seq++
 	snap := model.StatusSnapshot{
 		Seq: m.seq, Now: now, Level: model.WorstProfileLevel(profiles), Profiles: profiles,
@@ -1399,6 +1407,11 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	}
 	if m.opt.OnSnapshot != nil {
 		m.opt.OnSnapshot(snap)
+	}
+	if m.opt.OnFlash != nil {
+		for _, f := range flashes {
+			m.opt.OnFlash(f)
+		}
 	}
 	if m.opt.OnAlertRepeat != nil {
 		for _, ev := range repEvents {

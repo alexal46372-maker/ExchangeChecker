@@ -239,6 +239,7 @@ func runService(ctx context.Context, ac appConfig) error {
 		// alert_repeat after every failing check of an active alert, to
 		// the tray only (CHK-MON-17)
 		OnAlertRepeat: func(e model.AlertEvent) { srv.AlertRepeat(e) },
+		OnFlash:       func(f model.FlashEvent) { srv.Flash(f) }, // CHK-MON-22
 		// settings.viber.status of get_config / get_status, token reload
 		// after save_settings (CHK-SVC-06)
 		ViberStatus:     viber.Status,

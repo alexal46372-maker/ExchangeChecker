@@ -382,7 +382,7 @@ type PlanPointLister interface { NodePoints(ctx) ([]model.NodePoint, error) }   
 1. **Профили** — список, добавить/изменить/удалить; поля host, port, database, user, password; кнопка **Тест**.
 2. **Мониторинг** — PollInterval, WarningAfterMin, ErrorAfterMin.
 3. **Звук** — частоты/длительности warning и error, gap.
- 4. **Язык** — Русский / English (полный UI).
+ 4. ~~**Язык** — Русский / English (полный UI).~~ Отменено фазой 13 (§12 п. 206): только русский.
 
 Сохранение → файлы + `ReloadConfig` службе.
 
@@ -657,9 +657,9 @@ Wizard Win32 (страницы):
 3. **Время в БД — UTC+3, точно.**
 4. **SQL Authentication и Windows Authentication** — оба в v1.
 5. **Автозапуск трея** вместе с входом пользователя — да.
-6. **UI:** русский и английский, полностью.
+6. ~~**UI:** русский и английский, полностью.~~ Фаза 13 (п. 206): только русский.
 7. **ЛКМ-список:** только базы; цвет базы жёлтый (warning) / красный (error) по худшему уровню точек; точки обмена — во **выпадающем меню при наведении** на базу.
-8. **Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).
+8. ~~**Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).~~ Фаза 13 (п. 206): только русский, язык ОС не определяется.
 
 9. **DPAPI LocalMachine (фаза 1):** `CryptProtectData` с флагами `CRYPTPROTECT_LOCAL_MACHINE` (0x4) и `CRYPTPROTECT_UI_FORBIDDEN` (0x1), опциональный entropy `ExchangeChecker/secrets.dpapi/v1`. Трей (пользователь) шифрует, служба под LocalSystem расшифровывает. Граница доступа — ACL каталога `%ProgramData%\ExchangeChecker\` (инсталлятор, фаза 7: ~~Administrators+SYSTEM+Users-read~~ — **изменено п. 90:** только SYSTEM+Administrators, без Users, логи тоже). (**Изменено решением Вики от 03.10, п. 58:** `secrets.dpapi` — DACL только SY+BA; трей больше не шифрует сам — пишет только служба по IPC.) Tradeoff v1: любой локальный процесс на машине может расшифровать blob — принято как допустимое для v1.
 
@@ -870,7 +870,7 @@ Wizard Win32 (страницы):
 - Mute профиля до восстановления (п. 192, `CHK-MON-20` / `CHK-IPC-15`).
 - `clone_profile` (п. 193, `CHK-CFG-08`).
 
-*(Email notifications — фаза 13b, п. 199–201, ветка `feat/svc-email`.)*
+*(Email notifications — фаза 13b, п. 206–201, ветка `feat/svc-email`.)*
 
 ---
 
@@ -884,7 +884,7 @@ Wizard Win32 (страницы):
 
 ### Фаза 13b — служба: email-уведомления (ветка `feat/svc-email`; EC Service)
 
-- `settings.email` + DPAPI SMTP-пароль (п. 199, `CHK-CFG-09`).
+- `settings.email` + DPAPI SMTP-пароль (п. 206, `CHK-CFG-09`).
 - IPC `email_test` (п. 200, `CHK-IPC-16`).
 - Отправка писем по алертам (п. 201, `CHK-SVC-08`).
 
@@ -970,6 +970,10 @@ Wizard Win32 (страницы):
 208. **Включение/выключение профиля без save_profile (фаза 13, пункт 2; `CHK-MON-21`, `CHK-IPC-18`).** Capability `profile_enabled`; `{cmd:"set_enabled", profileId, enabled, expectedRevision?}` (только админ) → `ok {profileId, enabled, revision}`; флаг `enabled` профиля (существующее поле) сохраняется в profiles.json, конфигурация перечитывается сразу: при `false` воркер профиля отменяется (опрос в полёте отбрасывается, таймеры остановлены, ни проверок, ни алертов), при `true` опрос начинается немедленно. Всем клиентам push `{type:"profile_enabled", profileId, enabled, revision}`; get_status/get_config показывают `enabled`. Неверный expectedRevision → `conflict` (как save_settings), неизвестный профиль → `not_found`. Тесты: `TestCHK_MON_21_SetEnabledE2E` (cmd/exchsvc).
 209. **Мигание тревоги (фаза 13, пункт 7; `CHK-MON-22`, `CHK-IPC-19`).** Capability `flash`. Пока тревога точки (или профиля; уровень warning или error) активна, на **каждой** проверке, которая всё ещё неуспешна (переход в тревогу и каждый alert_repeat), всем клиентам push `{type:"flash", profileId, pointKey, eventId, level}` (`pointKey` пуст для тревоги профиля). `ack_alert` («Подтвердить») мигание не останавливает. `{cmd:"dismiss_flash", eventId}` («Закрыть», любой подключённый клиент, как ack_alert) → `ok {result:"flash_dismissed", eventId}` — подавляет мигание этой тревоги до восстановления; неизвестный/неактивный eventId → `not_found` + `monitor.unknown_event` («Тревога не найдена или уже снята.»), без eventId → `invalid_request`. При восстановлении (а также когда тревога снята иначе: профиль выключен/удалён, mute_until_recovered) — push `{type:"flash_stop", profileId, pointKey}` и сброс подавления; новая ошибка после восстановления получает новый eventId и снова мигает. Профиль в mute_until_recovered и выключенный профиль не мигают. Состояние мигания — в памяти (после перезапуска службы мигание начинается заново на первой неуспешной проверке). Тесты: `TestCHK_MON_22_FlashE2E` (cmd/exchsvc).
 
+
+206. **Только русский язык (фаза 13, `CHK-TRAY-86`; отменяет п. 6, 8, 76–78 и §7 «Язык»):** многоязычность удалена во всём проекте (трей, служба `cmd/exchsvc`, инсталлятор `cmd/exchsetup`): каталог `internal/i18n` — один русский текст на ключ (`map[string]string`), тексты службы `model.MonitorMessage` / `model.SQLMessage` — только русские; удалены английские тексты, переключение языка, настройка «Язык» (окно настроек и меню трея «Язык»), определение языка ОС (`internal/winapi/lang*.go`, `internal/config/lang.go`) и тесты RU≠EN. Журнал службы и инсталлятор — по-русски. Старое поле `language`/`lang` в `settings.json` и в блоке `tray` файла экспорта молча игнорируется (при сохранении не пишется); ключ инсталлятора `/LANG=` принимается и игнорируется. Скриншоты ui-screens — только RU. Тесты: `TestCHK_TRAY_86_*`.
+
+207. **Тёмная тема удалена (фаза 13, `CHK-TRAY-88`; отменяет п. 194 и тёмную часть п. 195–196, 203):** удалены тёмная палитра `internal/trayui` (`ThemeDark`, `IsDark`, dark*), меню трея «Тема» (`CmdThemeLight/Dark`, `ThemeMenu`), `ThemeStore` / `RegistryThemeStore` (значение HKCU `Theme` больше не читается и не пишется), `SetChromeTheme`, тёмный заголовок DWM (`SetImmersiveDarkMode`, `DwmSetWindowAttribute`), поле `theme` блока `tray` файла экспорта, тексты «Тема/Светлая/Тёмная», тёмные скриншоты ui-screens и тесты CHK-TRAY-55. Палитра всегда светлая (CHK-TRAY-51/65): `Chrome*()` возвращают светлые константы; `trayui.Theme`/`ThemeLight`/`Current()` и `SetTheme` (no-op) оставлены только чтобы защищённые тесты erase/redraw CHK-TRAY-65…73 компилировались без изменений. Старое поле `theme` в файле экспорта молча игнорируется (не переносится, не попадает в сводку). Тесты: `TestCHK_TRAY_88_*`.
 
 ## 14. Что не делаем в v1
 

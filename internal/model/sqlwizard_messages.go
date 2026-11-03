@@ -16,31 +16,30 @@ const (
 	ValSQLGrantPassword = "validation.sql_grant_password"
 )
 
-var sqlWizardMessages = map[string]LocalizedText{
-	MsgSQLAutoPickOK: {"Найден один подходящий вариант — он применён автоматически. Проверьте пример строк.",
-		"One matching option was found and applied automatically. Check the sample rows."},
-	MsgSQLAutoPickNone:          {"Подходящие таблицы не найдены — укажите таблицы вручную.", "No matching tables were found — set the tables manually."},
-	MsgSQLAutoPickMultiplePlans: {"В базе несколько планов обмена — выберите нужный.", "The database has several exchange plans — choose one."},
-	MsgSQLAutoPickCounters: {"Времена обмена в базе не найдены, предложены счётчики сообщений плана обмена — подтвердите выбор.",
-		"No exchange times were found; the exchange plan message counters are proposed — confirm the choice."},
-	MsgSQLAutoPickCountersOK: {"Времена обмена в базе не найдены (1С 8.1): применены счётчики сообщений планов обмена — время фиксируется службой при их изменении.",
-		"No exchange times in the database (1C 8.1): the exchange plan message counters were applied — the service records the time when they change."},
-	MsgSQLAutoPickIncomplete: {"Лучший вариант неполный (нет времени отправки или приёма, нет точек или поиск прерван) — выберите вручную.",
-		"The best option is incomplete (no send or recv time, no points, or the search was cut short) — choose manually."},
-	MsgSQLAutoPickLowScore:  {"Уверенности недостаточно — выберите вариант из списка.", "Not confident enough — choose an option from the list."},
-	MsgSQLAutoPickAmbiguous: {"Несколько похожих вариантов — выберите нужный.", "Several similar options — choose one."},
-	MsgSQLCandExchangePlan:  {"Таблица плана обмена 1С", "1C exchange plan table"},
-	MsgSQLCandSendRecv:      {"Есть время отправки и приёма", "Has send and receive times"},
-	MsgSQLCandCounters:      {"Только счётчики сообщений, без времени", "Message counters only, no times"},
-	MsgSQLCandIncomplete:    {"Неполный вариант (нет времени отправки/приёма или точек)", "Incomplete (no send/receive time or no points)"},
-	MsgSQLCandLowScore:      {"Низкая уверенность", "Low confidence"},
-	ValSQLGrantPassword: {"Поле «{0}»: недопустимый пароль ({2}): до 128 символов, без управляющих символов.",
-		"Field \"{0}\": invalid password ({2}): up to 128 characters, no control characters."},
-	ValSQLBrowseHost: {"Поле «{0}»: укажите имя компьютера или IP-адрес.", "Field \"{0}\": enter a computer name or an IP address."},
-	ValSQLInstanceName: {"Поле «{0}»: имя экземпляра — до {2} символов, начинается с буквы, _ или #.",
-		"Field \"{0}\": the instance name has up to {2} characters and starts with a letter, _ or #."},
-	ValSQLPrincipal: {"Поле «{0}»: недопустимое имя ({2}). Windows: ДОМЕН\\ИМЯ или ДОМЕН\\КОМПЬЮТЕР$; SQL-логин без «\\»; до 128 символов, без управляющих символов и пробелов по краям.",
-		"Field \"{0}\": invalid name ({2}). Windows: DOMAIN\\NAME or DOMAIN\\COMPUTER$; a SQL login without '\\'; up to 128 characters, no control characters, no leading or trailing spaces."},
+var sqlWizardMessages = map[string]string{
+	MsgSQLAutoPickOK: "Найден один подходящий вариант — он применён автоматически. Проверьте пример строк.",
+
+	MsgSQLAutoPickNone:          "Подходящие таблицы не найдены — укажите таблицы вручную.",
+	MsgSQLAutoPickMultiplePlans: "В базе несколько планов обмена — выберите нужный.",
+	MsgSQLAutoPickCounters:      "Времена обмена в базе не найдены, предложены счётчики сообщений плана обмена — подтвердите выбор.",
+
+	MsgSQLAutoPickCountersOK: "Времена обмена в базе не найдены (1С 8.1): применены счётчики сообщений планов обмена — время фиксируется службой при их изменении.",
+
+	MsgSQLAutoPickIncomplete: "Лучший вариант неполный (нет времени отправки или приёма, нет точек или поиск прерван) — выберите вручную.",
+
+	MsgSQLAutoPickLowScore:  "Уверенности недостаточно — выберите вариант из списка.",
+	MsgSQLAutoPickAmbiguous: "Несколько похожих вариантов — выберите нужный.",
+	MsgSQLCandExchangePlan:  "Таблица плана обмена 1С",
+	MsgSQLCandSendRecv:      "Есть время отправки и приёма",
+	MsgSQLCandCounters:      "Только счётчики сообщений, без времени",
+	MsgSQLCandIncomplete:    "Неполный вариант (нет времени отправки/приёма или точек)",
+	MsgSQLCandLowScore:      "Низкая уверенность",
+	ValSQLGrantPassword:     "Поле «{0}»: недопустимый пароль ({2}): до 128 символов, без управляющих символов.",
+
+	ValSQLBrowseHost:   "Поле «{0}»: укажите имя компьютера или IP-адрес.",
+	ValSQLInstanceName: "Поле «{0}»: имя экземпляра — до {2} символов, начинается с буквы, _ или #.",
+
+	ValSQLPrincipal: "Поле «{0}»: недопустимое имя ({2}). Windows: ДОМЕН\\ИМЯ или ДОМЕН\\КОМПЬЮТЕР$; SQL-логин без «\\»; до 128 символов, без управляющих символов и пробелов по краям.",
 }
 
 func init() {

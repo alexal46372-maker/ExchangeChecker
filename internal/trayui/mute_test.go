@@ -34,29 +34,29 @@ func dbItems(items []Item) []Item {
 
 // TestCHK_TRAY_59_MuteMenu — left-menu mute/unmute items by capability and state.
 func TestCHK_TRAY_59_MuteMenu(t *testing.T) {
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		items := dbItems(BuildLeftMenu(muteStatus(false), lang))
+	{
+		items := dbItems(BuildLeftMenu(muteStatus(false)))
 		if len(items) < 1 || items[0].Sub == nil {
-			t.Fatalf("%s: %#v", lang, items)
+			t.Fatalf("%s: %#v", i18n.RU, items)
 		}
 		sub := items[0].Sub
-		if sub[0].ID != MuteCmd(0) || sub[0].Text != i18n.T(i18n.KeyMenuMute, lang) {
-			t.Fatalf("%s mute item %#v", lang, sub[0])
+		if sub[0].ID != MuteCmd(0) || sub[0].Text != i18n.T(i18n.KeyMenuMute) {
+			t.Fatalf("%s mute item %#v", i18n.RU, sub[0])
 		}
-		items = dbItems(BuildLeftMenu(muteStatus(true), lang))
+		items = dbItems(BuildLeftMenu(muteStatus(true)))
 		sub = items[0].Sub
-		if sub[0].ID != UnmuteCmd(0) || sub[0].Text != i18n.T(i18n.KeyMenuUnmute, lang) {
-			t.Fatalf("%s unmute %#v", lang, sub[0])
+		if sub[0].ID != UnmuteCmd(0) || sub[0].Text != i18n.T(i18n.KeyMenuUnmute) {
+			t.Fatalf("%s unmute %#v", i18n.RU, sub[0])
 		}
-		if !strings.Contains(items[0].Text, i18n.T(i18n.KeyDBMuted, lang)) {
-			t.Fatalf("%s muted indicator missing in %q", lang, items[0].Text)
+		if !strings.Contains(items[0].Text, i18n.T(i18n.KeyDBMuted)) {
+			t.Fatalf("%s muted indicator missing in %q", i18n.RU, items[0].Text)
 		}
 		st := muteStatus(false)
 		st.Capabilities = []string{model.CapHeartbeat}
-		items = dbItems(BuildLeftMenu(st, lang))
+		items = dbItems(BuildLeftMenu(st))
 		for _, it := range items[0].Sub {
 			if it.ID == MuteCmd(0) || it.ID == UnmuteCmd(0) {
-				t.Fatalf("%s mute without cap", lang)
+				t.Fatalf("%s mute without cap", i18n.RU)
 			}
 		}
 	}
@@ -83,18 +83,18 @@ func TestCHK_TRAY_59_MuteCmdIndex(t *testing.T) {
 // TestCHK_TRAY_59_MutedCard — status/card show muted.
 func TestCHK_TRAY_59_MutedCard(t *testing.T) {
 	st := muteStatus(true)
-	rows := StatusRows(st, i18n.RU, time.Now())
+	rows := StatusRows(st, time.Now())
 	found := false
 	for _, r := range rows {
-		if strings.Contains(r.Note, i18n.T(i18n.KeyCardMuted, i18n.RU)) {
+		if strings.Contains(r.Note, i18n.T(i18n.KeyCardMuted)) {
 			found = true
 		}
 	}
 	if !found {
 		t.Fatalf("rows %#v", rows)
 	}
-	cards := Cards(rows, i18n.RU)
-	if len(cards) == 0 || !cards[0].Muted || !strings.Contains(cards[0].State, i18n.T(i18n.KeyCardMuted, i18n.RU)) {
+	cards := Cards(rows)
+	if len(cards) == 0 || !cards[0].Muted || !strings.Contains(cards[0].State, i18n.T(i18n.KeyCardMuted)) {
 		t.Fatalf("card %#v", cards)
 	}
 }

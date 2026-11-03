@@ -33,7 +33,6 @@ var WizardTimeout = 30 * time.Second
 
 // Wizard is the state of the «Добавить базу» wizard.
 type Wizard struct {
-	Lang    string
 	Step    WizardStep
 	Server  string // host or host\instance, as typed or picked
 	Port    string
@@ -70,12 +69,12 @@ type Wizard struct {
 }
 
 // NewWizard starts with the defaults of a new profile.
-func NewWizard(lang string) *Wizard {
+func NewWizard() *Wizard {
 	f := FromProfile(model.NewProfile(""))
-	return &Wizard{Lang: i18n.Normalize(lang), Encrypt: f.Encrypt, Chosen: -1, mainIdx: -1, Best: -1}
+	return &Wizard{Encrypt: f.Encrypt, Chosen: -1, mainIdx: -1, Best: -1}
 }
 
-func (z *Wizard) t(key string) string { return i18n.T(key, z.Lang) }
+func (z *Wizard) t(key string) string { return i18n.T(key) }
 
 // WizardAvailable: the wizard needs the administrator window and the
 // commands it sends (else «Добавить» opens the old form).
@@ -230,7 +229,7 @@ func (z *Wizard) DiscoveryDone(m model.IPCMessage) (int, string) {
 	z.Pick = m.AutoPick
 	z.Chosen = -1
 	z.Main, z.Plans, z.Problem = model.Mapping{}, nil, nil
-	main, plans, idx, pr := resolveDiscovery(z.Candidates, z.Lang)
+	main, plans, idx, pr := resolveDiscovery(z.Candidates)
 	z.Best = idx
 	if pr != nil {
 		if pr.Code == ProblemNone && m.Truncated {
@@ -243,9 +242,9 @@ func (z *Wizard) DiscoveryDone(m model.IPCMessage) (int, string) {
 		return -1, pr.Text
 	}
 	z.Main, z.Plans, z.mainIdx = main, plans, idx
-	text := FoundText(main, plans, z.Lang)
+	text := FoundText(main, plans)
 	if main.Mode == model.MappingCounters || anyCounters(plans) {
-		text += "\r\n" + i18n.Message(model.MsgSQLAutoPickCountersOK, z.Lang)
+		text += "\r\n" + i18n.Message(model.MsgSQLAutoPickCountersOK)
 	}
 	if m.Truncated {
 		text += "\r\n" + z.t(i18n.KeyWizNoteTruncated)
@@ -278,7 +277,7 @@ func (z *Wizard) TestProblem(m model.IPCMessage) *Problem {
 
 // CandidateLine is a row of the candidate list with its confidence.
 func (z *Wizard) CandidateLine(i int) string {
-	d := Discovery{Lang: z.Lang}
+	d := Discovery{}
 	s := d.CandidateLine(z.Candidates[i])
 	if z.Pick != nil && i < len(z.Pick.Ranks) {
 		s = fmt.Sprintf(z.t(i18n.KeyWizConfidence), int(z.Pick.Ranks[i].Confidence*100+0.5)) + "  " + s
@@ -391,19 +390,9 @@ func (z *Wizard) GrantText(sc model.SQLGrantScript) string {
 		lines = append(lines, fmt.Sprintf(z.t(i18n.KeyWizGrantPlaceholder), sc.PasswordPlaceholder))
 	}
 	for _, n := range sc.Notes {
-		lines = append(lines, "• "+localized(n, z.Lang))
+		lines = append(lines, "• "+n)
 	}
 	return strings.Join(lines, "\r\n")
-}
-
-func localized(t model.LocalizedText, lang string) string {
-	if i18n.Normalize(lang) == i18n.EN && t.EN != "" {
-		return t.EN
-	}
-	if t.RU != "" {
-		return t.RU
-	}
-	return t.EN
 }
 
 // wizFallback: the local «что делать» texts per errorInfo code, used when
@@ -429,18 +418,18 @@ func FallbackKey(code string) string {
 // ErrorText renders an error for the wizard and the connection test: the
 // code, then the diagnosis of sql_diagnose (title + numbered steps) or
 // the local text, then the technical detail.
-func ErrorText(code string, d *model.SQLDiagnosis, detail, lang string) string {
-	lines := []string{fmt.Sprintf(i18n.T(i18n.KeyWizErrCode, lang), code)}
-	if d != nil && (d.Title.RU != "" || d.Title.EN != "") {
-		lines = append(lines, localized(d.Title, lang))
+func ErrorText(code string, d *model.SQLDiagnosis, detail string) string {
+	lines := []string{fmt.Sprintf(i18n.T(i18n.KeyWizErrCode), code)}
+	if d != nil && d.Title != "" {
+		lines = append(lines, d.Title)
 		if len(d.Steps) > 0 {
-			lines = append(lines, i18n.T(i18n.KeyWizWhatToDo, lang))
+			lines = append(lines, i18n.T(i18n.KeyWizWhatToDo))
 			for i, s := range d.Steps {
-				lines = append(lines, fmt.Sprintf("%d. %s", i+1, localized(s, lang)))
+				lines = append(lines, fmt.Sprintf("%d. %s", i+1, s))
 			}
 		}
 	} else {
-		lines = append(lines, i18n.T(i18n.KeyWizWhatToDo, lang), i18n.T(FallbackKey(code), lang))
+		lines = append(lines, i18n.T(i18n.KeyWizWhatToDo), i18n.T(FallbackKey(code)))
 	}
 	if detail = strings.TrimSpace(detail); detail != "" {
 		lines = append(lines, detail)

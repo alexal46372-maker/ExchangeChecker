@@ -12,7 +12,7 @@ import (
 // TestCHK_TRAY_52_BrowseModes: default Find = empty mode; subnet only
 // explicit; capabilities gate UI helpers; advice and progress text.
 func TestCHK_TRAY_52_BrowseModes(t *testing.T) {
-	z := NewWizard(i18n.RU)
+	z := NewWizard()
 	if r := z.BrowseRequest(); r.Cmd != model.CmdSQLBrowse || r.Mode != "" || r.Host != "" {
 		t.Fatalf("default browse %+v", r)
 	}
@@ -33,10 +33,10 @@ func TestCHK_TRAY_52_BrowseModes(t *testing.T) {
 	if len(z.Instances) != 1 {
 		t.Fatalf("instances %d", len(z.Instances))
 	}
-	if !strings.Contains(txt, i18n.T(i18n.KeyWizPublicNetwork, i18n.RU)) {
+	if !strings.Contains(txt, i18n.T(i18n.KeyWizPublicNetwork)) {
 		t.Fatalf("public hint missing: %q", txt)
 	}
-	if !strings.Contains(txt, model.SQLMessage(model.MsgSQLBrowseAdviceEnterServer, i18n.RU)) {
+	if !strings.Contains(txt, model.SQLMessage(model.MsgSQLBrowseAdviceEnterServer)) {
 		t.Fatalf("advice missing: %q", txt)
 	}
 	p := z.BrowseProgressLine(model.SQLBrowseProgress{Phase: "ssrp", Done: 1, Total: 3, Found: 2})
@@ -47,7 +47,7 @@ func TestCHK_TRAY_52_BrowseModes(t *testing.T) {
 
 // TestCHK_TRAY_52_TestSteps: request has no password; step lines and advice.
 func TestCHK_TRAY_52_TestSteps(t *testing.T) {
-	z := NewWizard(i18n.EN)
+	z := NewWizard()
 	z.Server = `srv\INST`
 	z.Port = "1500"
 	req := z.TestStepsRequest("")
@@ -63,13 +63,13 @@ func TestCHK_TRAY_52_TestSteps(t *testing.T) {
 		t.Fatalf("line %q", line)
 	}
 	adv := z.TestStepsAdvice(steps)
-	if !strings.Contains(adv, model.SQLMessage(model.MsgSQLCheckAdviceDNS, i18n.EN)) {
+	if !strings.Contains(adv, model.SQLMessage(model.MsgSQLCheckAdviceDNS)) {
 		t.Fatalf("advice %q", adv)
 	}
 	if RetryAfterSeconds(2500) != 3 || RetryAfterSeconds(0) != 1 {
 		t.Fatal("retry")
 	}
-	e := NewEditor(i18n.RU, Admin)
+	e := NewEditor(Admin)
 	pr := e.WizardProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeBusy, RetryAfterMs: 4500}, nil)
 	if pr == nil || !strings.Contains(pr.Text, "5") {
 		t.Fatalf("busy retry %v", pr)

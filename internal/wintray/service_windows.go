@@ -120,8 +120,8 @@ func stateOfError(err error) trayui.SvcState {
 
 // ServiceResultText is the message after «Запустить» / «Остановить»
 // (err nil = the request was accepted) and whether it is a warning.
-func ServiceResultText(name string, start bool, err error, lang string) (string, bool) {
-	t := func(key string) string { return fmt.Sprintf(i18n.T(key, lang), name) }
+func ServiceResultText(name string, start bool, err error) (string, bool) {
+	t := func(key string) string { return fmt.Sprintf(i18n.T(key), name) }
 	switch {
 	case err == nil && start:
 		return t(i18n.KeySvcStartSent), false
@@ -136,7 +136,7 @@ func ServiceResultText(name string, start bool, err error, lang string) (string,
 	case errors.Is(err, errServiceNotActive):
 		return t(i18n.KeySvcErrNotActive), false
 	}
-	return fmt.Sprintf(i18n.T(i18n.KeySvcErrOther, lang), name, err.Error()), true
+	return fmt.Sprintf(i18n.T(i18n.KeySvcErrOther), name, err.Error()), true
 }
 
 // service is the control of the App (Options.Service or the SCM).
@@ -156,7 +156,7 @@ func (a *App) serviceState() trayui.SvcState {
 // serviceCommand runs «Запустить» / «Остановить» off the UI thread (the
 // SCM may take a while) and shows the result.
 func (a *App) serviceCommand(start bool) {
-	ctl, lang := a.service(), a.opt.Lang
+	ctl := a.service()
 	go func() {
 		var err error
 		if start {
@@ -164,7 +164,7 @@ func (a *App) serviceCommand(start bool) {
 		} else {
 			err = ctl.Stop()
 		}
-		text, warn := ServiceResultText(ctl.Name(), start, err, lang)
+		text, warn := ServiceResultText(ctl.Name(), start, err)
 		a.runOnUI(func() { a.notify(text, warn) })
 	}()
 }
@@ -179,5 +179,5 @@ func (a *App) notify(text string, warn bool) {
 	if warn {
 		flags = winapi.MB_OK | winapi.MB_ICONWARNING
 	}
-	winapi.MessageBox(a.hwnd, text, i18n.T(i18n.KeyAppName, a.opt.Lang), flags)
+	winapi.MessageBox(a.hwnd, text, i18n.T(i18n.KeyAppName), flags)
 }

@@ -141,7 +141,7 @@ func (w *settingsWindow) openWizard() {
 	if w.busy || w.disc != nil || !w.profileDiscardOK() {
 		return
 	}
-	wd := &wizardDialog{w: w, ctl: map[int32]uintptr{}, z: traysettings.NewWizard(w.cfg.lang), prevSel: w.ed.Sel}
+	wd := &wizardDialog{w: w, ctl: map[int32]uintptr{}, z: traysettings.NewWizard(), prevSel: w.ed.Sel}
 	hwnd, err := createWindow(WizardClass, w.t(i18n.KeyWizTitle), 0, wizStyle, 0, 0, wizCW, wizCH, w.hwnd, wd.wndProc)
 	if err != nil {
 		w.setStatus(fmt.Sprintf(w.t(i18n.KeySetFailed), err.Error()))
@@ -586,7 +586,6 @@ func (wd *wizardDialog) fail(m model.IPCMessage, err error, prefix string) {
 }
 
 func (wd *wizardDialog) diagnose(req model.IPCRequest, code, detail, prefix string) {
-	lang := wd.w.cfg.lang
 	join := func(s string) string {
 		if prefix != "" {
 			return prefix + "\r\n" + s
@@ -594,7 +593,7 @@ func (wd *wizardDialog) diagnose(req model.IPCRequest, code, detail, prefix stri
 		return s
 	}
 	if !wd.w.cfg.session.Supported(model.CmdSQLDiagnose) {
-		wd.setResult(join(traysettings.ErrorText(code, nil, detail, lang)))
+		wd.setResult(join(traysettings.ErrorText(code, nil, detail)))
 		return
 	}
 	wd.run(req, traysettings.CallTimeout, func(m model.IPCMessage, err error) {
@@ -602,7 +601,7 @@ func (wd *wizardDialog) diagnose(req model.IPCRequest, code, detail, prefix stri
 		if err == nil && m.Type == model.MsgSQLDiagnosis {
 			d = m.SQLDiagnosis
 		}
-		wd.setResult(join(traysettings.ErrorText(code, d, detail, lang)))
+		wd.setResult(join(traysettings.ErrorText(code, d, detail)))
 	})
 }
 

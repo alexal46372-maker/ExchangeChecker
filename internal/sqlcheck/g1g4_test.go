@@ -25,15 +25,12 @@ func TestCHK_SQL_04_MessagesInModel(t *testing.T) {
 		t.Errorf("keys %v", MessageKeys())
 	}
 	for _, k := range append(model.SQLMessageKeys(), model.SQLValidationKeys()...) {
-		for _, lang := range []string{model.LangRU, model.LangEN} {
-			if model.SQLMessage(k, lang) == "" || Message(k, lang) != model.SQLMessage(k, lang) {
-				t.Errorf("%s/%s: %q", k, lang, model.SQLMessage(k, lang))
+		{
+			if model.SQLMessage(k) == "" || Message(k) != model.SQLMessage(k) {
+				t.Errorf("%s: %q", k, model.SQLMessage(k))
 			}
 		}
-		if model.SQLMessage(k, model.LangRU) == model.SQLMessage(k, model.LangEN) {
-			t.Errorf("%s: ru == en", k)
-		}
-		if m := model.SQLMessages()[k]; m.RU == "" || m.EN == "" {
+		if m := model.SQLMessages()[k]; m == "" {
 			t.Errorf("SQLMessages[%s] = %+v", k, m)
 		}
 	}
@@ -42,13 +39,13 @@ func TestCHK_SQL_04_MessagesInModel(t *testing.T) {
 	}
 	// the returned map is a copy
 	m := model.SQLMessages()
-	m[MsgTLSCertificate] = model.LocalizedText{}
-	if model.SQLMessage(MsgTLSCertificate, model.LangEN) == "" {
+	m[MsgTLSCertificate] = ""
+	if model.SQLMessage(MsgTLSCertificate) == "" {
 		t.Error("SQLMessages must return a copy")
 	}
 	// validation.sql_* render through model.FormatMessage (tray editor)
-	got := model.FormatMessage(model.ValSQLManualForbidden, []string{"manualSql", model.ValSQLManualForbidden, "DELETE"}, model.LangEN)
-	if got != `Field "manualSql": the query must be read-only; forbidden keyword DELETE.` {
+	got := model.FormatMessage(model.ValSQLManualForbidden, []string{"manualSql", model.ValSQLManualForbidden, "DELETE"})
+	if got != "Поле «manualSql»: запрос должен только читать данные; недопустимое слово DELETE." {
 		t.Errorf("format: %q", got)
 	}
 	// warnings
@@ -68,10 +65,10 @@ func TestCHK_SQL_04_MessagesInModel(t *testing.T) {
 	}
 	for i, tpl := range tpls {
 		old := ManualSQLTemplates[i]
-		if old.Name != tpl.ID || old.SQL != tpl.SQL || old.Description != tpl.Description.EN {
+		if old.Name != tpl.ID || old.SQL != tpl.SQL || old.Description != tpl.Description {
 			t.Errorf("template %d: %+v vs %+v", i, old, tpl)
 		}
-		if tpl.Title.RU == "" || tpl.Title.EN == "" || tpl.Description.RU == "" {
+		if tpl.Title == "" || tpl.Description == "" {
 			t.Errorf("template %s: texts %+v", tpl.ID, tpl)
 		}
 		if err := ValidateManualSQL(tpl.SQL); err != nil {
@@ -83,7 +80,7 @@ func TestCHK_SQL_04_MessagesInModel(t *testing.T) {
 		t.Error("SQLManualTemplates must return a copy")
 	}
 	b, _ := json.Marshal(model.SQLManualTemplates()[0])
-	for _, want := range []string{`"id":"1c_node_linked"`, `"title":{"ru":`, `"en":`, `"description":`, `"sql":"SELECT`} {
+	for _, want := range []string{`"id":"1c_node_linked"`, `"title":"`, `"description":`, `"sql":"SELECT`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("template JSON %s lacks %s", b, want)
 		}
@@ -123,7 +120,7 @@ func TestCHK_SQL_04_TypedManualErrors(t *testing.T) {
 		if got := fe.IPCArgs(); got[0] != "manualSql" || got[1] != c.key {
 			t.Errorf("%q: IPCArgs %v", c.q, got)
 		}
-		if model.FormatMessage(c.key, fe.IPCArgs(), model.LangRU) == "" {
+		if model.FormatMessage(c.key, fe.IPCArgs()) == "" {
 			t.Errorf("%q: no text", c.q)
 		}
 		// through CheckMapping: *Error KindMapping, still typed (an empty
@@ -210,7 +207,7 @@ func TestCHK_SQL_04_TypedMappingErrors(t *testing.T) {
 		if c.sentinel != nil && !errors.Is(err, c.sentinel) {
 			t.Errorf("%s: errors.Is(%v, %v) = false", c.name, err, c.sentinel)
 		}
-		if txt := model.FormatMessage(fe.Key, fe.IPCArgs(), model.LangEN); txt == "" || strings.Contains(txt, "{") {
+		if txt := model.FormatMessage(fe.Key, fe.IPCArgs()); txt == "" || strings.Contains(txt, "{") {
 			t.Errorf("%s: text %q", c.name, txt)
 		}
 	}

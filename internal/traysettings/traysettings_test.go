@@ -20,7 +20,7 @@ func savedSQL() model.Profile {
 }
 
 func adminEditor(ps ...model.Profile) *Editor {
-	e := NewEditor(i18n.RU, Admin)
+	e := NewEditor(Admin)
 	e.LoadConfig(model.ConfigView{Profiles: ps}, "rev1")
 	return e
 }
@@ -94,7 +94,7 @@ func TestCHK_TRAY_04_PasswordHints(t *testing.T) {
 	e := adminEditor(savedSQL())
 	want := func(key string) {
 		t.Helper()
-		if got := e.PasswordHint(); got != i18n.T(key, i18n.RU) {
+		if got := e.PasswordHint(); got != i18n.T(key) {
 			t.Errorf("hint %q, want %s", got, key)
 		}
 	}
@@ -112,9 +112,9 @@ func TestCHK_TRAY_04_PasswordHints(t *testing.T) {
 	want(i18n.KeySetPwWindowsDrop)
 	e.New()
 	want(i18n.KeySetPwNew)
-	r := NewEditor(i18n.EN, ReadOnly)
+	r := NewEditor(ReadOnly)
 	r.LoadSnapshot(model.StatusSnapshot{Profiles: []model.ProfileSnapshot{{ProfileID: "p1", Connection: &model.ProfileConnection{Server: "s", AuthMode: model.AuthSQL, HasPassword: true}}}})
-	if r.PasswordHint() != i18n.T(i18n.KeySetPwSaved, i18n.EN) {
+	if r.PasswordHint() != i18n.T(i18n.KeySetPwSaved) {
 		t.Errorf("read-only hint %q", r.PasswordHint())
 	}
 }
@@ -138,7 +138,7 @@ func TestCHK_TRAY_04_Hints(t *testing.T) {
 // TestCHK_TRAY_04_ReadOnlyFromSnapshot — read-only mode is built from
 // get_status: connection, thresholds, revision; no save / delete.
 func TestCHK_TRAY_04_ReadOnlyFromSnapshot(t *testing.T) {
-	e := NewEditor(i18n.RU, ReadOnly)
+	e := NewEditor(ReadOnly)
 	e.LoadSnapshot(model.StatusSnapshot{ConfigRevision: "r9", Profiles: []model.ProfileSnapshot{{
 		ProfileID: "a", Name: "A", Enabled: true,
 		Connection:        &model.ProfileConnection{Server: `h\i`, Port: 1500, Database: "d", AuthMode: model.AuthWindows, Encrypt: model.EncryptOn, TLSMinVersion: "1.0"},
@@ -212,7 +212,7 @@ func TestCHK_TRAY_06_SaveRequest(t *testing.T) {
 	saved := *req.Profile
 	saved.ID, saved.HasPassword = "new-id", true
 	txt := e.SaveDone(model.IPCMessage{Type: model.MsgOK, Result: model.ResultSaved, Profile: &saved, Revision: "rev2", PollScheduled: true})
-	if e.Revision != "rev2" || e.IsNew || e.Sel != 1 || e.Base.ID != "new-id" || e.Form.PasswordTyped || txt != i18n.T(i18n.KeySetSavedPoll, i18n.RU) {
+	if e.Revision != "rev2" || e.IsNew || e.Sel != 1 || e.Base.ID != "new-id" || e.Form.PasswordTyped || txt != i18n.T(i18n.KeySetSavedPoll) {
 		t.Errorf("save done: rev %s new %v sel %d %q", e.Revision, e.IsNew, e.Sel, txt)
 	}
 	if e.Dirty() {
@@ -224,7 +224,7 @@ func TestCHK_TRAY_06_SaveRequest(t *testing.T) {
 	}
 	e.Revision = "r"
 	e.Form.Name = strings.Repeat("я", model.IPCMaxRequest/2)
-	if _, pr = e.SaveRequest(pw); pr == nil || pr.Text != i18n.T(i18n.KeySetTooLarge, i18n.RU) {
+	if _, pr = e.SaveRequest(pw); pr == nil || pr.Text != i18n.T(i18n.KeySetTooLarge) {
 		t.Errorf("too large: %+v", pr)
 	}
 }
@@ -270,7 +270,7 @@ func TestCHK_TRAY_05_TestRequestAndText(t *testing.T) {
 		}
 	}
 	bad := e.TestText(model.TestProfileResult{Category: model.TestTimeout, ErrorKey: model.MsgTestTimeout, Error: "dial timeout", Encrypt: "on", TLSMin: "1.0"})
-	if !strings.Contains(bad, i18n.Message(model.MsgTestTimeout, i18n.RU)) || !strings.Contains(bad, "15") || !strings.Contains(bad, "dial timeout") || !strings.Contains(bad, "1.0") {
+	if !strings.Contains(bad, i18n.Message(model.MsgTestTimeout)) || !strings.Contains(bad, "15") || !strings.Contains(bad, "dial timeout") || !strings.Contains(bad, "1.0") {
 		t.Errorf("timeout text %q", bad)
 	}
 }
@@ -279,13 +279,13 @@ func TestCHK_TRAY_05_TestRequestAndText(t *testing.T) {
 // timeouts, not connected, unsupported, too large.
 func TestCHK_TRAY_05_ErrorTexts(t *testing.T) {
 	e := adminEditor(savedSQL())
-	if pr := e.TestReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeBusy, ErrorKey: model.MsgTestBusy}, nil); pr.Text != i18n.Message(model.MsgTestBusy, i18n.RU) {
+	if pr := e.TestReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeBusy, ErrorKey: model.MsgTestBusy}, nil); pr.Text != i18n.Message(model.MsgTestBusy) {
 		t.Errorf("busy %q", pr.Text)
 	}
 	if pr := e.TestReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeRateLimited, ErrorKey: model.MsgMonitorRateLimited}, nil); !strings.Contains(pr.Text, "10") {
 		t.Errorf("rate limited %q", pr.Text)
 	}
-	if pr := e.TestReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeCanceled, ErrorKey: model.MsgMonitorCanceled}, nil); pr.Text != i18n.Message(model.MsgMonitorCanceled, i18n.RU) {
+	if pr := e.TestReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeCanceled, ErrorKey: model.MsgMonitorCanceled}, nil); pr.Text != i18n.Message(model.MsgMonitorCanceled) {
 		t.Errorf("canceled %q", pr.Text)
 	}
 	if pr := e.TestReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgTestPasswordRequired, ErrorArgs: []string{"password", model.ValRequired}}, nil); pr.Field != FieldPassword || pr.Text != "Введите пароль." {
@@ -300,7 +300,7 @@ func TestCHK_TRAY_05_ErrorTexts(t *testing.T) {
 		context.DeadlineExceeded: i18n.KeySetTestNoReply,
 	} {
 		pr := e.TestReply(model.IPCMessage{}, err)
-		want := i18n.T(key, i18n.RU)
+		want := i18n.T(key)
 		if key == i18n.KeySetTestNoReply {
 			want = strings.Replace(want, "%d", "25", 1)
 		}
@@ -374,7 +374,7 @@ func TestCHK_TRAY_06_ReplyErrors(t *testing.T) {
 	if e.Reply(model.IPCMessage{Type: model.MsgOK}) != nil {
 		t.Error("ok is not an error")
 	}
-	r := NewEditor(i18n.RU, ReadOnly)
+	r := NewEditor(ReadOnly)
 	pr = r.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeAccessDenied, ErrorKey: model.MsgMonitorAccessDenied})
 	if !strings.Contains(pr.Text, "Изменить (администратор)") {
 		t.Errorf("read-only access denied %q", pr.Text)
@@ -426,7 +426,7 @@ func TestCHK_TRAY_04_Unsaved(t *testing.T) {
 	if !e.Unsaved() {
 		t.Error("typed new profile")
 	}
-	r := NewEditor(i18n.RU, ReadOnly)
+	r := NewEditor(ReadOnly)
 	r.LoadSnapshot(model.StatusSnapshot{Profiles: []model.ProfileSnapshot{{ProfileID: "a"}}})
 	r.Form.Host = "x"
 	if r.Unsaved() {

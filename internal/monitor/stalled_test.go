@@ -161,7 +161,7 @@ func TestCHK_MON_18_NoDuplicateLag(t *testing.T) {
 	}
 	opt.Sink = alert.Multi{
 		alert.SinkFunc(func(e model.AlertEvent) { evMu.Lock(); events = append(events, e); evMu.Unlock() }),
-		&alert.EventLogSink{R: rep, Lang: model.LangEN},
+		&alert.EventLogSink{R: rep},
 	}
 	m := New(opt)
 	m.reloadConfig(true)

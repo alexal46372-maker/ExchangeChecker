@@ -18,7 +18,7 @@ func TestCHK_SVC_08_EmailAlertAsync(t *testing.T) {
 	var sends int32
 	store := &memEmailStore{pw: "secret"}
 	n := NewEmail(EmailOptions{
-		Store: store, Lang: model.LangEN, Now: func() time.Time { return time.Date(2026, 10, 27, 12, 0, 0, 0, time.Local) },
+		Store: store, Now: func() time.Time { return time.Date(2026, 10, 27, 12, 0, 0, 0, time.Local) },
 		SendHook: func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error {
 			atomic.AddInt32(&sends, 1)
 			if password != "secret" || to != "a@b.co" || host != "smtp.example.com" {

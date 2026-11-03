@@ -30,7 +30,6 @@ type summaryWindow struct {
 	a           *App
 	hwnd, chart uintptr
 	info, close, cards uintptr
-	lang        string
 	session     *trayipc.Session
 
 	mu      sync.Mutex
@@ -50,7 +49,7 @@ func (a *App) openSummary() {
 		winapi.SetForegroundWindow(a.summaryWin.hwnd)
 		return
 	}
-	sw, err := createSummary(a, a.opt.Lang, a.session)
+	sw, err := createSummary(a, a.session)
 	if err != nil {
 		return
 	}
@@ -62,13 +61,13 @@ func (a *App) openSummary() {
 }
 
 // createSummary builds the summary window (session may be nil for demo screenshots).
-func createSummary(a *App, lang string, session *trayipc.Session) (*summaryWindow, error) {
-	sw := &summaryWindow{a: a, lang: lang, session: session}
+func createSummary(a *App, session *trayipc.Session) (*summaryWindow, error) {
+	sw := &summaryWindow{a: a, session: session}
 	var parent uintptr
 	if a != nil {
 		parent = a.hwnd
 	}
-	hwnd, err := createWindow(summaryClass, i18n.T(i18n.KeySumTitle, lang), 0,
+	hwnd, err := createWindow(summaryClass, i18n.T(i18n.KeySumTitle), 0,
 		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU|winapi.WS_MINIMIZEBOX, 0, 0, 720, 480, parent, sw.wndProc)
 	if err != nil {
 		return nil, err
@@ -78,7 +77,7 @@ func createSummary(a *App, lang string, session *trayipc.Session) (*summaryWindo
 	return sw, nil
 }
 
-func (sw *summaryWindow) t(k string) string { return i18n.T(k, sw.lang) }
+func (sw *summaryWindow) t(k string) string { return i18n.T(k) }
 
 func (sw *summaryWindow) build() {
 	sw.info, _ = winapi.CreateWindowEx(0, "STATIC", "", winapi.WS_CHILD|winapi.WS_VISIBLE|winapi.SS_LEFT,

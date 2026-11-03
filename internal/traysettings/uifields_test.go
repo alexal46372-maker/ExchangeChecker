@@ -24,7 +24,7 @@ func TestCHK_TRAY_40_UIFields(t *testing.T) {
 	all := []Field{FieldName, FieldHost, FieldInstance, FieldPort, FieldDatabase, FieldAuth, FieldLogin, FieldPassword,
 		FieldClearPassword, FieldEncrypt, FieldTLS10, FieldTrust, FieldEnabled, FieldPreset, FieldProfWarn, FieldProfError,
 		FieldConnTimeout, FieldQueryTimeout, FieldPollInterval, FieldWarnMinutes, FieldErrorMinutes, FieldBeepEnabled,
-		FieldWarnFreq, FieldWarnDur, FieldErrorFreq, FieldErrorDur, FieldGap, FieldLanguage, FieldAutostart,
+		FieldWarnFreq, FieldWarnDur, FieldErrorFreq, FieldErrorDur, FieldGap, FieldAutostart,
 		FieldDiscPoint, FieldDiscTime, FieldDiscTolerance, FieldDiscLimit}
 	for _, id := range all {
 		if !seen[id] {

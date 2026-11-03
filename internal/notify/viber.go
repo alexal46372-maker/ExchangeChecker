@@ -55,7 +55,6 @@ type Options struct {
 	Store  Store
 	Client Poster // nil = hcwinnet.NewClient(15 s, system roots)
 	URL    string // "" = ViberURL
-	Lang   string
 	Log    Logger
 	Now    func() time.Time
 	// Loc is the schedule time zone (nil = time.Local: the machine time).
@@ -237,7 +236,7 @@ func (n *Notifier) Alert(e model.AlertEvent) {
 		n.status.Dropped++
 		return
 	}
-	n.enqueueLocked(EventText(e, n.o.Lang), now)
+	n.enqueueLocked(EventText(e), now)
 	n.kick()
 }
 
@@ -297,36 +296,31 @@ func problems(s *model.StatusSnapshot) []model.ProfileSnapshot {
 
 // ErrorText is the localized text of an error key (sql.* / monitor.*),
 // notify.error_unknown otherwise: the raw (SQL) error text is never sent.
-func ErrorText(key, lang string) string {
-	if t := model.SQLMessage(key, lang); t != "" {
+func ErrorText(key string) string {
+	if t := model.SQLMessage(key); t != "" {
 		return t
 	}
-	if t := model.MonitorMessage(key, lang); t != "" {
+	if t := model.MonitorMessage(key); t != "" {
 		return t
 	}
-	return model.MonitorMessage(model.MsgViberErrorUnknown, lang)
+	return model.MonitorMessage(model.MsgViberErrorUnknown)
 }
 
 // EventText renders an alert for Viber: alert.Format without the raw
 // error, the error as its localized key.
-func EventText(e model.AlertEvent, lang string) string {
+func EventText(e model.AlertEvent) string {
 	raw := e.Error != "" || e.ErrorKey != ""
 	key := e.ErrorKey
 	e.Error, e.ErrorKey = "", ""
-	t := alert.Format(e, lang)
+	t := alert.Format(e)
 	if raw {
-		if lang == model.LangEN {
-			t += "; error: "
-		} else {
-			t += "; ошибка: "
-		}
-		t += ErrorText(key, lang)
+		t += "; ошибка: "
+		t += ErrorText(key)
 	}
 	return t
 }
 
 func (n *Notifier) summaryText(s *model.StatusSnapshot, reminder bool) string {
-	en := n.o.Lang == model.LangEN
 	pr := problems(s)
 	if !reminder {
 		for _, p := range s.Profiles {
@@ -337,31 +331,23 @@ func (n *Notifier) summaryText(s *model.StatusSnapshot, reminder bool) string {
 	}
 	var b strings.Builder
 	switch {
-	case reminder && en:
-		b.WriteString("ExchangeChecker reminder: unresolved problems")
 	case reminder:
 		b.WriteString("ExchangeChecker, напоминание: нерешённые проблемы")
-	case en:
-		b.WriteString("ExchangeChecker summary")
 	default:
 		b.WriteString("ExchangeChecker, сводка")
 	}
 	if len(pr) == 0 {
-		if en {
-			b.WriteString(": all profiles ok")
-		} else {
-			b.WriteString(": все профили в норме")
-		}
+		b.WriteString(": все профили в норме")
 		return b.String()
 	}
 	for _, p := range pr {
 		b.WriteString("\n- " + p.Name + ": ")
 		if p.CheckedAt.IsZero() {
-			b.WriteString(model.MonitorMessage(model.MsgViberNotChecked, n.o.Lang))
+			b.WriteString(model.MonitorMessage(model.MsgViberNotChecked))
 			continue
 		}
 		if p.Error != "" || p.ErrorKey != "" {
-			b.WriteString(ErrorText(p.ErrorKey, n.o.Lang))
+			b.WriteString(ErrorText(p.ErrorKey))
 			continue
 		}
 		var bad []string
@@ -573,9 +559,6 @@ func (n *Notifier) ViberTest(ctx context.Context, recipientID, token string) (mo
 	n.lastTest = now
 	n.mu.Unlock()
 	text := "ExchangeChecker: тестовое сообщение"
-	if n.o.Lang == model.LangEN {
-		text = "ExchangeChecker: test message"
-	}
 	res := model.ViberTestResult{OK: true, Results: []model.ViberTestItem{}}
 	for _, r := range recv {
 		if ctx.Err() != nil {

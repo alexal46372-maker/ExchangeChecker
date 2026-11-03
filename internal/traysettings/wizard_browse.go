@@ -35,14 +35,14 @@ func (z *Wizard) BrowseRequestMode(mode string) model.IPCRequest {
 const MsgBrowsePublicNetwork = "sql.browse_advice_public_network"
 
 // BrowsePublicNetworkHint: when the service reports an active Public
-// firewall profile, return the RU/EN hint; else "".
-func BrowsePublicNetworkHint(r model.SQLBrowseResult, lang string) string {
+// firewall profile, return the hint; else "".
+func BrowsePublicNetworkHint(r model.SQLBrowseResult) string {
 	for _, k := range r.Advice {
 		if k == MsgBrowsePublicNetwork || strings.Contains(strings.ToLower(k), "public") {
-			if m := model.SQLMessage(k, lang); m != "" {
+			if m := model.SQLMessage(k); m != "" {
 				return m
 			}
-			return i18n.T(i18n.KeyWizPublicNetwork, lang)
+			return i18n.T(i18n.KeyWizPublicNetwork)
 		}
 	}
 	return ""
@@ -64,14 +64,14 @@ func FormatBrowseDone(z *Wizard, r model.SQLBrowseResult) string {
 			s += " " + z.t(i18n.KeyWizFoundPartial)
 		}
 	}
-	if tip := BrowsePublicNetworkHint(r, z.Lang); tip != "" {
+	if tip := BrowsePublicNetworkHint(r); tip != "" {
 		s += "\r\n" + tip
 	}
 	for _, k := range r.Advice {
 		if k == MsgBrowsePublicNetwork || strings.Contains(strings.ToLower(k), "public") {
 			continue // already in tip
 		}
-		if msg := model.SQLMessage(k, z.Lang); msg != "" {
+		if msg := model.SQLMessage(k); msg != "" {
 			s += "\r\n" + msg
 		}
 	}
@@ -99,7 +99,7 @@ func (z *Wizard) TestStepLine(st model.SQLCheckStep) string {
 	if !st.OK {
 		mark = "✗"
 	}
-	title := CheckStepTitle(st.ID, z.Lang)
+	title := CheckStepTitle(st.ID)
 	line := mark + " " + title
 	if st.Ms > 0 {
 		line += fmt.Sprintf(" (%d ms)", st.Ms)
@@ -111,7 +111,7 @@ func (z *Wizard) TestStepLine(st model.SQLCheckStep) string {
 }
 
 // CheckStepTitle is the RU/EN label of a sql_test_steps stage id.
-func CheckStepTitle(id, lang string) string {
+func CheckStepTitle(id string) string {
 	key := map[string]string{
 		model.SQLStepParse: i18n.KeyWizCheckParse, model.SQLStepDNS: i18n.KeyWizCheckDNS,
 		model.SQLStepBrowser: i18n.KeyWizCheckBrowser, model.SQLStepTCP: i18n.KeyWizCheckTCP,
@@ -122,7 +122,7 @@ func CheckStepTitle(id, lang string) string {
 	if key == "" {
 		return id
 	}
-	return i18n.T(key, lang)
+	return i18n.T(key)
 }
 
 // TestStepsAdvice under the first failed step (error + advice keys).
@@ -133,7 +133,7 @@ func (z *Wizard) TestStepsAdvice(steps []model.SQLCheckStep) string {
 		}
 		var parts []string
 		if st.ErrorKey != "" {
-			if m := model.SQLMessage(st.ErrorKey, z.Lang); m != "" {
+			if m := model.SQLMessage(st.ErrorKey); m != "" {
 				parts = append(parts, m)
 			}
 		}
@@ -141,7 +141,7 @@ func (z *Wizard) TestStepsAdvice(steps []model.SQLCheckStep) string {
 		if key == "" {
 			key = model.SQLCheckAdviceKey(st.ID)
 		}
-		if m := model.SQLMessage(key, z.Lang); m != "" {
+		if m := model.SQLMessage(key); m != "" {
 			parts = append(parts, m)
 		}
 		return strings.Join(parts, "\r\n")

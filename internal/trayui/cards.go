@@ -41,7 +41,7 @@ func cardRank(c Color) int {
 }
 
 // Cards groups the status rows by database, in their order.
-func Cards(rows []StatusRow, lang string) []Card {
+func Cards(rows []StatusRow) []Card {
 	var out []Card
 	idx := map[string]int{}
 	stale := map[string]int{}
@@ -60,12 +60,12 @@ func Cards(rows []StatusRow, lang string) []Card {
 			c.Color, c.State = r.Color, r.State
 		}
 		if r.PointKey == "" && r.Point == "" {
-			if r.State == i18n.T(i18n.KeyStDisabled, lang) {
+			if r.State == i18n.T(i18n.KeyStDisabled) {
 				c.Disabled = true
 			}
 			if r.Note != "" {
 				c.Info = r.Note
-				if strings.Contains(r.Note, i18n.T(i18n.KeyCardMuted, lang)) {
+				if strings.Contains(r.Note, i18n.T(i18n.KeyCardMuted)) {
 					c.Muted = true
 				}
 			}
@@ -96,29 +96,29 @@ func Cards(rows []StatusRow, lang string) []Card {
 		c := &out[i]
 		switch {
 		case c.Fresh != "":
-			c.Fresh = fmt.Sprintf(i18n.T(i18n.KeyCardFresh, lang), c.Fresh)
+			c.Fresh = fmt.Sprintf(i18n.T(i18n.KeyCardFresh), c.Fresh)
 		default:
-			c.Fresh = fmt.Sprintf(i18n.T(i18n.KeyCardFresh, lang), i18n.T(i18n.KeyCardNoData, lang))
+			c.Fresh = fmt.Sprintf(i18n.T(i18n.KeyCardFresh), i18n.T(i18n.KeyCardNoData))
 		}
 		if c.Disabled {
-			c.State, c.Fresh, c.Info = i18n.T(i18n.KeyCardPollingOff, lang), "", ""
+			c.State, c.Fresh, c.Info = i18n.T(i18n.KeyCardPollingOff), "", ""
 			c.Tip = c.Name + " — " + c.State
 			continue
 		}
 		if c.Info == "" {
-			c.Info = fmt.Sprintf(i18n.T(i18n.KeyCardPoints, lang), c.Points, c.Bad)
+			c.Info = fmt.Sprintf(i18n.T(i18n.KeyCardPoints), c.Points, c.Bad)
 		}
 		tip := c.Name + " — " + c.State
 		if len(tips[key]) > 0 {
 			tip += "\r\n" + strings.Join(tips[key], "\r\n")
 		}
-		c.Tip = tip + "\r\n" + i18n.T(i18n.KeyCardTip, lang)
+		c.Tip = tip + "\r\n" + i18n.T(i18n.KeyCardTip)
 	}
 	for i := range out {
 		if out[i].Muted && out[i].State != "" {
-			out[i].State = out[i].State + " · " + i18n.T(i18n.KeyCardMuted, lang)
+			out[i].State = out[i].State + " · " + i18n.T(i18n.KeyCardMuted)
 		} else if out[i].Muted {
-			out[i].State = i18n.T(i18n.KeyCardMuted, lang)
+			out[i].State = i18n.T(i18n.KeyCardMuted)
 		}
 	}
 	return out

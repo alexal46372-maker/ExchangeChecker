@@ -2,7 +2,7 @@
 // without WinAPI: which active alerts the alert window shows, when the
 // PC-speaker sound plays, is muted and re-armed, the ack_alert requests of
 // the «Подтвердить» button and how their replies are handled, the beep
-// loop behind a Beeper interface, and the window texts (RU/EN).
+// loop behind a Beeper interface, and the window texts (Russian).
 //
 // Rules (PLAN §6.2, §6.3, §12 p.43, p.50):
 //   - the service decides warning/error; the tray shows the active alerts

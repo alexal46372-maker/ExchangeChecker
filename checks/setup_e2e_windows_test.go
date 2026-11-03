@@ -386,7 +386,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	res := wininstall.Install(sys, wininstall.InstallConfig{
 		Opts:       wininstall.Options{Silent: true},
 		DefaultDir: dir, DataDir: data, Files: badFiles,
-		Version: "1.2.0", Lang: "en", Now: time.Now(),
+		Version: "1.2.0", Now: time.Now(),
 	}, &e2eLog{t})
 	if res.Code != wininstall.ExitError {
 		t.Fatalf("bad upgrade code=%d err=%v (want exit 1 + rollback)", res.Code, res.Err)
@@ -423,7 +423,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	res = wininstall.Install(sys, wininstall.InstallConfig{
 		Opts:       wininstall.Options{Silent: true},
 		DefaultDir: dir, DataDir: data, Files: badFiles,
-		Version: "1.2.0", Lang: "en", Now: time.Now(),
+		Version: "1.2.0", Now: time.Now(),
 	}, &e2eLog{t})
 	if res.Code != wininstall.ExitError {
 		t.Fatalf("hung-V2 upgrade code=%d err=%v (want exit 1 + rollback)", res.Code, res.Err)

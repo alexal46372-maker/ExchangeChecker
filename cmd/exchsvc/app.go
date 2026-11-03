@@ -123,7 +123,6 @@ func runService(ctx context.Context, ac appConfig) error {
 		log.Printf("%s: DACL SYSTEM+Administrators (protected)", config.SecretsFile)
 	}
 	settings, settingsErr := store.LoadSettings()
-	lang := config.EffectiveLanguage(settings)
 
 	events := ac.Events
 	if events == nil {
@@ -185,13 +184,13 @@ func runService(ctx context.Context, ac appConfig) error {
 
 	// phase 10 (CHK-SVC-06): Viber notifications (settings.viber +
 	// viber.dpapi); the settings arrive with the snapshots
-	viber := notify.New(notify.Options{Store: store, Client: ac.ViberClient, URL: ac.ViberURL, Lang: lang, Log: log, Now: ac.Now,
+	viber := notify.New(notify.Options{Store: store, Client: ac.ViberClient, URL: ac.ViberURL, Log: log, Now: ac.Now,
 		StateDir: ac.Dir}) // viber_state.json: date of the last summary
 	vctx, vcancel := context.WithCancel(ctx)
 	vdone := make(chan struct{})
-	email := notify.NewEmail(notify.EmailOptions{Store: store, Lang: lang, Log: log, Now: ac.Now, SendHook: ac.EmailSendHook})
+	email := notify.NewEmail(notify.EmailOptions{Store: store, Log: log, Now: ac.Now, SendHook: ac.EmailSendHook})
 	defer email.Close()
-	telegram := notify.NewTelegram(notify.TelegramOptions{Store: store, BaseURL: ac.TelegramBaseURL, Lang: lang, Log: log, Now: ac.Now})
+	telegram := notify.NewTelegram(notify.TelegramOptions{Store: store, BaseURL: ac.TelegramBaseURL, Log: log, Now: ac.Now})
 	defer telegram.Close()
 	go func() { defer close(vdone); viber.Run(vctx) }()
 	defer func() { vcancel(); <-vdone }()
@@ -207,14 +206,14 @@ func runService(ctx context.Context, ac appConfig) error {
 		// one informational Event Log entry per acknowledgement; the
 		// alert entries themselves are not changed by an ack
 		OnAck: func(e model.AlertEvent) {
-			report(alert.EventTypeInformation, alert.EventIDAck, alert.FormatAck(e, lang))
+			report(alert.EventTypeInformation, alert.EventIDAck, alert.FormatAck(e))
 		},
 		// configuration changed through IPC by an administrator (phase
 		// 6): one informational entry 105 with account, action, profile
 		// id (CHK-MON-05 extension); the installer of phase 7 registers
 		// 104 and 105 in the message file
 		OnConfigChange: func(c model.ConfigChange) {
-			report(alert.EventTypeInformation, alert.EventIDConfig, alert.FormatConfigChange(c, lang))
+			report(alert.EventTypeInformation, alert.EventIDConfig, alert.FormatConfigChange(c))
 		},
 		// save_settings -> HKLM Run (CHK-CFG-04); an error is logged and
 		// sent to Warn, the settings stay saved
@@ -226,7 +225,7 @@ func runService(ctx context.Context, ac appConfig) error {
 		TestWithTimeout: ac.TestWithTimeout,
 		Log:             log,
 		Sink: alert.Multi{
-			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},
+			&alert.EventLogSink{R: events, Fallback: log},
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),
 			hist,     // transition records of the history (CHK-SVC-03)
 			viber,    // Viber (CHK-SVC-06)
@@ -266,7 +265,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	srv.Viber = viber
 	srv.Email = email
 	srv.Telegram = telegram
-	srv.AlarmTest = alarmTester{viber: viber, lang: lang} // alarm_test (CHK-IPC-11)
+	srv.AlarmTest = alarmTester{viber: viber} // alarm_test (CHK-IPC-11)
 	if autostart != nil {
 		// get_status.trayAutostartError + capability tray_autostart_status
 		srv.TrayAutostartError = autostart.ErrorCode

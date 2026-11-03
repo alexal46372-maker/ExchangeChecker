@@ -26,7 +26,7 @@ const (
 	TrayExitMessage = "ExchangeChecker.TrayExit"
 	// TrayReloadPrefsMessage is the RegisterWindowMessageW name that makes
 	// the tray (window class ExchangeCheckerTray) reread Sound / UIMode /
-	// Theme / balloons / lang from HKCU without exiting (CHK-TRAY-57).
+	// Theme / balloons from HKCU without exiting (CHK-TRAY-57).
 	// The settings window posts it after importing the tray block.
 	TrayReloadPrefsMessage = "ExchangeChecker.TrayReloadPrefs"
 	// Window classes that handle TrayExitMessage (CHK-TRAY-11). A separate

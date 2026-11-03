@@ -7,14 +7,6 @@ import (
 	"time"
 )
 
-// UI language codes. LangAuto means "use the Windows UI language"
-// (fallback RU), see config.EffectiveLanguage and PLAN.md §7.4.
-const (
-	LangAuto = ""
-	LangRU   = "ru"
-	LangEN   = "en"
-)
-
 // Defaults and limits.
 const (
 	DefaultPollIntervalSec = 60
@@ -110,7 +102,6 @@ type Settings struct {
 	WarnMinutes     int          `json:"warnMinutes"`
 	ErrorMinutes    int          `json:"errorMinutes"`
 	Beep            BeepSettings `json:"beep"`
-	Language        string       `json:"language"`
 	TrayAutostart   bool         `json:"trayAutostart"`
 	// Viber (phase 10, CHK-SVC-06): nil in save_settings = keep the
 	// stored value; always set in views; never in export_config.
@@ -144,7 +135,6 @@ func DefaultSettings() Settings {
 			GapMs:         DefaultBeepGapMs,
 			Enabled:       OptTrue,
 		},
-		Language:      LangAuto,
 		TrayAutostart: true,
 		Viber:         defaultViberPtr(),
 		Email:         defaultEmailPtr(),
@@ -287,11 +277,6 @@ func (s Settings) Validate() error {
 		if err := s.Telegram.Validate(); err != nil {
 			errs = append(errs, err)
 		}
-	}
-	switch s.Language {
-	case LangAuto, LangRU, LangEN:
-	default:
-		errs = append(errs, fieldErr("language", ValEnum, fmt.Sprintf("settings: unsupported language %q (want \"\", %q or %q)", s.Language, LangRU, LangEN), s.Language))
 	}
 	return errors.Join(errs...)
 }

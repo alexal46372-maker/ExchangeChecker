@@ -14,7 +14,7 @@ func viberEditor(t *testing.T, hasToken bool) *Editor {
 	s := model.DefaultSettings()
 	s.Viber.HasToken = hasToken
 	s.Viber.Recipients = []model.ViberRecipient{{ID: "abc=", Name: "Дежурный"}}
-	e := NewEditor(i18n.RU, Admin)
+	e := NewEditor(Admin)
 	e.LoadConfig(model.ConfigView{Settings: s}, "r1")
 	if !e.CanEditViber() || e.ViberUnsaved() {
 		t.Fatal("viber page not loaded")
@@ -66,7 +66,7 @@ func TestCHK_TRAY_43_ViberForm(t *testing.T) {
 		t.Error("clearViberToken")
 	}
 	e.ViberDone(model.IPCMessage{Type: model.MsgOK}, req)
-	if e.Settings.Viber.HasToken || e.TokenStateText() != i18n.T(i18n.KeyVbTokenNone, i18n.RU) {
+	if e.Settings.Viber.HasToken || e.TokenStateText() != i18n.T(i18n.KeyVbTokenNone) {
 		t.Error("token cleared")
 	}
 
@@ -99,7 +99,7 @@ func TestCHK_TRAY_43_ViberForm(t *testing.T) {
 		t.Errorf("settings_invalid: %+v", pr)
 	}
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgViberNoToken})
-	if pr == nil || pr.Field != FieldViberToken || pr.Text != i18n.Message(model.MsgViberNoToken, i18n.RU) {
+	if pr == nil || pr.Field != FieldViberToken || pr.Text != i18n.Message(model.MsgViberNoToken) {
 		t.Errorf("no token: %+v", pr)
 	}
 	pr = e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgViberNoToken, ErrorArgs: []string{"viberToken"}})
@@ -108,9 +108,9 @@ func TestCHK_TRAY_43_ViberForm(t *testing.T) {
 	}
 	for _, k := range []string{model.MsgViberNoToken, model.MsgViberNoRecipients, model.MsgViberAuthFailed, model.MsgViberReceiverInvalid,
 		model.MsgViberRateLimited, model.MsgViberNetwork, model.MsgViberTLS, model.MsgViberFailed, model.MsgViberInvalid} {
-		ru, en := i18n.Message(k, i18n.RU), i18n.Message(k, i18n.EN)
-		if ru == "" || en == "" || ru == en || strings.Contains(ru, k) {
-			t.Errorf("%s: %q / %q", k, ru, en)
+		ru := i18n.Message(k)
+		if ru == "" || strings.Contains(ru, k) {
+			t.Errorf("%s: %q", k, ru)
 		}
 	}
 }
@@ -135,8 +135,8 @@ func TestCHK_TRAY_43_ViberTest(t *testing.T) {
 	}
 	txt := e.ViberTestText(&model.ViberTestResult{OK: false, Results: []model.ViberTestItem{{ID: "abc=", OK: true},
 		{ID: "zz", ErrorKey: model.MsgViberReceiverInvalid}}})
-	if !strings.Contains(txt, "Дежурный (abc=): доставлено") || !strings.Contains(txt, "zz: "+i18n.Message(model.MsgViberReceiverInvalid, i18n.RU)) ||
-		!strings.HasPrefix(txt, i18n.T(i18n.KeyVbTestFailed, i18n.RU)) {
+	if !strings.Contains(txt, "Дежурный (abc=): доставлено") || !strings.Contains(txt, "zz: "+i18n.Message(model.MsgViberReceiverInvalid)) ||
+		!strings.HasPrefix(txt, i18n.T(i18n.KeyVbTestFailed)) {
 		t.Errorf("result text %q", txt)
 	}
 	if e.ViberTestText(nil) == "" {
@@ -148,7 +148,7 @@ func TestCHK_TRAY_43_ViberTest(t *testing.T) {
 		m.ViberTest == nil || !m.ViberTest.OK || len(m.ViberTest.Results) != 1 {
 		t.Errorf("viberTest JSON %+v %v", m, err)
 	}
-	if ViberStatusText(&model.ViberSettings{Status: &model.ViberStatus{Sent: 3, Queued: 1}}, i18n.EN) != "Sent: 3, queued: 1, dropped: 0" {
+	if ViberStatusText(&model.ViberSettings{Status: &model.ViberStatus{Sent: 3, Queued: 1}}) != "Отправлено: 3, в очереди: 1, отброшено: 0" {
 		t.Error("status text")
 	}
 }

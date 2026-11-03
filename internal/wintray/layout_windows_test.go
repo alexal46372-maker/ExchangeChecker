@@ -226,15 +226,15 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 	defer func() { testWorkArea = nil }()
 	small := winapi.RECT{Right: 1024, Bottom: 728} // 1024×768 minus a 40 px taskbar
 	for _, dpi := range []int32{96, 120, 144} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
+		{
 			testDPI = dpi
-			tag := fmt.Sprintf("%s %d dpi", lang, dpi)
+			tag := fmt.Sprintf("%s %d dpi", i18n.RU, dpi)
 			func() {
 				testWorkArea = &small
 				defer func() { testWorkArea = nil }()
-				checkSettingsFit(t, "small "+tag, lang, small)
+				checkSettingsFit(t, "small "+tag, i18n.RU, small)
 			}()
-			uiScenes(t, lang, func(name string, hwnd uintptr) { checkLayout(t, name+" "+tag, hwnd) })
+			uiScenes(t, i18n.RU, func(name string, hwnd uintptr) { checkLayout(t, name+" "+tag, hwnd) })
 		}
 	}
 }
@@ -248,7 +248,7 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 	app := startCfgApp(t, ds.cfgService, true, nil)
 	defer app.Exit()
 	for _, mode := range []traysettings.Mode{traysettings.Admin, traysettings.ReadOnly} {
-		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: mode, session: app.session, hidden: true,
+		w, err := newSettingsWindow(settingsConfig{mode: mode, session: app.session, hidden: true,
 			uiMode: traysettings.UIExpert, elevator: &fakeElevator{}})
 		if err != nil {
 			t.Fatal(err)
@@ -313,7 +313,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		ex.syncWarn()
 		visit("export", ex.hwnd)
 		ex.close()
-		writeImportFile(t, e.path, &traysettings.TrayBlock{Language: "ru"}, e.x.profiles[0])
+		writeImportFile(t, e.path, &traysettings.TrayBlock{}, e.x.profiles[0])
 		e.w.click(t, idSetImport)
 		d := e.w.imp
 		if d == nil {
@@ -328,7 +328,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		ds := newDiscService()
 		app := startCfgApp(t, ds.cfgService, true, nil)
 		defer app.Exit()
-		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+		w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true,
 			uiMode: traysettings.UIExpert})
 		if err != nil {
 			t.Fatal(err)
@@ -346,7 +346,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		w.toggleUIMode()
 		visit("settings simple", w.hwnd)
 
-		ro, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.ReadOnly, session: app.session, hidden: true,
+		ro, err := newSettingsWindow(settingsConfig{mode: traysettings.ReadOnly, session: app.session, hidden: true,
 			uiMode: traysettings.UIExpert, elevator: &fakeElevator{}})
 		if err != nil {
 			t.Fatal(err)
@@ -354,7 +354,6 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		visit("settings read-only", ro.hwnd)
 		ro.close()
 
-		app.opt.Lang = lang
 		sw, err := newSoundWindow(app)
 		if err != nil {
 			t.Fatal(err)
@@ -383,8 +382,8 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		} else {
 			t.Error("panel")
 		}
-		ab, err := newAboutWindow(0, trayui.AboutTitle(lang), trayui.AboutText(app.session.Status(), lang),
-			i18n.T(i18n.KeyAboutOK, lang), "", false, nil)
+		ab, err := newAboutWindow(0, trayui.AboutTitle(), trayui.AboutText(app.session.Status()),
+			i18n.T(i18n.KeyAboutOK), "", false, nil)
 		if err == nil {
 			visit("about", ab)
 			winapi.DestroyWindow(ab)
@@ -394,7 +393,6 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		ws := newWizService()
 		app := startCfgApp(t, ws.cfgService, true, nil)
 		defer app.Exit()
-		app.opt.Lang = lang
 		w := openAdmin(t, app)
 		w.click(t, idSetAdd)
 		if w.wiz == nil {
@@ -449,7 +447,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		svc := newViberCfg()
 		app := startCfgApp(t, svc.cfgService, true, nil)
 		defer app.Exit()
-		vw, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+		vw, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true,
 			uiMode: traysettings.UIExpert})
 		if err != nil {
 			t.Fatal(err)
@@ -460,14 +458,14 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		vw.setPage(pageViber)
 		visit("settings viber", vw.hwnd)
 	}()
-	aw, err := newAlertWindow(0, lang, nil, nil)
+	aw, err := newAlertWindow(0, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	aw.apply(sampleAlert(lang), false) // a sample alert: text and status filled
 	visit("alert", aw.hwnd)
 	winapi.DestroyWindow(aw.hwnd)
-	st, err := newStatusWindow(lang, false, nil)
+	st, err := newStatusWindow(false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -492,7 +490,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 
 	// CHK-TRAY-54: summary + alarm_test under mock CapSummary / CapAlarmTest
 	func() {
-		sw, err := createSummary(nil, lang, nil)
+		sw, err := createSummary(nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -501,7 +499,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		winapi.DestroyWindow(sw.hwnd)
 	}()
 	func() {
-		aw, err := createAlarmTest(nil, lang)
+		aw, err := createAlarmTest(nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -509,7 +507,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 			ViberTestResult: model.ViberTestResult{OK: true, Results: []model.ViberTestItem{
 				{ID: "u1", OK: true}, {ID: "u2", OK: true},
 			}},
-		}}, lang))
+		}}))
 		visit("alarm_test", aw.hwnd)
 		winapi.DestroyWindow(aw.hwnd)
 	}()
@@ -518,9 +516,6 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 // sampleAlert is an alert view for the layout test and the screenshots.
 func sampleAlert(lang string) trayalert.View {
 	msg := "Служба: подтверждение отправлено"
-	if lang == i18n.EN {
-		msg = "Service: acknowledgement sent"
-	}
 	at := time.Date(2026, 10, 20, 9, 30, 0, 0, time.FixedZone("UTC+3", 3*3600))
 	return trayalert.View{Visible: true, Level: model.LevelError, CanAck: true, Message: msg,
 		Alerts: []model.AlertEvent{

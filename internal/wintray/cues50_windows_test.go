@@ -31,10 +31,10 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	done, _ := useComCtl6()
 	defer done()
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		svc := newViberCfg()
 		app := startCfgApp(t, svc.cfgService, true, nil)
-		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+		w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true,
 			uiMode: traysettings.UIExpert})
 		if err != nil {
 			t.Fatal(err)
@@ -42,17 +42,17 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 		w.Reload()
 		pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() && w.ctl[idVbToken] != 0 })
 		for _, f := range traysettings.UIFields {
-			want := f.CueText(lang)
+			want := f.CueText()
 			if want == "" || f.ID == traysettings.FieldDiscTime || f.ID == traysettings.FieldDiscTolerance {
 				continue
 			}
 			id, ok := settingsCueID[f.ID]
 			if !ok {
-				t.Errorf("%s: field %s has cue %q but no settings control", lang, f.ID, want)
+				t.Errorf("%s: field %s has cue %q but no settings control", i18n.RU, f.ID, want)
 				continue
 			}
 			if got := w.cues[id]; got != want {
-				t.Errorf("%s: %s cue %q, want %q", lang, f.ID, got, want)
+				t.Errorf("%s: %s cue %q, want %q", i18n.RU, f.ID, got, want)
 			}
 		}
 		w.click(t, idSetAdd)
@@ -69,11 +69,11 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 			}
 			f := reqFields[id]
 			if !miss[f] {
-				t.Errorf("%s: %s highlighted but not Missing", lang, f)
+				t.Errorf("%s: %s highlighted but not Missing", i18n.RU, f)
 			}
 			for _, u := range traysettings.UIFields {
 				if u.ID == f && u.HasDefault {
-					t.Errorf("%s: HasDefault %s highlighted", lang, f)
+					t.Errorf("%s: HasDefault %s highlighted", i18n.RU, f)
 				}
 			}
 		}
@@ -82,7 +82,7 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 
 		ds := newDiscService()
 		app2 := startCfgApp(t, ds.cfgService, true, nil)
-		w2, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app2.session, hidden: true,
+		w2, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app2.session, hidden: true,
 			uiMode: traysettings.UIExpert})
 		if err != nil {
 			t.Fatal(err)
@@ -94,16 +94,16 @@ func TestCHK_TRAY_50_Cues(t *testing.T) {
 		})
 		w2.click(t, idSetDiscover)
 		if w2.disc == nil {
-			t.Fatalf("%s: discovery not opened", lang)
+			t.Fatalf("%s: discovery not opened", i18n.RU)
 		}
 		for _, f := range []traysettings.UIField{
 			{ID: traysettings.FieldDiscTime, Cue: i18n.KeyCueDiscTime},
 			{ID: traysettings.FieldDiscTolerance, Cue: i18n.KeySetTimeoutCue, CueDefault: 1440},
 		} {
-			want := f.CueText(lang)
+			want := f.CueText()
 			id := map[traysettings.Field]int32{traysettings.FieldDiscTime: idDiscTime, traysettings.FieldDiscTolerance: idDiscTol}[f.ID]
 			if got := winapi.CueBanner(w2.disc.ctl[id]); got != want {
-				t.Errorf("%s: discovery %s cue %q, want %q", lang, f.ID, got, want)
+				t.Errorf("%s: discovery %s cue %q, want %q", i18n.RU, f.ID, got, want)
 			}
 		}
 		w2.disc.close()

@@ -18,7 +18,7 @@ const (
 	SQLAutoPickMinMargin = 30
 )
 
-// Auto-pick reason keys (SQLAutoPick.ReasonKey; RU/EN in SQLMessage).
+// Auto-pick reason keys (SQLAutoPick.ReasonKey; texts in SQLMessage).
 const (
 	MsgSQLAutoPickOK            = "sql.autopick_ok"             // applied automatically
 	MsgSQLAutoPickNone          = "sql.autopick_none"           // no candidate
@@ -74,7 +74,7 @@ const (
 	SQLAutoPickMinConfidence = float64(SQLAutoPickMinScore) / SQLConfidenceFullScore
 )
 
-// Candidate reason keys (SQLCandidateRank.Reasons; RU/EN in SQLMessage).
+// Candidate reason keys (SQLCandidateRank.Reasons; texts in SQLMessage).
 const (
 	MsgSQLCandExchangePlan = "sql.cand_exchange_plan" // exchange plan table (_NodeNNN)
 	MsgSQLCandSendRecv     = "sql.cand_send_recv"     // both send and recv times

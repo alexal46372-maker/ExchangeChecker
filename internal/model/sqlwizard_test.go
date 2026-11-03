@@ -122,12 +122,12 @@ func TestCHK_SQL_08_AutoPick(t *testing.T) {
 // key for history (monitor.KnownErrorKey uses model.SQLMessage).
 func TestCHK_SQL_09_WizardKeysKnown(t *testing.T) {
 	for _, k := range append(SQLWizardMessageKeys(), SQLWizardValidationKeys()...) {
-		if SQLMessage(k, LangRU) == "" || SQLMessage(k, LangEN) == "" {
+		if SQLMessage(k) == "" || SQLMessage(k) == "" {
 			t.Errorf("%s: no text", k)
 		}
 	}
 	fe := &FieldError{Field: "principal", Key: ValSQLPrincipal, Args: []string{SQLPrincipalControl}}
-	if s := FormatMessage(fe.Key, []string{"principal", "", SQLPrincipalControl}, LangEN); !strings.Contains(s, "control_char") {
+	if s := FormatMessage(fe.Key, []string{"principal", "", SQLPrincipalControl}); !strings.Contains(s, "control_char") {
 		t.Errorf("format: %q", s)
 	}
 }
@@ -136,12 +136,12 @@ func TestCHK_SQL_09_WizardKeysKnown(t *testing.T) {
 func TestCHK_SQL_09_Diagnose(t *testing.T) {
 	seen := map[string]bool{}
 	for _, d := range SQLDiagnoses() {
-		if seen[d.Key] || len(d.Steps) == 0 || d.Title.RU == "" || d.Title.EN == "" {
+		if seen[d.Key] || len(d.Steps) == 0 || d.Title == "" {
 			t.Errorf("%+v", d)
 		}
 		seen[d.Key] = true
 		for _, s := range d.Steps {
-			if s.RU == "" || s.EN == "" {
+			if s == "" {
 				t.Errorf("%s: empty step", d.Key)
 			}
 		}
@@ -155,8 +155,8 @@ func TestCHK_SQL_09_Diagnose(t *testing.T) {
 		t.Error("tls/unknown")
 	}
 	d := SQLDiagnose(SQLConnLogin, "")
-	d.Steps[0].RU = "x"
-	if SQLDiagnose(SQLConnLogin, "").Steps[0].RU == "x" {
+	d.Steps[0] = "x"
+	if SQLDiagnose(SQLConnLogin, "").Steps[0] == "x" {
 		t.Error("not a copy")
 	}
 }
@@ -340,7 +340,7 @@ func TestCHK_SQL_16_AutoPickReviewCases(t *testing.T) {
 		t.Errorf("old client one plan %+v", p)
 	}
 	for _, k := range []string{MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters, MsgSQLAutoPickCountersOK} {
-		if SQLMessage(k, "ru") == "" || SQLMessage(k, "en") == "" {
+		if SQLMessage(k) == "" || SQLMessage(k) == "" {
 			t.Errorf("no text %s", k)
 		}
 	}

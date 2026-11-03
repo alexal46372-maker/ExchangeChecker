@@ -89,7 +89,7 @@ func startP9App(t *testing.T, svc *p9Service) (*App, *ipc.Server) {
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenStatus: true, Beeper: &testBeeper{},
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenStatus: true, Beeper: &testBeeper{},
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestCHK_TRAY_26_HistoryWindow(t *testing.T) {
 	winapi.ListViewSelect(sw.list, i)
 	PumpPending()
 	sw.updateHistoryButton()
-	if !winapi.IsWindowEnabled(sw.history) || sw.tips.text(sw.history) != i18n.T(i18n.KeyTipStHistory, i18n.RU) {
+	if !winapi.IsWindowEnabled(sw.history) || sw.tips.text(sw.history) != i18n.T(i18n.KeyTipStHistory) {
 		t.Fatal("history button")
 	}
 	winapi.SendMessage(sw.history, winapi.BM_CLICK, 0, 0)
@@ -341,7 +341,7 @@ func TestCHK_TRAY_26_HistoryWindow(t *testing.T) {
 	winapi.SendMessage(hw.chart, winapi.WM_PAINT, 0, 0) // GDI smoke
 	for c, k := range map[uintptr]string{hw.day: i18n.KeyTipHistDay, hw.week: i18n.KeyTipHistWeek, hw.chart: i18n.KeyTipHistChart,
 		hw.info: i18n.KeyTipHistInfo, hw.csv: i18n.KeyTipHistExportCSV, hw.html: i18n.KeyTipHistExportHTML, hw.close: i18n.KeyTipHistClose} {
-		if hw.tips.text(c) != i18n.T(k, i18n.RU) {
+		if hw.tips.text(c) != i18n.T(k) {
 			t.Errorf("tooltip %s", k)
 		}
 	}
@@ -358,7 +358,7 @@ func TestCHK_TRAY_26_HistoryWindow(t *testing.T) {
 	}
 	svc.m.Unlock()
 	winapi.SendMessage(hw.day, winapi.BM_CLICK, 0, 0)
-	want := model.MonitorMessage(model.MsgHistoryBusy, i18n.RU)
+	want := model.MonitorMessage(model.MsgHistoryBusy)
 	pumpUntil(t, "busy text", func() bool { return winapi.GetWindowText(hw.info) == want })
 
 	// closing the window cancels the running page (cancel {ref})
@@ -405,7 +405,7 @@ func TestCHK_TRAY_26_NoHistoryCapability(t *testing.T) {
 		t.Fatal("history must be unavailable")
 	}
 	sw.openHistory()
-	if app.histWin != nil || winapi.GetWindowText(sw.info) != i18n.T(i18n.KeyStHistoryOff, i18n.RU) {
+	if app.histWin != nil || winapi.GetWindowText(sw.info) != i18n.T(i18n.KeyStHistoryOff) {
 		t.Fatalf("opened / info %q", winapi.GetWindowText(sw.info))
 	}
 }
@@ -479,8 +479,8 @@ func TestCHK_TRAY_27_HistoryExport(t *testing.T) {
 	hw.export(exportCSV)
 	pumpUntil(t, "partial csv", func() bool { return hw.lastSaved != "" })
 	c, _ = os.ReadFile(filepath.Join(dir, "p.csv"))
-	if !hw.lastPartial || !strings.HasSuffix(string(c), i18n.T(i18n.KeyHistPartial, i18n.RU)+"\r\n") ||
-		!strings.Contains(winapi.GetWindowText(hw.info), i18n.T(i18n.KeyHistPartial, i18n.RU)) {
+	if !hw.lastPartial || !strings.HasSuffix(string(c), i18n.T(i18n.KeyHistPartial)+"\r\n") ||
+		!strings.Contains(winapi.GetWindowText(hw.info), i18n.T(i18n.KeyHistPartial)) {
 		t.Errorf("partial %v %q", hw.lastPartial, winapi.GetWindowText(hw.info))
 	}
 	hw.load() // the chart is marked as well

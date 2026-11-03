@@ -9,59 +9,6 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// ThemeValue is the HKCU REG_SZ of the tray chrome theme under LangKey
-// (phase 12, CHK-TRAY-55): "light" / "dark"; empty / missing = light.
-const ThemeValue = "Theme"
-
-// ThemeStore keeps the per-user light/dark preference.
-type ThemeStore interface {
-	Load() (trayui.Theme, error)
-	Save(trayui.Theme) error
-}
-
-// RegistryThemeStore stores Theme in HKCU\Software\ExchangeChecker\Tray.
-type RegistryThemeStore struct {
-	Key string // "" = LangKey
-}
-
-func (s RegistryThemeStore) key() string {
-	if s.Key == "" {
-		return LangKey
-	}
-	return s.Key
-}
-
-// Load implements ThemeStore; missing = light.
-func (s RegistryThemeStore) Load() (trayui.Theme, error) {
-	v, ok, err := winapi.RegGetStringView(winapi.HKEY_CURRENT_USER, s.key(), ThemeValue, 0)
-	if err != nil || !ok {
-		return trayui.ThemeLight, err
-	}
-	return trayui.NormalizeTheme(v), nil
-}
-
-// Save implements ThemeStore.
-func (s RegistryThemeStore) Save(t trayui.Theme) error {
-	t = trayui.NormalizeTheme(string(t))
-	return winapi.RegSetStringView(winapi.HKEY_CURRENT_USER, s.key(), ThemeValue, string(t), 0)
-}
-
-// LoadTheme reads the preference and applies it to trayui.
-// A nil store leaves the current theme alone (do not clobber SetTheme —
-// screenshots and tests set dark before creating windows via NewApp).
-// A store that is missing / unreadable → light.
-func LoadTheme(s ThemeStore) trayui.Theme {
-	if s == nil {
-		return trayui.Current()
-	}
-	t := trayui.ThemeLight
-	if v, err := s.Load(); err == nil {
-		t = trayui.NormalizeTheme(string(v))
-	}
-	trayui.SetTheme(t)
-	return t
-}
-
 var (
 	themeBrushMu sync.Mutex
 	panelBrush   uintptr
@@ -116,14 +63,13 @@ func ensureChromeBrushes() (panel, page, line, brand uintptr) {
 	return panelBrush, pageBrush, lineBrush, brandBrush
 }
 
-// ApplyWindowTheme sets immersive dark mode (Win10+, Find fallback) and
-// invalidates the client so CTLCOLOR / paint pick up the active palette.
+// ApplyWindowTheme invalidates the client so CTLCOLOR / paint pick up the
+// chrome palette (immersive dark title bar removed, CHK-TRAY-88).
 func ApplyWindowTheme(hwnd uintptr) {
 	if hwnd == 0 || !winapi.IsWindow(hwnd) {
 		return
 	}
 	invalidateThemeBrushes()
-	winapi.SetImmersiveDarkMode(hwnd, trayui.IsDark())
 	// class brush is COLOR_BTNFACE; force our erase + child CTLCOLOR
 	winapi.RedrawWindow(hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW|winapi.RDW_FRAME)
 }

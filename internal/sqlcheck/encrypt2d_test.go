@@ -171,15 +171,10 @@ func TestCHK_SQL_05_WarnPlaintextLogin(t *testing.T) {
 			t.Errorf("%s: warnings %v, want plaintext=%v", c.name, w, c.warn)
 		}
 	}
-	ru, en := Message(MsgWarnPlaintextLogin, model.LangRU), Message(MsgWarnPlaintextLogin, model.LangEN)
+	ru := Message(MsgWarnPlaintextLogin)
 	for _, sub := range []string{"пароль", "Windows", "db_datareader"} {
 		if !strings.Contains(ru, sub) {
 			t.Errorf("ru text lacks %q: %s", sub, ru)
-		}
-	}
-	for _, sub := range []string{"password", "Windows", "db_datareader"} {
-		if !strings.Contains(en, sub) {
-			t.Errorf("en text lacks %q: %s", sub, en)
 		}
 	}
 	found := false

@@ -8,7 +8,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// Localizable messages (phase 6, G1): the keys, the RU/EN texts and the
+// Localizable messages (phase 6, G1): the keys, the (Russian) texts and the
 // connection warnings live in package model (model.SQLMessage,
 // model.SQLWarnings, sqlmessages.go) so the service can send them to the
 // tray without the SQL driver. sqlcheck returns the stable keys
@@ -28,9 +28,9 @@ const (
 	MsgWarnPlaintextLogin = model.MsgSQLWarnPlaintextLogin
 )
 
-// Message returns the text of key in lang ("en", anything else = "ru"),
+// Message returns the (Russian) text of key,
 // or "" for an unknown key (model.SQLMessage).
-func Message(key, lang string) string { return model.SQLMessage(key, lang) }
+func Message(key string) string { return model.SQLMessage(key) }
 
 // MessageKeys lists the known sql.* message keys (model.SQLMessageKeys).
 func MessageKeys() []string { return model.SQLMessageKeys() }

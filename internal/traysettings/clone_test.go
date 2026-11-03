@@ -10,7 +10,7 @@ import (
 // TestCHK_TRAY_58_CloneRequest — clone_profile carries profileId +
 // expectedRevision; admin + saved profile only; password never sent.
 func TestCHK_TRAY_58_CloneRequest(t *testing.T) {
-	e := &Editor{Mode: Admin, Lang: i18n.RU, Revision: "r3",
+	e := &Editor{Mode: Admin, Revision: "r3",
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад", Server: "s", Database: "d", AuthMode: model.AuthSQL, Login: "u", HasPassword: true}}}
 	e.Select(0)
 	req, pr := e.CloneRequest()
@@ -33,7 +33,7 @@ func TestCHK_TRAY_58_CloneRequest(t *testing.T) {
 
 // TestCHK_TRAY_58_CloneDone — selects the clone and reports needPassword.
 func TestCHK_TRAY_58_CloneDone(t *testing.T) {
-	e := &Editor{Mode: Admin, Lang: i18n.RU, Revision: "r1",
+	e := &Editor{Mode: Admin, Revision: "r1",
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад", Server: "s", Database: "d", AuthMode: model.AuthSQL}}}
 	e.Select(0)
 	clone := model.Profile{ID: "c1", Name: "Склад (копия)", Server: "s", Database: "d", AuthMode: model.AuthSQL}
@@ -45,12 +45,12 @@ func TestCHK_TRAY_58_CloneDone(t *testing.T) {
 	if msg == "" || e.Base.HasPassword {
 		t.Fatalf("status %q hasPassword %v", msg, e.Base.HasPassword)
 	}
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		if i18n.T(i18n.KeySetClone, lang) == i18n.KeySetClone {
-			t.Errorf("missing key %s %s", i18n.KeySetClone, lang)
+	{
+		if i18n.T(i18n.KeySetClone) == i18n.KeySetClone {
+			t.Errorf("missing key %s %s", i18n.KeySetClone, i18n.RU)
 		}
-		if i18n.T(i18n.KeySetCloneConfirm, lang) == i18n.KeySetCloneConfirm {
-			t.Errorf("missing confirm %s", lang)
+		if i18n.T(i18n.KeySetCloneConfirm) == i18n.KeySetCloneConfirm {
+			t.Errorf("missing confirm %s", i18n.RU)
 		}
 	}
 }

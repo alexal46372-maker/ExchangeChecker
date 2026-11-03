@@ -2,20 +2,17 @@ package model
 
 import "strings"
 
-// CloneNameSuffix returns the localized " (copy)" / " (копия)" suffix for
-// clone_profile (CHK-CFG-08). lang is "en" or anything else (RU default).
-func CloneNameSuffix(lang string) string {
-	if lang == LangEN {
-		return " (copy)"
-	}
+// CloneNameSuffix returns the " (копия)" suffix for clone_profile
+// (CHK-CFG-08).
+func CloneNameSuffix() string {
 	return " (копия)"
 }
 
-// DefaultCloneName builds "<old> (копия)" / "<old> (copy)". Empty old ->
+// DefaultCloneName builds "<old> (копия)". Empty old ->
 // just the trimmed suffix without a leading space artifact.
-func DefaultCloneName(oldName, lang string) string {
+func DefaultCloneName(oldName string) string {
 	old := strings.TrimSpace(oldName)
-	suf := CloneNameSuffix(lang)
+	suf := CloneNameSuffix()
 	if old == "" {
 		return strings.TrimSpace(suf)
 	}

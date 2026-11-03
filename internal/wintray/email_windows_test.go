@@ -117,7 +117,7 @@ func TestCHK_TRAY_64_EmailHidden(t *testing.T) {
 	// with capability: Simple hides the tab
 	svc := newEmailCfg()
 	app2 := startCfgApp(t, svc.cfgService, true, nil)
-	w2, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app2.session, hidden: true,
+	w2, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app2.session, hidden: true,
 		uiMode: traysettings.UISimple})
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestCHK_TRAY_64_EmailPage(t *testing.T) {
 		t.Fatal("clear on email:", why)
 	}
 	if w.text(idEmRecipients) != "ops ops@example.com Дежурный" || w.text(idEmHost) != "smtp.example.com" ||
-		w.text(idEmPassword) != "" || w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordSaved, i18n.RU) {
+		w.text(idEmPassword) != "" || w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordSaved) {
 		t.Fatalf("filled: %q %q %q", w.text(idEmRecipients), w.text(idEmHost), w.text(idEmPasswordState))
 	}
 	// starttls: password enabled
@@ -171,7 +171,7 @@ func TestCHK_TRAY_64_EmailPage(t *testing.T) {
 	if winapi.IsWindowEnabled(w.ctl[idEmPassword]) {
 		t.Error("password must be disabled for tlsMode=none")
 	}
-	if !strings.Contains(w.text(idEmPasswordState), "none") && w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordNoneTLS, i18n.RU) {
+	if !strings.Contains(w.text(idEmPasswordState), "none") && w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordNoneTLS) {
 		t.Errorf("none state %q", w.text(idEmPasswordState))
 	}
 	// back to starttls, save with new password
@@ -208,5 +208,59 @@ func TestCHK_TRAY_64_EmailPage(t *testing.T) {
 		if pg == pageEmail {
 			t.Error("simple shows email")
 		}
+	}
+}
+
+// TestCHK_TRAY_87_TestSavesFirst — «Тест» on the e-mail page saves the
+// page first (save_settings with the recipients as typed: one bare
+// address) and sends email_test only after that save succeeded; a failed
+// save shows its error and sends no email_test.
+func TestCHK_TRAY_87_TestSavesFirst(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newEmailCfg()
+	app := startCfgApp(t, svc.cfgService, true, nil)
+	w := openAdmin(t, app)
+	pumpUntil(t, "email tab", func() bool { w.update(); return w.ed.HasEmail })
+	w.setPage(pageEmail)
+
+	// 1) failing save: error shown, no email_test
+	svc.emu.Lock()
+	svc.saveErr = &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorConfigSaveFailed, Message: "disk"}
+	svc.emu.Unlock()
+	w.set(idEmRecipients, "alex@mail.ru")
+	w.click(t, idEmTest)
+	pumpUntil(t, "save failed", func() bool { w.update(); return !w.busy && w.text(idEmResult) != "" })
+	if n, m := svc.counts(); n != 0 || m != 0 {
+		t.Fatalf("after failed save: saves %d tests %d", n, m)
+	}
+	if !strings.Contains(w.text(idEmResult), model.MonitorMessage(model.MsgMonitorConfigSaveFailed)) {
+		t.Errorf("save error not shown: %q", w.text(idEmResult))
+	}
+
+	// 2) invalid address: Russian text, nothing sent
+	w.set(idEmRecipients, "alex")
+	w.click(t, idEmTest)
+	if n, m := svc.counts(); n != 0 || m != 0 || !strings.Contains(w.text(idEmResult), "Неверный адрес e-mail получателя: «alex»") {
+		t.Fatalf("invalid addr: saves %d tests %d %q", n, m, w.text(idEmResult))
+	}
+
+	// 3) ok: save_settings with one generated-id recipient, then email_test
+	w.set(idEmRecipients, "alex@mail.ru")
+	w.click(t, idEmTest)
+	pumpUntil(t, "saved and tested", func() bool { w.update(); _, m := svc.counts(); return m == 1 && w.emTesting == nil && !w.busy })
+	n, m := svc.counts()
+	if n != 1 || m != 1 {
+		t.Fatalf("saves %d tests %d", n, m)
+	}
+	rs := svc.saves[0].e.Recipients
+	if len(rs) != 1 || rs[0].Addr != "alex@mail.ru" || rs[0].ID != "alex" {
+		t.Fatalf("saved recipients %+v", rs)
+	}
+	if svc.tests[0].RecipientID != "" || svc.tests[0].Addr != "" {
+		t.Errorf("email_test %+v", svc.tests[0])
+	}
+	if w.text(idEmRecipients) != "alex@mail.ru" {
+		t.Errorf("box after save %q", w.text(idEmRecipients))
 	}
 }

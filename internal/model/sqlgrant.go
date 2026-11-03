@@ -58,8 +58,8 @@ func splitTable(t string) (string, string) {
 type SQLGrantScript struct {
 	SQL string `json:"sql"`
 	// PasswordPlaceholder is set for a SQL login: the text to replace.
-	PasswordPlaceholder string          `json:"passwordPlaceholder,omitempty"`
-	Notes               []LocalizedText `json:"notes"`
+	PasswordPlaceholder string   `json:"passwordPlaceholder,omitempty"`
+	Notes               []string `json:"notes"`
 }
 
 // Reasons of ValSQLPrincipal ({2}).
@@ -225,25 +225,25 @@ func SQLGrantScriptFor(r SQLGrantRequest) (SQLGrantScript, error) {
 		roleOrTables(r.Tables),
 		"EXEC sp_executesql @sql, N'@login sysname', @login = @login;",
 		"PRINT N'Exchange Checker: access granted ("+what+").';")
-	res := SQLGrantScript{SQL: b.String(), Notes: []LocalizedText{
-		{"Скрипт выдаёт только чтение (роль db_datareader или SELECT на перечисленные таблицы) в одной базе; его можно запускать повторно. Программа скрипт только показывает и не выполняет.", "The script grants read access only (db_datareader role or SELECT on the listed tables) in one database; it can be run again. The program only shows the script, it never runs it."},
-		{"Запускает администратор SQL Server (sysadmin, либо securityadmin + db_owner базы) в SQL Server Management Studio или sqlcmd.", "A SQL Server administrator runs it (sysadmin, or securityadmin + db_owner of the database) in SQL Server Management Studio or sqlcmd."},
+	res := SQLGrantScript{SQL: b.String(), Notes: []string{
+		"Скрипт выдаёт только чтение (роль db_datareader или SELECT на перечисленные таблицы) в одной базе; его можно запускать повторно. Программа скрипт только показывает и не выполняет.",
+		"Запускает администратор SQL Server (sysadmin, либо securityadmin + db_owner базы) в SQL Server Management Studio или sqlcmd.",
 	}}
 	if win {
-		res.Notes = append(res.Notes, LocalizedText{
+		res.Notes = append(res.Notes,
 			"Служба Exchange Checker работает как LocalSystem: на удалённом SQL Server выдайте права учётной записи компьютера ДОМЕН\\ИМЯ$, на этом же компьютере — NT AUTHORITY\\SYSTEM.",
-			"The Exchange Checker service runs as LocalSystem: on a remote SQL Server grant the computer account DOMAIN\\NAME$, on the same computer NT AUTHORITY\\SYSTEM."})
+		)
 	} else {
 		res.PasswordPlaceholder = SQLGrantPasswordPlaceholder
 		res.Notes = append(res.Notes,
-			LocalizedText{"Замените " + SQLGrantPasswordPlaceholder + " надёжным паролем (без этого скрипт остановится с ошибкой). Пароль в скрипт программой не подставляется и нигде не сохраняется; после запуска службы введите его в трее.",
-				"Replace " + SQLGrantPasswordPlaceholder + " with a strong password (the script stops with an error otherwise). The program never puts the password into the script or stores it; enter it in the tray after the service starts."},
-			LocalizedText{"Пароль пишется внутри N'…': каждый апостроф (') в пароле нужно удвоить (''). Длина — не более 128 символов, иначе скрипт остановится с ошибкой.",
-				"The password goes inside N'…': double every apostrophe (') in it (''). At most 128 characters, otherwise the script stops with an error."},
-			LocalizedText{"CHECK_POLICY = ON применяет политику паролей Windows (сложность, блокировка); CHECK_EXPIRATION = OFF — пароль не истекает, иначе опрос остановится.",
-				"CHECK_POLICY = ON applies the Windows password policy (complexity, lockout); CHECK_EXPIRATION = OFF — the password does not expire, otherwise polling would stop."},
-			LocalizedText{"На сервере должен быть включён смешанный режим проверки подлинности (SQL Server and Windows Authentication mode).",
-				"The server must use mixed mode authentication (SQL Server and Windows Authentication mode)."})
+			"Замените "+SQLGrantPasswordPlaceholder+" надёжным паролем (без этого скрипт остановится с ошибкой). Пароль в скрипт программой не подставляется и нигде не сохраняется; после запуска службы введите его в трее.",
+
+			"Пароль пишется внутри N'…': каждый апостроф (') в пароле нужно удвоить (''). Длина — не более 128 символов, иначе скрипт остановится с ошибкой.",
+
+			"CHECK_POLICY = ON применяет политику паролей Windows (сложность, блокировка); CHECK_EXPIRATION = OFF — пароль не истекает, иначе опрос остановится.",
+
+			"На сервере должен быть включён смешанный режим проверки подлинности (SQL Server and Windows Authentication mode).",
+		)
 	}
 	return res, nil
 }

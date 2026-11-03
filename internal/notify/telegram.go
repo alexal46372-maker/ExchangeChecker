@@ -37,7 +37,6 @@ type TelegramOptions struct {
 	// BaseURL overrides TelegramAPIBase (tests: httptest server).
 	BaseURL string
 	Client  Poster // nil = hcwinnet.NewClient(20 s, system roots)
-	Lang    string
 	Log     Logger
 	Now     func() time.Time
 	Loc     *time.Location
@@ -160,7 +159,7 @@ func (n *TelegramNotifier) Alert(e model.AlertEvent) {
 		n.status.Dropped++
 		return
 	}
-	n.queue = append(n.queue, tgItem{text: EventText(e, n.o.Lang), next: now})
+	n.queue = append(n.queue, tgItem{text: EventText(e), next: now})
 	n.kick()
 }
 
@@ -342,9 +341,6 @@ func (n *TelegramNotifier) TelegramTest(ctx context.Context, botToken, chatID st
 	n.lastTest = now
 	n.mu.Unlock()
 	text := "ExchangeChecker: тестовое сообщение"
-	if n.o.Lang == model.LangEN {
-		text = "ExchangeChecker: test message"
-	}
 	if err := n.send(ctx, token, chatID, text); err != nil {
 		n.o.Log.Printf("telegram: test failed: %s", redactToken(err.Error(), token))
 		return model.TelegramTestResult{OK: false, ErrorKey: tgErrKey(err)}, nil

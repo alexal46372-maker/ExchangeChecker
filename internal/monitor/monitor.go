@@ -1178,7 +1178,7 @@ func (r *errRecorder) ListPoints(ctx context.Context) ([]model.ExchangePoint, er
 // test.* (model.MonitorMessage) or sql.* (model.SQLMessage, G1/G4). The
 // service only passes such keys to the tray in errorKey.
 func KnownErrorKey(key string) bool {
-	return key != "" && (model.MonitorMessage(key, model.LangEN) != "" || model.SQLMessage(key, model.LangEN) != "")
+	return key != "" && (model.MonitorMessage(key) != "" || model.SQLMessage(key) != "")
 }
 
 // ErrorKeyOf maps a reader error to a monitor.* message key.
@@ -1397,7 +1397,7 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		m.saveMutes()
 	}
 	for _, ev := range events {
-		m.opt.Log.Printf("alert #%d: %s", ev.ID, alert.Format(ev, model.LangEN))
+		m.opt.Log.Printf("alert #%d: %s", ev.ID, alert.Format(ev))
 		if m.mutedOutbound(ev.ProfileID) {
 			continue // muted: no Event Log / Viber / IPC alert (CHK-MON-20)
 		}

@@ -56,7 +56,7 @@ type Indicator struct {
 const MaxTooltip = 127
 
 // Evaluate derives the indicator from the session status.
-func Evaluate(st trayipc.Status, lang string) Indicator {
+func Evaluate(st trayipc.Status) Indicator {
 	ind := Indicator{Service: serviceOf(st)}
 	snap := st.Snapshot
 	if snap != nil {
@@ -66,27 +66,27 @@ func Evaluate(st trayipc.Status, lang string) Indicator {
 	switch ind.Service {
 	case SvcOK:
 		// always shown above the databases (PLAN §12 p. 48)
-		ind.ServiceLine = i18n.T(i18n.KeySvcOK, lang)
+		ind.ServiceLine = i18n.T(i18n.KeySvcOK)
 	case SvcConnecting:
-		ind.ServiceLine = i18n.T(i18n.KeySvcConnecting, lang)
+		ind.ServiceLine = i18n.T(i18n.KeySvcConnecting)
 	case SvcPollerHung:
-		ind.ServiceLine = i18n.T(i18n.KeySvcPollerHung, lang)
+		ind.ServiceLine = i18n.T(i18n.KeySvcPollerHung)
 	case SvcNotResponding:
-		ind.ServiceLine = i18n.T(i18n.KeySvcNotResponding, lang)
+		ind.ServiceLine = i18n.T(i18n.KeySvcNotResponding)
 	case SvcUnavailable:
-		ind.ServiceLine = i18n.T(i18n.KeySvcUnavailable, lang)
+		ind.ServiceLine = i18n.T(i18n.KeySvcUnavailable)
 	case SvcNotRunning:
-		ind.ServiceLine = i18n.T(i18n.KeySvcNotRunning, lang)
+		ind.ServiceLine = i18n.T(i18n.KeySvcNotRunning)
 	case SvcUntrusted:
-		ind.ServiceLine = i18n.T(i18n.KeySvcUntrusted, lang)
+		ind.ServiceLine = i18n.T(i18n.KeySvcUntrusted)
 	}
 	if ind.Service == SvcOK && st.Version == 1 {
-		ind.ServiceLine = fmt.Sprintf(i18n.T(i18n.KeySvcOldProtocol, lang), st.Version)
+		ind.ServiceLine = fmt.Sprintf(i18n.T(i18n.KeySvcOldProtocol), st.Version)
 	}
 	if ind.Fresh && snap.ConfigErrorKey != "" {
-		ind.ConfigLine = i18n.Message(snap.ConfigErrorKey, lang)
+		ind.ConfigLine = i18n.Message(snap.ConfigErrorKey)
 	} else if ind.Fresh && snap.ConfigError != "" {
-		ind.ConfigLine = i18n.Message(model.MsgMonitorConfigInvalid, lang)
+		ind.ConfigLine = i18n.Message(model.MsgMonitorConfigInvalid)
 	}
 	switch ind.Service {
 	case SvcOK:
@@ -96,14 +96,14 @@ func Evaluate(st trayipc.Status, lang string) Indicator {
 	default:
 		ind.Icon = IconOffline
 	}
-	tip := i18n.T(i18n.KeyAppName, lang) + ": "
+	tip := i18n.T(i18n.KeyAppName) + ": "
 	switch {
 	case ind.ServiceLine != "" && ind.Service != SvcOK:
 		tip += ind.ServiceLine
 	case ind.ConfigLine != "":
-		tip += levelText(ind.Level, lang) + "; " + ind.ConfigLine
+		tip += levelText(ind.Level) + "; " + ind.ConfigLine
 	default:
-		tip += levelText(ind.Level, lang)
+		tip += levelText(ind.Level)
 	}
 	ind.Tooltip = TruncateUTF16(tip, MaxTooltip)
 	return ind
@@ -141,14 +141,14 @@ func levelIcon(l model.AlertLevel) Icon {
 	return IconOK
 }
 
-func levelText(l model.AlertLevel, lang string) string {
+func levelText(l model.AlertLevel) string {
 	switch l {
 	case model.LevelError:
-		return i18n.T(i18n.KeyLevelError, lang)
+		return i18n.T(i18n.KeyLevelError)
 	case model.LevelWarning:
-		return i18n.T(i18n.KeyLevelWarning, lang)
+		return i18n.T(i18n.KeyLevelWarning)
 	}
-	return i18n.T(i18n.KeyLevelOK, lang)
+	return i18n.T(i18n.KeyLevelOK)
 }
 
 // TruncateUTF16 cuts s to at most max UTF-16 code units (szTip is

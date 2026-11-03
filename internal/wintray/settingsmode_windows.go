@@ -29,7 +29,7 @@ func requiredBk() uint32 { return trayui.ChromeRequired() }
 func (w *settingsWindow) UIMode() traysettings.UIMode { return w.uiMode }
 
 // expertOnlyGen are General-tab controls hidden in «Простой» (UIFields
-// Simple=false). Language / Autostart / note stay as basic General items.
+// Simple=false). Autostart / note stay as basic General items.
 var expertOnlyGen = []int32{idGenPoll, idGenWarnFreq, idGenWarnDur, idGenErrFreq, idGenErrDur, idGenGap, idGenStalled}
 
 func (w *settingsWindow) applyUIMode() {

@@ -347,12 +347,12 @@ func TestCHK_IPC_06_DeleteSettingsGetConfig(t *testing.T) {
 		t.Errorf("args %v", ie.Args)
 	}
 	st = model.DefaultSettings()
-	st.TrayAutostart, st.PollIntervalSec, st.Language = true, 300, model.LangEN
+	st.TrayAutostart, st.PollIntervalSec = true, 300
 	if _, err := m.SaveSettings(st, e.rev(), `D\u3`); err != nil {
 		t.Fatal(err)
 	}
 	s := m.Snapshot()
-	if s.Settings == nil || !s.Settings.TrayAutostart || s.Settings.Language != model.LangEN || s.Settings.PollIntervalSec != 300 {
+	if s.Settings == nil || !s.Settings.TrayAutostart || s.Settings.PollIntervalSec != 300 {
 		t.Fatalf("settings not applied synchronously: %+v", s.Settings)
 	}
 	want := []model.ConfigChange{
@@ -370,18 +370,18 @@ func TestCHK_IPC_06_DeleteSettingsGetConfig(t *testing.T) {
 // action and the profile id, never a password, server or connection string.
 func TestCHK_MON_05_ConfigChangedEventText(t *testing.T) {
 	c := model.ConfigChange{Account: `CORP\alex`, Action: model.CmdSaveProfile, ProfileID: "p-1"}
-	for _, lang := range []string{model.LangRU, model.LangEN} {
-		s := alert.FormatConfigChange(c, lang)
+	{
+		s := alert.FormatConfigChange(c)
 		for _, want := range []string{`CORP\alex`, "save_profile", "p-1"} {
 			if !strings.Contains(s, want) {
-				t.Errorf("%s: %q lacks %q", lang, s, want)
+				t.Errorf("%q lacks %q", s, want)
 			}
 		}
 	}
 	if alert.EventIDConfig != 105 || alert.EventIDAck != 104 {
 		t.Error("event ids")
 	}
-	s := alert.FormatConfigChange(model.ConfigChange{Action: model.CmdSaveSettings}, model.LangRU)
+	s := alert.FormatConfigChange(model.ConfigChange{Action: model.CmdSaveSettings})
 	if !strings.Contains(s, "Конфигурация изменена") || strings.Contains(s, "профиль") {
 		t.Errorf("settings text %q", s)
 	}

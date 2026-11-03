@@ -69,14 +69,14 @@ func cand(table string, plan string, score int) model.DiscoveryCandidate {
 // truncated = incomplete), selection into the editable mapping, hidden
 // link fields kept, all plans, applying into the profile (save_profile).
 func TestCHK_TRAY_07_CandidateToMapping(t *testing.T) {
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery})
-	if d.Candidates == nil || len(d.Candidates) != 0 || d.Sel != -1 || d.Status() != i18n.T(i18n.KeyDiscNone, i18n.RU) {
+	if d.Candidates == nil || len(d.Candidates) != 0 || d.Sel != -1 || d.Status() != i18n.T(i18n.KeyDiscNone) {
 		t.Fatalf("empty: %+v %q", d.Candidates, d.Status())
 	}
 	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery, Truncated: true,
 		Candidates: []model.DiscoveryCandidate{cand("_Node10", "_Node10", 90), cand("_Node20", "_Node20", 80)}})
-	if d.Sel != 0 || !strings.Contains(d.Status(), i18n.T(i18n.KeyDiscIncomplete, i18n.RU)) {
+	if d.Sel != 0 || !strings.Contains(d.Status(), i18n.T(i18n.KeyDiscIncomplete)) {
 		t.Errorf("status %q", d.Status())
 	}
 	if d.Map.Table != "_Node10" || !d.Map.YearOffset2000 || d.Map.TimesTable != "_InfoRg88" {
@@ -125,7 +125,7 @@ func TestCHK_TRAY_07_CandidateToMapping(t *testing.T) {
 	if mc := d.Map.Mapping(); mc.SentNoColumn != "_Fld90" || mc.LastSendColumn != "" || mc.YearOffset != 0 || mc.ManualSQL != "" || mc.TimesTable != "" {
 		t.Errorf("counters %+v", mc)
 	}
-	if len(TemplateTitles(i18n.EN)) == 0 || len(TemplateTitles(i18n.EN)) != len(model.SQLManualTemplates()) {
+	if len(TemplateTitles()) == 0 || len(TemplateTitles()) != len(model.SQLManualTemplates()) {
 		t.Error("templates")
 	}
 }
@@ -137,14 +137,14 @@ func TestCHK_TRAY_07_HintsLocalized(t *testing.T) {
 		model.HintExactMatch, model.HintNearApproxTime, model.HintAllPointsFresh, model.HintYearOffset2000, model.HintSendRecvByName,
 		model.HintSendRecvByOrder, model.HintSingleSeries, model.HintNoTimestamps, model.HintFutureDates, model.HintSampled,
 		model.HintSampleFailed, model.HintTruncated, model.HintCounters, model.HintCompositeRef, model.HintByTime} {
-		ru, en := HintText(h, i18n.RU), HintText(h, i18n.EN)
-		if ru == h || en == h || ru == en {
-			t.Errorf("hint %s: %q / %q", h, ru, en)
+		ru := HintText(h)
+		if ru == h {
+			t.Errorf("hint %s: %q", h, ru)
 		}
 	}
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	det := d.CandidateDetails(cand("_Node10", "_Node10", 1))
-	if !strings.Contains(det, HintText(model.HintLinked, i18n.RU)) || !strings.Contains(det, "new_hint") ||
+	if !strings.Contains(det, HintText(model.HintLinked)) || !strings.Contains(det, "new_hint") ||
 		!strings.Contains(det, "Склад: 06.10.2026 09:00 / —") {
 		t.Errorf("details %q", det)
 	}
@@ -169,38 +169,38 @@ func TestCHK_TRAY_07_TruncatedReason(t *testing.T) {
 		{ReplyCheck, model.TruncatedLimit, i18n.KeyDiscIncomplete},
 		{ReplyCheck, "", i18n.KeyDiscIncomplete},
 	} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
-			if got := IncompleteText(c.kind, c.reason, lang); got != i18n.T(c.key, lang) {
-				t.Errorf("%s/%q/%s: %q", c.kind, c.reason, lang, got)
+		{
+			if got := IncompleteText(c.kind, c.reason); got != i18n.T(c.key) {
+				t.Errorf("%s/%q/%s: %q", c.kind, c.reason, i18n.RU, got)
 			}
 		}
 	}
-	if ru := i18n.T(i18n.KeyDiscReasonBudget, i18n.RU); !strings.Contains(ru, "Повторите") || !strings.Contains(i18n.T(i18n.KeyDiscReasonSize, i18n.EN), "Refine") {
+	if ru := i18n.T(i18n.KeyDiscReasonBudget); !strings.Contains(ru, "Повторите") || !strings.Contains(i18n.T(i18n.KeyDiscReasonSize), "Уточните") {
 		t.Error("hints: retry / narrow, refine")
 	}
-	d := NewDiscovery(i18n.EN, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery, Truncated: true, TruncatedReason: model.TruncatedBudget})
-	if !strings.Contains(d.Status(), i18n.T(i18n.KeyDiscReasonBudget, i18n.EN)) {
+	if !strings.Contains(d.Status(), i18n.T(i18n.KeyDiscReasonBudget)) {
 		t.Errorf("discovery %q", d.Status())
 	}
 	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery, Truncated: true, TruncatedReason: "future"})
-	if !strings.HasSuffix(d.Status(), i18n.T(i18n.KeyDiscIncomplete, i18n.EN)) {
+	if !strings.HasSuffix(d.Status(), i18n.T(i18n.KeyDiscIncomplete)) {
 		t.Errorf("unknown reason %q", d.Status())
 	}
 	d.NodePointsDone(model.IPCMessage{Type: model.MsgNodePoints, Truncated: true, TruncatedReason: model.TruncatedLimit,
 		NodePoints: []model.NodePoint{{Name: "A"}}})
-	if !strings.Contains(d.PointsStatus(), i18n.T(i18n.KeyDiscReasonLimit, i18n.EN)) {
+	if !strings.Contains(d.PointsStatus(), i18n.T(i18n.KeyDiscReasonLimit)) {
 		t.Errorf("points %q", d.PointsStatus())
 	}
-	if txt, _ := d.CheckResult(model.MappingCheck{OK: true, Truncated: true, TruncatedReason: model.TruncatedSize}); !strings.Contains(txt, i18n.T(i18n.KeyDiscReasonCheckSize, i18n.EN)) {
+	if txt, _ := d.CheckResult(model.MappingCheck{OK: true, Truncated: true, TruncatedReason: model.TruncatedSize}); !strings.Contains(txt, i18n.T(i18n.KeyDiscReasonCheckSize)) {
 		t.Errorf("check %q", txt)
 	}
 	// sampleRows cut to the requested limit is not truncated
-	if txt, _ := d.CheckResult(model.MappingCheck{OK: true, SampleRows: []model.SampleRow{{Point: "A"}}}); strings.Contains(txt, i18n.T(i18n.KeyDiscIncomplete, i18n.EN)) {
+	if txt, _ := d.CheckResult(model.MappingCheck{OK: true, SampleRows: []model.SampleRow{{Point: "A"}}}); strings.Contains(txt, i18n.T(i18n.KeyDiscIncomplete)) {
 		t.Errorf("complete preview %q", txt)
 	}
 	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery})
-	if strings.Contains(d.Status(), i18n.T(i18n.KeyDiscIncomplete, i18n.EN)) {
+	if strings.Contains(d.Status(), i18n.T(i18n.KeyDiscIncomplete)) {
 		t.Error("complete result")
 	}
 }
@@ -209,9 +209,9 @@ func TestCHK_TRAY_07_TruncatedReason(t *testing.T) {
 // the service), a listed point goes as pointRef, the approximate time is
 // read in UTC+3, tolerance checked.
 func TestCHK_TRAY_07_ByValueQuery(t *testing.T) {
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	if _, pr := d.Query(ValueForm{Point: "  ", PointIndex: -1}); pr == nil || pr.Field != FieldDiscPoint ||
-		pr.Text != model.MonitorMessage(model.MsgDiscoverPointNameEmpty, i18n.RU) {
+		pr.Text != model.MonitorMessage(model.MsgDiscoverPointNameEmpty) {
 		t.Errorf("empty point %+v", pr)
 	}
 	d.NodePointsDone(model.IPCMessage{Type: model.MsgNodePoints, NodePoints: []model.NodePoint{{PlanTable: "_Node10", Ref: "ab01", Code: "001", Name: "Склад"}}})
@@ -239,26 +239,26 @@ func TestCHK_TRAY_07_ByValueQuery(t *testing.T) {
 // rows, a field error highlighted and localized, 2012+ violations,
 // a connection error key, truncated preview.
 func TestCHK_TRAY_07_ManualSQLFlow(t *testing.T) {
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	at := time.Date(2026, 10, 6, 9, 0, 0, 0, model.DBZone)
 	txt, f := d.CheckResult(model.MappingCheck{OK: true, SampleRows: []model.SampleRow{{Point: "A", LastSend: &at, LastRecv: &at}}, Truncated: true})
-	if f != "" || !strings.HasPrefix(txt, i18n.T(i18n.KeyDiscCheckOK, i18n.RU)) || !strings.Contains(txt, "A: 06.10.2026 09:00 / 06.10.2026 09:00") ||
-		!strings.Contains(txt, i18n.T(i18n.KeyDiscIncomplete, i18n.RU)) {
+	if f != "" || !strings.HasPrefix(txt, i18n.T(i18n.KeyDiscCheckOK)) || !strings.Contains(txt, "A: 06.10.2026 09:00 / 06.10.2026 09:00") ||
+		!strings.Contains(txt, i18n.T(i18n.KeyDiscIncomplete)) {
 		t.Errorf("ok: %q", txt)
 	}
 	txt, f = d.CheckResult(model.MappingCheck{ErrorKey: model.MsgDiscoverMappingInvalid,
 		ErrorArgs: []string{"mapping.lastSendColumn", model.ValRequired}})
 	if f != "mapping.lastSendColumn" || !strings.Contains(txt, "Колонка отправки") ||
-		!strings.Contains(txt, model.MonitorMessage(model.MsgDiscoverMappingInvalid, i18n.RU)) {
+		!strings.Contains(txt, model.MonitorMessage(model.MsgDiscoverMappingInvalid)) {
 		t.Errorf("field error: %q %q", txt, f)
 	}
 	txt, _ = d.CheckResult(model.MappingCheck{ErrorKey: model.MsgDiscoverMappingInvalid, Violations: []string{"OFFSET/FETCH", "IIF"}})
-	if !strings.Contains(txt, "OFFSET/FETCH, IIF") || !strings.Contains(txt, i18n.T(i18n.KeyDiscViolations, i18n.RU)) {
+	if !strings.Contains(txt, "OFFSET/FETCH, IIF") || !strings.Contains(txt, i18n.T(i18n.KeyDiscViolations)) {
 		t.Errorf("violations: %q", txt)
 	}
 	keys := model.SQLMessageKeys()
 	txt, _ = d.CheckResult(model.MappingCheck{ErrorKey: keys[0], Error: "tech"})
-	if txt != model.SQLMessage(keys[0], i18n.RU) {
+	if txt != model.SQLMessage(keys[0]) {
 		t.Errorf("sql key: %q", txt)
 	}
 }
@@ -275,12 +275,12 @@ func TestCHK_TRAY_07_ProtocolErrors(t *testing.T) {
 		m    model.IPCMessage
 		want string
 	}{
-		{msg(model.ErrCodeBusy, model.MsgDiscoverBusy), model.MonitorMessage(model.MsgDiscoverBusy, i18n.RU)},
-		{msg(model.ErrCodeBusy, model.MsgDiscoverProfileBusy), model.MonitorMessage(model.MsgDiscoverProfileBusy, i18n.RU)},
-		{msg(model.ErrCodeFailed, sqlKey), model.SQLMessage(sqlKey, i18n.RU)},
-		{msg(model.ErrCodeFailed, model.MsgDiscoverTimeout), model.MonitorMessage(model.MsgDiscoverTimeout, i18n.RU)},
-		{msg(model.ErrCodeFailed, ""), model.MonitorMessage(model.MsgDiscoverFailed, i18n.RU)},
-		{msg(model.ErrCodeCanceled, model.MsgMonitorCanceled), i18n.T(i18n.KeyDiscCanceled, i18n.RU)},
+		{msg(model.ErrCodeBusy, model.MsgDiscoverBusy), model.MonitorMessage(model.MsgDiscoverBusy)},
+		{msg(model.ErrCodeBusy, model.MsgDiscoverProfileBusy), model.MonitorMessage(model.MsgDiscoverProfileBusy)},
+		{msg(model.ErrCodeFailed, sqlKey), model.SQLMessage(sqlKey)},
+		{msg(model.ErrCodeFailed, model.MsgDiscoverTimeout), model.MonitorMessage(model.MsgDiscoverTimeout)},
+		{msg(model.ErrCodeFailed, ""), model.MonitorMessage(model.MsgDiscoverFailed)},
+		{msg(model.ErrCodeCanceled, model.MsgMonitorCanceled), i18n.T(i18n.KeyDiscCanceled)},
 	} {
 		if pr := e.InteractiveProblem(c.m, nil); pr == nil || pr.Text != c.want {
 			t.Errorf("%s/%s: %+v", c.m.Code, c.m.ErrorKey, pr)
@@ -289,7 +289,7 @@ func TestCHK_TRAY_07_ProtocolErrors(t *testing.T) {
 	// code internal (a recovered panic of the service handler): the
 	// general text of monitor.internal, never the technical one
 	if pr := e.InteractiveProblem(msg(model.ErrCodeInternal, model.MsgMonitorInternal), nil); pr == nil ||
-		!strings.Contains(pr.Text, model.MonitorMessage(model.MsgMonitorInternal, i18n.RU)) || strings.Contains(pr.Text, "tech") {
+		!strings.Contains(pr.Text, model.MonitorMessage(model.MsgMonitorInternal)) || strings.Contains(pr.Text, "tech") {
 		t.Errorf("internal %+v", pr)
 	}
 	if pr := e.InteractiveProblem(msg(model.ErrCodeRateLimited, model.MsgMonitorRateLimited), nil); pr == nil || !strings.Contains(pr.Text, "10") {
@@ -300,7 +300,7 @@ func TestCHK_TRAY_07_ProtocolErrors(t *testing.T) {
 	if pr == nil || pr.Field != FieldDiscPoint {
 		t.Errorf("point empty %+v", pr)
 	}
-	if pr := e.InteractiveProblem(model.IPCMessage{}, context.Canceled); pr == nil || pr.Text != i18n.T(i18n.KeyDiscCanceled, i18n.RU) {
+	if pr := e.InteractiveProblem(model.IPCMessage{}, context.Canceled); pr == nil || pr.Text != i18n.T(i18n.KeyDiscCanceled) {
 		t.Errorf("ctx canceled %+v", pr)
 	}
 	if pr := e.InteractiveProblem(model.IPCMessage{Type: model.MsgDiscovery}, nil); pr != nil {
@@ -313,23 +313,23 @@ func TestCHK_TRAY_07_ProtocolErrors(t *testing.T) {
 // unknown error code is a general error.
 func TestCHK_TRAY_07_FailedKeys(t *testing.T) {
 	e := adminEditor(savedSQL())
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	keys := []string{"monitor.test_network", "monitor.test_login", "monitor.test_database", "monitor.test_tls",
 		"monitor.conn_error", "monitor.query_error", "monitor.mapping", "monitor.discover_timeout", "monitor.discover_failed",
 	}
 	keys = append(keys, model.SQLMessageKeys()...) // every sql.* key (PLAN §6.2)
 	for _, k := range keys {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
-			want := i18n.Message(k, lang)
+		{
+			want := i18n.Message(k)
 			if want == "" || strings.Contains(want, k) {
-				t.Errorf("%s/%s not localized: %q", k, lang, want)
+				t.Errorf("%s/%s not localized: %q", k, i18n.RU, want)
 			}
 		}
 		pr := e.InteractiveProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeFailed, ErrorKey: k, Error: "tech"}, nil)
-		if pr == nil || pr.Text != i18n.Message(k, i18n.RU) {
+		if pr == nil || pr.Text != i18n.Message(k) {
 			t.Errorf("failed %s: %+v", k, pr)
 		}
-		if txt, _ := d.CheckResult(model.MappingCheck{ErrorKey: k, Error: "tech"}); txt != i18n.Message(k, i18n.RU) {
+		if txt, _ := d.CheckResult(model.MappingCheck{ErrorKey: k, Error: "tech"}); txt != i18n.Message(k) {
 			t.Errorf("ok:false %s: %q", k, txt)
 		}
 	}

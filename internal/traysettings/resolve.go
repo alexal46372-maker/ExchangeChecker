@@ -18,8 +18,8 @@ import (
 // (two equally good candidates for one table), low_score (below the
 // threshold) or incomplete (no send/receive time, no points — e.g. a
 // counters plan with 0 points — or the search was cut short).
-func ResolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapping, []model.Mapping, *Problem) {
-	main, plans, _, pr := resolveDiscovery(cands, lang)
+func ResolveDiscovery(cands []model.DiscoveryCandidate) (model.Mapping, []model.Mapping, *Problem) {
+	main, plans, _, pr := resolveDiscovery(cands)
 	return main, plans, pr
 }
 
@@ -35,14 +35,13 @@ const (
 
 // resolveDiscovery also returns the best candidate: the main one when
 // applied, else the one to preselect under «Подробнее» (-1: none).
-func resolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapping, []model.Mapping, int, *Problem) {
-	lang = i18n.Normalize(lang)
+func resolveDiscovery(cands []model.DiscoveryCandidate) (model.Mapping, []model.Mapping, int, *Problem) {
 	if len(cands) == 0 {
-		return model.Mapping{}, nil, -1, &Problem{Code: ProblemNone, Text: i18n.T(i18n.KeyWizErrNone, lang)}
+		return model.Mapping{}, nil, -1, &Problem{Code: ProblemNone, Text: i18n.T(i18n.KeyWizErrNone)}
 	}
 	p := model.SQLAutoPickFor(cands)
 	if p.Index < 0 || p.Index >= len(cands) {
-		return model.Mapping{}, nil, -1, &Problem{Code: ProblemNone, Text: i18n.T(i18n.KeyWizErrNone, lang)}
+		return model.Mapping{}, nil, -1, &Problem{Code: ProblemNone, Text: i18n.T(i18n.KeyWizErrNone)}
 	}
 	if !p.AutoApply {
 		switch p.ReasonKey {
@@ -56,16 +55,16 @@ func resolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapp
 				}
 			}
 			if other >= 0 {
-				d := Discovery{Lang: lang}
+				d := Discovery{}
 				return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemAmbiguous,
-					Text: fmt.Sprintf(i18n.T(i18n.KeyWizErrAmbiguous, lang), ambiguousName(d, b), ambiguousName(d, cands[other]))}
+					Text: fmt.Sprintf(i18n.T(i18n.KeyWizErrAmbiguous), ambiguousName(d, b), ambiguousName(d, cands[other]))}
 			}
 		case model.MsgSQLAutoPickLowScore:
-			return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemLowScore, Text: i18n.T(i18n.KeyWizErrLowScore, lang)}
+			return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemLowScore, Text: i18n.T(i18n.KeyWizErrLowScore)}
 		}
 		// incomplete, a counters fallback outside 1C plans, or any other
 		// reason: never applied without the user
-		return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemIncomplete, Text: i18n.T(i18n.KeyWizErrIncomplete, lang)}
+		return model.Mapping{}, nil, p.Index, &Problem{Code: ProblemIncomplete, Text: i18n.T(i18n.KeyWizErrIncomplete)}
 	}
 	if len(p.Plans) > 0 {
 		main := cands[p.Plans[0]].Mapping()
@@ -87,14 +86,14 @@ func resolveDiscovery(cands []model.DiscoveryCandidate, lang string) (model.Mapp
 }
 
 // FoundText is «Найдено: план X (+N), поля …» of a resolved discovery.
-func FoundText(main model.Mapping, plans []model.Mapping, lang string) string {
+func FoundText(main model.Mapping, plans []model.Mapping) string {
 	name := main.PlanTable()
 	if name == "" {
 		name = MappingName(main)
 	}
-	s := fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlan, lang), name)
+	s := fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlan), name)
 	if len(plans) > 0 {
-		s += fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlans, lang), len(plans))
+		s += fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlans), len(plans))
 	}
 	var cols []string
 	for _, c := range []string{main.PointNameColumn, main.PointIDColumn, main.LastSendColumn, main.LastRecvColumn, main.SentNoColumn, main.ReceivedNoColumn} {
@@ -103,7 +102,7 @@ func FoundText(main model.Mapping, plans []model.Mapping, lang string) string {
 		}
 	}
 	if len(cols) > 0 {
-		s += ", " + fmt.Sprintf(i18n.T(i18n.KeyWizFoundFields, lang), strings.Join(cols, ", "))
+		s += ", " + fmt.Sprintf(i18n.T(i18n.KeyWizFoundFields), strings.Join(cols, ", "))
 	}
 	return s
 }

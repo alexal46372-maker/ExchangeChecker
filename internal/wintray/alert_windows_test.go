@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
@@ -126,7 +125,7 @@ func startAlertApp(t *testing.T, svc *alertService, b *testBeeper) (*App, *ipc.S
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, Beeper: b,
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, Beeper: b,
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)
@@ -280,19 +279,19 @@ func TestCHK_TRAY_03_AckGone(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_45_AlertKeepsPosition — switching the language re-lays the
-// alert window out without moving it back to the centre.
+// TestCHK_TRAY_45_AlertKeepsPosition — a relayout (new texts) of the
+// alert window does not move it back to the centre.
 func TestCHK_TRAY_45_AlertKeepsPosition(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	aw, err := newAlertWindow(0, "ru", nil, nil)
+	aw, err := newAlertWindow(0, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer winapi.DestroyWindow(aw.hwnd)
 	winapi.SetWindowPos(aw.hwnd, 0, 40, 50, 0, 0, winapi.SWP_NOSIZE|winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
-	aw.setLang("en")
+	aw.layout()
 	if r := winapi.GetWindowRect(aw.hwnd); r.Left != 40 || r.Top != 50 {
-		t.Fatalf("alert moved to %d,%d after the language change, want 40,50", r.Left, r.Top)
+		t.Fatalf("alert moved to %d,%d after a relayout, want 40,50", r.Left, r.Top)
 	}
 }

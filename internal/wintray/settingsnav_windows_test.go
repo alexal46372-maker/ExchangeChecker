@@ -17,10 +17,10 @@ import (
 func TestCHK_TRAY_47_Navigation(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		svc := newViberCfg()
 		app := startCfgApp(t, svc.cfgService, true, nil)
-		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+		w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true,
 			uiMode: traysettings.UIExpert})
 		if err != nil {
 			t.Fatal(err)
@@ -28,10 +28,10 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 		w.Reload()
 		pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() && w.viberAvailable() })
 		if w.ctl[idSetTabs] == 0 || winapi.TabItemCount(w.ctl[idSetTabs]) < 2 {
-			t.Fatalf("%s: tabs missing or too few (%d)", lang, winapi.TabItemCount(w.ctl[idSetTabs]))
+			t.Fatalf("%s: tabs missing or too few (%d)", i18n.RU, winapi.TabItemCount(w.ctl[idSetTabs]))
 		}
 		if !w.navTabSelected(0) {
-			t.Errorf("%s: databases tab not selected", lang)
+			t.Errorf("%s: databases tab not selected", i18n.RU)
 		}
 		barLeft := func() int32 { return winapi.GetWindowRect(w.ctl[idSetStatus]).Left }
 		for _, p := range []struct {
@@ -39,32 +39,32 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 		}{{1}, {pageViber}} {
 			w.setPage(p.page)
 			if w.page != p.page || !w.navTabSelected(p.page) {
-				t.Errorf("%s: page %d tab not selected", lang, p.page)
+				t.Errorf("%s: page %d tab not selected", i18n.RU, p.page)
 			}
 			if x := winapi.GetWindowRect(w.ctl[idSetReload]).Left; x != barLeft() || visible(w.ctl[idSetTest]) {
-				t.Errorf("%s page %d: «Перечитать» at %d, bar starts at %d", lang, p.page, x, barLeft())
+				t.Errorf("%s page %d: «Перечитать» at %d, bar starts at %d", i18n.RU, p.page, x, barLeft())
 			}
 		}
 		w.setPage(0)
 		if w.page != 0 || winapi.GetWindowRect(w.ctl[idSetTest]).Left != barLeft() {
-			t.Errorf("%s: back to the databases page", lang)
+			t.Errorf("%s: back to the databases page", i18n.RU)
 		}
 		w.toggleUIMode() // Simple: Databases + General; Viber expert-only
 		nTabs := winapi.TabItemCount(w.ctl[idSetTabs])
 		if nTabs < 2 || len(w.tabPages) < 2 || w.tabPageAt(0) != 1 || w.tabPageAt(1) != 0 {
-			t.Errorf("%s: simple mode must keep General+Databases (CHK-TRAY-75), got win=%d pages=%v", lang, nTabs, w.tabPages)
+			t.Errorf("%s: simple mode must keep General+Databases (CHK-TRAY-75), got win=%d pages=%v", i18n.RU, nTabs, w.tabPages)
 		}
 		for _, p := range w.tabPages {
 			if p == pageViber {
-				t.Errorf("%s: Viber tab must be hidden in Simple", lang)
+				t.Errorf("%s: Viber tab must be hidden in Simple", i18n.RU)
 			}
 		}
 		if !visible(w.ctl[idSetUIMode]) {
-			t.Errorf("%s: mode button must stay (window-common)", lang)
+			t.Errorf("%s: mode button must stay (window-common)", i18n.RU)
 		}
 		w.toggleUIMode()
 		if winapi.TabItemCount(w.ctl[idSetTabs]) < 3 {
-			t.Errorf("%s: expert tabs not restored (want Databases+General+Viber)", lang)
+			t.Errorf("%s: expert tabs not restored (want Databases+General+Viber)", i18n.RU)
 		}
 		w.close()
 		app.Exit()
@@ -76,10 +76,10 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 func TestCHK_TRAY_47_Cues(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		svc := newViberCfg()
 		app := startCfgApp(t, svc.cfgService, true, nil)
-		w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+		w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true,
 			uiMode: traysettings.UIExpert})
 		if err != nil {
 			t.Fatal(err)
@@ -87,11 +87,11 @@ func TestCHK_TRAY_47_Cues(t *testing.T) {
 		for _, id := range []int32{idSetName, idSetHost, idSetInstance, idSetPort, idSetDatabase, idSetLogin, idSetPassword,
 			idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idVbToken} {
 			if w.cues[id] == "" {
-				t.Errorf("%s: control %d without a cue", lang, id)
+				t.Errorf("%s: control %d without a cue", i18n.RU, id)
 			}
 		}
-		if w.cues[idSetName] != i18n.T(i18n.KeyCueName, lang) {
-			t.Errorf("%s: name cue %q", lang, w.cues[idSetName])
+		if w.cues[idSetName] != i18n.T(i18n.KeyCueName) {
+			t.Errorf("%s: name cue %q", i18n.RU, w.cues[idSetName])
 		}
 		w.close()
 		app.Exit()
@@ -110,7 +110,7 @@ func TestCHK_TRAY_47_PageClear(t *testing.T) {
 	svc := newViberCfg()
 	app := startCfgApp(t, svc.cfgService, true, nil)
 	// Start Simple — the live Win failure path (#6 / #8 missed ghosts).
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session,
 		hidden: false, // visible window when possible
 		uiMode: traysettings.UISimple})
 	if err != nil {

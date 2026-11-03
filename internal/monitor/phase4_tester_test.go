@@ -244,8 +244,8 @@ func TestCHK_IPC_03_TestProfile(t *testing.T) {
 	if e.ft.n() != calls+2 {
 		t.Errorf("unsaved windows profiles must not connect: %d calls", e.ft.n()-calls-2)
 	}
-	if model.MonitorMessage(model.MsgTestWindowsUnsaved, "ru") != "Сохраните профиль, чтобы проверить Windows-аутентификацию." ||
-		model.MonitorMessage(model.MsgTestWindowsUnsaved, model.LangEN) == "" {
+	if model.MonitorMessage(model.MsgTestWindowsUnsaved) != "Сохраните профиль, чтобы проверить Windows-аутентификацию." ||
+		model.MonitorMessage(model.MsgTestWindowsUnsaved) == "" {
 		t.Error("windows message RU/EN")
 	}
 }
@@ -319,8 +319,8 @@ func TestCHK_IPC_03_SavedPasswordReuse(t *testing.T) {
 	if _, err := e.run(model.IPCRequest{Profile: &p, Password: reqPW}); err != nil || e.ft.last().pw != reqPW {
 		t.Errorf("explicit password: %v", err)
 	}
-	if model.MonitorMessage(model.MsgTestPasswordRequired, "ru") != "Введите пароль." || model.MonitorMessage(model.MsgTestPasswordRequired, model.LangEN) != "Enter the password." {
-		t.Error("password message RU/EN")
+	if model.MonitorMessage(model.MsgTestPasswordRequired) != "Введите пароль." {
+		t.Error("password message")
 	}
 }
 

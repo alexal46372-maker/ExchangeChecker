@@ -72,7 +72,7 @@ func emailE2E(t *testing.T, noProfiles string) {
 	if err != nil || cfg.Config == nil {
 		t.Fatalf("get_config %+v %v", cfg, err)
 	}
-	ed := traysettings.NewEditor(model.LangRU, traysettings.Admin)
+	ed := traysettings.NewEditor(traysettings.Admin)
 	ed.LoadConfig(*cfg.Config, cfg.Revision)
 	if !ed.CanEditEmail() {
 		t.Fatal("email page not editable")
@@ -260,7 +260,7 @@ func TestCHK_SVC_09_EmailRecipientListAndErrors(t *testing.T) {
 	if m.Type != model.MsgError || m.ErrorKey != model.MsgEmailRecipientNotFound {
 		t.Fatalf("unknown id %+v", m)
 	}
-	if !strings.Contains(model.MonitorMessage(model.MsgEmailNoRecipients, model.LangRU), "Нет сохранённых получателей") {
+	if !strings.Contains(model.MonitorMessage(model.MsgEmailNoRecipients), "Нет сохранённых получателей") {
 		t.Fatal("RU text")
 	}
 }

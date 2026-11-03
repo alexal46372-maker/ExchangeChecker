@@ -52,7 +52,7 @@ func page(hwnd uintptr) Page { return Page(winapi.SendMessage(hwnd, MsgGetPage, 
 // Install → progress → Finish, the tray flag; Cancel → exit code 2.
 func TestCHK_SETUP_10_WizardUI(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "EC")
-	st := NewWizardState("en", "1.1.0", ModeFresh, "", dir, false, `C:\ProgramData\ExchangeChecker`, false)
+	st := NewWizardState("1.1.0", ModeFresh, "", dir, false, `C:\ProgramData\ExchangeChecker`, false)
 	ran := make(chan Options, 1)
 	done := make(chan WizardOutcome, 1)
 	go func() {
@@ -121,7 +121,7 @@ func TestCHK_SETUP_10_WizardUI(t *testing.T) {
 	}
 
 	// Cancel → exit code 2, nothing run
-	st2 := NewWizardState("ru", "1.1.0", ModeFresh, "", dir, false, "", false)
+	st2 := NewWizardState("1.1.0", ModeFresh, "", dir, false, "", false)
 	go func() {
 		out, _ := RunWizard(WizardConfig{State: st2, NoCancelConfirm: true,
 			Run: func(Options, func(string)) Result { t.Error("must not run"); return Result{} }})
@@ -143,7 +143,7 @@ func TestCHK_SETUP_10_UninstallConfirm(t *testing.T) {
 	done := make(chan res, 1)
 	run := func() {
 		go func() {
-			ok, p, err := ConfirmUninstall("en")
+			ok, p, err := ConfirmUninstall()
 			if err != nil {
 				t.Error(err)
 			}
@@ -186,7 +186,7 @@ func TestCHK_SETUP_10_UninstallConfirm(t *testing.T) {
 // downgrade: Next disabled on Welcome, Cancel → exit 3, nothing run.
 func TestCHK_SETUP_10_WizardUpgradeAndDowngrade(t *testing.T) {
 	for _, was := range []bool{true, false} {
-		st := NewWizardState("en", "1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, "", was)
+		st := NewWizardState("1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, "", was)
 		ran := make(chan Options, 1)
 		done := make(chan WizardOutcome, 1)
 		go func() {
@@ -217,7 +217,7 @@ func TestCHK_SETUP_10_WizardUpgradeAndDowngrade(t *testing.T) {
 		<-done
 	}
 
-	st := NewWizardState("en", "1.0.0", ModeDowngrade, "1.1.0", `C:\EC`, true, "", true)
+	st := NewWizardState("1.0.0", ModeDowngrade, "1.1.0", `C:\EC`, true, "", true)
 	done := make(chan WizardOutcome, 1)
 	go func() {
 		out, _ := RunWizard(WizardConfig{State: st,

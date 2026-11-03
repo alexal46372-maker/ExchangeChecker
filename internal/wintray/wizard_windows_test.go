@@ -142,7 +142,7 @@ func TestCHK_TRAY_30_Wizard(t *testing.T) {
 		t.Fatalf("db rows %d", l)
 	}
 	wd.click(t, idWizNext)
-	if wd.text() != i18n.T(i18n.KeyWizDBNone, i18n.RU) {
+	if wd.text() != i18n.T(i18n.KeyWizDBNone) {
 		t.Errorf("no db %q", wd.text())
 	}
 	wd.pick(idWizDBs, 1)
@@ -154,7 +154,7 @@ func TestCHK_TRAY_30_Wizard(t *testing.T) {
 		wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" || len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {
 		t.Fatalf("finish: tests %d chosen %d %q", svc.count("test"), wd.z.Chosen, wd.text())
 	}
-	if !strings.Contains(wd.text(), i18n.T(i18n.KeyWizTestOK, i18n.RU)) || !strings.Contains(wd.text(), "_Node10 (+1)") {
+	if !strings.Contains(wd.text(), i18n.T(i18n.KeyWizTestOK)) || !strings.Contains(wd.text(), "_Node10 (+1)") {
 		t.Errorf("result %q", wd.text())
 	}
 	if !wd.candsCtl[1].Hidden {
@@ -247,7 +247,7 @@ func TestCHK_TRAY_31_WizardDiagnosis(t *testing.T) {
 	wd.set(idWizLogin, "mon")
 	wd.click(t, idWizNext)
 	d := model.SQLDiagnoseCode(model.SQLCodeInstanceNotFound, "")
-	pumpUntil(t, "diagnosis", func() bool { return wd.idle() && strings.Contains(wd.text(), d.Title.RU) })
+	pumpUntil(t, "diagnosis", func() bool { return wd.idle() && strings.Contains(wd.text(), d.Title) })
 	if !strings.Contains(wd.text(), "instance_not_found") || !strings.Contains(wd.text(), "1. ") || !strings.Contains(wd.text(), "SQL9") {
 		t.Errorf("diagnosis %q", wd.text())
 	}
@@ -261,7 +261,7 @@ func TestCHK_TRAY_31_WizardDiagnosis(t *testing.T) {
 	w.click(t, idSetTest)
 	pumpUntil(t, "test diagnosis", func() bool { return w.testCancel == nil && w.diagnoses == 1 })
 	dt := model.SQLDiagnose(model.TestTimeout, model.MsgTestTimeout)
-	if st := w.statusText(); !strings.Contains(st, "timeout") || !strings.Contains(st, dt.Title.RU) || !strings.Contains(st, i18n.Message(model.MsgTestTimeout, i18n.RU)) {
+	if st := w.statusText(); !strings.Contains(st, "timeout") || !strings.Contains(st, dt.Title) || !strings.Contains(st, i18n.Message(model.MsgTestTimeout)) {
 		t.Errorf("test status %q", st)
 	}
 }
@@ -295,7 +295,7 @@ func TestCHK_TRAY_32_WizardGrant(t *testing.T) {
 	if !strings.Contains(clip[0], "mon") || !strings.Contains(clip[0], "ut") {
 		t.Errorf("script %q", clip[0])
 	}
-	if strings.Contains(wd.text(), clip[0]) || !strings.HasPrefix(wd.text(), i18n.T(i18n.KeyWizGrantCopied, i18n.RU)) {
+	if strings.Contains(wd.text(), clip[0]) || !strings.HasPrefix(wd.text(), i18n.T(i18n.KeyWizGrantCopied)) {
 		t.Errorf("result %q", wd.text())
 	}
 	w.cfg.clipboard = func(uintptr, string) error { return errors.New("busy clipboard") }
@@ -341,7 +341,7 @@ func TestCHK_TRAY_83_WizardLowScoreNotApplied(t *testing.T) {
 	if wd.z.Chosen != -1 || wd.w.ed.MapEdit != nil || winapi.IsWindowEnabled(wd.ctl[idWizSave]) {
 		t.Fatalf("low score applied: chosen %d %q", wd.z.Chosen, wd.text())
 	}
-	if wd.z.Problem == nil || wd.z.Problem.Code != traysettings.ProblemLowScore || !strings.Contains(wd.text(), i18n.T(i18n.KeyWizErrLowScore, i18n.RU)) {
+	if wd.z.Problem == nil || wd.z.Problem.Code != traysettings.ProblemLowScore || !strings.Contains(wd.text(), i18n.T(i18n.KeyWizErrLowScore)) {
 		t.Errorf("text %q", wd.text())
 	}
 	lb := wd.ctl[idWizCands]

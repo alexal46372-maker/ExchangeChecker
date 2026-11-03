@@ -360,7 +360,7 @@ func (m *Monitor) SaveProfile(p model.Profile, password string, clearPassword bo
 // CHK-CFG-08): copies connection, mapping and thresholds of profileID into
 // a new profile; never copies the password / secrets (HasPassword false,
 // NeedPassword true). newID empty = generate; if set must be free. newName
-// empty = "<old> (копия)" / "(copy)" from settings language. expectedRevision
+// empty = "<old> (копия)". expectedRevision
 // is mandatory.
 func (m *Monitor) CloneProfile(profileID, newID, newName, expectedRevision, account string) (model.SavedProfile, bool, error) {
 	if err := requireRevision(expectedRevision); err != nil {
@@ -410,12 +410,7 @@ func (m *Monitor) CloneProfile(profileID, newID, newName, expectedRevision, acco
 	dst.ID = newID
 	newName = strings.TrimSpace(newName)
 	if newName == "" {
-		st, _ := w.LoadSettings()
-		lang := st.Language
-		if lang != model.LangEN {
-			lang = model.LangRU
-		}
-		newName = model.DefaultCloneName(src.Name, lang)
+		newName = model.DefaultCloneName(src.Name)
 	}
 	dst.Name = newName
 	if err := dst.Validate(); err != nil {

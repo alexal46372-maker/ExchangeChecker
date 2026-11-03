@@ -8,7 +8,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-func label(key, lang string) string { return strings.TrimSuffix(i18n.T(key, lang), ":") }
+func label(key string) string { return strings.TrimSuffix(i18n.T(key), ":") }
 
 // TestCHK_TRAY_12_ProfileLimits — thresholds, timeouts and the server
 // preset are form fields: round trip, own values saved, values equal to
@@ -53,7 +53,7 @@ func TestCHK_TRAY_12_ProfileLimits(t *testing.T) {
 		}
 	}
 	// the editor shows the inherited general thresholds and follows them
-	e := NewEditor(i18n.RU, Admin)
+	e := NewEditor(Admin)
 	np := model.NewProfile("p2")
 	np.Server, np.Database, np.Login = "h", "d", "l"
 	e.LoadConfig(model.ConfigView{Settings: model.Settings{PollIntervalSec: 60, WarnMinutes: 40, ErrorMinutes: 80}, Profiles: []model.Profile{np}}, "r")
@@ -93,8 +93,8 @@ func TestCHK_TRAY_17_Defaults(t *testing.T) {
 	if model.DefaultConnectTimeoutSec != 15 || model.DefaultQueryTimeoutSec != 30 || model.DefaultWarnMinutes != 30 || model.DefaultErrorMinutes != 60 {
 		t.Error("defaults of model changed: update the texts / tests")
 	}
-	if i18n.T(i18n.KeySetPortCue, i18n.RU) != "1433 или пусто для SQL Browser" {
-		t.Errorf("port cue %q", i18n.T(i18n.KeySetPortCue, i18n.RU))
+	if i18n.T(i18n.KeySetPortCue) != "1433 или пусто для SQL Browser" {
+		t.Errorf("port cue %q", i18n.T(i18n.KeySetPortCue))
 	}
 }
 
@@ -123,41 +123,40 @@ func TestCHK_TRAY_13_TrustOnlyWithOn(t *testing.T) {
 // TestCHK_TRAY_14_ErrorTexts — validation texts name the window's labels,
 // never JSON names; the TLS texts of the service name existing controls.
 func TestCHK_TRAY_14_ErrorTexts(t *testing.T) {
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		e := adminEditor(savedSQL())
-		e.Lang = lang
 		e.Form.WarnMin, e.Form.ErrorMin = "50", "40"
 		_, pr := e.SaveRequest("")
 		if pr == nil || strings.Contains(pr.Text, "warnMinutes") || strings.Contains(pr.Text, "errorMinutes") ||
-			!strings.Contains(pr.Text, label(i18n.KeySetWarnMin, lang)) || !strings.Contains(pr.Text, label(i18n.KeySetErrorMin, lang)) {
-			t.Errorf("%s: pair text %+v", lang, pr)
+			!strings.Contains(pr.Text, label(i18n.KeySetWarnMin)) || !strings.Contains(pr.Text, label(i18n.KeySetErrorMin)) {
+			t.Errorf("%s: pair text %+v", i18n.RU, pr)
 		}
 		// the same reply of the service (general page) uses the general labels
 		e.settingsCtx = true
 		if txt := e.validationText([]string{"errorMinutes", model.ValGreaterThan, "warnMinutes", "30"}); strings.Contains(txt, "warnMinutes") ||
-			!strings.Contains(txt, label(i18n.KeyGenWarn, lang)) {
-			t.Errorf("%s: general text %q", lang, txt)
+			!strings.Contains(txt, label(i18n.KeyGenWarn)) {
+			t.Errorf("%s: general text %q", i18n.RU, txt)
 		}
 		e.settingsCtx = false
 		txt := e.validationText([]string{"encrypt", model.ValPresetConflict, "strict", "mssql2008"})
-		if strings.Contains(txt, "mssql2008") || !strings.Contains(txt, i18n.T(i18n.KeySetPreset2008, lang)) || !strings.Contains(txt, i18n.T(i18n.KeySetEncStrict, lang)) {
-			t.Errorf("%s: preset text %q", lang, txt)
+		if strings.Contains(txt, "mssql2008") || !strings.Contains(txt, i18n.T(i18n.KeySetPreset2008)) || !strings.Contains(txt, i18n.T(i18n.KeySetEncStrict)) {
+			t.Errorf("%s: preset text %q", i18n.RU, txt)
 		}
-		if txt := e.validationText([]string{"connectTimeoutSec", model.ValRange, "1", "600", "0"}); !strings.Contains(txt, label(i18n.KeySetConnTimeout, lang)) {
-			t.Errorf("%s: timeout text %q", lang, txt)
+		if txt := e.validationText([]string{"connectTimeoutSec", model.ValRange, "1", "600", "0"}); !strings.Contains(txt, label(i18n.KeySetConnTimeout)) {
+			t.Errorf("%s: timeout text %q", i18n.RU, txt)
 		}
 		// TLS messages name real labels of the window
 		want := map[string][]string{
-			model.MsgSQLTLSEnableTLS10:  {i18n.T(i18n.KeySetTLS10, lang)},
-			model.MsgSQLTLSLegacyFailed: {label(i18n.KeySetEncrypt, lang), i18n.T(i18n.KeySetEncDisable, lang)},
-			model.MsgSQLTLSCertificate: {i18n.T(i18n.KeySetTrust, lang), i18n.T(i18n.KeySetEncOn, lang),
-				i18n.T(i18n.KeySetEncOptional, lang)},
+			model.MsgSQLTLSEnableTLS10:  {i18n.T(i18n.KeySetTLS10)},
+			model.MsgSQLTLSLegacyFailed: {label(i18n.KeySetEncrypt), i18n.T(i18n.KeySetEncDisable)},
+			model.MsgSQLTLSCertificate: {i18n.T(i18n.KeySetTrust), i18n.T(i18n.KeySetEncOn),
+				i18n.T(i18n.KeySetEncOptional)},
 		}
 		for k, labels := range want {
-			msg := model.SQLMessage(k, lang)
+			msg := model.SQLMessage(k)
 			for _, l := range labels {
 				if !strings.Contains(msg, l) {
-					t.Errorf("%s %s: %q does not name %q", lang, k, msg, l)
+					t.Errorf("%s %s: %q does not name %q", i18n.RU, k, msg, l)
 				}
 			}
 		}

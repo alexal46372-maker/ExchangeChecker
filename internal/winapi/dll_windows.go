@@ -9,11 +9,10 @@ import (
 
 // kernel32 is a KnownDLL and is always mapped, so loading it by name is safe.
 var (
-	modkernel32                  = syscall.NewLazyDLL("kernel32.dll")
-	procGetSystemDirectoryW      = modkernel32.NewProc("GetSystemDirectoryW")
-	procLocalFree                = modkernel32.NewProc("LocalFree")
-	procMoveFileExW              = modkernel32.NewProc("MoveFileExW")
-	procGetUserDefaultUILanguage = modkernel32.NewProc("GetUserDefaultUILanguage")
+	modkernel32             = syscall.NewLazyDLL("kernel32.dll")
+	procGetSystemDirectoryW = modkernel32.NewProc("GetSystemDirectoryW")
+	procLocalFree           = modkernel32.NewProc("LocalFree")
+	procMoveFileExW         = modkernel32.NewProc("MoveFileExW")
 )
 
 // systemDirectory returns the System32 directory via GetSystemDirectoryW.

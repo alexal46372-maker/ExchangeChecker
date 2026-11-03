@@ -31,6 +31,7 @@ const (
 	MsgTelegramChatInvalid = "notify.telegram_chat_invalid"
 	MsgTelegramRateLimited = "notify.telegram_rate_limited"
 	MsgTelegramNetwork     = "notify.telegram_network"
+	MsgTelegramTLS         = "notify.telegram_tls"
 	MsgTelegramFailed      = "notify.telegram_failed"
 	MsgTelegramTimeout     = "notify.telegram_timeout"
 	MsgTelegramCanceled    = "notify.telegram_canceled"

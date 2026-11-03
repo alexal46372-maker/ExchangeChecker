@@ -2,15 +2,18 @@ package notify
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/hcwinnet"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
@@ -84,7 +87,7 @@ func TestCHK_SVC_10_TelegramScheduleAndRedaction(t *testing.T) {
 	}
 
 	// redaction: unreachable server
-	dead := NewTelegram(TelegramOptions{BaseURL: "http://127.0.0.1:1", Log: lg, Client: &http.Client{Timeout: time.Second}})
+	dead := NewTelegram(TelegramOptions{BaseURL: "http://127.0.0.1:1", Log: lg, Client: hcwinnet.NewClient(time.Second, nil)})
 	defer dead.Close()
 	err := dead.send(context.Background(), tgTok, "42", "x")
 	if err == nil || strings.Contains(err.Error(), tgTok) || tgErrKey(err) != model.MsgTelegramNetwork {
@@ -132,5 +135,23 @@ func TestCHK_IPC_17_TelegramTestValidation(t *testing.T) {
 	_, _ = tn.TelegramTest(ctx, tgTok, "42")
 	if _, err := tn.TelegramTest(ctx, tgTok, "42"); key(err) != model.MsgTelegramRateLimited {
 		t.Fatalf("rate limit: %v", err)
+	}
+}
+
+// TestCHK_SVC_10_TelegramUsesHcwinnet — the production client is the
+// shared hcwinnet transport (TLS >= 1.2), like Viber; no own net/http client.
+func TestCHK_SVC_10_TelegramUsesHcwinnet(t *testing.T) {
+	tn := NewTelegram(TelegramOptions{})
+	defer tn.Close()
+	c, ok := tn.o.Client.(*hcwinnet.Client)
+	if !ok || c.MinTLSVersion() < tls.VersionTLS12 {
+		t.Fatalf("client %T", tn.o.Client)
+	}
+	src, err := os.ReadFile("telegram.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(src), "http.Client") || strings.Contains(string(src), ".Do(") {
+		t.Fatal("telegram.go must send through hcwinnet")
 	}
 }

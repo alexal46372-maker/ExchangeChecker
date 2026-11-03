@@ -39,8 +39,15 @@ func (s *tgServer) handler(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)
 		return
 	}
-	_ = r.ParseForm()
-	s.texts = append(s.texts, r.PostForm.Get("chat_id")+"|"+r.PostForm.Get("text"))
+	var b struct {
+		ChatID string `json:"chat_id"`
+		Text   string `json:"text"`
+	}
+	if r.Header.Get("Content-Type") != "application/json" || json.NewDecoder(r.Body).Decode(&b) != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	s.texts = append(s.texts, b.ChatID+"|"+b.Text)
 	_, _ = io.WriteString(w, `{"ok":true,"result":{}}`)
 }
 

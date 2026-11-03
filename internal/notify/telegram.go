@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -13,11 +12,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/hcwinnet"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
 // Phase 13 (CHK-SVC-10 / CHK-IPC-17): Telegram notifications via the Bot
-// API sendMessage (stdlib net/http, timeouts). Alerts are queued
+// API sendMessage through internal/hcwinnet — the same HTTPS transport as
+// Viber (Go crypto/tls, TLS >= 1.2 independent of Schannel, system roots,
+// HTTPS_PROXY), timeouts, response size limit. Alerts are queued
 // asynchronously like Viber/email. The bot token is part of the URL path:
 // it is never logged and is redacted from every error text.
 
@@ -34,7 +36,7 @@ type TelegramOptions struct {
 	Store TelegramTokenStore
 	// BaseURL overrides TelegramAPIBase (tests: httptest server).
 	BaseURL string
-	Client  *http.Client // nil = Timeout 20s
+	Client  Poster // nil = hcwinnet.NewClient(20 s, system roots)
 	Lang    string
 	Log     Logger
 	Now     func() time.Time
@@ -76,7 +78,7 @@ func NewTelegram(o TelegramOptions) *TelegramNotifier {
 		o.BaseURL = TelegramAPIBase
 	}
 	if o.Client == nil {
-		o.Client = &http.Client{Timeout: 20 * time.Second}
+		o.Client = hcwinnet.NewClient(20*time.Second, nil)
 	}
 	n := &TelegramNotifier{o: o, settings: model.DefaultTelegramSettings(),
 		wake: make(chan struct{}, 1), stop: make(chan struct{})}
@@ -264,37 +266,32 @@ func redactToken(s, token string) string {
 
 // send posts one sendMessage. Errors never contain the token.
 func (n *TelegramNotifier) send(ctx context.Context, token, chatID, text string) error {
-	form := url.Values{"chat_id": {chatID}, "text": {text}}
+	body, _ := json.Marshal(map[string]string{"chat_id": chatID, "text": text})
 	u := strings.TrimRight(n.o.BaseURL, "/") + "/bot" + token + "/sendMessage"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(form.Encode()))
-	if err != nil {
-		return &tgError{model.MsgTelegramFailed, redactToken(err.Error(), token)}
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := n.o.Client.Do(req)
+	code, raw, err := n.o.Client.PostJSON(ctx, u, nil, body, 64<<10)
 	if err != nil {
 		key := model.MsgTelegramNetwork
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		switch {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			key = model.MsgTelegramTimeout
-		} else if errors.Is(ctx.Err(), context.Canceled) {
+		case errors.Is(ctx.Err(), context.Canceled):
 			key = model.MsgTelegramCanceled
+		case errors.Is(err, hcwinnet.ErrTLS):
+			key = model.MsgTelegramTLS
 		}
 		return &tgError{key, redactToken(err.Error(), token)}
 	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	var r struct {
 		OK          bool   `json:"ok"`
 		ErrorCode   int    `json:"error_code"`
 		Description string `json:"description"`
 	}
 	_ = json.Unmarshal(raw, &r)
-	if resp.StatusCode == http.StatusOK && r.OK {
+	if code == http.StatusOK && r.OK {
 		return nil
 	}
-	code := r.ErrorCode
-	if code == 0 {
-		code = resp.StatusCode
+	if r.ErrorCode != 0 {
+		code = r.ErrorCode
 	}
 	detail := redactToken(fmt.Sprintf("http %d: %s", code, r.Description), token)
 	switch code {

@@ -219,6 +219,8 @@ type IPCRequest struct {
 	// ChatID: telegram_test override (optional).
 	ChatID        string `json:"chatId,omitempty"`
 	ClearBotToken bool   `json:"clearBotToken,omitempty"`
+	// Enabled: set_enabled (phase 13, CHK-IPC-18); required there.
+	Enabled *bool `json:"enabled,omitempty"`
 	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
 	Level string `json:"level,omitempty"`
 	Viber bool   `json:"viber,omitempty"`
@@ -379,6 +381,8 @@ type IPCMessage struct {
 	EmailTest *EmailTestResult `json:"emailTest,omitempty"`
 	// TelegramTest: telegram_test_result (phase 13, CHK-IPC-17).
 	TelegramTest *TelegramTestResult `json:"telegramTest,omitempty"`
+	// Enabled: set_enabled reply / profile_enabled push (CHK-IPC-18).
+	Enabled *bool `json:"enabled,omitempty"`
 	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
 	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
 	// Summary: summary reply (phase 11, CHK-SVC-07).

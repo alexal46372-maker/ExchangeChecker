@@ -448,6 +448,50 @@ func (m *Monitor) CloneProfile(profileID, newID, newName, expectedRevision, acco
 
 // DeleteProfile implements ipc.ConfigManager (admin only): the profile,
 // its password, counters state, alerts and acknowledgements go.
+// SetEnabled implements ipc.ProfileEnabler (phase 13, CHK-MON-21):
+// flips profiles.json enabled of one profile and reloads at once — a
+// disabled profile's worker is cancelled (an in-flight poll is discarded,
+// no further checks or alerts); an enabled one starts polling.
+// expectedRevision is optional ("" = no conflict check).
+func (m *Monitor) SetEnabled(profileID string, enabled bool, expectedRevision, account string) (string, error) {
+	w := m.configWriter()
+	if w == nil {
+		return "", saveFailed(errNoStore)
+	}
+	m.cfgMu.Lock()
+	defer m.cfgMu.Unlock()
+	if expectedRevision != "" {
+		if err := m.checkRevisionLocked(w, expectedRevision); err != nil {
+			return "", err
+		}
+	}
+	ps, _, err := loadForWrite(w)
+	if err != nil {
+		return "", err
+	}
+	found, changed := false, false
+	for i := range ps {
+		if ps[i].ID == profileID {
+			found = true
+			changed = ps[i].Enabled != enabled
+			ps[i].Enabled = enabled
+		}
+	}
+	if !found || profileID == "" {
+		return "", ErrUnknownProfile
+	}
+	if changed {
+		if err := w.SaveProfiles(ps); err != nil {
+			return "", saveFailed(err)
+		}
+	}
+	rev := m.afterWriteLocked(w)
+	if changed {
+		m.configChanged(model.ConfigChange{Account: account, Action: model.CmdSetEnabled, ProfileID: profileID})
+	}
+	return rev, nil
+}
+
 func (m *Monitor) DeleteProfile(profileID, expectedRevision, account string) (string, error) {
 	if err := requireRevision(expectedRevision); err != nil {
 		return "", err

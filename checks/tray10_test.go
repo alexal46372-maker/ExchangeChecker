@@ -126,6 +126,8 @@ var winAPIMinVersion = map[string]float64{
 	"SetForegroundWindow": 5.0, "ShowWindow": 5.0, "TrackPopupMenuEx": 5.0,
 	// CHK-TRAY-91: menu click hook (Windows 2000+ / XP+)
 	"SetWindowsHookExW": 5.0, "UnhookWindowsHookEx": 5.0, "CallNextHookEx": 5.0, "MenuItemFromPoint": 5.0, "EndMenu": 5.0, "GetCurrentThreadId": 5.0,
+	// CHK-TRAY-96: volume slider in the menu (Windows 2000+)
+	"GetMenuItemRect": 5.0, "GetSysColor": 5.0, "SetCursorPos": 5.0,
 	// CHK-TRAY-95: full-screen flash overlay (Windows 2000+)
 	"SetLayeredWindowAttributes": 5.0, "TranslateMessage": 5.0,
 	"UnregisterClassW": 5.0,

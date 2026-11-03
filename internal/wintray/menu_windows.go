@@ -16,8 +16,9 @@ const squareSize = 16
 // bitmaps caches the colored squares (MENUITEMINFO.hbmpItem, 32-bit
 // premultiplied DIB — PLAN §12: no owner-draw).
 type bitmaps struct {
-	m      map[trayui.Color]uintptr
-	checks map[checkKey]uintptr
+	m        map[trayui.Color]uintptr
+	checks   map[checkKey]uintptr
+	speakers map[trayui.SpeakerLevel]uintptr // icons of the volume slider (CHK-TRAY-96)
 }
 
 func (b *bitmaps) get(c trayui.Color) uintptr {
@@ -45,7 +46,10 @@ func (b *bitmaps) free() {
 	for _, h := range b.checks {
 		winapi.DeleteObject(h)
 	}
-	b.m, b.checks = nil, nil
+	for _, h := range b.speakers {
+		winapi.DestroyIcon(h)
+	}
+	b.m, b.checks, b.speakers = nil, nil, nil
 }
 
 // menuText escapes '&' (menu mnemonic prefix).
@@ -70,6 +74,9 @@ func buildMenu(items []trayui.Item, bm *bitmaps) (uintptr, error) {
 			mii.TypeData = winapi.UTF16Ptr(menuText(it.Text))
 			if it.Disabled {
 				mii.State = winapi.MFS_DISABLED
+			}
+			if it.Volume { // owner-draw slider (CHK-TRAY-96)
+				mii.Type = winapi.MFT_OWNERDRAW
 			}
 			if it.Checked && !it.Check {
 				mii.State |= winapi.MFS_CHECKED
@@ -115,6 +122,7 @@ func trackMenu(owner uintptr, items []trayui.Item, bm *bitmaps) int {
 	// user clicks elsewhere (KB135788)
 	winapi.SetForegroundWindow(owner)
 	menuToggle.menu, menuToggle.items, menuToggle.cmd = hm, items, 0
+	menuVolume.index, menuVolume.drag = volumeIndex(items), false
 	hook, _ := winapi.SetMsgFilterHook(msgFilterCallback)
 	cmd := int(winapi.TrackPopupMenuEx(hm, winapi.TPM_RETURNCMD|winapi.TPM_RIGHTBUTTON|winapi.TPM_NONOTIFY, pt.X, pt.Y, owner))
 	if hook != 0 {
@@ -124,6 +132,7 @@ func trackMenu(owner uintptr, items []trayui.Item, bm *bitmaps) int {
 		cmd = menuToggle.cmd
 	}
 	menuToggle.menu, menuToggle.items, menuToggle.cmd = 0, nil, 0
+	menuVolume.index, menuVolume.drag = -1, false
 	winapi.PostMessage(owner, winapi.WM_NULL, 0, 0)
 	return cmd
 }
@@ -167,6 +176,9 @@ var msgFilterCallback = syscall.NewCallback(msgFilterProc)
 func msgFilterProc(code int32, wParam, lParam uintptr) uintptr {
 	if code == winapi.MSGF_MENU && lParam != 0 && menuToggle.menu != 0 {
 		m := winapi.HookMSG(lParam)
+		if volumeHook(m) {
+			return 1 // the slider drags, the menu stays open (CHK-TRAY-96)
+		}
 		if m.Message == winapi.WM_LBUTTONUP || m.Message == winapi.WM_LBUTTONDOWN {
 			if cmd := toggleAt(winapi.MenuItemFromPoint(0, menuToggle.menu, winapi.GetCursorPos())); cmd != 0 {
 				if m.Message == winapi.WM_LBUTTONUP {

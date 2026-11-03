@@ -154,6 +154,7 @@ type App struct {
 	// phase 10: sound profiles (CHK-TRAY-33..35), problem list, blinking
 	// icon and panel (CHK-TRAY-38/39)
 	soundPrefs  trayalert.SoundPrefs
+	volumeDraws int // WM_DRAWITEM of the menu volume slider (CHK-TRAY-96)
 	soundStored bool
 	soundWin    *soundWindow
 	volWin      *volumeWindow
@@ -457,6 +458,10 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 		a.taskbarRecreated++
 		a.addIcon()
 		return 0, true
+	case msg == winapi.WM_MEASUREITEM && measureVolumeItem(lp):
+		return 1, true
+	case msg == winapi.WM_DRAWITEM && a.onDrawItem(lp):
+		return 1, true
 	case msg == winapi.WM_TIMER && wp == blinkTimerID:
 		a.blinkTick()
 		return 0, true
@@ -567,7 +572,12 @@ func (a *App) RightMenu() []trayui.Item {
 func (a *App) ShowLeftMenu() { a.Command(trackMenu(a.hwnd, a.LeftMenu(), &a.squares)) }
 
 // ShowRightMenu shows Settings / About / Exit at the cursor.
-func (a *App) ShowRightMenu() { a.Command(trackMenu(a.hwnd, a.RightMenu(), &a.squares)) }
+func (a *App) ShowRightMenu() {
+	menuVolume.app = a
+	cmd := trackMenu(a.hwnd, a.RightMenu(), &a.squares)
+	menuVolume.app = nil
+	a.Command(cmd)
+}
 
 // Command executes a menu command.
 func (a *App) Command(cmd int) {

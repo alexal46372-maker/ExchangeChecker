@@ -60,6 +60,10 @@ type Item struct {
 	// the item (it also opens the points submenu) sends ID = ToggleCmd(i)
 	// unless ID is 0 (no profile_enabled / not elevated).
 	Check bool
+	// Volume (CHK-TRAY-96): the master volume slider (owner-draw item:
+	// speaker icon, track, «N %»); dragging on it changes the volume while
+	// the menu stays open.
+	Volume bool
 }
 
 // TimeLayout of menu times (UTC+3, PLAN §4.5).

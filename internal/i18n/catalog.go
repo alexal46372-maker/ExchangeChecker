@@ -1528,7 +1528,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyAlertUnmute:        "Звук вкл",
 	KeyTipAlertMute:       "Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком",
 	KeyMenuSound:          "Звук тревог…",
-	KeyMenuVolume:         "Громкость…",
+	KeyMenuVolume:         "Громкость",
 	KeyMenuPinHelp:        "Как закрепить значок…",
 	KeyPinHelpTitle:       "Значок Exchange Checker",
 	KeyPinHelpText:        "Чтобы значок всегда был виден рядом с часами (Windows 7):\r\n1. Нажмите стрелку «Отображать скрытые значки» слева от часов.\r\n2. Выберите «Настроить…».\r\n3. Для Exchange Checker выберите «Показать значок и уведомления».\r\n\r\nВ Windows 10 и 11: Параметры → Персонализация → Панель задач → Значки в углу панели задач — включите Exchange Checker.",

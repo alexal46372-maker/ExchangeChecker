@@ -82,3 +82,57 @@ func ExeICO() []byte {
 	}
 	return EncodeICO(ExeIconSizes, imgs)
 }
+
+// Notification-area icons (phase 13, CHK-TRAY-90): the application icon
+// whose arrows show the state. The blink logic (CHK-TRAY-38) is
+// unchanged: it alternates IconError / IconWarning with IconBlank, and
+// IconBlank is now the normal icon (green arrows) — so the arrows blink
+// red (error) or yellow (warning).
+const (
+	IcoTrayOK      = "tray_ok"
+	IcoTrayWarning = "tray_warning"
+	IcoTrayError   = "tray_error"
+	IcoTrayOffline = "tray_offline"
+	IcoTrayProblem = "tray_problem"
+	IcoTrayBlank   = "tray_blank"
+)
+
+// TrayIco is the .ico name of the notification icon of kind k.
+func TrayIco(k Icon) string {
+	switch k {
+	case IconOK:
+		return IcoTrayOK
+	case IconWarning:
+		return IcoTrayWarning
+	case IconError:
+		return IcoTrayError
+	case IconProblem:
+		return IcoTrayProblem
+	case IconBlank:
+		return IcoTrayBlank
+	}
+	return IcoTrayOffline
+}
+
+// TrayArrow is the arrow colour of the notification icon of kind k.
+func TrayArrow(k Icon) [3]uint8 {
+	switch k {
+	case IconOK, IconBlank:
+		return ArrowGreen
+	case IconWarning:
+		return ArrowYellow
+	case IconError:
+		return ArrowRed
+	}
+	return ArrowGrey
+}
+
+// TrayIconPixels is the notification icon of kind k: the application
+// icon with TrayArrow(k) arrows; IconProblem adds a red dot.
+func TrayIconPixels(k Icon, size int) []uint32 {
+	s := appShapes(TrayArrow(k))
+	if k == IconProblem {
+		s = append(s, shape{white, circle(37, 37, 11)}, shape{ArrowRed, circle(37, 37, 9)})
+	}
+	return render(s, size)
+}

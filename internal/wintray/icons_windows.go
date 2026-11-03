@@ -30,8 +30,9 @@ type icoKey struct {
 // icons is a cache of HICONs made from the embedded .ico files.
 type icons struct{ m map[icoKey]uintptr }
 
-// get is the tray icon of kind k (small icon size of the current DPI).
-func (ic *icons) get(k trayui.Icon) uintptr { return ic.ico(trayui.StateIco(k), px(icoSmall)) }
+// get is the notification icon of kind k (small icon size of the current
+// DPI): the app icon with state-coloured arrows (CHK-TRAY-90).
+func (ic *icons) get(k trayui.Icon) uintptr { return ic.ico(trayui.TrayIco(k), px(icoSmall)) }
 
 // ico is the HICON of name at size pixels (0 if it cannot be made).
 func (ic *icons) ico(name string, size int32) uintptr {

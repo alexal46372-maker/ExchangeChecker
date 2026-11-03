@@ -10,7 +10,7 @@ import (
 // its image at every size (and scales to a size it does not have).
 func TestCHK_TRAY_49_Icons(t *testing.T) {
 	names := IconNames()
-	if len(names) != 11 {
+	if len(names) != 17 {
 		t.Fatalf("names %v", names)
 	}
 	for _, n := range names {

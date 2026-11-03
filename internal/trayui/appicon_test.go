@@ -79,3 +79,43 @@ func equalPx(a, b []uint32) bool {
 	}
 	return true
 }
+
+// TestCHK_TRAY_90_TrayIconArrows — the notification icon is the app icon
+// (blue background) with state arrows: green OK and the blink «off»
+// phase, yellow warning, red error, grey offline; problem adds a red dot.
+func TestCHK_TRAY_90_TrayIconArrows(t *testing.T) {
+	want := map[Icon][3]uint8{IconOK: ArrowGreen, IconBlank: ArrowGreen, IconWarning: ArrowYellow,
+		IconError: ArrowRed, IconOffline: ArrowGrey, IconProblem: ArrowGrey}
+	names := map[string]bool{}
+	for k, arrow := range want {
+		for _, s := range IconSizes {
+			p := TrayIconPixels(k, s)
+			if c := px(p, s, s*20/48, s*17/48); c != [4]uint8{255, arrow[0], arrow[1], arrow[2]} {
+				t.Errorf("icon %d size %d: arrow %v want %v", k, s, c, arrow)
+			}
+			if c := px(p, s, s/2, 1); c != [4]uint8{255, AppBlue[0], AppBlue[1], AppBlue[2]} {
+				t.Errorf("icon %d size %d: background %v", k, s, c)
+			}
+		}
+		names[TrayIco(k)] = true
+		ico, err := IconICO(TrayIco(k))
+		if err != nil || len(ico) == 0 {
+			t.Fatalf("%s: %v", TrayIco(k), err)
+		}
+		committed, err := os.ReadFile(filepath.Join("..", "wintray", "icons", TrayIco(k)+".ico"))
+		if err != nil || !bytes.Equal(committed, ico) {
+			t.Errorf("%s.ico stale (go run ./tools/mkres): %v", TrayIco(k), err)
+		}
+	}
+	if len(names) != 6 {
+		t.Errorf("tray icon names %v", names)
+	}
+	if !equalPx(TrayIconPixels(IconBlank, 16), TrayIconPixels(IconOK, 16)) ||
+		!equalPx(TrayIconPixels(IconOK, 32), AppIconPixels(ArrowGreen, 32)) {
+		t.Error("blink off phase / OK must be the normal app icon")
+	}
+	p := TrayIconPixels(IconProblem, 48)
+	if c := px(p, 48, 37, 37); c != [4]uint8{255, ArrowRed[0], ArrowRed[1], ArrowRed[2]} {
+		t.Errorf("problem dot %v", c)
+	}
+}

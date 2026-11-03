@@ -65,7 +65,8 @@ func CardIco(c Color) string {
 // IconNames lists every generated icon, sorted.
 func IconNames() []string {
 	n := []string{IcoStateOK, IcoStateWarning, IcoStateError, IcoStateOffline, IcoStateProblem, IcoStateBlank,
-		IcoNavDatabases, IcoNavGeneral, IcoNavViber, IcoNavMode, IcoApp}
+		IcoNavDatabases, IcoNavGeneral, IcoNavViber, IcoNavMode, IcoApp,
+		IcoTrayOK, IcoTrayWarning, IcoTrayError, IcoTrayOffline, IcoTrayProblem, IcoTrayBlank}
 	sort.Strings(n)
 	return n
 }
@@ -98,6 +99,11 @@ func iconImage(name string, size int) ([]uint32, error) {
 		return IconPixels(IconProblem, size), nil
 	case IcoStateBlank:
 		return IconPixels(IconBlank, size), nil
+	}
+	for _, k := range []Icon{IconOK, IconWarning, IconError, IconOffline, IconProblem, IconBlank} {
+		if name == TrayIco(k) { // notification icon (CHK-TRAY-90)
+			return TrayIconPixels(k, size), nil
+		}
 	}
 	if name == IcoApp { // the main icon, green arrows (CHK-TRAY-89)
 		return AppIconPixels(ArrowGreen, size), nil

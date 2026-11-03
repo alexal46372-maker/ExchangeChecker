@@ -3,6 +3,7 @@
 package wintray
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -69,6 +70,8 @@ func dbItem(app *App) trayui.Item {
 // set_enabled at once (with expectedRevision) and updates the menu; a
 // conflict reverts the checkbox. No mute item is left in the menu.
 func TestCHK_TRAY_91_DatabaseCheckToggle(t *testing.T) {
+	runtime.LockOSThread() // windows and the message pump on one thread
+	defer runtime.UnlockOSThread()
 	svc := newCfgService()
 	en := &enablerService{cfgService: svc}
 	svc.handler = en
@@ -133,6 +136,8 @@ func TestCHK_TRAY_91_DatabaseCheckToggle(t *testing.T) {
 // maps a click on the item to its toggle command only for Check items with
 // a command.
 func TestCHK_TRAY_91_CheckBitmapAndHook(t *testing.T) {
+	runtime.LockOSThread() // windows and the message pump on one thread
+	defer runtime.UnlockOSThread()
 	var bm bitmaps
 	defer bm.free()
 	items := []trayui.Item{
@@ -172,6 +177,8 @@ func TestCHK_TRAY_91_CheckBitmapAndHook(t *testing.T) {
 // TestCHK_TRAY_91_NotElevatedNoToggle — without clientElevated (set_enabled
 // is admin-only) the check mark is drawn but sends nothing.
 func TestCHK_TRAY_91_NotElevatedNoToggle(t *testing.T) {
+	runtime.LockOSThread() // windows and the message pump on one thread
+	defer runtime.UnlockOSThread()
 	svc := newCfgService()
 	en := &enablerService{cfgService: svc}
 	svc.handler = en

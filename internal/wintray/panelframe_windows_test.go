@@ -35,9 +35,36 @@ func TestCHK_TRAY_92_PanelRedFrame(t *testing.T) {
 	winapi.RedrawWindow(p.hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_UPDATENOW|winapi.RDW_ALLCHILDREN)
 	pumpN(5)
 	winapi.DwmFlush()
-	w, h, px, ok := winapi.CaptureWindow(p.hwnd)
-	if !ok {
-		t.Fatal("capture")
+	// PrintWindow(PW_RENDERFULLCONTENT) returns black for a window DWM has
+	// not composed yet: classic WM_PRINT first, then full content, then the
+	// screen copy (the panel is shown topmost); the first capture with any
+	// painted pixel is checked.
+	var w, h int32
+	var px []byte
+	for i, capf := range []func(uintptr) (int32, int32, []byte, bool){
+		func(hw uintptr) (int32, int32, []byte, bool) { return winapi.CaptureWindowFlags(hw, 0) },
+		winapi.CaptureWindow,
+		winapi.CaptureScreen,
+	} {
+		cw, ch, cp, ok := capf(p.hwnd)
+		if !ok {
+			continue
+		}
+		painted := false
+		for j := 0; j+3 < len(cp); j += 4 {
+			if cp[j]|cp[j+1]|cp[j+2] != 0 {
+				painted = true
+				break
+			}
+		}
+		if painted {
+			w, h, px = cw, ch, cp
+			t.Logf("capture method %d", i)
+			break
+		}
+	}
+	if px == nil {
+		t.Fatal("capture: no painted pixels")
 	}
 	at := func(x, y int32) uint32 {
 		i := (y*w + x) * 4

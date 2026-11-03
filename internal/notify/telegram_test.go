@@ -38,13 +38,10 @@ func (l *capLog) Printf(f string, a ...interface{}) {
 // schedule window are dropped (not sent); network/HTTP errors never
 // contain the token.
 func TestCHK_SVC_10_TelegramScheduleAndRedaction(t *testing.T) {
-	var mu sync.Mutex
-	n := 0
+	got := make(chan struct{}, 16)
 	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		n++
-		mu.Unlock()
 		_, _ = io.WriteString(w, `{"ok":true}`)
+		got <- struct{}{}
 	}))
 	defer hs.Close()
 	// Saturday 12:00 local
@@ -56,34 +53,41 @@ func TestCHK_SVC_10_TelegramScheduleAndRedaction(t *testing.T) {
 		Schedule: model.ViberSchedule{Days: []int{1, 2, 3, 4, 5}, From: "08:30", To: "17:00"}}}
 	tn.Snapshot(model.StatusSnapshot{Settings: &set})
 	ev := model.AlertEvent{Kind: model.AlertKindAlert, From: model.LevelOK, To: model.LevelError, PointName: "Магазин 1"}
-	if model.ViberEventOf(ev) == "" {
-		t.Skip("event kind mapping changed")
+	if k := model.ViberEventOf(ev); k != model.ViberEventError {
+		t.Fatalf("event kind %q, want %q", k, model.ViberEventError)
 	}
+	// Saturday: outside the window → dropped synchronously, nothing queued
 	tn.Alert(ev)
-	time.Sleep(200 * time.Millisecond)
-	mu.Lock()
-	sent := n
-	mu.Unlock()
-	if sent != 0 || tn.Status().Dropped != 1 {
-		t.Fatalf("outside window: sent %d status %+v", sent, tn.Status())
+	if st := tn.Status(); st.Dropped != 1 || st.Queued != 0 {
+		t.Fatalf("outside window: %+v", st)
 	}
 	// Monday 12:00 → sent
 	now = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 	tn.Alert(ev)
-	deadline := time.Now().Add(3 * time.Second)
-	for tn.Status().Sent == 0 && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
+	select {
+	case <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("in window not sent")
 	}
-	if tn.Status().Sent != 1 {
-		t.Fatalf("in window not sent: %+v", tn.Status())
+	deadline := time.After(5 * time.Second)
+	for tn.Status().Sent != 1 {
+		select {
+		case <-deadline:
+			t.Fatalf("sent not counted: %+v", tn.Status())
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
-	// event filter
+	// event filter: unselected kind → not queued (synchronous decision)
 	set.Telegram.Events = []string{}
 	tn.Snapshot(model.StatusSnapshot{Settings: &set})
 	tn.Alert(ev)
-	time.Sleep(100 * time.Millisecond)
-	if tn.Status().Sent != 1 {
+	if st := tn.Status(); st.Queued != 0 || st.Sent != 1 {
+		t.Fatalf("unselected event queued: %+v", st)
+	}
+	select {
+	case <-got:
 		t.Fatal("unselected event sent")
+	default:
 	}
 
 	// redaction: unreachable server

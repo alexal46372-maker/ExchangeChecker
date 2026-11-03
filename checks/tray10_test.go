@@ -132,6 +132,8 @@ var winAPIMinVersion = map[string]float64{
 	"SetLayeredWindowAttributes": 5.0, "TranslateMessage": 5.0,
 	"UnregisterClassW": 5.0,
 	// phase 6b alert window and sound (CHK-TRAY-03)
+	// CHK-TRAY-97: last fallback of «Тон» (Windows 2000+)
+	"MessageBeep": 5.0,
 	"Beep": 5.0, "SetWindowTextW": 5.0, "EnableWindow": 5.0, "IsWindowEnabled": 5.0, "IsWindowVisible": 5.0,
 	"LoadIconW": 5.0, "SetWindowPos": 5.0, "FlashWindowEx": 5.0, "GetForegroundWindow": 5.0,
 	// phase 6c settings window (CHK-TRAY-04/05/06)

@@ -74,7 +74,7 @@ func StepIndex(p Page) int {
 	}
 }
 
-// StepKeys are catalog keys for the brand-panel step list (RU/EN).
+// StepKeys are catalog keys for the brand-panel step list.
 var StepKeys = []string{
 	"setup.step.welcome",
 	"setup.step.folder",

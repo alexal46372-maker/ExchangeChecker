@@ -27,16 +27,16 @@ func csvCell(s string) string {
 	return s
 }
 
-func headers(lang string) []string {
+func headers() []string {
 	h := make([]string, len(StatusColumns))
 	for i, k := range StatusColumns {
-		h[i] = i18n.T(k, lang)
+		h[i] = i18n.T(k)
 	}
 	return h
 }
 
 // ExportCSV renders rows as CSV.
-func ExportCSV(rows []StatusRow, lang string) []byte {
+func ExportCSV(rows []StatusRow) []byte {
 	var b bytes.Buffer
 	b.WriteString("\uFEFF")
 	line := func(cells []string) {
@@ -48,7 +48,7 @@ func ExportCSV(rows []StatusRow, lang string) []byte {
 		}
 		b.WriteString("\r\n")
 	}
-	line(headers(lang))
+	line(headers())
 	for _, r := range rows {
 		line(r.Cells())
 	}
@@ -58,15 +58,15 @@ func ExportCSV(rows []StatusRow, lang string) []byte {
 // ExportHTML renders rows as an HTML page; at is the export time (UTC+3).
 // Border / HeaderRow / pale row colours come from the active chrome theme
 // (CHK-TRAY-51 / CHK-TRAY-56).
-func ExportHTML(rows []StatusRow, lang string, at time.Time) []byte {
+func ExportHTML(rows []StatusRow, at time.Time) []byte {
 	var b bytes.Buffer
 	e := html.EscapeString
-	title := i18n.T(i18n.KeyStTitle, lang) + " — " + i18n.T(i18n.KeyAppName, lang)
-	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + e(lang) + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
+	title := i18n.T(i18n.KeyStTitle) + " — " + i18n.T(i18n.KeyAppName)
+	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + i18n.RU + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
 	b.WriteString("<style>body{font-family:Segoe UI,Arial,sans-serif;font-size:13px}table{border-collapse:collapse}" +
 		"td,th{border:1px solid "+ChromeHTML(ChromeBorder())+";padding:3px 6px;text-align:left}th{background:"+ChromeHTML(ChromeHeaderRow())+"}</style></head><body>\n")
-	b.WriteString("<h1>" + e(title) + "</h1>\n<p>" + e(i18n.T(i18n.KeyStExportedAt, lang)) + " " + e(at.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n<table>\n<tr>")
-	for _, h := range headers(lang) {
+	b.WriteString("<h1>" + e(title) + "</h1>\n<p>" + e(i18n.T(i18n.KeyStExportedAt)) + " " + e(at.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n<table>\n<tr>")
+	for _, h := range headers() {
 		b.WriteString("<th>" + e(h) + "</th>")
 	}
 	b.WriteString("</tr>\n")

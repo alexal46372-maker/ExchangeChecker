@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
@@ -43,7 +42,7 @@ func startP10App(t *testing.T, svc *alertService, b *testBeeper, store SoundStor
 	t.Cleanup(func() { srv.Close() })
 	var notes []string
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
 		Beeper: b, SoundStore: store, Notify: func(s string, _ bool) { notes = append(notes, s) },
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
@@ -249,8 +248,8 @@ func TestCHK_TRAY_37_IconAndHelp(t *testing.T) {
 	if len(*notes) != 1 || !strings.Contains((*notes)[0], "Настроить") {
 		t.Fatalf("notes %q", *notes)
 	}
-	if !strings.Contains(PinHelpText(i18n.EN), "Customize") {
-		t.Error("EN note")
+	if !strings.Contains(PinHelpText(), "Настроить") {
+		t.Error("pin help text")
 	}
 }
 
@@ -294,6 +293,44 @@ func TestCHK_TRAY_38_BlinkIcon(t *testing.T) {
 	}
 }
 
+// TestCHK_TRAY_90_TrayIconBlinkArrows — the notification icon handle is
+// the app icon with state arrows; the existing blink alternates the
+// yellow / red arrows with the normal (green) icon.
+func TestCHK_TRAY_90_TrayIconBlinkArrows(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := &alertService{}
+	svc.set(1, ptAlert("a", "Склад", "k1", model.LevelWarning))
+	app, srv, _ := startP10App(t, svc, &testBeeper{}, nil)
+	pumpUntil(t, "warning", func() bool { return app.Blink() == trayalert.BlinkYellow })
+	yellow, green := app.icons.ico(trayui.IcoTrayWarning, px(icoSmall)), app.icons.ico(trayui.IcoTrayBlank, px(icoSmall))
+	if yellow == 0 || green == 0 || yellow == green {
+		t.Fatalf("icons %x %x", yellow, green)
+	}
+	if n := app.nid(); n.Icon != yellow {
+		t.Errorf("on phase icon %x want yellow %x", n.Icon, yellow)
+	}
+	app.blinkTick()
+	if n := app.nid(); n.Icon != green {
+		t.Errorf("off phase icon %x want normal %x", n.Icon, green)
+	}
+	app.blinkTick()
+	srv.PublishStatus(svc.set(2, ptAlert("a", "Склад", "k1", model.LevelError)))
+	pumpUntil(t, "error", func() bool { return app.Blink() == trayalert.BlinkRed })
+	if n := app.nid(); n.Icon != app.icons.ico(trayui.IcoTrayError, px(icoSmall)) || app.blinkOff {
+		t.Errorf("red phase icon %x", n.Icon)
+	}
+	app.blinkTick()
+	if n := app.nid(); n.Icon != green {
+		t.Error("red blink off phase must be the normal icon")
+	}
+	srv.PublishStatus(svc.set(3))
+	pumpUntil(t, "fine", func() bool { return app.Blink() == trayalert.BlinkNone })
+	if n := app.nid(); n.Icon != app.icons.get(app.Indicator().Icon) {
+		t.Error("steady icon")
+	}
+}
+
 // TestCHK_TRAY_39_Panel — the topmost panel by the clock: no caption or
 // close button, never activated, lists the problems and disappears at
 // once on recovery.
@@ -325,7 +362,7 @@ func TestCHK_TRAY_39_Panel(t *testing.T) {
 func TestCHK_TRAY_34_SoundIsolation(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
 		Session: trayipc.Options{Dial: func(context.Context) (io.ReadWriteCloser, error) { return nil, io.EOF }}})
 	if err != nil {
 		t.Fatal(err)
@@ -395,7 +432,7 @@ func TestCHK_TRAY_36_AlertRepeatPush(t *testing.T) {
 	srv := ipc.NewServer(svc, nil)
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true, Beeper: &testBeeper{},
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true, Beeper: &testBeeper{},
 		Session: trayipc.Options{Dial: func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() },
 			BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {

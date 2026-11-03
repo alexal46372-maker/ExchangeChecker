@@ -58,7 +58,7 @@ func TestCHK_TRAY_07_ApplyInvalidMapping(t *testing.T) {
 	// tables: a column without a table — the table box is highlighted
 	dd.selKind(traysettings.KindTables)
 	dd.set(idDiscSend, "_Fld90")
-	if dd.text(idDiscSource) != i18n.T(i18n.KeyDiscSourceManual, i18n.RU) {
+	if dd.text(idDiscSource) != i18n.T(i18n.KeyDiscSourceManual) {
 		t.Errorf("hand-typed column: source %q", dd.text(idDiscSource))
 	}
 	dd.click(t, idDiscApply)
@@ -126,7 +126,7 @@ func TestCHK_TRAY_07_DialogQuestions(t *testing.T) {
 	}
 	winapi.SendMessage(dd.hwnd, winapi.WM_COMMAND, winapi.IDCANCEL, 0)
 	winapi.SendMessage(dd.hwnd, winapi.WM_CLOSE, 0, 0)
-	if w.disc == nil || len(conf.texts) != 4 || conf.texts[3] != i18n.T(i18n.KeyDiscConfirmClose, i18n.RU) {
+	if w.disc == nil || len(conf.texts) != 4 || conf.texts[3] != i18n.T(i18n.KeyDiscConfirmClose) {
 		t.Fatalf("close refused: open %v questions %q", w.disc != nil, conf.texts)
 	}
 	// a search reply after the user typed: edits kept, nothing selected
@@ -166,7 +166,7 @@ func TestCHK_TRAY_07_MergeConfirm(t *testing.T) {
 	app := startCfgApp(t, ds.cfgService, true, nil, conf)
 	w := openAdmin(t, app)
 	dd := openDisc(t, w)
-	if dd.text(idDiscTable) != "_NODE40" || dd.text(idDiscSource) != i18n.T(i18n.KeyDiscSourceManual, i18n.RU) {
+	if dd.text(idDiscTable) != "_NODE40" || dd.text(idDiscSource) != i18n.T(i18n.KeyDiscSourceManual) {
 		t.Errorf("own mapping: %q %q", dd.text(idDiscTable), dd.text(idDiscSource))
 	}
 	dd.click(t, idDiscFind)
@@ -210,7 +210,7 @@ func TestCHK_TRAY_07_ReconnectKeepsMapping(t *testing.T) {
 		t.Fatal("reload not started")
 	}
 	dd.click(t, idDiscApply) // busy: refused, the dialog stays
-	if w.disc == nil || w.ed.MapEdit != nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscBusy, i18n.RU) {
+	if w.disc == nil || w.ed.MapEdit != nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscBusy) {
 		t.Fatalf("apply while busy: %q", dd.text(idDiscResult))
 	}
 	// an edit made while get_config is in flight (as if applied)
@@ -221,7 +221,7 @@ func TestCHK_TRAY_07_ReconnectKeepsMapping(t *testing.T) {
 	ds.mu.Unlock()
 	close(hold)
 	pumpUntil(t, "get_config", func() bool { return ds.count("get") == gets+1 && !w.busy })
-	if w.ed.MapEdit == nil || *w.ed.MapEdit != m || w.ed.Revision != "r1" || w.statusText() != i18n.T(i18n.KeySetChangedOffline, i18n.RU) {
+	if w.ed.MapEdit == nil || *w.ed.MapEdit != m || w.ed.Revision != "r1" || w.statusText() != i18n.T(i18n.KeySetChangedOffline) {
 		t.Errorf("edit lost: mapEdit %v rev %q status %q", w.ed.MapEdit != nil, w.ed.Revision, w.statusText())
 	}
 	// Apply now works; a further reconnection only checks the revision
@@ -250,7 +250,7 @@ func TestCHK_TRAY_09_AutostartAfterReconnect(t *testing.T) {
 	app := startCfgApp(t, svc, true, &fakeElevator{})
 	w := openAdmin(t, app)
 	w.setPage(1)
-	if got := w.text(idGenAutostartErr); got != i18n.T(i18n.KeyAutostartErrAccess, i18n.RU) {
+	if got := w.text(idGenAutostartErr); got != i18n.T(i18n.KeyAutostartErrAccess) {
 		t.Fatalf("autostart error %q", got)
 	}
 	gets := svc.count("get")
@@ -289,7 +289,7 @@ func TestCHK_TRAY_07_TimeoutLateReply(t *testing.T) {
 	ds.setBlock(true)
 	dd.click(t, idDiscFind)
 	pumpUntil(t, "timeout", func() bool { return dd.cancel == nil && dd.text(idDiscResult) != "" })
-	if dd.text(idDiscResult) != i18n.Message(model.MsgDiscoverTimeout, i18n.RU) {
+	if dd.text(idDiscResult) != i18n.Message(model.MsgDiscoverTimeout) {
 		t.Errorf("timeout text %q", dd.text(idDiscResult))
 	}
 	ds.setBlock(false)
@@ -301,7 +301,7 @@ func TestCHK_TRAY_07_TimeoutLateReply(t *testing.T) {
 	ds.dmu.Unlock()
 	dd.click(t, idDiscFind)
 	pumpUntil(t, "failed", func() bool { n, _ := ds.n(); return n == 2 && dd.cancel == nil })
-	if got := dd.text(idDiscResult); got != i18n.Message(model.MsgSQLTLSEnableTLS10, i18n.RU) || !strings.Contains(got, "TLS 1.0") {
+	if got := dd.text(idDiscResult); got != i18n.Message(model.MsgSQLTLSEnableTLS10) || !strings.Contains(got, "TLS 1.0") {
 		t.Errorf("failed text %q", got)
 	}
 
@@ -372,9 +372,9 @@ func TestCHK_TRAY_07_SecondSettingsAndLayout(t *testing.T) {
 		t.Errorf("dialog outside the work area %+v: %d,%d %dx%d", real, wx, wy, ww, wh)
 	}
 	// «Время обмена (UTC+3):» / «Exchange time (UTC+3):» fit their label (≈6 px a character)
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		if n := len([]rune(i18n.T(i18n.KeyDiscTime, lang))); n*6 > 147 {
-			t.Errorf("%s time label too long: %d characters", lang, n)
+	{
+		if n := len([]rune(i18n.T(i18n.KeyDiscTime))); n*6 > 147 {
+			t.Errorf("%s time label too long: %d characters", i18n.RU, n)
 		}
 	}
 }
@@ -431,11 +431,11 @@ func TestCHK_TRAY_07_SelectRace(t *testing.T) {
 	}
 	winapi.SendMessage(dd.ctl[idDiscList], winapi.LB_SETCURSEL, 1, 0)
 	dd.command(idDiscList, winapi.LBN_SELCHANGE) // «Да»
-	if len(conf.texts) != 1 || conf.texts[0] != i18n.T(i18n.KeyDiscConfirmOverwrite, i18n.RU) {
+	if len(conf.texts) != 1 || conf.texts[0] != i18n.T(i18n.KeyDiscConfirmOverwrite) {
 		t.Fatalf("questions %q", conf.texts)
 	}
 	if dd.d.Sel != -1 || dd.text(idDiscTable) == "_Node88" || dd.text(idDiscPlanLabel) != "hand edit" ||
-		dd.text(idDiscResult) != i18n.T(i18n.KeyDiscListChanged, i18n.RU) {
+		dd.text(idDiscResult) != i18n.T(i18n.KeyDiscListChanged) {
 		t.Errorf("stale choice applied: sel %d table %q label %q result %q", dd.d.Sel, dd.text(idDiscTable), dd.text(idDiscPlanLabel), dd.text(idDiscResult))
 	}
 	if n := winapi.SendMessage(dd.ctl[idDiscList], winapi.LB_GETCOUNT, 0, 0); n != 2 || dd.d.Candidates[1].Table != "_Node88" {
@@ -479,7 +479,7 @@ func TestCHK_TRAY_07_ApplyRaceConfig(t *testing.T) {
 	if len(conf.texts) != 1 || !strings.Contains(conf.texts[0], "Старый") {
 		t.Fatalf("questions %q", conf.texts)
 	}
-	if w.disc == nil || w.ed.MapEdit != nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscConfigChanged, i18n.RU) {
+	if w.disc == nil || w.ed.MapEdit != nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscConfigChanged) {
 		t.Fatalf("applied over a changed profile: open %v mapEdit %v result %q", w.disc != nil, w.ed.MapEdit != nil, dd.text(idDiscResult))
 	}
 	if w.ed.Revision != "r7" || w.ed.EffectiveMapping() != other {

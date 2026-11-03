@@ -4,20 +4,6 @@ package model
 // CHK-SQL-01/04): defined here, without the SQL driver, so the service
 // can send them to the tray over IPC; sqlcheck delegates to them.
 
-// LocalizedText is a RU/EN text pair (JSON for IPC).
-type LocalizedText struct {
-	RU string `json:"ru"`
-	EN string `json:"en"`
-}
-
-// In returns the text in lang ("en", anything else = "ru").
-func (t LocalizedText) In(lang string) string {
-	if lang == LangEN {
-		return t.EN
-	}
-	return t.RU
-}
-
 // sql.* message keys (sqlcheck.Error.Key, ProfileSnapshot.Warnings).
 const (
 	// MsgSQLTLSEnableTLS10: the TLS handshake failed and the profile still
@@ -88,52 +74,42 @@ const (
 	SQLTypesBinary4     = "binary(4)"
 )
 
-var sqlMessages = map[string]LocalizedText{
+var sqlMessages = map[string]string{
 	// The texts name the real controls of the tray settings window
 	// (phase 8, CHK-TRAY-14): «Шифрование», «Тип сервера», the «Разрешить
 	// TLS 1.0 (SQL Server 2008)» and «Доверять сертификату сервера без
 	// проверки» check boxes (internal/i18n set.*).
-	MsgSQLTLSEnableTLS10: {
-		"Не удалось установить TLS-соединение с SQL Server. Для SQL Server 2005/2008 без обновлений TLS 1.2 включите флажок «Разрешить TLS 1.0 (SQL Server 2008)» (его включает и «Тип сервера: SQL Server 2008 / 2008 R2»).",
-		"The TLS handshake with SQL Server failed. For SQL Server 2005/2008 without the TLS 1.2 updates, enable TLS 1.0 with the \"Allow TLS 1.0 (SQL Server 2008)\" check box (\"Server type: SQL Server 2008 / 2008 R2\" turns it on as well).",
-	},
-	MsgSQLTLSLegacyFailed: {
-		"TLS-соединение с SQL Server не установлено даже с TLS 1.0 (нет общего набора шифров или протокола). Установите на сервер обновление TLS 1.2 либо выберите «Шифрование: Без шифрования» (данные и логин передаются без TLS, пароль SQL фактически открытым текстом).",
-		"The TLS handshake with SQL Server failed even with TLS 1.0 (no common cipher suite or protocol). Install the TLS 1.2 update on the server or choose \"Encryption: No encryption\" (no TLS for data and login; the SQL password is effectively sent in clear text).",
-	},
-	MsgSQLTLSCertificate: {
-		"Сертификат SQL Server не прошёл проверку. При «Шифрование: Весь сеанс (TLS)» включите флажок «Доверять сертификату сервера без проверки» или выберите «Шифрование: Только вход, если сервер умеет TLS» (сертификат не проверяется).",
-		"The SQL Server certificate was rejected. With \"Encryption: Whole session (TLS)\" check \"Trust the server certificate without validation\" or choose \"Encryption: Login only, if the server supports TLS\" (the certificate is not validated).",
-	},
-	MsgSQLPresetMSSQL2008: {
-		"SQL Server 2008: все запросы совместимы с уровнем 100. По умолчанию подключение без шифрования. Если включить шифрование, а на сервере нет обновлений TLS 1.2, нужен TLS 1.0 (пресет разрешает его); Go предложит AES-CBC-SHA или 3DES, RC4 не поддерживается.",
-		"SQL Server 2008: every query is compatible with level 100. By default the connection is not encrypted. If encryption is turned on and the server lacks the TLS 1.2 updates, TLS 1.0 is needed (the preset allows it); Go offers AES-CBC-SHA or 3DES, RC4 is not supported.",
-	},
-	MsgSQLWarnPlaintextLogin: {
-		"Шифрование отключено: пароль SQL передаётся по сети практически открытым текстом (обратимая маскировка TDS). Рекомендуется Windows-аутентификация или отдельный логин только с ролью db_datareader.",
-		"Encryption is disabled: the SQL password travels over the network almost in plain text (reversible TDS scrambling). Use Windows authentication or a dedicated login with the db_datareader role only.",
-	},
-	ValSQLManualEmpty:     {"Поле «{0}»: ручной SQL пуст.", "Field \"{0}\": the manual SQL is empty."},
-	ValSQLManualNotSelect: {"Поле «{0}»: нужен один запрос SELECT (или WITH … SELECT).", "Field \"{0}\": a single SELECT (or WITH ... SELECT) statement is required."},
-	ValSQLManualMulti:     {"Поле «{0}»: допускается только один запрос.", "Field \"{0}\": only one statement is allowed."},
-	ValSQLManualLiteral:   {"Поле «{0}»: не закрыта строка, [имя] или \"имя\".", "Field \"{0}\": unterminated string, [identifier] or \"identifier\"."},
-	ValSQLManualForbidden: {"Поле «{0}»: запрос должен только читать данные; недопустимое слово {2}.", "Field \"{0}\": the query must be read-only; forbidden keyword {2}."},
-	ValSQLManualCompat2008: {"Поле «{0}»: конструкции новее SQL Server 2008 (уровень совместимости 100): {2}. Используйте TOP, ROW_NUMBER() OVER (PARTITION BY … ORDER BY …), CASE, CONVERT, + для строк.",
-		"Field \"{0}\": T-SQL newer than SQL Server 2008 (compatibility level 100): {2}. Use TOP, ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...), CASE, CONVERT, + for strings."},
-	ValSQLManualColumns:    {"Поле «{0}»: запрос должен вернуть 3 столбца (точка, последняя отправка, последний приём), вернул {2}.", "Field \"{0}\": the query must return 3 columns (point, last send, last recv), it returned {2}."},
-	ValSQLManualValueType:  {"Поле «{0}»: столбец {2} должен быть датой/временем (получено {3}).", "Field \"{0}\": column {2} must be a date/time (got {3})."},
-	ValSQLTableNotFound:    {"Поле «{0}»: таблица {2} не найдена.", "Field \"{0}\": table {2} not found."},
-	ValSQLTableAmbiguous:   {"Поле «{0}»: таблица {2} есть в нескольких схемах, укажите схему.", "Field \"{0}\": table {2} exists in several schemas, set the schema."},
-	ValSQLColumnNotFound:   {"Поле «{0}»: в таблице {2} нет столбца {3}.", "Field \"{0}\": table {2} has no column {3}."},
-	ValSQLColumnType:       {"Поле «{0}»: столбец {2}.{3} имеет тип {4}, нужен {5}.", "Field \"{0}\": column {2}.{3} is {4}, want {5}."},
-	ValSQLLinkTypeMismatch: {"Поле «{0}»: типы столбцов связи различаются: {2} — {3}, {4} — {5}.", "Field \"{0}\": the link columns have different types: {2} is {3}, {4} is {5}."},
-	ValSQLNoTimestamp:      {"Поле «{0}»: укажите столбец времени отправки или приёма.", "Field \"{0}\": set the last send or last recv column."},
-	ValSQLIdentifier:       {"Поле «{0}»: недопустимое имя ({2}; не длиннее {3} символов, без NUL).", "Field \"{0}\": invalid name ({2}; at most {3} characters, no NUL)."},
-	ValSQLComment: {"Поле «{0}»: комментарии (-- и /* */) в ручном SQL не допускаются, удалите их.",
-		"Field \"{0}\": comments (-- and /* */) are not allowed in manual SQL, remove them."},
-	ValSQLManualHint: {"Поле «{0}»: недопустимая подсказка {2}; разрешены только WITH (NOLOCK), READUNCOMMITTED, NOWAIT (подсказки блокировок мешают работе 1С).",
-		"Field \"{0}\": hint {2} is not allowed; only WITH (NOLOCK), READUNCOMMITTED, NOWAIT are allowed (locking hints would block 1C users)."},
-	ValSQLManualOption: {"Поле «{0}»: OPTION (…) в ручном SQL не допускается.", "Field \"{0}\": OPTION (...) is not allowed in manual SQL."},
+	MsgSQLTLSEnableTLS10: "Не удалось установить TLS-соединение с SQL Server. Для SQL Server 2005/2008 без обновлений TLS 1.2 включите флажок «Разрешить TLS 1.0 (SQL Server 2008)» (его включает и «Тип сервера: SQL Server 2008 / 2008 R2»).",
+
+	MsgSQLTLSLegacyFailed: "TLS-соединение с SQL Server не установлено даже с TLS 1.0 (нет общего набора шифров или протокола). Установите на сервер обновление TLS 1.2 либо выберите «Шифрование: Без шифрования» (данные и логин передаются без TLS, пароль SQL фактически открытым текстом).",
+
+	MsgSQLTLSCertificate: "Сертификат SQL Server не прошёл проверку. При «Шифрование: Весь сеанс (TLS)» включите флажок «Доверять сертификату сервера без проверки» или выберите «Шифрование: Только вход, если сервер умеет TLS» (сертификат не проверяется).",
+
+	MsgSQLPresetMSSQL2008: "SQL Server 2008: все запросы совместимы с уровнем 100. По умолчанию подключение без шифрования. Если включить шифрование, а на сервере нет обновлений TLS 1.2, нужен TLS 1.0 (пресет разрешает его); Go предложит AES-CBC-SHA или 3DES, RC4 не поддерживается.",
+
+	MsgSQLWarnPlaintextLogin: "Шифрование отключено: пароль SQL передаётся по сети практически открытым текстом (обратимая маскировка TDS). Рекомендуется Windows-аутентификация или отдельный логин только с ролью db_datareader.",
+
+	ValSQLManualEmpty:      "Поле «{0}»: ручной SQL пуст.",
+	ValSQLManualNotSelect:  "Поле «{0}»: нужен один запрос SELECT (или WITH … SELECT).",
+	ValSQLManualMulti:      "Поле «{0}»: допускается только один запрос.",
+	ValSQLManualLiteral:    "Поле «{0}»: не закрыта строка, [имя] или \"имя\".",
+	ValSQLManualForbidden:  "Поле «{0}»: запрос должен только читать данные; недопустимое слово {2}.",
+	ValSQLManualCompat2008: "Поле «{0}»: конструкции новее SQL Server 2008 (уровень совместимости 100): {2}. Используйте TOP, ROW_NUMBER() OVER (PARTITION BY … ORDER BY …), CASE, CONVERT, + для строк.",
+
+	ValSQLManualColumns:    "Поле «{0}»: запрос должен вернуть 3 столбца (точка, последняя отправка, последний приём), вернул {2}.",
+	ValSQLManualValueType:  "Поле «{0}»: столбец {2} должен быть датой/временем (получено {3}).",
+	ValSQLTableNotFound:    "Поле «{0}»: таблица {2} не найдена.",
+	ValSQLTableAmbiguous:   "Поле «{0}»: таблица {2} есть в нескольких схемах, укажите схему.",
+	ValSQLColumnNotFound:   "Поле «{0}»: в таблице {2} нет столбца {3}.",
+	ValSQLColumnType:       "Поле «{0}»: столбец {2}.{3} имеет тип {4}, нужен {5}.",
+	ValSQLLinkTypeMismatch: "Поле «{0}»: типы столбцов связи различаются: {2} — {3}, {4} — {5}.",
+	ValSQLNoTimestamp:      "Поле «{0}»: укажите столбец времени отправки или приёма.",
+	ValSQLIdentifier:       "Поле «{0}»: недопустимое имя ({2}; не длиннее {3} символов, без NUL).",
+	ValSQLComment:          "Поле «{0}»: комментарии (-- и /* */) в ручном SQL не допускаются, удалите их.",
+
+	ValSQLManualHint: "Поле «{0}»: недопустимая подсказка {2}; разрешены только WITH (NOLOCK), READUNCOMMITTED, NOWAIT (подсказки блокировок мешают работе 1С).",
+
+	ValSQLManualOption: "Поле «{0}»: OPTION (…) в ручном SQL не допускается.",
 }
 
 // SQLMessageKeys lists the sql.* UI text keys.
@@ -150,30 +126,26 @@ func SQLValidationKeys() []string {
 }
 
 // SQLMessages returns a copy of the SQL texts: sql.* and validation.sql_*
-// keys -> RU/EN (for the IPC catalog sent to the tray).
-func SQLMessages() map[string]LocalizedText {
-	out := make(map[string]LocalizedText, len(sqlMessages))
+// keys -> text (for the IPC catalog sent to the tray).
+func SQLMessages() map[string]string {
+	out := make(map[string]string, len(sqlMessages))
 	for k, v := range sqlMessages {
 		out[k] = v
 	}
 	return out
 }
 
-// SQLMessage returns the text of a sql.* / validation.sql_* key in lang
-// ("en", anything else = "ru"), or "" for an unknown key.
-func SQLMessage(key, lang string) string {
-	m, ok := sqlMessages[key]
-	if !ok {
-		return ""
-	}
-	return m.In(lang)
+// SQLMessage returns the (Russian) text of a sql.* / validation.sql_*
+// key, or "" for an unknown key.
+func SQLMessage(key string) string {
+	return sqlMessages[key]
 }
 
 // SQLWarnings returns the message keys of the connection warnings of p
 // for the setup GUI and the tray: MsgSQLWarnPlaintextLogin when the
 // profile uses SQL authentication without encryption (encrypt "disable",
 // also when unset). Windows authentication gets no warning. Warnings do
-// not block saving or polling; texts: SQLMessage(key, lang).
+// not block saving or polling; texts: SQLMessage(key).
 func SQLWarnings(p Profile) []string {
 	var w []string
 	if p.PlaintextLogin() {

@@ -130,7 +130,7 @@ type StatusSnapshot struct {
 	PollerHung       bool       `json:"pollerHung"`
 	HungAfterSec     int        `json:"hungAfterSec,omitempty"`
 	// Read-only settings view (phase 6): the applied global settings
-	// (incl. beep, language, trayAutostart) and the configuration
+	// (incl. beep, trayAutostart) and the configuration
 	// revision (as returned by get_config / save_*).
 	Settings       *Settings `json:"settings,omitempty"`
 	ConfigRevision string    `json:"configRevision,omitempty"`

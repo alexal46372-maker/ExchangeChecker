@@ -25,7 +25,6 @@ type InstallConfig struct {
 	DataDir    string // %ProgramData%\ExchangeChecker
 	Files      map[string][]byte
 	Version    string
-	Lang       string
 	Now        time.Time
 }
 
@@ -223,7 +222,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// 5. service — journal previous ImagePath / description for upgrade rollback (§7.4)
 	spec := ServiceSpec{
 		Name: model.ServiceName, DisplayName: version.ProductName, ImagePath: ServiceImagePath(svcExe),
-		Description: ServiceDescription(c.Lang), AutoStart: !c.Opts.NoStart,
+		Description: ServiceDescription(), AutoStart: !c.Opts.NoStart,
 		ResetPeriod: FailureResetPeriod, FailureDelays: FailureDelays, SDDL: ServiceSDDL,
 	}
 	if svc.Exists {
@@ -277,7 +276,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// 7b. Start-menu shortcut (§6.3) — not fatal; kept on upgrade unless
 	// re-created; /NOSHORTCUT leaves an existing one alone
 	if !c.Opts.NoShortcut {
-		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, T(c.Lang, "setup.shortcut.desc")); err != nil {
+		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, T("setup.shortcut.desc")); err != nil {
 			warn("start menu shortcut: %v", err)
 		} else {
 			log.Printf("shortcut %s", lnk)

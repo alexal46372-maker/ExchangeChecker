@@ -39,7 +39,7 @@ func TestCHK_SQL_09_ErrorInfo(t *testing.T) {
 	}
 	for i, c := range cases {
 		info := ErrorInfo(c.err)
-		if info.Code != c.code || info.SQLNumber != c.num || info.ErrorKey == "" || model.SQLMessage(info.ErrorKey, model.LangEN) == "" {
+		if info.Code != c.code || info.SQLNumber != c.num || info.ErrorKey == "" || model.SQLMessage(info.ErrorKey) == "" {
 			t.Errorf("%d %v: %+v", i, c.err, info)
 		}
 	}

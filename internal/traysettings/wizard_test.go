@@ -9,7 +9,7 @@ import (
 )
 
 func newWizEditor() *Editor {
-	e := NewEditor(i18n.RU, Admin)
+	e := NewEditor(Admin)
 	e.LoadConfig(model.ConfigView{Settings: model.DefaultSettings()}, "r1")
 	e.New()
 	return e
@@ -25,12 +25,12 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 		t.Error("availability")
 	}
 	e := newWizEditor()
-	z := NewWizard(i18n.RU)
+	z := NewWizard()
 	if pr := z.ServerProblem(e); pr == nil || pr.Field != FieldHost {
 		t.Errorf("empty server %+v", pr)
 	}
 	z.Server, z.Login = "tcp:srv,1433", "mon"
-	if pr := z.ServerProblem(e); pr == nil || pr.Field != FieldHost || !strings.Contains(pr.Text, i18n.T(i18n.KeyValReasonTcp, i18n.RU)) {
+	if pr := z.ServerProblem(e); pr == nil || pr.Field != FieldHost || !strings.Contains(pr.Text, i18n.T(i18n.KeyValReasonTcp)) {
 		t.Errorf("tcp %+v", pr)
 	}
 	z.Server, z.Login = `srv\SQL1`, ""
@@ -50,7 +50,7 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 	}
 	txt := z.BrowseDone(model.SQLBrowseResult{Instances: []model.SQLServerInstance{{Host: "SRV", Address: "10.0.0.5", Instance: "SQL1", Version: "10.50", TCPPort: 1500},
 		{Host: "SRV", Instance: "MSSQLSERVER"}}, Responders: 1, Partial: true})
-	if !strings.Contains(txt, "2") || !strings.Contains(txt, i18n.T(i18n.KeyWizFoundPartial, i18n.RU)) {
+	if !strings.Contains(txt, "2") || !strings.Contains(txt, i18n.T(i18n.KeyWizFoundPartial)) {
 		t.Errorf("browse text %q", txt)
 	}
 	if l := InstanceLine(z.Instances[0]); l != `SRV\SQL1  (10.50, TCP 1500, 10.0.0.5)` {
@@ -59,7 +59,7 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 	if !z.PickInstance(1) || z.Server != "SRV" || z.PickInstance(5) {
 		t.Errorf("pick %q", z.Server)
 	}
-	if !strings.Contains((&Wizard{Lang: i18n.EN}).BrowseDone(model.SQLBrowseResult{}), "SQL Server Browser") {
+	if !strings.Contains((&Wizard{}).BrowseDone(model.SQLBrowseResult{}), "SQL Server Browser") {
 		t.Error("none found mentions the SQL Browser")
 	}
 	z.Server, z.Port = `srv\SQL1`, ""
@@ -93,7 +93,7 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 	if UniqueProfileName(nil, " ") != "" {
 		t.Error("empty")
 	}
-	e2 := NewEditor(i18n.RU, Admin)
+	e2 := NewEditor(Admin)
 	e2.LoadConfig(model.ConfigView{Settings: model.DefaultSettings(), Profiles: []model.Profile{p1}}, "r1")
 	e2.New()
 	z.ToForm(e2, true)
@@ -136,13 +136,13 @@ func TestCHK_TRAY_30_WizardSteps(t *testing.T) {
 // SQL Browser), sql_diagnose requests, access_denied / rate_limited / busy.
 func TestCHK_TRAY_31_WizardErrors(t *testing.T) {
 	d := model.SQLDiagnoseCode(model.SQLCodeLoginFailed, "")
-	s := ErrorText(model.SQLCodeLoginFailed, &d, "Login failed for user 'mon'.", i18n.RU)
-	if !strings.Contains(s, "login_failed") || !strings.Contains(s, d.Title.RU) || !strings.Contains(s, "1. "+d.Steps[0].RU) || !strings.HasSuffix(s, "'mon'.") {
+	s := ErrorText(model.SQLCodeLoginFailed, &d, "Login failed for user 'mon'.")
+	if !strings.Contains(s, "login_failed") || !strings.Contains(s, d.Title) || !strings.Contains(s, "1. "+d.Steps[0]) || !strings.HasSuffix(s, "'mon'.") {
 		t.Errorf("diag %q", s)
 	}
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		if s := ErrorText(model.SQLCodeInstanceNotFound, nil, "", lang); !strings.Contains(s, "SQL Server Browser") {
-			t.Errorf("%s instance_not_found %q", lang, s)
+	{
+		if s := ErrorText(model.SQLCodeInstanceNotFound, nil, ""); !strings.Contains(s, "SQL Server Browser") {
+			t.Errorf("%s instance_not_found %q", i18n.RU, s)
 		}
 	}
 	for _, c := range model.SQLErrorCodes() {
@@ -165,18 +165,18 @@ func TestCHK_TRAY_31_WizardErrors(t *testing.T) {
 		t.Error("ok test")
 	}
 	e := newWizEditor()
-	if pr := e.WizardProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeAccessDenied}, nil); pr.Text != i18n.T(i18n.KeyWizAccessDenied, i18n.RU) {
+	if pr := e.WizardProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeAccessDenied}, nil); pr.Text != i18n.T(i18n.KeyWizAccessDenied) {
 		t.Errorf("access %q", pr.Text)
 	}
 	if pr := e.WizardProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeRateLimited, RetryAfterMs: 2500}, nil); !strings.Contains(pr.Text, "3 с") {
 		t.Errorf("rate %q", pr.Text)
 	}
-	if pr := e.WizardProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeBusy, ErrorKey: model.MsgDiscoverBusy}, nil); pr.Text != i18n.T(i18n.KeyWizBusy, i18n.RU) {
+	if pr := e.WizardProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeBusy, ErrorKey: model.MsgDiscoverBusy}, nil); pr.Text != i18n.T(i18n.KeyWizBusy) {
 		t.Errorf("busy %q", pr.Text)
 	}
 	pr := e.WizardProblem(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorBadRequest,
 		ErrorArgs: []string{"server", model.ValSQLServerForbidden, "via"}}, nil)
-	if pr.Field != FieldHost || !strings.Contains(pr.Text, i18n.T(i18n.KeyValReasonVia, i18n.RU)) {
+	if pr.Field != FieldHost || !strings.Contains(pr.Text, i18n.T(i18n.KeyValReasonVia)) {
 		t.Errorf("bad_request %+v", pr)
 	}
 }
@@ -185,7 +185,7 @@ func TestCHK_TRAY_31_WizardErrors(t *testing.T) {
 // NT AUTHORITY\SYSTEM locally, DOMAIN\COMPUTER$ remotely), the tables of
 // the chosen mapping, the notes text (never the script).
 func TestCHK_TRAY_32_GrantScript(t *testing.T) {
-	z := NewWizard(i18n.RU)
+	z := NewWizard()
 	z.Server, z.Login, z.Database = `srv\SQL1`, "mon", "ut"
 	if r := z.GrantRequest("PC1", "DOM"); r.Cmd != model.CmdSQLGrantScript || r.Principal != "mon" || r.Windows || r.Database != "ut" || len(r.Tables) != 0 {
 		t.Errorf("sql %+v", r)
@@ -208,7 +208,7 @@ func TestCHK_TRAY_32_GrantScript(t *testing.T) {
 		t.Errorf("tables %+v", r.Tables)
 	}
 	sc := model.SQLGrantScript{SQL: "CREATE LOGIN [mon] WITH PASSWORD = N'<PASSWORD>'", PasswordPlaceholder: "<PASSWORD>",
-		Notes: []model.LocalizedText{{RU: "заметка", EN: "note"}}}
+		Notes: []string{"заметка"}}
 	txt := z.GrantText(sc)
 	if strings.Contains(txt, "CREATE") || !strings.Contains(txt, "<PASSWORD>") || !strings.Contains(txt, "• заметка") {
 		t.Errorf("text %q", txt)

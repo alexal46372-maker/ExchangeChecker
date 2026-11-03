@@ -123,9 +123,17 @@ var winAPIMinVersion = map[string]float64{
 	"GetWindowTextLengthW": 5.0, "GetWindowTextW": 5.0, "InsertMenuItemW": 5.0, "IsWindow": 5.0,
 	"LoadCursorW": 5.0, "PeekMessageW": 5.0, "PostMessageW": 5.0, "PostQuitMessage": 5.0,
 	"RegisterClassExW": 5.0, "RegisterWindowMessageW": 5.0, "SendMessageW": 5.0,
-	"SetForegroundWindow": 5.0, "ShowWindow": 5.0, "TrackPopupMenuEx": 5.0, "TranslateMessage": 5.0,
+	"SetForegroundWindow": 5.0, "ShowWindow": 5.0, "TrackPopupMenuEx": 5.0,
+	// CHK-TRAY-91: menu click hook (Windows 2000+ / XP+)
+	"SetWindowsHookExW": 5.0, "UnhookWindowsHookEx": 5.0, "CallNextHookEx": 5.0, "MenuItemFromPoint": 5.0, "EndMenu": 5.0, "GetCurrentThreadId": 5.0,
+	// CHK-TRAY-96: volume slider in the menu (Windows 2000+)
+	"GetMenuItemRect": 5.0, "GetSysColor": 5.0, "SetCursorPos": 5.0,
+	// CHK-TRAY-95: full-screen flash overlay (Windows 2000+)
+	"SetLayeredWindowAttributes": 5.0, "TranslateMessage": 5.0,
 	"UnregisterClassW": 5.0,
 	// phase 6b alert window and sound (CHK-TRAY-03)
+	// CHK-TRAY-97: last fallback of «Тон» (Windows 2000+)
+	"MessageBeep": 5.0,
 	"Beep": 5.0, "SetWindowTextW": 5.0, "EnableWindow": 5.0, "IsWindowEnabled": 5.0, "IsWindowVisible": 5.0,
 	"LoadIconW": 5.0, "SetWindowPos": 5.0, "FlashWindowEx": 5.0, "GetForegroundWindow": 5.0,
 	// phase 6c settings window (CHK-TRAY-04/05/06)
@@ -195,7 +203,7 @@ var winAPIMinVersion = map[string]float64{
 	"GetTextMetricsW": 5.0, "CreateCompatibleDC": 5.0, "CreateCompatibleBitmap": 5.0, "GetDIBits": 5.0,
 	"DeleteDC": 5.0, "BitBlt": 5.0, "GetWindowDC": 5.0, "PrintWindow": 5.1, "RedrawWindow": 5.0, "SetParent": 5.0,
 	// phase 11: visible frame for screenshots, falls back to GetWindowRect
-	"DwmGetWindowAttribute": 6.0, "DwmFlush": 6.0, "DwmSetWindowAttribute": 6.0, // immersive dark (Win10+; Find fallback, CHK-TRAY-55)
+	"DwmGetWindowAttribute": 6.0, "DwmFlush": 6.0,
 	"SetWindowLongW": 5.0,
 	// phase 11: Common Controls 6 for the GUI tests (cues in the screenshots, CHK-TRAY-47)
 	"CreateActCtxW": 5.1, "ActivateActCtx": 5.1, "DeactivateActCtx": 5.1, "ReleaseActCtx": 5.1,

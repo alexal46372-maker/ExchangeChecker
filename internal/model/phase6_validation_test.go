@@ -78,8 +78,8 @@ func TestCHK_CFG_03_FieldErrors(t *testing.T) {
 		if strings.Join(fe.IPCArgs(), "|") != strings.Join(want, "|") {
 			t.Errorf("%s: args %q, want %q", c.name, fe.IPCArgs(), want)
 		}
-		if FormatMessage(fe.Key, fe.IPCArgs(), LangEN) == "" || strings.Contains(FormatMessage(fe.Key, fe.IPCArgs(), LangRU), "{") {
-			t.Errorf("%s: text of %s not formatted: %q", c.name, fe.Key, FormatMessage(fe.Key, fe.IPCArgs(), LangRU))
+		if FormatMessage(fe.Key, fe.IPCArgs()) == "" || strings.Contains(FormatMessage(fe.Key, fe.IPCArgs()), "{") {
+			t.Errorf("%s: text of %s not formatted: %q", c.name, fe.Key, FormatMessage(fe.Key, fe.IPCArgs()))
 		}
 	}
 	// still valid: host, host\instance, spaces around
@@ -121,13 +121,14 @@ func TestCHK_CFG_03_FieldErrors(t *testing.T) {
 func TestCHK_CFG_03_SettingsFieldErrors(t *testing.T) {
 	s := DefaultSettings()
 	s.Beep.WarningFreqHz = 1
-	s.Language = "de"
+	bad := 5
+	s.StalledMinutes = &bad
 	err := s.Validate()
 	fe := AsFieldError(err)
 	if fe == nil || fe.Field != "beep.warningFreqHz" || fe.Key != ValRange {
 		t.Fatalf("first error: %+v (%v)", fe, err)
 	}
-	if !strings.Contains(err.Error(), "settings: beep.warningFreqHz must be in") || !strings.Contains(err.Error(), "unsupported language") {
+	if !strings.Contains(err.Error(), "settings: beep.warningFreqHz must be in") || !strings.Contains(err.Error(), "stalledMinutes") {
 		t.Errorf("text changed: %v", err)
 	}
 	s = DefaultSettings()
@@ -144,12 +145,12 @@ func TestCHK_CFG_03_SettingsFieldErrors(t *testing.T) {
 
 func TestCHK_CFG_03_ValidationTexts(t *testing.T) {
 	for _, k := range append(ValidationKeys(), MonitorMessageKeys()...) {
-		if MonitorMessage(k, LangRU) == "" || MonitorMessage(k, LangEN) == "" {
+		if MonitorMessage(k) == "" {
 			t.Errorf("no text for %s", k)
 		}
 	}
-	got := FormatMessage(ValRange, []string{"port", ValRange, "0", "65535", "70000"}, LangEN)
-	if got != `Field "port": value 70000 is out of range 0..65535.` {
+	got := FormatMessage(ValRange, []string{"port", ValRange, "0", "65535", "70000"})
+	if got != "Поле «port»: значение 70000 вне диапазона 0…65535." {
 		t.Errorf("format: %q", got)
 	}
 }

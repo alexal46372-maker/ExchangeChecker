@@ -13,18 +13,18 @@ func u64(v uint64) *uint64 { return &v }
 // CHK-TRAY-22: check_now replies and the wait for lastCheckSeq.
 func TestCheckState(t *testing.T) {
 	now := time.Date(2026, 10, 13, 12, 0, 0, 0, model.DBZone)
-	r := ParseCheckReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeRateLimited, ErrorKey: model.MsgCheckRateLimited, RetryAfterMs: 12001}, nil, true, "ru")
+	r := ParseCheckReply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeRateLimited, ErrorKey: model.MsgCheckRateLimited, RetryAfterMs: 12001}, nil, true)
 	if !r.Warn || r.WaitSeq || r.Text != "Проверка уже запрашивалась недавно, повторите через 13 с" {
 		t.Fatalf("rate limited %+v", r)
 	}
-	if r := ParseCheckReply(model.IPCMessage{Type: model.MsgError, ErrorKey: model.MsgMonitorProfileOff}, nil, true, "en"); !strings.Contains(r.Text, "disabled") {
+	if r := ParseCheckReply(model.IPCMessage{Type: model.MsgError, ErrorKey: model.MsgMonitorProfileOff}, nil, true); !strings.Contains(r.Text, "отключён") {
 		t.Errorf("error %+v", r)
 	}
 	var c CheckState
 	c.Start(now)
-	r = ParseCheckReply(model.IPCMessage{Type: model.MsgOK, Result: model.ResultAccepted, CheckSeq: u64(7)}, nil, true, "en")
+	r = ParseCheckReply(model.IPCMessage{Type: model.MsgOK, Result: model.ResultAccepted, CheckSeq: u64(7)}, nil, true)
 	c.Reply(r)
-	if !c.Busy || !r.WaitSeq || r.Text != "Check in progress…" {
+	if !c.Busy || !r.WaitSeq || r.Text != "Проверка выполняется…" {
 		t.Fatalf("accepted %+v %+v", c, r)
 	}
 	if d, _ := c.Status(&model.StatusSnapshot{Seq: 900, LastCheckSeq: 6}, now); d || !c.Busy {
@@ -34,12 +34,12 @@ func TestCheckState(t *testing.T) {
 		t.Fatal("lastCheckSeq >= checkSeq ends the wait")
 	}
 	c.Start(now)
-	c.Reply(ParseCheckReply(model.IPCMessage{Type: model.MsgOK, Result: model.ResultCheckCoalesced, CheckSeq: u64(9)}, nil, true, "en"))
+	c.Reply(ParseCheckReply(model.IPCMessage{Type: model.MsgOK, Result: model.ResultCheckCoalesced, CheckSeq: u64(9)}, nil, true))
 	if _, to := c.Status(nil, now.Add(CheckWait)); !to || c.Busy {
 		t.Fatal("timeout")
 	}
 	c.Start(now) // poll_now fallback: the reply ends it
-	r = ParseCheckReply(model.IPCMessage{Type: model.MsgOK, Result: model.ResultAccepted}, nil, false, "ru")
+	r = ParseCheckReply(model.IPCMessage{Type: model.MsgOK, Result: model.ResultAccepted}, nil, false)
 	c.Reply(r)
 	if c.Busy || r.Text != "Проверка запрошена" {
 		t.Fatalf("poll_now %+v", c)
@@ -55,7 +55,7 @@ func TestServerClock(t *testing.T) {
 		t.Fatalf("offset %+v", c)
 	}
 	fresh := local.Add(-30 * time.Minute)
-	if s, _ := AgoText(&fresh, c.Now(local), "ru"); s != "35 мин назад" {
+	if s, _ := AgoText(&fresh, c.Now(local)); s != "35 мин назад" {
 		t.Errorf("ago %q", s)
 	}
 	c.Update(&model.StatusSnapshot{Seq: 2}, local) // older service
@@ -74,22 +74,22 @@ func TestDebouncer(t *testing.T) {
 	ev := func(from, to model.AlertLevel) model.AlertEvent {
 		return model.AlertEvent{ProfileID: "a", ProfileName: "ERP", PointName: "Склад", Key: "k", From: from, To: to, LagMinutes: 40}
 	}
-	if b := d.Feed(ev(model.LevelOK, model.LevelWarning), now, "ru"); len(b) != 1 {
+	if b := d.Feed(ev(model.LevelOK, model.LevelWarning), now); len(b) != 1 {
 		t.Fatal("first overdue at once")
 	}
-	if b := d.Feed(ev(model.LevelWarning, model.LevelOK), now.Add(time.Minute), "ru"); len(b) != 0 {
+	if b := d.Feed(ev(model.LevelWarning, model.LevelOK), now.Add(time.Minute)); len(b) != 0 {
 		t.Fatal("recovery is held")
 	}
-	if b := d.Feed(ev(model.LevelOK, model.LevelWarning), now.Add(90*time.Second), "ru"); len(b) != 0 {
+	if b := d.Feed(ev(model.LevelOK, model.LevelWarning), now.Add(90*time.Second)); len(b) != 0 {
 		t.Fatal("flap overdue suppressed")
 	}
 	if b := d.Due(now.Add(10 * time.Minute)); len(b) != 0 {
 		t.Fatal("cancelled recovery must not appear")
 	}
-	if b := d.Feed(ev(model.LevelWarning, model.LevelError), now.Add(3*time.Minute), "ru"); len(b) != 1 || b[0].Level != model.LevelError {
+	if b := d.Feed(ev(model.LevelWarning, model.LevelError), now.Add(3*time.Minute)); len(b) != 1 || b[0].Level != model.LevelError {
 		t.Fatal("escalation is shown")
 	}
-	d.Feed(ev(model.LevelError, model.LevelOK), now.Add(4*time.Minute), "ru")
+	d.Feed(ev(model.LevelError, model.LevelOK), now.Add(4*time.Minute))
 	if _, ok := d.NextDue(); !ok {
 		t.Fatal("pending")
 	}
@@ -99,7 +99,7 @@ func TestDebouncer(t *testing.T) {
 	if b := d.Due(now.Add(6 * time.Minute)); len(b) != 1 || !b[0].Recovered {
 		t.Fatal("confirmed recovery shown")
 	}
-	if b := d.Feed(ev(model.LevelOK, model.LevelWarning), now.Add(7*time.Minute), "ru"); len(b) != 1 {
+	if b := d.Feed(ev(model.LevelOK, model.LevelWarning), now.Add(7*time.Minute)); len(b) != 1 {
 		t.Fatal("new overdue after a shown recovery")
 	}
 }
@@ -173,11 +173,11 @@ func TestHistoryChart(t *testing.T) {
 	if len(L.XTicks) != 7 || L.XTicks[0].Text != "12:00" || len(L.Marks) != 1 {
 		t.Fatalf("ticks %+v", L.XTicks)
 	}
-	if s := HistoryErrorText(model.IPCMessage{Type: model.MsgError, ErrorKey: model.MsgHistoryRangeTooLong}, nil, "ru"); s != "Интервал истории больше 31 дня." {
+	if s := HistoryErrorText(model.IPCMessage{Type: model.MsgError, ErrorKey: model.MsgHistoryRangeTooLong}, nil); s != "Интервал истории больше 31 дня." {
 		t.Error(s)
 	}
 	for _, k := range []string{model.MsgHistoryDisabled, model.MsgHistoryBadRange, model.MsgHistoryBadCursor, model.MsgHistoryBadFilter, model.MsgHistoryBusy, model.MsgHistoryFailed} {
-		if s := HistoryErrorText(model.IPCMessage{ErrorKey: k}, nil, "en"); s == "" || strings.Contains(s, k) {
+		if s := HistoryErrorText(model.IPCMessage{ErrorKey: k}, nil); s == "" || strings.Contains(s, k) {
 			t.Errorf("%s: %q", k, s)
 		}
 	}
@@ -193,20 +193,20 @@ func TestHistoryExport(t *testing.T) {
 		{Kind: model.HistoryKindProfile, CheckedAt: at, ProfileName: "<b>", LatencyMs: &lat},
 		{Kind: model.HistoryKindRecovered, CheckedAt: at, ProfileName: "ERP", PointName: "p", From: &w, To: &ok, DurationMin: &dur},
 	}
-	c := string(ExportHistoryCSV(recs, "ru", false))
+	c := string(ExportHistoryCSV(recs, false))
 	if !strings.HasPrefix(c, "\uFEFFВремя;База;Точка;") || strings.Count(c, "\r\n") != 4 ||
 		!strings.Contains(c, "13.10.2026 12:00:05;ERP;'=Склад;опрос точки;предупреждение;42;") ||
 		!strings.Contains(c, "предупреждение → норма;17;") || !strings.Contains(c, ";150;") {
 		t.Fatalf("csv %q", c)
 	}
-	if p := string(ExportHistoryCSV(recs, "ru", true)); !strings.HasSuffix(p, "\r\nПоказаны не все записи: достигнут предел выгрузки\r\n") {
+	if p := string(ExportHistoryCSV(recs, true)); !strings.HasSuffix(p, "\r\nПоказаны не все записи: достигнут предел выгрузки\r\n") {
 		t.Errorf("partial csv %q", p)
 	}
-	if p := string(ExportHistoryHTML(recs, "x", at, at, "en", true)); !strings.Contains(p, "Not all records are shown") {
+	if p := string(ExportHistoryHTML(recs, "x", at, at, true)); !strings.Contains(p, "Показаны не все записи") {
 		t.Error("partial html")
 	}
-	h := string(ExportHistoryHTML(recs, "ERP — p", at, at, "en", false))
-	if !strings.Contains(h, "&lt;b&gt;") || strings.Contains(h, "<b>") || !strings.Contains(h, "#fff3c4") || !strings.Contains(h, "recovery") {
+	h := string(ExportHistoryHTML(recs, "ERP — p", at, at, false))
+	if !strings.Contains(h, "&lt;b&gt;") || strings.Contains(h, "<b>") || !strings.Contains(h, "#fff3c4") || !strings.Contains(h, "восстановление") {
 		t.Fatalf("html %s", h)
 	}
 }

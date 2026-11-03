@@ -126,6 +126,15 @@ const (
 	// Ref + BrowseProgress / TestStep.
 	EventBrowseProgress
 	EventTestStepProgress
+	// EventProfileEnabled: a profile_enabled push (phase 13, CHK-IPC-18 /
+	// CHK-TRAY-91; capability profile_enabled). Status already carries the
+	// new Enabled of the profile and the config revision; Message is the
+	// push (ProfileID, Enabled, Revision).
+	EventProfileEnabled
+	// EventFlash: a flash / flash_stop push (phase 13, CHK-IPC-19 /
+	// CHK-TRAY-95; capability flash); Message is the push (Type,
+	// ProfileID, PointKey, EventID, Level).
+	EventFlash
 )
 
 // Event is delivered to Options.OnEvent.
@@ -662,6 +671,27 @@ func (s *Session) ping(ctx context.Context, c *ipc.Client) bool {
 	return true
 }
 
+// applyEnabled stores the profile_enabled push in the current snapshot
+// (a copy: earlier Status values keep theirs) until the next status push.
+func (s *Session) applyEnabled(id string, on bool, rev string) Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.st.Snapshot != nil {
+		cp := *s.st.Snapshot
+		cp.Profiles = append([]model.ProfileSnapshot(nil), cp.Profiles...)
+		for i := range cp.Profiles {
+			if cp.Profiles[i].ProfileID == id {
+				cp.Profiles[i].Enabled = on
+			}
+		}
+		if rev != "" {
+			cp.ConfigRevision = rev
+		}
+		s.st.Snapshot = &cp
+	}
+	return s.copyLocked()
+}
+
 // applySnapshot stores a snapshot: the reply of get_status always (new
 // connection, possibly a restarted service with a new sequence), pushes
 // only when not older than the current one.
@@ -693,6 +723,16 @@ func (s *Session) onPush(m model.IPCMessage) {
 		if st := s.Status(); m.Alert != nil && st.Has(model.CapAlertRepeat) {
 			a := *m.Alert
 			s.emit(Event{Kind: EventAlertRepeat, Status: st, Alert: &a})
+		}
+	case model.MsgProfileEnabled:
+		if m.ProfileID != "" && m.Enabled != nil && s.Status().Has(model.CapProfileEnabled) {
+			cp := m
+			s.emit(Event{Kind: EventProfileEnabled, Status: s.applyEnabled(m.ProfileID, *m.Enabled, m.Revision), Message: &cp})
+		}
+	case model.MsgFlash, model.MsgFlashStop:
+		if st := s.Status(); st.Has(model.CapFlash) {
+			cp := m
+			s.emit(Event{Kind: EventFlash, Status: st, Message: &cp})
 		}
 	case model.MsgSQLBrowseProgress, model.MsgSQLTestStepsProgress:
 		s.progMu.Lock()

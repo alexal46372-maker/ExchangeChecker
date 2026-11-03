@@ -68,29 +68,29 @@ type CheckReply struct {
 }
 
 // ParseCheckReply renders a check_now (useCheckNow) or poll_now reply.
-func ParseCheckReply(m model.IPCMessage, err error, useCheckNow bool, lang string) CheckReply {
+func ParseCheckReply(m model.IPCMessage, err error, useCheckNow bool) CheckReply {
 	if err == nil && m.Type == model.MsgError {
 		if m.Code == model.ErrCodeRateLimited && m.RetryAfterMs > 0 {
 			sec := int((m.RetryAfterMs + 999) / 1000)
-			return CheckReply{Text: fmt.Sprintf(i18n.T(i18n.KeyCheckRateLimited, lang), sec), Warn: true}
+			return CheckReply{Text: fmt.Sprintf(i18n.T(i18n.KeyCheckRateLimited), sec), Warn: true}
 		}
 		text := m.Error
 		if m.ErrorKey != "" {
-			text = i18n.Message(m.ErrorKey, lang)
+			text = i18n.Message(m.ErrorKey)
 		}
-		return CheckReply{Text: fmt.Sprintf(i18n.T(i18n.KeyStCheckFailed, lang), text), Warn: true}
+		return CheckReply{Text: fmt.Sprintf(i18n.T(i18n.KeyStCheckFailed), text), Warn: true}
 	}
 	if err != nil {
-		return CheckReply{Text: fmt.Sprintf(i18n.T(i18n.KeyStCheckFailed, lang), err), Warn: true}
+		return CheckReply{Text: fmt.Sprintf(i18n.T(i18n.KeyStCheckFailed), err), Warn: true}
 	}
 	if useCheckNow && m.CheckSeq != nil {
 		key := i18n.KeyCheckRunning
 		if m.Result == model.ResultCheckCoalesced {
 			key = i18n.KeyCheckCoalesced
 		}
-		return CheckReply{Text: i18n.T(key, lang), WaitSeq: true, Seq: *m.CheckSeq}
+		return CheckReply{Text: i18n.T(key), WaitSeq: true, Seq: *m.CheckSeq}
 	}
-	return CheckReply{Text: i18n.T(i18n.KeyStCheckQueued, lang)}
+	return CheckReply{Text: i18n.T(i18n.KeyStCheckQueued)}
 }
 
 // Reply applies a reply: poll_now / errors end Busy, check_now waits.
@@ -160,8 +160,8 @@ func debKey(ev model.AlertEvent) string {
 }
 
 // Feed takes one alert push; it returns the balloons to show now.
-func (d *Debouncer) Feed(ev model.AlertEvent, now time.Time, lang string) []Balloon {
-	b, ok := BalloonFor(ev, lang)
+func (d *Debouncer) Feed(ev model.AlertEvent, now time.Time) []Balloon {
+	b, ok := BalloonFor(ev)
 	if !ok {
 		return nil
 	}

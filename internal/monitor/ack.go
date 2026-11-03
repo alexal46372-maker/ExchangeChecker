@@ -356,7 +356,7 @@ func (m *Monitor) ack(profileID, pointKey string, eventID uint64) (int, error) {
 	if len(fresh) > 0 {
 		m.saveAcks()
 		for _, ev := range fresh {
-			m.opt.Log.Printf("alert acknowledged: %s", alert.FormatAck(ev, model.LangEN))
+			m.opt.Log.Printf("alert acknowledged: %s", alert.FormatAck(ev))
 			if m.opt.OnAck != nil {
 				m.opt.OnAck(ev)
 			}

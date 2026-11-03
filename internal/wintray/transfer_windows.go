@@ -13,7 +13,6 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
@@ -60,9 +59,9 @@ const expCW, expCH = 480, 260
 // trayStores are the per-user stores of the tray block (nil = not
 // stored; export then writes the defaults).
 type trayStores struct {
-	Lang    LangStore
 	Balloon BalloonStore
 	Sound   SoundStore
+	Flash   ScreenFlashStore // «Мигание экрана» (CHK-TRAY-95)
 }
 
 func (w *settingsWindow) transferAvailable() bool {
@@ -94,9 +93,6 @@ func (w *settingsWindow) notice(text string) {
 func (w *settingsWindow) trayBlock() traysettings.TrayBlock {
 	st := w.cfg.stores
 	t := traysettings.TrayBlock{Balloons: true, UIMode: w.uiMode}
-	if st.Lang != nil {
-		t.Language, _ = st.Lang.Load()
-	}
 	if st.Balloon != nil {
 		if on, err := st.Balloon.Load(); err == nil {
 			t.Balloons = on
@@ -112,13 +108,6 @@ func (w *settingsWindow) trayBlock() traysettings.TrayBlock {
 	if t.UIMode == "" {
 		t.UIMode = traysettings.UISimple
 	}
-	if w.cfg.themeStore != nil {
-		if th, err := w.cfg.themeStore.Load(); err == nil {
-			t.Theme = string(th)
-		}
-	} else {
-		t.Theme = string(trayui.Current())
-	}
 	return t
 }
 
@@ -131,9 +120,6 @@ func (w *settingsWindow) saveTray(t *traysettings.TrayBlock) error {
 			first = err
 		}
 	}
-	if st.Lang != nil {
-		keep(st.Lang.Save(t.Language))
-	}
 	if st.Balloon != nil {
 		keep(st.Balloon.Save(t.Balloons))
 	}
@@ -142,9 +128,6 @@ func (w *settingsWindow) saveTray(t *traysettings.TrayBlock) error {
 	}
 	if w.cfg.uiStore != nil {
 		keep(w.cfg.uiStore.Save(t.UIMode))
-	}
-	if w.cfg.themeStore != nil && t.Theme != "" {
-		keep(w.cfg.themeStore.Save(trayui.NormalizeTheme(t.Theme)))
 	}
 	if first == nil {
 		broadcastTrayReloadPrefs()
@@ -200,7 +183,7 @@ func (w *settingsWindow) openExport() {
 	d.tips.set(d.ctl[idExpDo], w.t(i18n.KeyTipXferExport))
 	d.tips.set(d.ctl[idExpCancel], w.t(i18n.KeyTipClose))
 	d.syncWarn()
-	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full dark chrome on export dialog
+	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full chrome on export dialog
 	winapi.EnableWindow(w.hwnd, false)
 }
 
@@ -323,7 +306,7 @@ func (w *settingsWindow) importConfig() {
 	} else if err == nil {
 		var b []byte
 		if b, err = os.ReadFile(path); err == nil {
-			f, err = traysettings.ParseImport(b, w.cfg.lang)
+			f, err = traysettings.ParseImport(b)
 		} else {
 			err = fmt.Errorf(w.t(i18n.KeyXferReadFailed), err.Error())
 		}
@@ -409,7 +392,7 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 		d.tips.set(d.ctl[id], w.t(k))
 	}
 	d.syncViberWarn()
-	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full dark chrome on import dialog
+	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full chrome on import dialog
 	winapi.EnableWindow(w.hwnd, false)
 	d.dryRun()
 }
@@ -457,7 +440,7 @@ func (d *importDialog) showPreview() {
 	if d.res == nil {
 		return
 	}
-	p := d.head + traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists, d.w.cfg.lang)
+	p := d.head + traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists)
 	if d.w.cfg.otherUser {
 		p += "\r\n" + d.w.t(i18n.KeyXferOtherUser)
 	}

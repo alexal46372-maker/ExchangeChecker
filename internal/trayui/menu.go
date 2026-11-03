@@ -26,35 +26,24 @@ const (
 	CmdSettings = 1001
 	CmdAbout    = 1002
 	CmdExit     = 1003
-	// language submenu (per-user tray language, phase 6e)
-	CmdLangAuto = 1011
-	CmdLangRU   = 1012
-	CmdLangEN   = 1013
-	// phase 12 CHK-TRAY-59: mute/unmute per profile in the left (databases) menu.
-	// CmdMuteBase+i / CmdUnmuteBase+i address snap.Profiles[i] (i < 1000).
-	CmdMuteBase   = 12000
-	CmdUnmuteBase = 13000
+	// phase 13 CHK-TRAY-91: the check mark on a database item toggles
+	// polling (set_enabled). CmdToggleBase+i addresses snap.Profiles[i]
+	// (i < 1000).
+	CmdToggleBase  = 14000
 	cmdProfileSlot = 1000
 )
 
-// MuteCmd / UnmuteCmd are the left-menu commands for snap.Profiles[i].
-func MuteCmd(i int) int   { return CmdMuteBase + i }
-func UnmuteCmd(i int) int { return CmdUnmuteBase + i }
+// ToggleCmd is the left-menu command of the check mark of snap.Profiles[i].
+func ToggleCmd(i int) int { return CmdToggleBase + i }
 
-// MuteProfileIndex reports whether cmd is mute/unmute and which profile index.
-func MuteProfileIndex(cmd int) (i int, mute bool, ok bool) {
-	if cmd >= CmdMuteBase && cmd < CmdMuteBase+cmdProfileSlot {
-		return cmd - CmdMuteBase, true, true
+// ToggleProfileIndex reports whether cmd is a database check mark and
+// which profile index it addresses.
+func ToggleProfileIndex(cmd int) (i int, ok bool) {
+	if cmd >= CmdToggleBase && cmd < CmdToggleBase+cmdProfileSlot {
+		return cmd - CmdToggleBase, true
 	}
-	if cmd >= CmdUnmuteBase && cmd < CmdUnmuteBase+cmdProfileSlot {
-		return cmd - CmdUnmuteBase, false, true
-	}
-	return 0, false, false
+	return 0, false
 }
-
-// LangCommands maps the language commands to the stored preference
-// ("" = as in Windows).
-var LangCommands = map[int]string{CmdLangAuto: "", CmdLangRU: model.LangRU, CmdLangEN: model.LangEN}
 
 // Item is one menu item. Sub != nil makes it a submenu.
 type Item struct {
@@ -65,6 +54,16 @@ type Item struct {
 	Separator bool
 	Checked   bool
 	Sub       []Item
+	// Check (CHK-TRAY-91): a database item. Instead of the color square it
+	// shows a bold check mark of Color (red error, yellow warning, green
+	// OK) when Checked (polling on), an empty box otherwise; a click on
+	// the item (it also opens the points submenu) sends ID = ToggleCmd(i)
+	// unless ID is 0 (no profile_enabled / not elevated).
+	Check bool
+	// Volume (CHK-TRAY-96): the master volume slider (owner-draw item:
+	// speaker icon, track, «N %»); dragging on it changes the volume while
+	// the menu stays open.
+	Volume bool
 }
 
 // TimeLayout of menu times (UTC+3, PLAN §4.5).
@@ -86,8 +85,8 @@ func LevelColor(l model.AlertLevel) Color {
 // configuration is stale or invalid, then ONLY the
 // databases, each with its exchange points as a submenu (PLAN §7.1, §12
 // p.7). The color square is duplicated by the status text.
-func BuildLeftMenu(st trayipc.Status, lang string) []Item {
-	ind := Evaluate(st, lang)
+func BuildLeftMenu(st trayipc.Status) []Item {
+	ind := Evaluate(st)
 	var items []Item
 	if ind.ServiceLine != "" {
 		items = append(items, Item{Text: ind.ServiceLine, Disabled: true})
@@ -100,70 +99,94 @@ func BuildLeftMenu(st trayipc.Status, lang string) []Item {
 	}
 	snap := st.Snapshot
 	if snap == nil {
-		return append(items, Item{Text: i18n.T(i18n.KeyDBNoData, lang), Disabled: true})
+		return append(items, Item{Text: i18n.T(i18n.KeyDBNoData), Disabled: true})
 	}
 	if len(snap.Profiles) == 0 {
-		return append(items, Item{Text: i18n.T(i18n.KeyDBNone, lang), Disabled: true})
+		return append(items, Item{Text: i18n.T(i18n.KeyDBNone), Disabled: true})
 	}
-	canMute := st.Has(model.CapMuteProfile)
+	canToggle := CanToggle(st)
 	for i, p := range snap.Profiles {
-		items = append(items, databaseItem(p, ind.Fresh, lang, canMute, i))
+		items = append(items, databaseItem(p, ind.Fresh, canToggle, i))
 	}
 	return items
 }
 
-func databaseItem(p model.ProfileSnapshot, fresh bool, lang string, canMute bool, idx int) Item {
-	color := LevelColor(p.Level)
-	status := levelText(p.Level, lang)
+// CanToggle reports whether the database check marks send set_enabled:
+// the service offers profile_enabled and this (admin-only) command is
+// allowed for the connection (clientElevated).
+func CanToggle(st trayipc.Status) bool {
+	return st.Has(model.CapProfileEnabled) && st.Elevated()
+}
+
+// CheckColor is the check mark color of a database item: red error,
+// yellow warning, green OK; grey while the data is stale, polling is off
+// or the first poll is pending.
+func CheckColor(p model.ProfileSnapshot, fresh bool) Color {
+	if !p.Enabled || !fresh || !p.Polled {
+		return ColorGrey
+	}
+	if p.ErrorKey != "" || p.Error != "" {
+		return ColorRed
+	}
+	return LevelColor(p.Level)
+}
+
+// ToggleFailedBalloon is the balloon after a failed set_enabled of the
+// database name (err: transport error; m: the MsgError reply).
+func ToggleFailedBalloon(name string, m model.IPCMessage, err error) Balloon {
+	text := i18n.T(i18n.KeyDBToggleFailed)
+	switch {
+	case err != nil:
+		text += ": " + i18n.T(i18n.KeyDBNoData)
+	case m.ErrorKey != "":
+		text += ": " + i18n.Message(m.ErrorKey)
+	case m.Error != "":
+		text += ": " + m.Error
+	}
+	return Balloon{Title: name, Text: text, Level: model.LevelWarning}
+}
+
+func databaseItem(p model.ProfileSnapshot, fresh bool, canToggle bool, idx int) Item {
+	status := levelText(p.Level)
 	switch {
 	case !p.Enabled:
-		color, status = ColorGrey, i18n.T(i18n.KeyDBDisabled, lang)
+		status = i18n.T(i18n.KeyDBDisabled)
 	case !p.Polled:
-		color, status = ColorGrey, i18n.T(i18n.KeyDBPending, lang)
+		status = i18n.T(i18n.KeyDBPending)
 	}
 	if !fresh {
-		color = ColorGrey
-		status += "; " + i18n.T(i18n.KeyDBStale, lang)
-	}
-	if p.Muted {
-		status += "; " + i18n.T(i18n.KeyDBMuted, lang)
+		status += "; " + i18n.T(i18n.KeyDBStale)
 	}
 	name := p.Name
 	if name == "" {
 		name = p.ProfileID
 	}
-	it := Item{Text: name + " — " + status, Color: color}
-	var sub []Item
-	if canMute {
-		if p.Muted {
-			sub = append(sub, Item{ID: UnmuteCmd(idx), Text: i18n.T(i18n.KeyMenuUnmute, lang)})
-		} else {
-			sub = append(sub, Item{ID: MuteCmd(idx), Text: i18n.T(i18n.KeyMenuMute, lang)})
-		}
-		sub = append(sub, Item{Separator: true})
+	it := Item{Text: name + " — " + status, Color: CheckColor(p, fresh), Check: true, Checked: p.Enabled}
+	if canToggle {
+		it.ID = ToggleCmd(idx)
 	}
+	var sub []Item
 	if p.ErrorKey != "" || p.Error != "" {
 		key := p.ErrorKey
 		if key == "" {
 			key = model.MsgMonitorPollError
 		}
-		sub = append(sub, Item{Text: levelText(model.LevelError, lang) + ": " + i18n.Message(key, lang), Disabled: true})
+		sub = append(sub, Item{Text: levelText(model.LevelError) + ": " + i18n.Message(key), Disabled: true})
 	}
-	for _, w := range p.Warnings {
-		sub = append(sub, Item{Text: i18n.Message(w, lang), Disabled: true})
-	}
+	// p.Warnings (e.g. «Шифрование отключено…») are not shown in the
+	// menu (CHK-TRAY-91).
 	if len(sub) > 0 && len(p.Points) > 0 {
 		sub = append(sub, Item{Separator: true})
 	}
-	sub = append(sub, pointItems(p.Points, lang)...)
+	sub = append(sub, pointItems(p.Points)...)
 	if len(sub) == 0 {
-		sub = []Item{{Text: i18n.T(i18n.KeyDBNoPoints, lang), Disabled: true}}
+		sub = []Item{{Text: i18n.T(i18n.KeyDBNoPoints), Disabled: true}}
 	}
 	it.Sub = sub
 	return it
 }
 
-func pointItems(pts []model.PointStatus, lang string) []Item {
+func pointItems(pts []model.PointStatus) []Item {
 	ps := append([]model.PointStatus(nil), pts...)
 	model.SortPoints(ps)
 	plans := map[string]bool{}
@@ -181,60 +204,49 @@ func pointItems(pts []model.PointStatus, lang string) []Item {
 				label = p.PlanTable
 			}
 			if label != "" {
-				out = append(out, Item{Text: i18n.T(i18n.KeyPtPlan, lang) + ": " + label, Disabled: true})
+				out = append(out, Item{Text: i18n.T(i18n.KeyPtPlan) + ": " + label, Disabled: true})
 			}
 		}
-		out = append(out, Item{Text: PointText(p, lang), Color: LevelColor(p.Level)})
+		out = append(out, Item{Text: PointText(p), Color: LevelColor(p.Level)})
 	}
 	return out
 }
 
-func fmtTime(t *time.Time, lang string) string {
+func fmtTime(t *time.Time) string {
 	if t == nil {
-		return i18n.T(i18n.KeyPtNever, lang)
+		return i18n.T(i18n.KeyPtNever)
 	}
 	return t.In(model.DBZone).Format(TimeLayout)
 }
 
 // PointText is the menu line of an exchange point: name, last send, last
 // receive, lag (from FreshAt), level, baseline / acknowledged marks.
-func PointText(p model.PointStatus, lang string) string {
+func PointText(p model.PointStatus) string {
 	s := fmt.Sprintf("%s: %s %s, %s %s", p.Name,
-		i18n.T(i18n.KeyPtSend, lang), fmtTime(p.LastSend, lang),
-		i18n.T(i18n.KeyPtRecv, lang), fmtTime(p.LastRecv, lang))
+		i18n.T(i18n.KeyPtSend), fmtTime(p.LastSend),
+		i18n.T(i18n.KeyPtRecv), fmtTime(p.LastRecv))
 	if p.LagMinutes >= 0 && p.FreshAt != nil {
-		s += ", " + fmt.Sprintf(i18n.T(i18n.KeyPtLag, lang), p.LagMinutes)
+		s += ", " + fmt.Sprintf(i18n.T(i18n.KeyPtLag), p.LagMinutes)
 	}
-	s += " — " + levelText(p.Level, lang)
+	s += " — " + levelText(p.Level)
 	if p.Baseline {
-		s += " (" + i18n.T(i18n.KeyPtBaseline, lang) + ")"
+		s += " (" + i18n.T(i18n.KeyPtBaseline) + ")"
 	}
 	if p.Acknowledged {
-		s += " (" + i18n.T(i18n.KeyPtAcked, lang) + ")"
+		s += " (" + i18n.T(i18n.KeyPtAcked) + ")"
 	}
 	return s
 }
 
 // BuildRightMenu is the right-click menu: Settings (phase 6c: read-only
-// window, «Изменить (администратор)» elevates), About, the language
-// submenu with the current per-user preference pref checked ("" = as in
-// Windows; phase 6e), the «Служба» submenu with the service state svc
+// window, «Изменить (администратор)» elevates), About, the «Служба» submenu with the service state svc
 // (phase 8, CHK-TRAY-16), Exit.
-func BuildRightMenu(lang, pref string, svc SvcState) []Item {
-	sub := []Item{
-		{ID: CmdLangAuto, Text: i18n.T(i18n.KeyMenuLangAuto, lang)},
-		{ID: CmdLangRU, Text: i18n.T(i18n.KeyMenuLangRU, lang)},
-		{ID: CmdLangEN, Text: i18n.T(i18n.KeyMenuLangEN, lang)},
-	}
-	for i := range sub {
-		sub[i].Checked = LangCommands[sub[i].ID] == pref
-	}
+func BuildRightMenu(svc SvcState) []Item {
 	return []Item{
-		{ID: CmdSettings, Text: i18n.T(i18n.KeyMenuSettings, lang)},
-		{ID: CmdAbout, Text: i18n.T(i18n.KeyMenuAbout, lang)},
-		{Text: i18n.T(i18n.KeyMenuLanguage, lang), Sub: sub},
-		{Text: i18n.T(i18n.KeyMenuService, lang), Sub: ServiceMenu(svc, lang)},
+		{ID: CmdSettings, Text: i18n.T(i18n.KeyMenuSettings)},
+		{ID: CmdAbout, Text: i18n.T(i18n.KeyMenuAbout)},
+		{Text: i18n.T(i18n.KeyMenuService), Sub: ServiceMenu(svc)},
 		{Separator: true},
-		{ID: CmdExit, Text: i18n.T(i18n.KeyMenuExit, lang)},
+		{ID: CmdExit, Text: i18n.T(i18n.KeyMenuExit)},
 	}
 }

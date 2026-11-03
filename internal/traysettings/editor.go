@@ -36,7 +36,6 @@ const (
 // selected (or new) profile, its form and the configuration revision
 // required by save_profile / delete_profile (expectedRevision).
 type Editor struct {
-	Lang string
 	Mode Mode
 	// Revision is the configuration revision: get_config.revision /
 	// get_status.configRevision, then the revision of every save_* reply.
@@ -65,6 +64,9 @@ type Editor struct {
 	// settings.email is loaded.
 	Email    EmailForm
 	HasEmail bool
+	// Telegram page (phase 13, CHK-TRAY-94).
+	Telegram    TelegramForm
+	HasTelegram bool
 	// MapEdit / MapsEdit: mapping chosen in the Discovery dialog (6d,
 	// CHK-TRAY-07), not saved yet; nil = the profile's own mapping.
 	// MapsEdit (the merged additional mappings, MergeMappings) replaces
@@ -82,11 +84,11 @@ type Editor struct {
 func (e *Editor) fromProfile(p model.Profile) Form { return FromProfileIn(p, e.Settings) }
 
 // NewEditor returns an empty editor.
-func NewEditor(lang string, mode Mode) *Editor {
-	return &Editor{Lang: lang, Mode: mode, Sel: -1}
+func NewEditor(mode Mode) *Editor {
+	return &Editor{Mode: mode, Sel: -1}
 }
 
-func (e *Editor) t(key string) string { return i18n.T(key, e.Lang) }
+func (e *Editor) t(key string) string { return i18n.T(key) }
 
 // LoadConfig replaces the profiles with get_config (administrator mode).
 // The selected profile is kept by id; unsaved edits are dropped.
@@ -330,13 +332,16 @@ type Problem struct {
 // fieldLabel is the localized name of a JSON path ({0} of validation
 // texts); unknown paths are returned unchanged.
 func (e *Editor) fieldLabel(path string) string {
-	if l, ok := emailFieldLabel(path, e.Lang); ok {
+	if l, ok := emailFieldLabel(path); ok {
 		return l
 	}
-	if l, ok := viberFieldLabel(path, e.Lang); ok {
+	if l, ok := viberFieldLabel(path); ok {
 		return l
 	}
-	if l, ok := discoveryFieldLabel(path, e.Lang); ok {
+	if l, ok := telegramFieldLabel(path); ok {
+		return l
+	}
+	if l, ok := discoveryFieldLabel(path); ok {
 		return l
 	}
 	key := map[string]string{
@@ -347,7 +352,7 @@ func (e *Editor) fieldLabel(path string) string {
 		"pollIntervalSec": i18n.KeyGenPoll, "warnMinutes": i18n.KeyGenWarn, "errorMinutes": i18n.KeyGenError,
 		"beep.enabled": i18n.KeyGenBeepEnabled, "beep.warningFreqHz": i18n.KeyGenWarnFreq, "beep.warningDurMs": i18n.KeyGenWarnDur,
 		"beep.errorFreqHz": i18n.KeyGenErrorFreq, "beep.errorDurMs": i18n.KeyGenErrorDur, "beep.gapMs": i18n.KeyGenGap,
-		"language": i18n.KeyGenLanguage, "trayAutostart": i18n.KeyGenAutostart,
+		"trayAutostart": i18n.KeyGenAutostart,
 		"serverPreset": i18n.KeySetPreset, "connectTimeoutSec": i18n.KeySetConnTimeout, "queryTimeoutSec": i18n.KeySetQueryTimeout,
 	}[path]
 	if !e.settingsCtx { // the profile's own thresholds (phase 8)
@@ -383,7 +388,7 @@ func (e *Editor) validationText(args []string) string {
 		}
 		a[3] = e.t(presetKeys[PresetIndex(a[3])])
 	}
-	text := model.FormatMessage(args[1], a, e.Lang)
+	text := model.FormatMessage(args[1], a)
 	if args[1] == model.ValSQLServerForbidden && len(args) > 2 { // phase 9b (CHK-TRAY-29): the reason
 		if k, ok := forbiddenReasonKeys[args[2]]; ok {
 			text += " " + e.t(k)
@@ -473,7 +478,7 @@ func (e *Editor) SaveRequest(password string) (model.IPCRequest, *Problem) {
 		case e.Form.ClearPassword:
 			req.ClearPassword = true
 		case e.IsNew || !e.Base.HasPassword || !model.CanReuseSavedPassword(p, e.Base):
-			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgTestPasswordRequired, e.Lang), Field: FieldPassword}
+			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgTestPasswordRequired), Field: FieldPassword}
 		}
 	}
 	if pr := e.checkSize(req); pr != nil {
@@ -629,10 +634,10 @@ func (e *Editor) TestText(r model.TestProfileResult) string {
 			lines = append(lines, fmt.Sprintf(e.t(i18n.KeySetTestCompat), r.CompatLevel))
 		}
 	} else {
-		why := i18n.Message(model.TestCategoryKey(r.Category), e.Lang)
+		why := i18n.Message(model.TestCategoryKey(r.Category))
 		lines = append(lines, fmt.Sprintf(e.t(i18n.KeySetTestFailed), why))
 		if r.ErrorKey != "" && r.ErrorKey != model.TestCategoryKey(r.Category) {
-			lines = append(lines, i18n.Message(r.ErrorKey, e.Lang))
+			lines = append(lines, i18n.Message(r.ErrorKey))
 		}
 		if r.Category == model.TestTimeout {
 			lines = append(lines, e.t(i18n.KeySetTimeoutHint))
@@ -704,7 +709,7 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 	if m.Type != model.MsgError {
 		return nil
 	}
-	base := i18n.Message(m.ErrorKey, e.Lang)
+	base := i18n.Message(m.ErrorKey)
 	if m.ErrorKey == "" {
 		base = m.Error
 		if base == "" {
@@ -727,6 +732,9 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 				return &Problem{Text: base, Field: f}
 			}
 			if f, ok := viberKeyFocus[m.ErrorKey]; ok {
+				return &Problem{Text: base, Field: f}
+			}
+			if f, ok := telegramKeyFocus[m.ErrorKey]; ok {
 				return &Problem{Text: base, Field: f}
 			}
 			return &Problem{Text: base}
@@ -761,6 +769,9 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 		return &Problem{Text: base, Field: f}
 	}
 	if f, ok := viberKeyFocus[m.ErrorKey]; ok {
+		return &Problem{Text: base, Field: f}
+	}
+	if f, ok := telegramKeyFocus[m.ErrorKey]; ok {
 		return &Problem{Text: base, Field: f}
 	}
 	return &Problem{Text: base}

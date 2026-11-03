@@ -22,18 +22,18 @@ func TestCHK_SQL_04_ServiceSQLKeysInModel(t *testing.T) {
 		known[k] = true
 	}
 	for _, k := range []string{sqlcheck.MsgTLSEnableTLS10, sqlcheck.MsgTLSLegacyFailed, sqlcheck.MsgTLSCertificate, sqlcheck.MsgWarnPlaintextLogin} {
-		ru, en := model.SQLMessage(k, model.LangRU), model.SQLMessage(k, model.LangEN)
-		if !known[k] || !KnownErrorKey(k) || ru == "" || en == "" || ru == en {
-			t.Errorf("%s: known %v, ru %q, en %q", k, known[k], ru, en)
+		ru := model.SQLMessage(k)
+		if !known[k] || !KnownErrorKey(k) || ru == "" {
+			t.Errorf("%s: known %v, ru %q,", k, known[k], ru)
 		}
 	}
 	for _, k := range model.SQLValidationKeys() {
 		if !strings.HasPrefix(k, "validation.sql_") {
 			t.Errorf("validation key %q", k)
 		}
-		ru, en := model.FormatMessage(k, nil, model.LangRU), model.FormatMessage(k, nil, model.LangEN)
-		if ru == "" || en == "" || ru == k || en == k {
-			t.Errorf("%s: ru %q en %q", k, ru, en)
+		ru := model.FormatMessage(k, nil)
+		if ru == "" || ru == k {
+			t.Errorf("%s: ru %q", k, ru)
 		}
 	}
 	for _, k := range model.MonitorMessageKeys() {

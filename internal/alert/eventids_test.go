@@ -145,7 +145,7 @@ func (f *eventIDFakeReporter) Report(t uint16, id uint32, m string) error {
 // and one message string per event to the Reporter (S4, Go side).
 func TestCHK_SVC_02_EventLogSinkContract(t *testing.T) {
 	r := &eventIDFakeReporter{}
-	s := &EventLogSink{R: r, Lang: "en"}
+	s := &EventLogSink{R: r}
 	s.Alert(model.AlertEvent{From: model.LevelOK, To: model.LevelError})
 	s.Alert(model.AlertEvent{From: model.LevelError, To: model.LevelOK})
 	if len(r.id) != 2 || r.id[0] != EventIDError || r.id[1] != EventIDRecover {

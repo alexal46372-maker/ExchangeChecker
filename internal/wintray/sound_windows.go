@@ -23,7 +23,7 @@ import (
 // tone with a log line) and the master volume.
 
 // SoundValue is the HKCU value of the sound profiles (REG_SZ JSON,
-// trayalert.SoundPrefs) under LangKey.
+// trayalert.SoundPrefs) under TrayKey.
 const SoundValue = "Sound"
 
 // SoundStore keeps the per-user sound settings; raw "" = not stored.
@@ -34,12 +34,12 @@ type SoundStore interface {
 
 // RegistrySoundStore stores them in HKCU\Key\Sound.
 type RegistrySoundStore struct {
-	Key string // "" = LangKey
+	Key string // "" = TrayKey
 }
 
 func (s RegistrySoundStore) key() string {
 	if s.Key == "" {
-		return LangKey
+		return TrayKey
 	}
 	return s.Key
 }
@@ -70,7 +70,7 @@ const (
 type winSounder struct {
 	alias string
 	log   func(string)
-	lang  func() string
+	tone  toneOutputs // zero = the real WinAPI (tests: fakes)
 
 	mu     sync.Mutex
 	failed map[string]bool // files already logged as failing
@@ -98,11 +98,7 @@ func (w *winSounder) fallback(file string, err error) {
 	w.failed[file] = true
 	w.mu.Unlock()
 	if first && w.log != nil {
-		lang := i18n.RU
-		if w.lang != nil {
-			lang = w.lang()
-		}
-		w.log("tray: sound: " + fmt.Sprintf(i18n.T(i18n.KeySoundFallback, lang), file, err))
+		w.log("tray: sound: " + fmt.Sprintf(i18n.T(i18n.KeySoundFallback), file, err))
 	}
 }
 
@@ -124,19 +120,52 @@ func waitOrStop(d time.Duration, stop <-chan struct{}) bool {
 	return true
 }
 
-// playTone: the sine WAV with the volume as amplitude (PLAN §12 p.115);
-// PlaySound refused (no audio device) → kernel32 Beep without volume.
+// toneOutputs are the three outputs of «Тон», tried in order (phase 13
+// item 1, CHK-TRAY-97). All of them sound through the speakers / sound
+// card, none uses the system speaker and no driver is installed.
+type toneOutputs struct {
+	playWAV     func(alias string, wav []byte) error // winmm PlaySound(SND_MEMORY) of the sine WAV
+	stopWAV     func(alias string)
+	beep        func(freq, dur uint32) error // kernel32 Beep (fixed level)
+	messageBeep func() error                 // user32 MessageBeep(MB_ICONHAND)
+}
+
+func (o toneOutputs) withDefaults() toneOutputs {
+	if o.playWAV == nil {
+		o.playWAV = func(alias string, wav []byte) error { return winapi.PlayWAV(alias, wav, false) }
+	}
+	if o.stopWAV == nil {
+		o.stopWAV = winapi.StopWAV
+	}
+	if o.beep == nil {
+		o.beep = winapi.Beep
+	}
+	if o.messageBeep == nil {
+		o.messageBeep = func() error { return winapi.MessageBeep(winapi.MB_ICONHAND) }
+	}
+	return o
+}
+
+// playTone: the sine WAV with the volume as amplitude (PLAN §12 p.115)
+// through PlaySound(SND_MEMORY); refused (no audio device) → kernel32
+// Beep without volume; Beep failed too → MessageBeep(MB_ICONHAND), the
+// system critical sound (CHK-TRAY-97). Each fallback is logged once.
 func (w *winSounder) playTone(freq, dur, vol int, stop <-chan struct{}) error {
 	if vol <= 0 {
 		waitOrStop(time.Duration(dur)*time.Millisecond, stop)
 		return nil
 	}
-	if err := winapi.PlayWAV(w.alias, trayalert.SineWAV(freq, dur, vol), false); err != nil {
+	o := w.tone.withDefaults()
+	if err := o.playWAV(w.alias, trayalert.SineWAV(freq, dur, vol)); err != nil {
 		w.fallback("PlaySound", err)
-		return winapi.Beep(uint32(freq), uint32(dur))
+		if err := o.beep(uint32(freq), uint32(dur)); err != nil {
+			w.fallback("Beep", err)
+			return o.messageBeep()
+		}
+		return nil
 	}
 	if !waitOrStop(time.Duration(dur)*time.Millisecond+20*time.Millisecond, stop) {
-		winapi.StopWAV(w.alias)
+		o.stopWAV(w.alias)
 	}
 	return nil
 }
@@ -205,7 +234,7 @@ func (a *App) loadSoundPrefs() {
 	}
 	raw, err := a.opt.SoundStore.Load()
 	if err != nil {
-		a.logf("tray: sound: read HKCU %s\\%s: %v (using defaults)", LangKey, SoundValue, err)
+		a.logf("tray: sound: read HKCU %s\\%s: %v (using defaults)", TrayKey, SoundValue, err)
 		return
 	}
 	if strings.TrimSpace(raw) == "" {
@@ -213,7 +242,7 @@ func (a *App) loadSoundPrefs() {
 	}
 	p, err := trayalert.ParseSoundPrefs(raw, d)
 	if err != nil {
-		a.logf("tray: sound: HKCU %s\\%s: %v (using defaults)", LangKey, SoundValue, err)
+		a.logf("tray: sound: HKCU %s\\%s: %v (using defaults)", TrayKey, SoundValue, err)
 		return
 	}
 	a.soundPrefs, a.soundStored = p, true

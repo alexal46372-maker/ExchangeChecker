@@ -46,7 +46,6 @@ type statusWindow struct {
 	canHistory              func() bool
 	onHistory               func(trayui.StatusRow)
 	tips                    *tooltips
-	lang                    string
 	rows                    []trayui.StatusRow
 	now                     func() time.Time
 	onCheck                 func()
@@ -59,7 +58,7 @@ var statusColWidths = []int32{130, 140, 110, 95, 110, 80, 95, 95, 160}
 // rowBk returns the pale state background of the active theme (CHK-TRAY-51/55).
 func rowBk(c trayui.Color) uint32 { return trayui.PaleColorRef(c) }
 
-func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, error) {
+func newStatusWindow(show bool, onCheck func()) (*statusWindow, error) {
 	const w = 1060
 	// phase 11 (CHK-TRAY-48): one row of cards above the table (no empty
 	// second row with few databases; the table has them all)
@@ -67,7 +66,7 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	h := 440 + cardPanelHeight(cardRows) + 8
 	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2
 	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 3
-	sw := &statusWindow{lang: lang, now: time.Now, onCheck: onCheck}
+	sw := &statusWindow{now: time.Now, onCheck: onCheck}
 	sw.savePath = sw.dialogPath
 	handler := func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 		switch msg {
@@ -101,14 +100,14 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 		}
 		return 0, false
 	}
-	hwnd, err := createWindow(statusClass, i18n.T(i18n.KeyStTitle, lang)+" — "+i18n.T(i18n.KeyAppName, lang), 0,
+	hwnd, err := createWindow(statusClass, i18n.T(i18n.KeyStTitle)+" — "+i18n.T(i18n.KeyAppName), 0,
 		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU|winapi.WS_MINIMIZEBOX, x, y, w, h, 0, handler)
 	if err != nil {
 		return nil, err
 	}
 	sw.hwnd = hwnd
 	sw.tips = newTooltips(hwnd)
-	cp, err := newCardPanel(hwnd, sw.tips, lang, cardRows)
+	cp, err := newCardPanel(hwnd, sw.tips, cardRows)
 	if err != nil {
 		destroyWindow(hwnd)
 		return nil, err
@@ -118,14 +117,14 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 		winapi.WS_BORDER|winapi.WS_TABSTOP, idStList, 0, 0, 0, 0)
 	winapi.SendMessage(sw.list, winapi.LVM_SETEXTENDEDLISTVIEWSTYLE, 0, winapi.LVS_EX_FULLROWSELECT|winapi.LVS_EX_GRIDLINES)
 	for i, k := range trayui.StatusColumns {
-		winapi.ListViewInsertColumn(sw.list, i, i18n.T(k, lang), px(statusColWidths[i]))
+		winapi.ListViewInsertColumn(sw.list, i, i18n.T(k), px(statusColWidths[i]))
 	}
 	sw.info = child(hwnd, "STATIC", "", winapi.SS_LEFT|ssNotify, idStInfo, 0, 0, 0, 0)
-	sw.history = child(hwnd, "BUTTON", i18n.T(i18n.KeyStHistory, lang), winapi.WS_TABSTOP, idStHistory, 0, 0, 0, 0)
-	sw.check = child(hwnd, "BUTTON", i18n.T(i18n.KeyMenuCheckNow, lang), winapi.WS_TABSTOP, idStCheckNow, 0, 0, 0, 0)
-	sw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV, lang), winapi.WS_TABSTOP, idStExportCSV, 0, 0, 0, 0)
-	sw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML, lang), winapi.WS_TABSTOP, idStExportHTML, 0, 0, 0, 0)
-	sw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose, lang), winapi.WS_TABSTOP, idStClose, 0, 0, 0, 0)
+	sw.history = child(hwnd, "BUTTON", i18n.T(i18n.KeyStHistory), winapi.WS_TABSTOP, idStHistory, 0, 0, 0, 0)
+	sw.check = child(hwnd, "BUTTON", i18n.T(i18n.KeyMenuCheckNow), winapi.WS_TABSTOP, idStCheckNow, 0, 0, 0, 0)
+	sw.csv = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportCSV), winapi.WS_TABSTOP, idStExportCSV, 0, 0, 0, 0)
+	sw.html = child(hwnd, "BUTTON", i18n.T(i18n.KeyStExportHTML), winapi.WS_TABSTOP, idStExportHTML, 0, 0, 0, 0)
+	sw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyStClose), winapi.WS_TABSTOP, idStClose, 0, 0, 0, 0)
 	// phase 11 (CHK-TRAY-45/47): the list, then the pinned bar (info line
 	// above the buttons); never wider than the work area, the columns
 	// share the width of the list
@@ -141,15 +140,15 @@ func newStatusWindow(lang string, show bool, onCheck func()) (*statusWindow, err
 	sw.bar = &ui.Pad{All: ui.P12, Child: &ui.Row{Right: true, Items: []ui.Node{uiCtl(sw.history, ui.Button, ""), uiCtl(sw.check, ui.Button, ""),
 		uiCtl(sw.csv, ui.Button, ""), uiCtl(sw.html, ui.Button, ""), uiCtl(sw.close, ui.Button, "")}}}
 	fitForm(hwnd, sw.content, sw.bar, 0, false)
-	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, lang)
-	sw.tips.set(sw.list, i18n.T(i18n.KeyTipStList, lang))
-	sw.tips.set(cp.hwnd, i18n.T(i18n.KeyTipCards, lang))
-	sw.tips.set(sw.check, i18n.T(i18n.KeyTipCheckNow, lang))
-	sw.tips.set(sw.csv, i18n.T(i18n.KeyTipExportCSV, lang))
-	sw.tips.set(sw.html, i18n.T(i18n.KeyTipExportHTML, lang))
-	sw.tips.set(sw.history, i18n.T(i18n.KeyTipStHistory, lang))
-	sw.tips.set(sw.info, i18n.T(i18n.KeyTipStInfo, lang))
-	sw.tips.set(sw.close, i18n.T(i18n.KeyTipClose, lang))
+	fitColumns(sw.list, statusColWidths, trayui.StatusColumns)
+	sw.tips.set(sw.list, i18n.T(i18n.KeyTipStList))
+	sw.tips.set(cp.hwnd, i18n.T(i18n.KeyTipCards))
+	sw.tips.set(sw.check, i18n.T(i18n.KeyTipCheckNow))
+	sw.tips.set(sw.csv, i18n.T(i18n.KeyTipExportCSV))
+	sw.tips.set(sw.html, i18n.T(i18n.KeyTipExportHTML))
+	sw.tips.set(sw.history, i18n.T(i18n.KeyTipStHistory))
+	sw.tips.set(sw.info, i18n.T(i18n.KeyTipStInfo))
+	sw.tips.set(sw.close, i18n.T(i18n.KeyTipClose))
 	if show {
 		sw.show()
 	}
@@ -167,7 +166,7 @@ func (sw *statusWindow) update(st trayipc.Status, connected bool) {
 	if i := winapi.ListViewSelected(sw.list); i >= 0 && i < len(sw.rows) {
 		selKey = [2]string{sw.rows[i].ProfileID, sw.rows[i].PointKey}
 	}
-	sw.rows = trayui.StatusRows(st, sw.lang, sw.now())
+	sw.rows = trayui.StatusRows(st, sw.now())
 	winapi.SendMessage(sw.list, winapi.LVM_DELETEALLITEMS, 0, 0)
 	for i, r := range sw.rows {
 		winapi.ListViewAddRow(sw.list, r.Cells())
@@ -175,17 +174,17 @@ func (sw *statusWindow) update(st trayipc.Status, connected bool) {
 			winapi.ListViewSelect(sw.list, i) // the selection survives a refresh
 		}
 	}
-	sw.cards.set(trayui.Cards(sw.rows, sw.lang))
+	sw.cards.set(trayui.Cards(sw.rows))
 	var cells [][]string
 	for _, r := range sw.rows {
 		cells = append(cells, r.Cells())
 	}
-	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, sw.lang, cells...)
+	fitColumns(sw.list, statusColWidths, trayui.StatusColumns, cells...)
 	sw.updateHistoryButton()
 	winapi.EnableWindow(sw.check, connected)
 	if sw.rows == nil {
-		winapi.SetWindowText(sw.info, i18n.T(i18n.KeyStNoData, sw.lang))
-	} else if sw.info != 0 && winapi.GetWindowText(sw.info) == i18n.T(i18n.KeyStNoData, sw.lang) {
+		winapi.SetWindowText(sw.info, i18n.T(i18n.KeyStNoData))
+	} else if sw.info != 0 && winapi.GetWindowText(sw.info) == i18n.T(i18n.KeyStNoData) {
 		winapi.SetWindowText(sw.info, "")
 	}
 	sw.fitInfo()
@@ -248,11 +247,11 @@ func (sw *statusWindow) onNotify(lp uintptr) (uintptr, bool) {
 func (sw *statusWindow) dialogPath(k exportKind) (string, bool) {
 	name := "ExchangeChecker-" + sw.now().Format("20060102-1504")
 	if k == exportCSV {
-		return winapi.GetSaveFileName(sw.hwnd, i18n.T(i18n.KeyStExportCSV, sw.lang),
-			i18n.T(i18n.KeyStFilterCSV, sw.lang)+"\x00*.csv", "csv", name+".csv")
+		return winapi.GetSaveFileName(sw.hwnd, i18n.T(i18n.KeyStExportCSV),
+			i18n.T(i18n.KeyStFilterCSV)+"\x00*.csv", "csv", name+".csv")
 	}
-	return winapi.GetSaveFileName(sw.hwnd, i18n.T(i18n.KeyStExportHTML, sw.lang),
-		i18n.T(i18n.KeyStFilterHTML, sw.lang)+"\x00*.html;*.htm", "html", name+".html")
+	return winapi.GetSaveFileName(sw.hwnd, i18n.T(i18n.KeyStExportHTML),
+		i18n.T(i18n.KeyStFilterHTML)+"\x00*.html;*.htm", "html", name+".html")
 }
 
 // export saves the shown rows (CHK-TRAY-21).
@@ -263,16 +262,16 @@ func (sw *statusWindow) export(k exportKind) {
 	}
 	var data []byte
 	if k == exportCSV {
-		data = trayui.ExportCSV(sw.rows, sw.lang)
+		data = trayui.ExportCSV(sw.rows)
 	} else {
-		data = trayui.ExportHTML(sw.rows, sw.lang, sw.now())
+		data = trayui.ExportHTML(sw.rows, sw.now())
 	}
 	if err := os.WriteFile(p, data, 0o644); err != nil {
-		sw.setInfo(fmt.Sprintf(i18n.T(i18n.KeyStSaveFailed, sw.lang), err))
+		sw.setInfo(fmt.Sprintf(i18n.T(i18n.KeyStSaveFailed), err))
 		return
 	}
 	sw.lastSaved = p
-	sw.setInfo(fmt.Sprintf(i18n.T(i18n.KeyStSaved, sw.lang), p))
+	sw.setInfo(fmt.Sprintf(i18n.T(i18n.KeyStSaved), p))
 }
 
 // selected is the selected row (ok = false when none).
@@ -294,7 +293,7 @@ func (sw *statusWindow) updateHistoryButton() {
 func (sw *statusWindow) openHistory() {
 	r, ok := sw.selected()
 	if !ok {
-		sw.setInfo(i18n.T(i18n.KeyStHistoryNoPoint, sw.lang))
+		sw.setInfo(i18n.T(i18n.KeyStHistoryNoPoint))
 		return
 	}
 	if sw.onHistory != nil {
@@ -309,7 +308,7 @@ func (sw *statusWindow) openHistory() {
 // the list, the optional columns (send, receive, plan; dropped, in the
 // export and the history) go first, then everything is scaled down (no
 // horizontal scrolling).
-func fitColumns(lv uintptr, widths []int32, keys []string, lang string, cells ...[]string) {
+func fitColumns(lv uintptr, widths []int32, keys []string, cells ...[]string) {
 	r := winapi.GetClientRect(lv)
 	avail := r.Right - r.Left - winapi.GetSystemMetrics(winapi.SM_CXVSCROLL)
 	if avail <= 0 || len(widths) == 0 {
@@ -320,7 +319,7 @@ func fitColumns(lv uintptr, widths []int32, keys []string, lang string, cells ..
 	want := make([]int32, len(widths))
 	for i := range widths {
 		if i < len(keys) {
-			tw, _ := m.Text(i18n.T(keys[i], lang))
+			tw, _ := m.Text(i18n.T(keys[i]))
 			min[i] = tw + px(ui.P12)
 		}
 		for _, row := range cells {

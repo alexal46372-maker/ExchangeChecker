@@ -71,7 +71,7 @@ func (a *App) Blinks() int { return a.blinks }
 // updateProblems recomputes the list; blinking and the panel follow at
 // once (the panel disappears immediately on recovery, decision 5).
 func (a *App) updateProblems() {
-	ps := trayalert.Problems(a.status, a.statusExt, a.opt.Lang)
+	ps := trayalert.Problems(a.status, a.statusExt)
 	if a.status.State == trayipc.StateConnecting && len(a.problems) > 0 && a.problems[0].Kind == trayalert.ProblemNoConnection {
 		ps = a.problems // a reconnect attempt: no flicker of the panel
 	}
@@ -132,7 +132,7 @@ type panelWindow struct {
 func (a *App) Panel() *panelWindow { return a.panel }
 
 func (a *App) updatePanel() {
-	lines := trayalert.PanelLines(a.problems, a.opt.Lang)
+	lines := trayalert.PanelLines(a.problems)
 	if len(lines) == 0 {
 		if a.panel != nil && a.panel.shown {
 			a.panel.shown = false
@@ -142,11 +142,15 @@ func (a *App) updatePanel() {
 	}
 	if a.panel == nil || !winapi.IsWindow(a.panel.hwnd) {
 		p := &panelWindow{}
-		h, err := createWindow(panelClass, i18n.T(i18n.KeyPanelTitle, a.opt.Lang),
+		h, err := createWindow(panelClass, i18n.T(i18n.KeyPanelTitle),
 			winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW|winapi.WS_EX_NOACTIVATE,
-			winapi.WS_POPUP|winapi.WS_BORDER, 0, 0, panelWidth, 40, a.hwnd,
+			winapi.WS_POPUP, 0, 0, panelWidth, 40, a.hwnd,
 			func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 				switch msg {
+				case winapi.WM_ERASEBKGND: // CHK-TRAY-92: the thick red frame
+					themeErase(wp, hw)
+					paintPanelFrame(wp, winapi.GetClientRect(hw))
+					return 1, true
 				case winapi.WM_LBUTTONUP:
 					a.OpenStatus()
 					return 0, true
@@ -174,15 +178,45 @@ func (a *App) updatePanel() {
 	// least panelWidth wide, one line per problem
 	text := uiCtl(p.text, ui.Label, strings.Join(lines, "\n"))
 	text.W = panelWidth - 18
-	f := newForm(&ui.Pad{Left: ui.P8, Right: ui.P8, Top: 6, Bottom: 6, Child: text}, 0)
-	ow, oh := outerSize(f.W, f.H, winapi.WS_POPUP|winapi.WS_BORDER, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW|winapi.WS_EX_NOACTIVATE)
+	b := int32(panelBorder) // logical; newForm scales the pad
+	f := newForm(&ui.Pad{Left: ui.P8 + b, Right: ui.P8 + b, Top: 6 + b, Bottom: 6 + b, Child: text}, 0)
+	ow, oh := outerSize(f.W, f.H, winapi.WS_POPUP, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW|winapi.WS_EX_NOACTIVATE)
 	x, y := a.panelPos(ow, oh)
 	winapi.SetWindowPos(p.hwnd, winapi.HWND_TOPMOST, x, y, ow, oh, winapi.SWP_NOACTIVATE)
+	winapi.InvalidateRect(p.hwnd, true) // the frame follows the new size
 	if !p.shown {
 		p.shown = true
 		if !a.opt.HiddenPanel && !a.opt.HiddenAlerts {
 			winapi.ShowWindow(p.hwnd, winapi.SW_SHOWNOACTIVATE)
 		}
+	}
+}
+
+// Thick red frame of the error panel by the clock (phase 13, item 4,
+// CHK-TRAY-92): panelBorder logical pixels (DPI-scaled) of bright red
+// instead of the thin WS_BORDER; the panel still has no close button.
+const panelBorder = 8
+
+// PanelFrameRGB is the frame color (COLORREF 0x00BBGGRR, bright red).
+const PanelFrameRGB = 0x00303BFF
+
+var panelFrameBrush uintptr
+
+func panelBorderPx() int32 { return px(panelBorder) }
+
+// paintPanelFrame fills the four frame bands of client rectangle r.
+func paintPanelFrame(dc uintptr, r winapi.RECT) {
+	if panelFrameBrush == 0 {
+		panelFrameBrush = winapi.CreateSolidBrush(PanelFrameRGB)
+	}
+	b := panelBorderPx()
+	for _, band := range []winapi.RECT{
+		{Left: r.Left, Top: r.Top, Right: r.Right, Bottom: r.Top + b},
+		{Left: r.Left, Top: r.Bottom - b, Right: r.Right, Bottom: r.Bottom},
+		{Left: r.Left, Top: r.Top, Right: r.Left + b, Bottom: r.Bottom},
+		{Left: r.Right - b, Top: r.Top, Right: r.Right, Bottom: r.Bottom},
+	} {
+		winapi.FillRect(dc, band, panelFrameBrush)
 	}
 }
 
@@ -214,14 +248,14 @@ func (a *App) panelPos(w, h int32) (int32, int32) {
 }
 
 // PinHelpText is the «Как закрепить значок» note.
-func PinHelpText(lang string) string { return i18n.T(i18n.KeyPinHelpText, lang) }
+func PinHelpText() string { return i18n.T(i18n.KeyPinHelpText) }
 
 // ShowPinHelp shows the note (Options.Notify in tests).
 func (a *App) ShowPinHelp() {
-	txt := PinHelpText(a.opt.Lang)
+	txt := PinHelpText()
 	if a.opt.Notify != nil {
 		a.opt.Notify(txt, false)
 		return
 	}
-	winapi.MessageBox(a.hwnd, txt, i18n.T(i18n.KeyPinHelpTitle, a.opt.Lang), winapi.MB_ICONINFORMATION)
+	winapi.MessageBox(a.hwnd, txt, i18n.T(i18n.KeyPinHelpTitle), winapi.MB_ICONINFORMATION)
 }

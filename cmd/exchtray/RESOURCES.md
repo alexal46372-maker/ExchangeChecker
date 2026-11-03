@@ -8,7 +8,10 @@
 - `RT_MANIFEST` 1 — `exchtray.manifest`: asInvoker, Common Controls v6,
   supportedOS Windows 7 / 8 / 8.1 / 10+, `dpiAware` = true (system DPI, с фазы 10 D3: окна трея масштабируются сами, шрифт Segoe UI 9);
 - `RT_GROUP_ICON` 1 + `RT_ICON` 1–3 — `exchtray.ico` (16, 32, 48 px, 32 бит
-  с альфой);
+  с альфой). С фазы 13 (CHK-TRAY-89) файл генерирует `tools/mkres` из
+  `trayui.ExeICO()`: синий скруглённый квадрат и **зелёные** стрелки обмена;
+  тот же значок — у окон трея (`internal/wintray/icons/app.ico`) и у
+  установщика (setup берёт `cmd/exchtray/exchtray.ico` в свой `.syso`);
 - `RT_VERSION` 1 — VERSIONINFO: `FileVersion`/`ProductVersion` = версия сборки,
   `ProductName` = `Exchange Checker`, `FileDescription` = `Exchange Checker Tray`,
   `InternalName` = `exchtray`, `OriginalFilename` = `ExchangeCheckerTray.exe`;

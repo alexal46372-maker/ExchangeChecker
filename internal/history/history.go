@@ -201,7 +201,7 @@ func knownKey(k string) string {
 	if k == "" {
 		return ""
 	}
-	if model.MonitorMessage(k, model.LangEN) != "" || model.SQLMessage(k, model.LangEN) != "" {
+	if model.MonitorMessage(k) != "" || model.SQLMessage(k) != "" {
 		return k
 	}
 	return ""

@@ -219,14 +219,14 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	if dd.text(idDiscTable) != "_Node10" || dd.text(idDiscTimesTable) != "_InfoRg88" || !dd.checked(idDiscYear) {
 		t.Errorf("mapping editor: table %q times %q", dd.text(idDiscTable), dd.text(idDiscTimesTable))
 	}
-	if st, res := dd.text(idDiscState), dd.text(idDiscResult); st != fmt.Sprintf(i18n.T(i18n.KeyDiscFound, i18n.RU), 2) ||
-		!strings.Contains(res, i18n.T(i18n.KeyDiscReasonBudget, i18n.RU)) {
+	if st, res := dd.text(idDiscState), dd.text(idDiscResult); st != fmt.Sprintf(i18n.T(i18n.KeyDiscFound), 2) ||
+		!strings.Contains(res, i18n.T(i18n.KeyDiscReasonBudget)) {
 		t.Errorf("count %q / truncated note %q", st, res)
 	}
 	if l := dd.d.CandidateLine(dd.d.Candidates[0]); !strings.Contains(l, "[связанные таблицы]") || !strings.Contains(l, "оценка 50") {
 		t.Errorf("candidate line not translated: %q", dd.d.CandidateLine(dd.d.Candidates[0]))
 	}
-	if !strings.Contains(dd.text(idDiscDetails), traysettings.HintText(model.HintLinked, i18n.RU)) {
+	if !strings.Contains(dd.text(idDiscDetails), traysettings.HintText(model.HintLinked)) {
 		t.Errorf("details %q", dd.text(idDiscDetails))
 	}
 
@@ -243,7 +243,7 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	dd.click(t, idDiscByValue)
 	PumpPending()
 	if n, _ := ds.n(); n != 2 || dd.lastField != string(traysettings.FieldDiscPoint) ||
-		dd.text(idDiscResult) != i18n.Message(model.MsgDiscoverPointNameEmpty, i18n.RU) {
+		dd.text(idDiscResult) != i18n.Message(model.MsgDiscoverPointNameEmpty) {
 		t.Errorf("empty point: reqs %d field %q result %q", n, dd.lastField, dd.text(idDiscResult))
 	}
 	winapi.SendMessage(dd.ctl[idDiscPoint], winapi.CB_SETCURSEL, 0, 0)
@@ -267,7 +267,7 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	}
 	dd.click(t, idDiscCancel)
 	pumpUntil(t, "canceled", func() bool { _, c := ds.n(); return c == 1 && dd.cancel == nil })
-	if dd.text(idDiscResult) != i18n.T(i18n.KeyDiscCanceled, i18n.RU) {
+	if dd.text(idDiscResult) != i18n.T(i18n.KeyDiscCanceled) {
 		t.Errorf("canceled result %q", dd.text(idDiscResult))
 	}
 	ds.setBlock(false)
@@ -281,7 +281,7 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	if r := ds.last(); r.Cmd != model.CmdCheckMapping || r.Mapping == nil || r.Mapping.Table != "_Node30" {
 		t.Errorf("check request %+v", r)
 	}
-	if dd.lastField != "mapping.lastSendColumn" || !strings.Contains(dd.text(idDiscResult), i18n.Message(model.MsgDiscoverMappingInvalid, i18n.RU)) {
+	if dd.lastField != "mapping.lastSendColumn" || !strings.Contains(dd.text(idDiscResult), i18n.Message(model.MsgDiscoverMappingInvalid)) {
 		t.Errorf("failed check: field %q result %q", dd.lastField, dd.text(idDiscResult))
 	}
 	// manual SQL template, ok with preview rows
@@ -301,7 +301,7 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 		r.Mapping.Table != "" || r.Mapping.TimesTable != "" {
 		t.Errorf("manual check request %+v", r.Mapping)
 	}
-	if !strings.HasPrefix(dd.text(idDiscResult), i18n.T(i18n.KeyDiscCheckOK, i18n.RU)) || !strings.Contains(dd.text(idDiscResult), "A: 06.10.2026 09:00") {
+	if !strings.HasPrefix(dd.text(idDiscResult), i18n.T(i18n.KeyDiscCheckOK)) || !strings.Contains(dd.text(idDiscResult), "A: 06.10.2026 09:00") {
 		t.Errorf("ok result %q", dd.text(idDiscResult))
 	}
 
@@ -310,12 +310,12 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	ds.setBlock(true)
 	asked := len(conf.texts)
 	dd.click(t, idDiscFind)
-	if len(conf.texts) != asked+1 || conf.texts[asked] != i18n.T(i18n.KeyDiscConfirmOverwrite, i18n.RU) {
+	if len(conf.texts) != asked+1 || conf.texts[asked] != i18n.T(i18n.KeyDiscConfirmOverwrite) {
 		t.Errorf("search over edits must ask: %q", conf.texts[asked:])
 	}
 	pumpUntil(t, "discover running 2", func() bool { n, _ := ds.n(); return n == 7 })
 	winapi.SendMessage(dd.hwnd, winapi.WM_CLOSE, 0, 0)
-	if conf.texts[len(conf.texts)-1] != i18n.T(i18n.KeyDiscConfirmClose, i18n.RU) {
+	if conf.texts[len(conf.texts)-1] != i18n.T(i18n.KeyDiscConfirmClose) {
 		t.Errorf("close with unapplied changes must ask: %q", conf.texts)
 	}
 	pumpUntil(t, "canceled on close", func() bool { _, c := ds.n(); return c == 2 })
@@ -339,12 +339,12 @@ func TestCHK_TRAY_07_DiscoveryDialogSmoke(t *testing.T) {
 	winapi.SendMessage(dd.ctl[idDiscAllPlans], winapi.BM_SETCHECK, winapi.BST_CHECKED, 0)
 	dd.profileID = "other"
 	dd.click(t, idDiscApply)
-	if w.disc == nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscProfileChanged, i18n.RU) {
+	if w.disc == nil || dd.text(idDiscResult) != i18n.T(i18n.KeyDiscProfileChanged) {
 		t.Fatalf("apply to another profile: %q", dd.text(idDiscResult))
 	}
 	dd.profileID = "p1"
 	dd.click(t, idDiscApply)
-	if w.disc != nil || w.ed.MapEdit == nil || !w.ed.Unsaved() || w.statusText() != i18n.T(i18n.KeyDiscApplied, i18n.RU) {
+	if w.disc != nil || w.ed.MapEdit == nil || !w.ed.Unsaved() || w.statusText() != i18n.T(i18n.KeyDiscApplied) {
 		t.Fatalf("applied: status %q", w.statusText())
 	}
 	saves := ds.count("save")

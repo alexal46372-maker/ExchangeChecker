@@ -293,7 +293,7 @@ func (w *settingsWindow) viberStatusText() string {
 		st.Snapshot.Settings.Viber.Status != nil {
 		v = st.Snapshot.Settings.Viber
 	}
-	return traysettings.ViberStatusText(v, w.cfg.lang)
+	return traysettings.ViberStatusText(v)
 }
 
 // saveViber sends save_settings of the page.

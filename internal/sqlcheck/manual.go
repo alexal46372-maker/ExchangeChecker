@@ -125,7 +125,7 @@ func ValidateManualSQL(q string) error {
 }
 
 // ManualSQLTemplate is an example manual query for the setup UI (the
-// pre-phase-6 shape; model.ManualSQLTemplate carries RU/EN titles).
+// pre-phase-6 shape; model.ManualSQLTemplate carries the titles).
 type ManualSQLTemplate struct {
 	Name        string
 	Description string
@@ -133,14 +133,14 @@ type ManualSQLTemplate struct {
 }
 
 // ManualSQLTemplates are the examples of model.SQLManualTemplates (phase
-// 6, G4) in the old shape: Name = ID, Description = English description.
+// 6, G4) in the old shape: Name = ID, Description = the description.
 // They are SQL Server 2008 T-SQL (CHK-SQL-05).
 var ManualSQLTemplates = legacyTemplates()
 
 func legacyTemplates() []ManualSQLTemplate {
 	var out []ManualSQLTemplate
 	for _, t := range model.SQLManualTemplates() {
-		out = append(out, ManualSQLTemplate{Name: t.ID, Description: t.Description.EN, SQL: t.SQL})
+		out = append(out, ManualSQLTemplate{Name: t.ID, Description: t.Description, SQL: t.SQL})
 	}
 	return out
 }

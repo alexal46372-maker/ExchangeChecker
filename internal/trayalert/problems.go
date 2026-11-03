@@ -108,12 +108,12 @@ const MaxPanelLines = 8
 // ext (optional) replaces the derived alert entries when the service sends
 // them. Acknowledged entries stay listed (the icon keeps blinking until
 // recovery; only the window and sound are acknowledged).
-func Problems(st trayipc.Status, ext StatusExt, lang string) []Problem {
+func Problems(st trayipc.Status, ext StatusExt) []Problem {
 	switch {
 	case st.State == trayipc.StateConnecting:
 		return nil // still starting: not a problem yet
 	case st.State != trayipc.StateConnected:
-		return []Problem{{Kind: ProblemNoConnection, Text: i18n.T(i18n.KeyPanelNoService, lang)}}
+		return []Problem{{Kind: ProblemNoConnection, Text: i18n.T(i18n.KeyPanelNoService)}}
 	case st.Snapshot == nil:
 		return nil
 	}
@@ -128,7 +128,7 @@ func Problems(st trayipc.Status, ext StatusExt, lang string) []Problem {
 			return nil
 		}
 		for _, p := range ext.Problems {
-			p.Text = extLine(p, names, snap, lang)
+			p.Text = extLine(p, names, snap)
 			out = append(out, p)
 		}
 		return out
@@ -152,23 +152,23 @@ func Problems(st trayipc.Status, ext StatusExt, lang string) []Problem {
 			seen[a.ProfileID] = true
 		}
 		out = append(out, Problem{Kind: k, ProfileID: a.ProfileID, PointKey: a.Key, Since: a.At,
-			Acknowledged: a.Acknowledged, Text: Line(a, lang)})
+			Acknowledged: a.Acknowledged, Text: Line(a)})
 	}
 	for _, p := range snap.Profiles {
 		if p.Enabled && p.Error != "" && !seen[p.ProfileID] {
 			// not yet debounced into an alert: still a problem for the icon
 			out = append(out, Problem{Kind: ProblemError, ProfileID: p.ProfileID, Since: p.CheckedAt,
 				Text: Line(model.AlertEvent{ProfileID: p.ProfileID, ProfileName: p.Name, To: model.LevelError,
-					Error: p.Error, ErrorKey: p.ErrorKey}, lang)})
+					Error: p.Error, ErrorKey: p.ErrorKey})})
 		}
 	}
 	return out
 }
 
-func extLine(p Problem, names map[string]string, snap *model.StatusSnapshot, lang string) string {
+func extLine(p Problem, names map[string]string, snap *model.StatusSnapshot) string {
 	for _, a := range snap.Alerts {
 		if a.ProfileID == p.ProfileID && a.Key == p.PointKey {
-			return Line(a, lang)
+			return Line(a)
 		}
 	}
 	name := names[p.ProfileID]
@@ -177,16 +177,16 @@ func extLine(p Problem, names map[string]string, snap *model.StatusSnapshot, lan
 	}
 	switch p.Kind {
 	case ProblemNoConnection:
-		return sprintf(i18n.T(i18n.KeyPanelNoSQL, lang), name)
+		return sprintf(i18n.T(i18n.KeyPanelNoSQL), name)
 	case ProblemError:
-		return name + ": " + levelText(model.LevelError, lang)
+		return name + ": " + levelText(model.LevelError)
 	case ProblemStalled:
 		if p.PointKey != "" {
-			return sprintf(i18n.T(i18n.KeyPanelStalled, lang), name, p.PointKey)
+			return sprintf(i18n.T(i18n.KeyPanelStalled), name, p.PointKey)
 		}
-		return name + ": " + levelText(model.LevelWarning, lang)
+		return name + ": " + levelText(model.LevelWarning)
 	}
-	return name + ": " + levelText(model.LevelWarning, lang)
+	return name + ": " + levelText(model.LevelWarning)
 }
 
 // Blink is the icon blink color.
@@ -214,7 +214,7 @@ func BlinkFor(ps []Problem) Blink {
 }
 
 // PanelLines are the panel texts, worst first, limited to MaxPanelLines.
-func PanelLines(ps []Problem, lang string) []string {
+func PanelLines(ps []Problem) []string {
 	var red, yellow []string
 	for _, p := range ps {
 		if p.Kind == ProblemWarning || p.Kind == ProblemStalled {
@@ -226,7 +226,7 @@ func PanelLines(ps []Problem, lang string) []string {
 	all := append(red, yellow...)
 	if len(all) > MaxPanelLines {
 		n := len(all) - MaxPanelLines + 1
-		all = append(all[:MaxPanelLines-1], sprintf(i18n.T(i18n.KeyAlertMore, lang), n))
+		all = append(all[:MaxPanelLines-1], sprintf(i18n.T(i18n.KeyAlertMore), n))
 	}
 	return all
 }

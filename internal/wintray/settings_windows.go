@@ -72,8 +72,6 @@ const (
 	idGenErrDur
 	idGenGap
 	idGenStalled // phase 11 CHK-TRAY-53
-	idGenLang
-	idGenTheme // phase 12 CHK-TRAY-55
 	idGenAutostart
 	idGenNote
 	idGenAutostartErr
@@ -91,6 +89,8 @@ const (
 	idSetExport    // «Экспорт…» (phase 10 E, administrator)
 	idSetImport    // «Импорт…»
 	idSetClose     = winapi.IDCANCEL
+	// idGenFlash: «Мигание экрана» (HKCU, saved at once; CHK-TRAY-95)
+	idGenFlash = 990
 )
 
 // Elevator starts the elevated settings process («Изменить
@@ -140,7 +140,6 @@ type settingsSession interface {
 
 // settingsConfig configures a settings window.
 type settingsConfig struct {
-	lang     string
 	mode     traysettings.Mode
 	session  settingsSession
 	elevator Elevator
@@ -156,8 +155,6 @@ type settingsConfig struct {
 	// D, CHK-TRAY-40); nil store = not stored
 	uiMode  traysettings.UIMode
 	uiStore UIModeStore
-	// themeStore: light/dark chrome (HKCU Theme, phase 12, CHK-TRAY-55); nil = not stored
-	themeStore ThemeStore
 	// phase 10 E (CHK-TRAY-44): the tray block stores, the file dialog
 	// and the warning box (nil = GetSaveFileNameW / GetOpenFileNameW,
 	// MessageBoxW)
@@ -204,6 +201,8 @@ type settingsWindow struct {
 	// emTestIDs / emTesting: email_test (CHK-TRAY-64)
 	emTestIDs []string
 	emTesting *model.IPCRequest
+	// tgTesting: the running telegram_test (CHK-TRAY-94).
+	tgTesting *model.IPCRequest
 	// phase 10 E: the scrolled page host, the px rectangles of its
 	// controls (unscrolled), the view / content sizes, the bar buttons
 	host                           uintptr
@@ -252,17 +251,17 @@ type settingsWindow struct {
 	// done after save_settings (test hook)
 	statusRefreshes, statusRefreshed int
 	page                             int          // 0 = databases, 1 = general, 2 = Viber, 3 = e-mail
-	pageCtl                          [4][]uintptr // profiles, «Общие», «Viber», «e-mail»
-	pagePanel                        [4]uintptr   // one child HWND per tab (SW_HIDE hides tree)
+	pageCtl                          [5][]uintptr // profiles, «Общие», «Viber», «e-mail», «Telegram»
+	pagePanel                        [5]uintptr   // one child HWND per tab (SW_HIDE hides tree)
 	pageParent                       uintptr      // CreateWindow parent while building a page
 	pageSlot                         winapi.RECT  // shared Gap:-1 slot (host coords) for panels
-	pages                            [4]ui.Node   // page roots for SetHidden on switch (no overlay)
+	pages                            [5]ui.Node   // page roots for SetHidden on switch (no overlay)
 	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs (frame child; fixed)
 	tabPages                         []int        // tab index → page index
 	tabSync                          bool         // ignore TCN_SELCHANGE while syncing
 	tabChromeH                       int32        // fixed tab strip height (px); not scrolled
 	footerTop                        int32        // y of footer bar in client (paint)
-	scrollPos                        [4]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
+	scrollPos                        [5]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
 	pageActions                      []uintptr    // Test/Cancel/Alarm/Poll — footer, not pageCtl
 	pinnedHost                       map[uintptr]bool // CHK-TRAY-78: DB list chrome (no vertical scroll)
 	cur                              *[]uintptr   // page of the controls being created
@@ -302,7 +301,7 @@ func (w *settingsWindow) setCue(id int32, text string) {
 // applyFieldCues sets EM_SETCUEBANNER from UIField.CueText (CHK-TRAY-50 note).
 func (w *settingsWindow) applyFieldCues() {
 	for _, f := range traysettings.UIFields {
-		text := f.CueText(w.cfg.lang)
+		text := f.CueText()
 		if text == "" {
 			continue
 		}
@@ -332,7 +331,7 @@ var settingsTips = map[int32]string{
 	idGenBeep: i18n.KeyTipGenBeep, idGenWarnFreq: i18n.KeyTipGenWarnFreq, idGenWarnDur: i18n.KeyTipGenWarnDur,
 	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
 	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
-	idGenLang: i18n.KeyTipGenLang, idGenTheme: i18n.KeyTipGenTheme, idGenAutostart: i18n.KeyTipGenAutostart,
+	idGenAutostart: i18n.KeyTipGenAutostart, idGenFlash: i18n.KeyTipGenScreenFlash,
 	// CHK-TRAY-62: General «Звук» section (same tips as soundwin)
 	idSndSave: i18n.KeyTipSoundSave,
 	idSndWarn + idSndBeep: i18n.KeyTipSoundKind, idSndWarn + idSndFile: i18n.KeyTipSoundKind,
@@ -371,8 +370,7 @@ func profText(f *traysettings.Form, id int32) *string {
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
-	cfg.lang = i18n.Normalize(cfg.lang)
-	w := &settingsWindow{cfg: cfg, ed: traysettings.NewEditor(cfg.lang, cfg.mode), ctl: map[int32]uintptr{},
+	w := &settingsWindow{cfg: cfg, ed: traysettings.NewEditor(cfg.mode), ctl: map[int32]uintptr{},
 		labels: map[int32]uintptr{}, labelText: map[int32]string{}, missing: map[int32]bool{}, groups: map[string]uintptr{}}
 	// no mode given (tests, older callers): every field, as before
 	w.uiMode = traysettings.UIExpert
@@ -382,9 +380,9 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	if w.cfg.elevator == nil {
 		w.cfg.elevator = ShellElevator{}
 	}
-	title := i18n.T(i18n.KeySetTitleRead, cfg.lang)
+	title := i18n.T(i18n.KeySetTitleRead)
 	if cfg.mode == traysettings.Admin {
-		title = i18n.T(i18n.KeySetTitleAdmin, cfg.lang)
+		title = i18n.T(i18n.KeySetTitleAdmin)
 	}
 	class := SettingsViewClass
 	if cfg.mode == traysettings.Admin {
@@ -412,7 +410,7 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	return w, nil
 }
 
-func (w *settingsWindow) t(key string) string { return i18n.T(key, w.cfg.lang) }
+func (w *settingsWindow) t(key string) string { return i18n.T(key) }
 
 func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
 	x, y, cw, ch = pxRect(x, y, cw, ch)
@@ -667,17 +665,17 @@ func (w *settingsWindow) build() {
 		}
 		gRows = append(gRows, field(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, gw))
 	}
-	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Box, 260, 34)
 	// a wrapped check box: the page width, not its one-line text (phase 11)
 	auto.Grow, auto.NoShrink = true, true
+	flash := add("BUTTON", w.t(i18n.KeyGenScreenFlash), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX, idGenFlash, ui.Check, 0, 0)
 	autoErr := add("STATIC", "", 0, winapi.SS_LEFT, idGenAutostartErr, ui.Box, 300, 32)
 	note := add("STATIC", w.t(i18n.KeyGenNote), 0, winapi.SS_LEFT, idGenNote, ui.Box, 300, 120)
 	autoErr.Grow, note.Grow = true, true
 	// phase 11 (CHK-TRAY-48): as high as their text, an empty error box
 	// takes no room (no gap under the autostart check box)
 	w.wrap = append(w.wrap, autoErr, note)
-	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: note})
+	gRows = append(gRows, ui.GridRow{Span: true, Field: auto}, ui.GridRow{Span: true, Field: autoErr}, ui.GridRow{Span: true, Field: flash}, ui.GridRow{Span: true, Field: note})
 	generalBox := &ui.GroupBox{Box: gBox, Child: &ui.Grid{Gap: ui.P4, Rows: gRows}}
 	soundBox := w.buildSoundSection(add, label) // CHK-TRAY-62
 	generalPage := &ui.Col{Gap: ui.P12, Items: []ui.Node{generalBox, soundBox}}
@@ -693,7 +691,7 @@ func (w *settingsWindow) build() {
 	button := func(id int32, key string, width int32, right bool) {
 		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, 12, 674, width, gridButtonH)
 		bw, _ := ui.Layout(&ui.Ctl{Kind: ui.Button, Text: w.t(key), W: width}, m, 0, 0, 0)
-		width = max32(width, unpx(bw)) // at least its text in this language
+		width = max32(width, unpx(bw)) // at least its text
 		if right {
 			w.barRight = append(w.barRight, barButton{id, width})
 		} else {
@@ -735,9 +733,11 @@ func (w *settingsWindow) build() {
 	viberPage := w.buildViber()
 	w.pageParent = w.pagePanel[pageEmail]
 	emailPage := w.buildEmail()
+	w.pageParent = w.pagePanel[pageTelegram]
+	telegramPage := w.buildTelegram()
 	w.pageParent = 0
 	// page roots: setPage hides inactive ones via ui.SetHidden (wizard pattern)
-	w.pages = [4]ui.Node{profilePage, generalPage, viberPage, emailPage}
+	w.pages = [5]ui.Node{profilePage, generalPage, viberPage, emailPage, telegramPage}
 	// CHK-TRAY-75: tab order is General→Databases; open on Databases (page 0)
 	// so profile Save/list tests and primary workflow stay on the working tab.
 	w.page = 0
@@ -747,7 +747,7 @@ func (w *settingsWindow) build() {
 	w.applyFieldCues()
 	w.fillEmailTLSCombo()
 	w.rebuildTabs()
-	w.layoutPages(m, []ui.Node{profilePage, generalPage, viberPage, emailPage})
+	w.layoutPages(m, []ui.Node{profilePage, generalPage, viberPage, emailPage, telegramPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
@@ -763,9 +763,6 @@ func (w *settingsWindow) build() {
 		if key, ok := settingsTips[id]; ok {
 			w.tips.set(h, w.t(key))
 		}
-	}
-	for _, k := range []string{i18n.KeyGenLangAuto, i18n.KeyGenLangRU, i18n.KeyGenLangEN} {
-		winapi.SendMessageString(w.ctl[idGenLang], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
 	// Theme combo removed from General (CHK-TRAY-61); tray menu in CHK-TRAY-63.
 	for _, h := range w.pageCtl[1] {
@@ -848,6 +845,9 @@ func (w *settingsWindow) command(id int32, code uint32) {
 	if w.emailCommand(id, code) {
 		return
 	}
+	if w.telegramCommand(id, code) {
+		return
+	}
 	if w.soundCommand(id) {
 		return
 	}
@@ -862,13 +862,13 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		if code == winapi.EN_CHANGE && !w.loading {
 			w.readGeneral()
 		}
-	case idGenLang:
-		if code == winapi.CBN_SELCHANGE && !w.loading {
-			w.readGeneral()
-		}
 	case idGenBeep, idGenAutostart:
 		if code == winapi.BN_CLICKED && !w.loading {
 			w.readGeneral()
+		}
+	case idGenFlash:
+		if code == winapi.BN_CLICKED && !w.loading {
+			w.saveScreenFlash()
 		}
 	case idSetPage:
 		if w.page != 1 {
@@ -1068,9 +1068,11 @@ func (w *settingsWindow) fill() {
 	w.setCheck(idSetTrust, f.TrustServerCert && traysettings.TrustApplies(f.Encrypt))
 	// idSetEnabled removed from «Опрос и пороги» (CHK-TRAY-80); list checkbox owns it.
 	w.fillGeneral()
+	w.fillScreenFlash()
 	w.loadSoundSection()
 	w.fillViber()
 	w.fillEmail()
+	w.fillTelegram()
 	w.update()
 }
 
@@ -1147,7 +1149,7 @@ func (w *settingsWindow) update() {
 	for _, e := range genEdits {
 		winapi.SendMessage(w.ctl[e.id], winapi.EM_SETREADONLY, boolPtr(!gen), 0)
 	}
-	for _, id := range []int32{idGenBeep, idGenAutostart, idGenLang} {
+	for _, id := range []int32{idGenBeep, idGenAutostart} {
 		winapi.EnableWindow(w.ctl[id], gen)
 	}
 	if ed.Mode == traysettings.Admin {
@@ -1160,6 +1162,9 @@ func (w *settingsWindow) update() {
 		}
 		if w.page == pageEmail {
 			canSave = ed.CanEditEmail()
+		}
+		if w.page == pageTelegram {
+			canSave = ed.CanEditTelegram()
 		}
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
@@ -1184,6 +1189,7 @@ func (w *settingsWindow) update() {
 	}
 	w.updateViber()
 	w.updateEmail()
+	w.updateTelegram()
 	w.updateRequired()
 	w.showPageActions(w.page)
 }
@@ -1240,7 +1246,7 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldStalledMinutes: idGenStalled,
 	traysettings.FieldBeepEnabled:    idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
 	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
-	traysettings.FieldLanguage: idGenLang, traysettings.FieldAutostart: idGenAutostart,
+	traysettings.FieldAutostart: idGenAutostart,
 	traysettings.FieldDiscoverButton: idSetDiscover, // mapping.* / mappings[i].*
 	traysettings.FieldPreset:         idSetPreset, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
 	traysettings.FieldProfStalled: idSetStalled,
@@ -1257,6 +1263,9 @@ func (w *settingsWindow) focus(f traysettings.Field) {
 	}
 	if traysettings.IsEmail(f) {
 		page = pageEmail
+	}
+	if traysettings.IsTelegram(f) {
+		page = pageTelegram
 	}
 	if page != w.page {
 		w.setPage(page)
@@ -1317,7 +1326,7 @@ func (w *settingsWindow) profileDiscardOK() bool {
 // Inactive tabs are SW_HIDE'd via their pagePanel HWND (entire child tree
 // disappears) — hide-by-HWND-list was not enough on live Win7 (ghosts).
 func (w *settingsWindow) setPage(p int) {
-	if p < 0 || p > pageEmail {
+	if p < 0 || p > pageTelegram {
 		return
 	}
 	// remember scroll of the page we leave
@@ -1358,9 +1367,6 @@ func (w *settingsWindow) readGeneral() {
 		*genText(g, e.id) = w.text(e.id)
 	}
 	g.BeepEnabled, g.Autostart = w.check(idGenBeep), w.check(idGenAutostart)
-	if i := int(winapi.SendMessage(w.ctl[idGenLang], winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(traysettings.LanguageChoices) {
-		g.Language = traysettings.LanguageChoices[i]
-	}
 }
 
 // fillGeneral shows the general page of the editor.
@@ -1373,11 +1379,6 @@ func (w *settingsWindow) fillGeneral() {
 	}
 	w.setCheck(idGenBeep, g.BeepEnabled)
 	w.setCheck(idGenAutostart, g.Autostart)
-	lang := traysettings.LanguageIndex(g.Language)
-	if !w.ed.HasSettings {
-		lang = -1
-	}
-	winapi.SendMessage(w.ctl[idGenLang], winapi.CB_SETCURSEL, uintptr(lang), 0)
 }
 
 // saveSettings sends save_settings of the general page.
@@ -1436,7 +1437,7 @@ func (w *settingsWindow) autostartError() string {
 	if !st.Has(model.CapTrayAutostartStatus) {
 		return ""
 	}
-	return traysettings.AutostartErrorText(st.TrayAutostartError, w.cfg.lang)
+	return traysettings.AutostartErrorText(st.TrayAutostartError)
 }
 
 // listIndex is the list row of the edited profile (-1 = none).
@@ -1493,6 +1494,9 @@ func (w *settingsWindow) onListNotify(lp uintptr) bool {
 			return true
 		}
 		on := winapi.ListViewChecked(w.ctl[idSetList], i)
+		if w.setEnabledLive(i, on) {
+			return true
+		}
 		if i != w.listIndex() {
 			// select the row whose poll flag changed (may prompt discard)
 			if !w.profileDiscardOK() {
@@ -1511,6 +1515,65 @@ func (w *settingsWindow) onListNotify(lp uintptr) bool {
 		return true
 	}
 	return true
+}
+
+// setEnabledLive sends set_enabled for the «Опрос» checkbox of saved
+// profile i at once when the service offers profile_enabled (CHK-TRAY-91);
+// the reply / profile_enabled push syncs the list and the tray menu. It
+// reports false when the old behaviour (the form field) applies.
+func (w *settingsWindow) setEnabledLive(i int, on bool) bool {
+	s := w.cfg.session
+	if s == nil || !s.Status().Has(model.CapProfileEnabled) {
+		return false
+	}
+	req, ok := w.ed.SetEnabledRequest(i, on)
+	if !ok {
+		return false
+	}
+	if w.busy {
+		w.loading = true
+		winapi.ListViewSetChecked(w.ctl[idSetList], i, !on)
+		w.loading = false
+		return true
+	}
+	id := req.ProfileID
+	w.call(req, func(m model.IPCMessage, err error) {
+		if err != nil || m.Type == model.MsgError || m.Enabled == nil {
+			w.loading = true
+			winapi.ListViewSetChecked(w.ctl[idSetList], i, !on)
+			w.loading = false
+			w.status = i18n.T(i18n.KeyDBToggleFailed) + replyErrText(m, err)
+			w.update()
+			return
+		}
+		w.onProfileEnabled(id, *m.Enabled, m.Revision)
+	})
+	return true
+}
+
+// replyErrText is ": <reason>" of a failed reply ("" = none).
+func replyErrText(m model.IPCMessage, err error) string {
+	switch {
+	case err != nil:
+		return ": " + i18n.T(i18n.KeyDBNoData)
+	case m.ErrorKey != "":
+		return ": " + i18n.Message(m.ErrorKey)
+	case m.Error != "":
+		return ": " + m.Error
+	}
+	return ""
+}
+
+// onProfileEnabled applies a set_enabled reply or a profile_enabled push
+// (also from the tray menu check mark) to the list checkbox.
+func (w *settingsWindow) onProfileEnabled(id string, on bool, rev string) {
+	i := w.ed.ApplyEnabled(id, on, rev)
+	if i >= 0 && w.ctl[idSetList] != 0 && winapi.ListViewChecked(w.ctl[idSetList], i) != on {
+		w.loading = true
+		winapi.ListViewSetChecked(w.ctl[idSetList], i, on)
+		w.loading = false
+	}
+	w.update()
 }
 
 func (w *settingsWindow) newProfile() {
@@ -1550,6 +1613,10 @@ func (w *settingsWindow) save() {
 	}
 	if w.page == pageEmail {
 		w.saveEmail()
+		return
+	}
+	if w.page == pageTelegram {
+		w.saveTelegram()
 		return
 	}
 	if w.busy {
@@ -1648,7 +1715,7 @@ func (w *settingsWindow) testDiagnosis(m model.IPCMessage, text string) {
 	}
 	detail := "" // TestText / Reply already show the technical error
 	show := func(d *model.SQLDiagnosis) {
-		w.setStatus(text + "\r\n" + traysettings.ErrorText(code, d, detail, w.cfg.lang))
+		w.setStatus(text + "\r\n" + traysettings.ErrorText(code, d, detail))
 	}
 	if w.cfg.mode != traysettings.Admin || !w.cfg.session.Supported(model.CmdSQLDiagnose) {
 		show(nil)
@@ -1903,17 +1970,16 @@ func (w *settingsWindow) close() {
 // SettingsOptions configure the elevated settings process (exchtray
 // --settings).
 type SettingsOptions struct {
-	Lang string
 	// Session: Dial and Verify (G7: the pipe server PID is checked
 	// before any command, so no password goes to a foreign process).
 	Session trayipc.Options
 	// UIModeStore: «Простой» / «Экспертный» (HKCU; nil = every field).
 	UIModeStore UIModeStore
 	// tray block of export / import (phase 10 E; HKCU, nil = not stored)
-	LangStore    LangStore
 	BalloonStore BalloonStore
 	SoundStore   SoundStore
-	ThemeStore   ThemeStore // phase 12 CHK-TRAY-55
+	// ScreenFlashStore: «Мигание экрана» (CHK-TRAY-95).
+	ScreenFlashStore ScreenFlashStore
 	// OwnerSID: the user SID of the tray that started the elevated window
 	// (--owner-sid=; "" = unknown, treated as the same user)
 	OwnerSID string
@@ -1966,10 +2032,9 @@ func RunSettings(opt SettingsOptions) int {
 		}
 	}
 	s := trayipc.New(so)
-	LoadTheme(opt.ThemeStore)
-	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,
-		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore, themeStore: opt.ThemeStore,
-		stores:    trayStores{Lang: opt.LangStore, Balloon: opt.BalloonStore, Sound: opt.SoundStore},
+	w, err = newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: s,
+		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
+		stores:    trayStores{Balloon: opt.BalloonStore, Sound: opt.SoundStore, Flash: opt.ScreenFlashStore},
 		otherUser: OtherUser(opt.OwnerSID, CurrentUserSID()),
 		onSoundSave: func(p trayalert.SoundPrefs) error {
 			if opt.SoundStore == nil {
@@ -2014,4 +2079,29 @@ func (w *settingsWindow) loop() int {
 		winapi.DispatchMessage(&m)
 	}
 	return int(m.WParam)
+}
+
+// fillScreenFlash shows «Мигание экрана» from HKCU (CHK-TRAY-95; a
+// per-user tray switch: editable in both modes, nil store = on).
+func (w *settingsWindow) fillScreenFlash() {
+	on := true
+	if st := w.cfg.stores.Flash; st != nil {
+		if v, err := st.Load(); err == nil {
+			on = v
+		}
+	}
+	w.setCheck(idGenFlash, on)
+}
+
+// saveScreenFlash stores the switch at once; the tray reads it on the
+// next flash push.
+func (w *settingsWindow) saveScreenFlash() {
+	st := w.cfg.stores.Flash
+	if st == nil {
+		return
+	}
+	if err := st.Save(w.check(idGenFlash)); err != nil {
+		w.status = w.t(i18n.KeyGenScreenFlashFailed) + " " + err.Error()
+		w.update()
+	}
 }

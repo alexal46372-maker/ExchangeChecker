@@ -29,13 +29,13 @@ func requiredBk() uint32 { return trayui.ChromeRequired() }
 func (w *settingsWindow) UIMode() traysettings.UIMode { return w.uiMode }
 
 // expertOnlyGen are General-tab controls hidden in «Простой» (UIFields
-// Simple=false). Language / Autostart / note stay as basic General items.
+// Simple=false). Autostart / note stay as basic General items.
 var expertOnlyGen = []int32{idGenPoll, idGenWarnFreq, idGenWarnDur, idGenErrFreq, idGenErrDur, idGenGap, idGenStalled}
 
 func (w *settingsWindow) applyUIMode() {
 	simple := w.uiMode == traysettings.UISimple
 	// CHK-TRAY-61/64: General tab stays in Simple; bounce off Viber/e-mail.
-	if simple && (w.page == pageViber || w.page == pageEmail) {
+	if simple && (w.page == pageViber || w.page == pageEmail || w.page == pageTelegram) {
 		w.setPage(0) // calls applyUIMode again
 		return
 	}

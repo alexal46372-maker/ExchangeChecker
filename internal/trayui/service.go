@@ -34,24 +34,24 @@ var svcStateKeys = map[SvcState]string{
 }
 
 // SvcStateText is the state line of the service submenu.
-func SvcStateText(s SvcState, lang string) string {
+func SvcStateText(s SvcState) string {
 	key, ok := svcStateKeys[s]
 	if !ok {
 		key = i18n.KeySvcUnknown
 	}
-	return fmt.Sprintf(i18n.T(i18n.KeySvcState, lang), i18n.T(key, lang))
+	return fmt.Sprintf(i18n.T(i18n.KeySvcState), i18n.T(key))
 }
 
 // ServiceMenu is the «Служба» submenu: the disabled state line, then
 // «Запустить» (only when stopped) and «Остановить» (only when running).
 // Unknown / no access states keep both enabled: the SCM decides and an
 // access error is explained after the attempt.
-func ServiceMenu(s SvcState, lang string) []Item {
+func ServiceMenu(s SvcState) []Item {
 	open := s == SvcStateUnknown || s == SvcStateNoAccess
 	return []Item{
-		{Text: SvcStateText(s, lang), Disabled: true},
+		{Text: SvcStateText(s), Disabled: true},
 		{Separator: true},
-		{ID: CmdSvcStart, Text: i18n.T(i18n.KeyMenuSvcStart, lang), Disabled: !(open || s == SvcStateStopped)},
-		{ID: CmdSvcStop, Text: i18n.T(i18n.KeyMenuSvcStop, lang), Disabled: !(open || s == SvcStateRunning)},
+		{ID: CmdSvcStart, Text: i18n.T(i18n.KeyMenuSvcStart), Disabled: !(open || s == SvcStateStopped)},
+		{ID: CmdSvcStop, Text: i18n.T(i18n.KeyMenuSvcStop), Disabled: !(open || s == SvcStateRunning)},
 	}
 }

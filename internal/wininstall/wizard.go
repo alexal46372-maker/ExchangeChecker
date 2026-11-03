@@ -20,7 +20,6 @@ const (
 // WizardState is the wizard's data.
 type WizardState struct {
 	Page       Page
-	Lang       string
 	Version    string
 	Mode       Mode
 	Installed  string // installed version (upgrade/reinstall)
@@ -42,9 +41,9 @@ type WizardState struct {
 
 // NewWizardState: defaults per §D.1 / §7.5 (upgrade: service checkbox =
 // "was running").
-func NewWizardState(lang, ver string, mode Mode, installed, dir string, locked bool, dataDir string, svcWasRunning bool) *WizardState {
+func NewWizardState(ver string, mode Mode, installed, dir string, locked bool, dataDir string, svcWasRunning bool) *WizardState {
 	s := &WizardState{
-		Lang: NormLang(lang), Version: ver, Mode: mode, Installed: installed,
+		Version: ver, Mode: mode, Installed: installed,
 		Dir: dir, DirLocked: locked, DataDir: dataDir,
 		Shortcut: true, Service: true, LaunchTray: true,
 	}
@@ -68,15 +67,15 @@ func (s *WizardState) Blocked() bool { return s.Mode == ModeDowngrade && !s.Allo
 // WelcomeText is the text of page 1.
 func (s *WizardState) WelcomeText() string {
 	if s.Blocked() {
-		return T(s.Lang, "setup.welcome.downgrade", s.Installed, s.Version)
+		return T("setup.welcome.downgrade", s.Installed, s.Version)
 	}
 	switch s.Mode {
 	case ModeUpgrade, ModeDowngrade:
-		return T(s.Lang, "setup.welcome.upgrade", s.Installed, s.Version)
+		return T("setup.welcome.upgrade", s.Installed, s.Version)
 	case ModeReinstall:
-		return T(s.Lang, "setup.welcome.reinstall", s.Installed)
+		return T("setup.welcome.reinstall", s.Installed)
 	}
-	return T(s.Lang, "setup.welcome.fresh", s.Version)
+	return T("setup.welcome.fresh", s.Version)
 }
 
 // Next advances; leaving the folder page validates the folder. From
@@ -138,9 +137,6 @@ func (s *WizardState) Options(base Options) Options {
 		o.NoStart = !s.SvcWasRunning // never differs from the previous state
 	}
 	o.AllowDowngrade = o.AllowDowngrade || s.AllowDowngrade
-	if s.Lang != "" {
-		o.Lang = s.Lang
-	}
 	return o
 }
 
@@ -151,15 +147,15 @@ func (s *WizardState) FinishText(logPath string) string {
 	case r == nil:
 		return ""
 	case r.Code == ExitOK:
-		return T(s.Lang, "setup.finish.ok", s.Version)
+		return T("setup.finish.ok", s.Version)
 	case r.Code == ExitRebootRequired:
-		return T(s.Lang, "setup.finish.reboot", s.Version)
+		return T("setup.finish.reboot", s.Version)
 	}
 	msg := "?"
 	if r.Err != nil {
 		msg = r.Err.Error()
 	}
-	return T(s.Lang, "setup.finish.error", msg, logPath)
+	return T("setup.finish.error", msg, logPath)
 }
 
 // ShowTrayCheckbox: launching the tray is offered only after success.

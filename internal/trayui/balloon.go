@@ -18,28 +18,28 @@ type Balloon struct {
 // BalloonFor maps an alert push to a balloon: only point events, raise to
 // warning / error ("просрочка") or back to OK ("восстановление");
 // warning -> error escalations count as overdue too.
-func BalloonFor(ev model.AlertEvent, lang string) (Balloon, bool) {
+func BalloonFor(ev model.AlertEvent) (Balloon, bool) {
 	if ev.PointName == "" || ev.From == ev.To {
 		return Balloon{}, false
 	}
 	where := ev.ProfileName + " — " + ev.PointName
 	if ev.To == model.LevelOK {
-		return Balloon{Title: i18n.T(i18n.KeyBalloonRecoveredTitle, lang),
-			Text: fmt.Sprintf(i18n.T(i18n.KeyBalloonRecovered, lang), where), Level: model.LevelOK, Recovered: true}, true
+		return Balloon{Title: i18n.T(i18n.KeyBalloonRecoveredTitle),
+			Text: fmt.Sprintf(i18n.T(i18n.KeyBalloonRecovered), where), Level: model.LevelOK, Recovered: true}, true
 	}
 	if ev.To < ev.From {
 		return Balloon{}, false // error -> warning: still overdue, no balloon
 	}
-	text := fmt.Sprintf(i18n.T(i18n.KeyBalloonOverdue, lang), where, ev.LagMinutes, levelText(ev.To, lang))
+	text := fmt.Sprintf(i18n.T(i18n.KeyBalloonOverdue), where, ev.LagMinutes, levelText(ev.To))
 	if ev.LagMinutes <= 0 {
-		text = fmt.Sprintf(i18n.T(i18n.KeyBalloonOverdueNoLag, lang), where, levelText(ev.To, lang))
+		text = fmt.Sprintf(i18n.T(i18n.KeyBalloonOverdueNoLag), where, levelText(ev.To))
 	}
-	return Balloon{Title: i18n.T(i18n.KeyBalloonOverdueTitle, lang), Text: text, Level: ev.To}, true
+	return Balloon{Title: i18n.T(i18n.KeyBalloonOverdueTitle), Text: text, Level: ev.To}, true
 }
 
 // CombineBalloons merges the balloons of one batch of pushes (one poll):
 // a single one is shown as is, several as one summary with the worst icon.
-func CombineBalloons(bs []Balloon, lang string) (Balloon, bool) {
+func CombineBalloons(bs []Balloon) (Balloon, bool) {
 	switch len(bs) {
 	case 0:
 		return Balloon{}, false
@@ -58,11 +58,11 @@ func CombineBalloons(bs []Balloon, lang string) (Balloon, bool) {
 			worst = b.Level
 		}
 	}
-	title := i18n.T(i18n.KeyBalloonOverdueTitle, lang)
+	title := i18n.T(i18n.KeyBalloonOverdueTitle)
 	if over == 0 {
-		title = i18n.T(i18n.KeyBalloonRecoveredTitle, lang)
+		title = i18n.T(i18n.KeyBalloonRecoveredTitle)
 	}
-	return Balloon{Title: title, Text: fmt.Sprintf(i18n.T(i18n.KeyBalloonSummary, lang), over, rec), Level: worst, Recovered: over == 0}, true
+	return Balloon{Title: title, Text: fmt.Sprintf(i18n.T(i18n.KeyBalloonSummary), over, rec), Level: worst, Recovered: over == 0}, true
 }
 
 // Phase 9a right-menu commands.
@@ -75,10 +75,10 @@ const (
 // Phase9Items are inserted into the right menu before «Выход»:
 // «Состояние…», «Проверить сейчас» (disabled when not connected) and the
 // checkable balloon switch.
-func Phase9Items(lang string, balloons, connected bool) []Item {
+func Phase9Items(balloons, connected bool) []Item {
 	return []Item{
-		{ID: CmdStatusWin, Text: i18n.T(i18n.KeyMenuStatusWin, lang)},
-		{ID: CmdCheckNow, Text: i18n.T(i18n.KeyMenuCheckNow, lang), Disabled: !connected},
-		{ID: CmdBalloons, Text: i18n.T(i18n.KeyMenuBalloons, lang), Checked: balloons},
+		{ID: CmdStatusWin, Text: i18n.T(i18n.KeyMenuStatusWin)},
+		{ID: CmdCheckNow, Text: i18n.T(i18n.KeyMenuCheckNow), Disabled: !connected},
+		{ID: CmdBalloons, Text: i18n.T(i18n.KeyMenuBalloons), Checked: balloons},
 	}
 }

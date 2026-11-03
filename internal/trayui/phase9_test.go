@@ -13,30 +13,30 @@ import (
 // CHK-TRAY-18: balloons on overdue / recovery.
 func TestBalloonFor(t *testing.T) {
 	ev := model.AlertEvent{ProfileName: "ERP", PointName: "Склад", From: model.LevelOK, To: model.LevelWarning, LagMinutes: 75}
-	b, ok := BalloonFor(ev, "ru")
+	b, ok := BalloonFor(ev)
 	if !ok || b.Recovered || b.Level != model.LevelWarning || !strings.Contains(b.Text, "75 мин") || !strings.Contains(b.Text, "ERP — Склад") {
 		t.Fatalf("overdue: %+v %v", b, ok)
 	}
 	ev.From, ev.To = model.LevelWarning, model.LevelError
-	if b, ok = BalloonFor(ev, "en"); !ok || b.Level != model.LevelError || b.Title != "Exchange overdue" {
+	if b, ok = BalloonFor(ev); !ok || b.Level != model.LevelError || b.Title != "Просрочка обмена" {
 		t.Fatalf("escalation: %+v", b)
 	}
 	ev.From, ev.To = model.LevelError, model.LevelOK
-	if b, ok = BalloonFor(ev, "en"); !ok || !b.Recovered || b.Title != "Exchange recovered" {
+	if b, ok = BalloonFor(ev); !ok || !b.Recovered || b.Title != "Обмен восстановлен" {
 		t.Fatalf("recovery: %+v", b)
 	}
 	ev.From, ev.To = model.LevelError, model.LevelWarning
-	if _, ok = BalloonFor(ev, "en"); ok {
+	if _, ok = BalloonFor(ev); ok {
 		t.Fatal("error->warning must not balloon")
 	}
-	if _, ok = BalloonFor(model.AlertEvent{ProfileName: "ERP", From: 0, To: model.LevelError}, "en"); ok {
+	if _, ok = BalloonFor(model.AlertEvent{ProfileName: "ERP", From: 0, To: model.LevelError}); ok {
 		t.Fatal("profile-level event must not balloon")
 	}
-	c, ok := CombineBalloons([]Balloon{{Level: model.LevelWarning}, {Level: model.LevelError}, {Recovered: true}}, "en")
-	if !ok || c.Level != model.LevelError || c.Text != "Points overdue: 2, recovered: 1" {
+	c, ok := CombineBalloons([]Balloon{{Level: model.LevelWarning}, {Level: model.LevelError}, {Recovered: true}})
+	if !ok || c.Level != model.LevelError || c.Text != "Просрочено точек: 2, восстановлено: 1" {
 		t.Fatalf("combine: %+v", c)
 	}
-	if _, ok = CombineBalloons(nil, "en"); ok {
+	if _, ok = CombineBalloons(nil); ok {
 		t.Fatal("empty combine")
 	}
 }
@@ -56,7 +56,7 @@ func sampleStatus(now time.Time) trayipc.Status {
 // CHK-TRAY-19: «Состояние» rows with colour and «N мин назад».
 func TestStatusRows(t *testing.T) {
 	now := time.Date(2026, 10, 13, 12, 0, 0, 0, model.DBZone)
-	rows := StatusRows(sampleStatus(now), "ru", now)
+	rows := StatusRows(sampleStatus(now), now)
 	if len(rows) != 3 {
 		t.Fatalf("rows: %+v", rows)
 	}
@@ -73,18 +73,18 @@ func TestStatusRows(t *testing.T) {
 	if r := byPoint[""]; r.Database != "<HR>" || r.Color != ColorRed || r.Note != "login failed" {
 		t.Fatalf("db row: %+v", r)
 	}
-	if s, _ := AgoText(nil, now, "en"); s != "" {
+	if s, _ := AgoText(nil, now); s != "" {
 		t.Fatal(s)
 	}
 	n := now.Add(-20 * time.Second)
-	if s, _ := AgoText(&n, now, "en"); s != "just now" {
+	if s, _ := AgoText(&n, now); s != "только что" {
 		t.Fatal(s)
 	}
 	d := now.Add(-72 * time.Hour)
-	if s, _ := AgoText(&d, now, "en"); s != "3 days ago" {
+	if s, _ := AgoText(&d, now); s != "3 дн. назад" {
 		t.Fatal(s)
 	}
-	if StatusRows(trayipc.Status{}, "ru", now) != nil {
+	if StatusRows(trayipc.Status{}, now) != nil {
 		t.Fatal("no snapshot")
 	}
 }
@@ -92,8 +92,8 @@ func TestStatusRows(t *testing.T) {
 // CHK-TRAY-21: CSV (BOM, ";", quoting, formula guard) and HTML (escaped).
 func TestExport(t *testing.T) {
 	now := time.Date(2026, 10, 13, 12, 0, 0, 0, model.DBZone)
-	rows := StatusRows(sampleStatus(now), "ru", now)
-	c := ExportCSV(rows, "ru")
+	rows := StatusRows(sampleStatus(now), now)
+	c := ExportCSV(rows)
 	if !bytes.HasPrefix(c, []byte("\xEF\xBB\xBFБаза;Точка;")) {
 		t.Fatalf("csv head: %q", c[:40])
 	}
@@ -109,7 +109,7 @@ func TestExport(t *testing.T) {
 			t.Errorf("csvCell(%q) = %q, want %q", in, got, want)
 		}
 	}
-	h := string(ExportHTML(rows, "en", now))
+	h := string(ExportHTML(rows, now))
 	if !strings.Contains(h, "&lt;HR&gt;") || strings.Contains(h, "<HR>") || !strings.Contains(h, `<meta charset="utf-8">`) ||
 		!strings.Contains(h, "#f8d0d0") || !strings.Contains(h, "13.10.2026 12:00") || strings.Contains(h, "<script") {
 		t.Fatalf("html: %s", h)

@@ -92,9 +92,9 @@ const (
 // AdminCommand reports whether cmd requires an elevated administrator.
 func AdminCommand(cmd string) bool {
 	switch cmd {
-	case CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdCloneProfile, CmdSaveSettings,
+	case CmdSetEnabled, CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdCloneProfile, CmdSaveSettings,
 		CmdDiscover, CmdDiscoverByValue, CmdListNodePoints, CmdCheckMapping,
-		CmdExportConfig, CmdImportConfig, CmdViberTest, CmdEmailTest:
+		CmdExportConfig, CmdImportConfig, CmdViberTest, CmdEmailTest, CmdTelegramTest:
 		return true
 	}
 	return false

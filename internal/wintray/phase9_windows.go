@@ -20,7 +20,7 @@ const ssNotify = 0x0100
 
 // BalloonsValue is the HKCU REG_DWORD of the balloon switch (1 = on,
 // missing = on; phase 9a, CHK-TRAY-18). A per-user tray preference like
-// the language: settings.json belongs to the service and is admin-only.
+// the others: settings.json belongs to the service and is admin-only.
 const BalloonsValue = "Balloons"
 
 // BalloonStore keeps the per-user balloon switch.
@@ -29,14 +29,17 @@ type BalloonStore interface {
 	Save(on bool) error
 }
 
+// TrayKey is the per-user registry key of the tray (HKCU).
+const TrayKey = `Software\ExchangeChecker\Tray`
+
 // RegistryBalloonStore stores the switch in HKCU\Key\Balloons.
 type RegistryBalloonStore struct {
-	Key string // "" = LangKey
+	Key string // "" = TrayKey
 }
 
 func (s RegistryBalloonStore) key() string {
 	if s.Key == "" {
-		return LangKey
+		return TrayKey
 	}
 	return s.Key
 }
@@ -71,7 +74,7 @@ func (a *App) loadBalloonPref() {
 	if err != nil {
 		// a missing key / value is not an error (Load returns on, nil);
 		// anything else is logged and the default (on) is kept
-		a.logf("tray: balloon switch: read HKCU %s\\%s: %v (using on)", LangKey, BalloonsValue, err)
+		a.logf("tray: balloon switch: read HKCU %s\\%s: %v (using on)", TrayKey, BalloonsValue, err)
 		on = true
 	}
 	a.balloonsOn = on
@@ -130,7 +133,7 @@ func (a *App) feedBalloons(evs []model.AlertEvent) {
 		if ev.Kind == model.AlertKindRepeat { // a repeat is not a transition
 			continue
 		}
-		bs = append(bs, a.debounce.Feed(ev, now, a.opt.Lang)...)
+		bs = append(bs, a.debounce.Feed(ev, now)...)
 	}
 	bs = append(bs, a.debounce.Due(now)...)
 	a.showBalloons(bs)
@@ -141,7 +144,7 @@ func (a *App) showBalloons(bs []trayui.Balloon) {
 	if !a.balloonsOn {
 		return
 	}
-	b, ok := trayui.CombineBalloons(bs, a.opt.Lang)
+	b, ok := trayui.CombineBalloons(bs)
 	if !ok {
 		return
 	}
@@ -208,7 +211,7 @@ func (a *App) connected() bool { return a.status.State == trayipc.StateConnected
 // shown) and returns it.
 func (a *App) OpenStatus() *statusWindow {
 	if a.statusWin == nil || !winapi.IsWindow(a.statusWin.hwnd) {
-		sw, err := newStatusWindow(a.opt.Lang, false, a.CheckNow)
+		sw, err := newStatusWindow(false, a.CheckNow)
 		if err != nil {
 			return nil
 		}
@@ -233,7 +236,7 @@ func (a *App) CheckNow() {
 	if a.check.Busy {
 		return
 	}
-	s, lang := a.session, a.opt.Lang
+	s := a.session
 	useCheck := s.Supported(model.CmdCheckNow)
 	a.check.Start(time.Now())
 	a.updateCheckUI()
@@ -245,7 +248,7 @@ func (a *App) CheckNow() {
 		ctx, cancel := context.WithTimeout(context.Background(), pollNowTimeout)
 		m, err := s.Do(ctx, model.IPCRequest{Cmd: cmd})
 		cancel()
-		r := trayui.ParseCheckReply(m, err, useCheck, lang)
+		r := trayui.ParseCheckReply(m, err, useCheck)
 		a.runOnUI(func() {
 			a.check.Reply(r)
 			a.checkResult(r.Text, r.Warn)
@@ -266,9 +269,9 @@ func (a *App) checkStatus(snap *model.StatusSnapshot) {
 	done, timedOut := a.check.Status(snap, time.Now())
 	switch {
 	case done:
-		a.checkResult(i18n.T(i18n.KeyCheckDone, a.opt.Lang), false)
+		a.checkResult(i18n.T(i18n.KeyCheckDone), false)
 	case timedOut:
-		a.checkResult(i18n.T(i18n.KeyCheckTimeout, a.opt.Lang), false)
+		a.checkResult(i18n.T(i18n.KeyCheckTimeout), false)
 	default:
 		return
 	}
@@ -298,17 +301,17 @@ func (a *App) updateCheckUI() {
 func (a *App) CheckBusy() bool { return a.check.Busy }
 
 // CheckNowText is the outcome of a poll_now reply.
-func CheckNowText(m model.IPCMessage, err error, lang string) (string, bool) {
+func CheckNowText(m model.IPCMessage, err error) (string, bool) {
 	if err == nil && m.Type == model.MsgError {
 		err = fmt.Errorf("%s", m.Error)
 		if m.ErrorKey != "" {
-			err = fmt.Errorf("%s", i18n.Message(m.ErrorKey, lang))
+			err = fmt.Errorf("%s", i18n.Message(m.ErrorKey))
 		}
 	}
 	if err != nil {
-		return fmt.Sprintf(i18n.T(i18n.KeyStCheckFailed, lang), err), true
+		return fmt.Sprintf(i18n.T(i18n.KeyStCheckFailed), err), true
 	}
-	return i18n.T(i18n.KeyStCheckQueued, lang), false
+	return i18n.T(i18n.KeyStCheckQueued), false
 }
 
 // truncU16 is s as UTF-16 cut to max units without splitting a surrogate

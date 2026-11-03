@@ -17,13 +17,13 @@ func TestCHK_TRAY_50_UIFieldCues(t *testing.T) {
 			continue
 		}
 		n++
-		for _, lang := range []string{i18n.RU, i18n.EN} {
-			got := f.CueText(lang)
+		{
+			got := f.CueText()
 			if got == "" || got == f.Cue {
-				t.Errorf("%s %s: cue %q", f.ID, lang, got)
+				t.Errorf("%s %s: cue %q", f.ID, i18n.RU, got)
 			}
 			if f.CueDefault > 0 && !containsDigit(got) {
-				t.Errorf("%s %s: CueDefault %d not in %q", f.ID, lang, f.CueDefault, got)
+				t.Errorf("%s %s: CueDefault %d not in %q", f.ID, i18n.RU, f.CueDefault, got)
 			}
 		}
 		if f.HasDefault {

@@ -168,20 +168,20 @@ func TestCHK_MON_01_CountersBaselineFlag(t *testing.T) {
 	if snap.Baseline {
 		t.Error("profile baseline must follow the freshest side")
 	}
-	if MonitorMessage(MsgMonitorBaseline, LangEN) == "" || MonitorMessage(MsgMonitorBaseline, LangRU) == "" {
+	if MonitorMessage(MsgMonitorBaseline) == "" {
 		t.Error("baseline text")
 	}
 }
 
-// TestCHK_MON_01_MessagesAndJSON — every monitor key has RU+EN text; the
+// TestCHK_MON_01_MessagesAndJSON — every monitor key has a Russian text; the
 // snapshot JSON roundtrips with levels as strings.
 func TestCHK_MON_01_MessagesAndJSON(t *testing.T) {
 	for _, k := range MonitorMessageKeys() {
-		if MonitorMessage(k, LangRU) == "" || MonitorMessage(k, LangEN) == "" || MonitorMessage(k, LangRU) == MonitorMessage(k, LangEN) {
+		if MonitorMessage(k) == "" || MonitorMessage(k) == k {
 			t.Errorf("key %s", k)
 		}
 	}
-	if MonitorMessage("nope", LangRU) != "" {
+	if MonitorMessage("nope") != "" {
 		t.Error("unknown key")
 	}
 	g := DefaultSettings()

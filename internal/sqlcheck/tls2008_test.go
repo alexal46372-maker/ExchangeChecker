@@ -83,7 +83,7 @@ func TestCHK_SQL_05_Preset2008(t *testing.T) {
 	if !strings.Contains(string(b), `"serverPreset":"mssql2008"`) || !strings.Contains(string(b), `"tlsMinVersion":"1.0"`) {
 		t.Errorf("json: %s", b)
 	}
-	if Message(MsgPresetMSSQL2008, "ru") == "" || !strings.Contains(Message(MsgPresetMSSQL2008, "en"), "TLS 1.0") {
+	if Message(MsgPresetMSSQL2008) == "" || !strings.Contains(Message(MsgPresetMSSQL2008), "TLS 1.0") {
 		t.Error("preset hint")
 	}
 }
@@ -138,17 +138,17 @@ func TestCHK_SQL_05_TLSErrorKeys(t *testing.T) {
 	if ps.ErrorKey != MsgTLSEnableTLS10 || ps.Level() != model.LevelError {
 		t.Errorf("status %+v", ps)
 	}
-	// RU and EN texts for every key; EN is used for "en", RU otherwise
+	// a Russian text for every key
 	for _, k := range MessageKeys() {
-		ru, en := Message(k, model.LangRU), Message(k, model.LangEN)
-		if ru == "" || en == "" || ru == en || Message(k, "de") != ru {
-			t.Errorf("%s: ru %q en %q", k, ru, en)
+		ru := Message(k)
+		if ru == "" || Message(k) != ru {
+			t.Errorf("%s: ru %q", k, ru)
 		}
 	}
-	if !strings.Contains(Message(MsgTLSEnableTLS10, "ru"), "TLS 1.0") || !strings.Contains(Message(MsgTLSEnableTLS10, "en"), "enable TLS 1.0") {
+	if !strings.Contains(Message(MsgTLSEnableTLS10), "TLS 1.0") || !strings.Contains(Message(MsgTLSEnableTLS10), "Разрешить TLS 1.0") {
 		t.Error("tls hint text")
 	}
-	if Message("sql.unknown", "ru") != "" {
+	if Message("sql.unknown") != "" {
 		t.Error("unknown key")
 	}
 }

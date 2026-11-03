@@ -102,6 +102,17 @@ type ConfigManager interface {
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
 }
 
+// FlashDismisser runs dismiss_flash (phase 13, CHK-IPC-19; any client,
+// like ack_alert).
+type FlashDismisser interface {
+	DismissFlash(eventID uint64) error
+}
+
+// ProfileEnabler runs set_enabled (phase 13, CHK-IPC-18; admin only).
+type ProfileEnabler interface {
+	SetEnabled(profileID string, enabled bool, expectedRevision, account string) (string, error)
+}
+
 // ProfileCloner runs clone_profile (phase 12, CHK-CFG-08, admin only).
 // Optional beside ConfigManager; Monitor implements both.
 type ProfileCloner interface {
@@ -258,6 +269,9 @@ type Server struct {
 	// Email (phase 13b, CHK-IPC-16 / CHK-SVC-08): email_test and capability
 	// email; nil = not offered.
 	Email EmailTester
+	// Telegram (phase 13, CHK-IPC-17): telegram_test and capability
+	// telegram; nil = not offered.
+	Telegram TelegramTester
 	// AlarmTest (phase 11, CHK-IPC-11): alarm_test and capability
 	// alarm_test; nil = not offered.
 	AlarmTest AlarmTester
@@ -397,6 +411,12 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(ProfileCloner); ok {
 		caps = append(caps, model.CapCloneProfile) // phase 12 (CHK-CFG-08)
 	}
+	if _, ok := s.H.(FlashDismisser); ok {
+		caps = append(caps, model.CapFlash) // phase 13 (CHK-IPC-19)
+	}
+	if _, ok := s.H.(ProfileEnabler); ok {
+		caps = append(caps, model.CapProfileEnabled) // phase 13 (CHK-IPC-18)
+	}
 	if disc {
 		caps = append(caps, model.CapDiscover, model.CapDiscoverByValue, model.CapNodePoints, model.CapCheckMapping)
 	}
@@ -439,6 +459,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if s.Email != nil {
 		caps = append(caps, model.CapEmail) // phase 13b (CHK-CFG-09)
+	}
+	if s.Telegram != nil {
+		caps = append(caps, model.CapTelegram) // phase 13 (CHK-CFG-10)
 	}
 	if s.AlarmTest != nil {
 		caps = append(caps, model.CapAlarmTest) // phase 11 (CHK-IPC-11)
@@ -832,6 +855,12 @@ func (s *Server) readLoop(c *conn) {
 				return
 			}
 			continue
+		case s.Telegram != nil && telegramCommand(req.Cmd):
+			if !s.startTelegram(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
 		case model.AdminCommand(req.Cmd):
 			reply = s.handleAdmin(c, req)
 		default:
@@ -1206,7 +1235,7 @@ func (s *Server) runRecovered(ctx context.Context, req model.IPCRequest, run fun
 
 // scrubRequest removes the password and manual SQL texts of req from msg.
 func scrubRequest(msg string, req model.IPCRequest) string {
-	secrets := []string{req.Password, req.ViberToken, req.SmtpPassword}
+	secrets := []string{req.Password, req.ViberToken, req.SmtpPassword, req.BotToken}
 	if req.Mapping != nil {
 		secrets = append(secrets, req.Mapping.ManualSQL)
 	}
@@ -1258,6 +1287,10 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 	if req.Cmd == model.CmdCloneProfile {
 		ok = okC
 	}
+	en, okE := s.H.(ProfileEnabler)
+	if req.Cmd == model.CmdSetEnabled {
+		ok = okE
+	}
 	if !ok {
 		return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)
 	}
@@ -1303,6 +1336,19 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 			result = model.ResultImportChecked
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: result, Reloaded: !res.DryRun, Revision: res.Revision, Import: &res}
+	case model.CmdSetEnabled: // phase 13 (CHK-IPC-18)
+		if req.ProfileID == "" || req.Enabled == nil {
+			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+				Message: "ipc: set_enabled needs profileId and enabled", Args: []string{"enabled", model.ValRequired}}, "")
+		}
+		rev, err := en.SetEnabled(req.ProfileID, *req.Enabled, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		v := *req.Enabled
+		s.broadcast(model.IPCMessage{Type: model.MsgProfileEnabled, ProfileID: req.ProfileID, Enabled: &v, Revision: rev})
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSaved, ProfileID: req.ProfileID, Enabled: &v,
+			Reloaded: true, Revision: rev}
 	case model.CmdGetConfig:
 		cfg, rev, err := cm.GetConfig()
 		if err != nil {
@@ -1342,7 +1388,13 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 				Message: "ipc: save_settings without settings", Args: []string{"settings", model.ValRequired}}, "")
 		}
 		var rev string
-		if es, ok := s.H.(EmailSettingsSaver); ok {
+		if ts, ok := s.H.(TelegramSettingsSaver); ok {
+			rev, err = ts.SaveSettingsAll(*req.Settings, model.SettingsSecrets{ViberToken: req.ViberToken, ClearViber: req.ClearViberToken,
+				SmtpPassword: req.SmtpPassword, ClearSmtp: req.ClearSmtpPassword, BotToken: req.BotToken, ClearBotToken: req.ClearBotToken},
+				req.ExpectedRevision, cl.Account)
+		} else if req.BotToken != "" || req.ClearBotToken {
+			return errorReply(req.ID, errors.New("telegram: bot token not supported"), model.ErrCodeUnknownCommand)
+		} else if es, ok := s.H.(EmailSettingsSaver); ok {
 			rev, err = es.SaveSettingsEmail(*req.Settings, req.ViberToken, req.ClearViberToken, req.SmtpPassword, req.ClearSmtpPassword, req.ExpectedRevision, cl.Account)
 		} else if vs, ok := s.H.(ViberSettingsSaver); ok {
 			if req.SmtpPassword != "" || req.ClearSmtpPassword {
@@ -1395,6 +1447,17 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 				return errorReply(req.ID, err, "")
 			}
 			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultAcknowledged, Acked: n}
+		}
+	case model.CmdDismissFlash: // phase 13 (CHK-IPC-19)
+		if fd, ok := s.H.(FlashDismisser); ok {
+			if req.EventID == 0 {
+				return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+					Message: "ipc: dismiss_flash needs eventId", Args: []string{"eventId", model.ValRequired}}, "")
+			}
+			if err := fd.DismissFlash(req.EventID); err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultFlashDismissed, EventID: req.EventID}
 		}
 	case model.CmdMuteUntilRecovered: // phase 12 (CHK-MON-20 / CHK-IPC-15)
 		if mu, ok := s.H.(Muter); ok {
@@ -1458,6 +1521,16 @@ func (s *Server) Alert(e model.AlertEvent) {
 // CHK-MON-17).
 func (s *Server) AlertRepeat(e model.AlertEvent) {
 	s.broadcast(model.IPCMessage{Type: model.MsgAlertRepeat, Alert: &e})
+}
+
+// Flash pushes flash / flash_stop to all clients (phase 13, CHK-IPC-19).
+func (s *Server) Flash(f model.FlashEvent) {
+	if f.Stop {
+		s.broadcast(model.IPCMessage{Type: model.MsgFlashStop, ProfileID: f.ProfileID, PointKey: f.PointKey})
+		return
+	}
+	lvl := f.Level
+	s.broadcast(model.IPCMessage{Type: model.MsgFlash, ProfileID: f.ProfileID, PointKey: f.PointKey, EventID: f.EventID, Level: &lvl})
 }
 
 // Clients returns the number of connected clients.

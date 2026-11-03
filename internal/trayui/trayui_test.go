@@ -42,7 +42,7 @@ func connected(snap *model.StatusSnapshot) trayipc.Status {
 // TestCHK_TRAY_01_MenuOnlyDatabases — the left menu lists only databases
 // (no points at the root), colored squares + status text.
 func TestCHK_TRAY_01_MenuOnlyDatabases(t *testing.T) {
-	items := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.RU))
+	items := databases(BuildLeftMenu(connected(sampleSnapshot())))
 	if len(items) != 4 {
 		t.Fatalf("want 4 database items, got %d: %+v", len(items), items)
 	}
@@ -71,16 +71,12 @@ func TestCHK_TRAY_01_MenuOnlyDatabases(t *testing.T) {
 			t.Errorf("points must not be at the root: %q", it.Text)
 		}
 	}
-	en := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.EN))
-	if !strings.Contains(en[0].Text, "warning") || !strings.Contains(en[1].Text, "error") {
-		t.Errorf("EN statuses: %q %q", en[0].Text, en[1].Text)
-	}
 }
 
 // TestCHK_TRAY_01_PointsSubmenu — points of a database: sorted, grouped by
 // exchange plan, times in UTC+3, lag, level, acknowledged mark.
 func TestCHK_TRAY_01_PointsSubmenu(t *testing.T) {
-	sub := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.RU))[0].Sub
+	sub := databases(BuildLeftMenu(connected(sampleSnapshot())))[0].Sub
 	if len(sub) != 4 {
 		t.Fatalf("want 2 plan headers + 2 points, got %+v", sub)
 	}
@@ -101,33 +97,29 @@ func TestCHK_TRAY_01_PointsSubmenu(t *testing.T) {
 	}
 	// a UTC time is shown in UTC+3
 	utc := time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC)
-	got := PointText(model.PointStatus{ExchangePoint: model.ExchangePoint{Name: "X", LastSend: &utc}, LagMinutes: -1}, i18n.EN)
-	if !strings.Contains(got, "sent 03.10 12:00") || strings.Contains(got, "ago") {
+	got := PointText(model.PointStatus{ExchangePoint: model.ExchangePoint{Name: "X", LastSend: &utc}, LagMinutes: -1})
+	if !strings.Contains(got, "отпр. 03.10 12:00") || strings.Contains(got, "назад") {
 		t.Errorf("UTC+3 conversion / unknown lag: %q", got)
 	}
-	bl := PointText(model.PointStatus{ExchangePoint: model.ExchangePoint{Name: "Y"}, Baseline: true, LagMinutes: -1}, i18n.RU)
+	bl := PointText(model.PointStatus{ExchangePoint: model.ExchangePoint{Name: "Y"}, Baseline: true, LagMinutes: -1})
 	if !strings.Contains(bl, "не раньше запуска службы") {
 		t.Errorf("baseline: %q", bl)
 	}
 }
 
 // TestCHK_TRAY_01_ErrorAndWarnings — a database in error shows the
-// localized error first; warnings follow; empty database -> a disabled
-// "no points" line.
+// localized error; warnings («Шифрование отключено…») are not shown in the
+// menu (CHK-TRAY-91); empty database -> a disabled "no points" line.
 func TestCHK_TRAY_01_ErrorAndWarnings(t *testing.T) {
-	items := databases(BuildLeftMenu(connected(sampleSnapshot()), i18n.RU))
+	items := databases(BuildLeftMenu(connected(sampleSnapshot())))
 	sub := items[1].Sub
-	if len(sub) != 2 || !sub[0].Disabled || !strings.Contains(sub[0].Text, model.MonitorMessage(model.MsgMonitorConnError, i18n.RU)) {
+	if len(sub) != 1 || !sub[0].Disabled || !strings.Contains(sub[0].Text, model.MonitorMessage(model.MsgMonitorConnError)) {
 		t.Fatalf("error line: %+v", sub)
-	}
-	// sql.* warnings are localized by model.SQLMessage (phase 6d)
-	if !strings.Contains(sub[1].Text, model.SQLMessage("sql.warn_plaintext_login", i18n.RU)) {
-		t.Errorf("warning line %q", sub[1].Text)
 	}
 	if s := items[2].Sub; len(s) != 1 || s[0].Text != "Нет точек обмена" || !s[0].Disabled {
 		t.Errorf("empty database: %+v", s)
 	}
-	none := databases(BuildLeftMenu(connected(&model.StatusSnapshot{}), i18n.RU))
+	none := databases(BuildLeftMenu(connected(&model.StatusSnapshot{})))
 	if len(none) != 1 || none[0].Text != "Нет настроенных баз" {
 		t.Errorf("no databases: %+v", none)
 	}
@@ -138,7 +130,7 @@ func TestCHK_TRAY_01_ErrorAndWarnings(t *testing.T) {
 // poller hung, not running; config stale / invalid shown.
 func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 	st := connected(sampleSnapshot())
-	if it := BuildLeftMenu(st, i18n.RU); !it[0].Disabled || it[0].Text != "Служба работает" || !it[1].Separator {
+	if it := BuildLeftMenu(st); !it[0].Disabled || it[0].Text != "Служба работает" || !it[1].Separator {
 		t.Fatalf("healthy service: the status line is always on top: %+v", it[:2])
 	}
 	texts := map[string]bool{}
@@ -151,7 +143,7 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 	} {
 		s := connected(sampleSnapshot())
 		mod(&s)
-		items := BuildLeftMenu(s, i18n.RU)
+		items := BuildLeftMenu(s)
 		if !items[0].Disabled || !items[1].Separator || items[0].Sub != nil {
 			t.Fatalf("status line on top expected: %+v", items[:2])
 		}
@@ -166,8 +158,8 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 	for _, key := range []string{model.MsgMonitorConfigStale, model.MsgMonitorConfigInvalid} {
 		snap := sampleSnapshot()
 		snap.ConfigErrorKey, snap.ConfigError, snap.ConfigStale = key, "boom", key == model.MsgMonitorConfigStale
-		items := BuildLeftMenu(connected(snap), i18n.RU)
-		if items[1].Text != model.MonitorMessage(key, i18n.RU) || !items[0].Disabled || !items[1].Disabled || !items[2].Separator {
+		items := BuildLeftMenu(connected(snap))
+		if items[1].Text != model.MonitorMessage(key) || !items[0].Disabled || !items[1].Disabled || !items[2].Separator {
 			t.Errorf("%s line: %+v", key, items[:3])
 		}
 	}
@@ -177,13 +169,13 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 // CHK-TRAY-63 (BuildTrayRightMenu). BuildRightMenu keeps Language/Service
 // for the older index-based tests below.
 func TestCHK_TRAY_01_RightClickItems(t *testing.T) {
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		it := BuildTrayRightMenu(RightMenuOpts{Lang: lang, Pref: "", Svc: SvcStateRunning, Theme: ThemeLight})
-		if len(it) == 0 || it[0].ID != CmdSettings || it[0].Disabled || it[0].Text != i18n.T(i18n.KeyMenuSettings, lang) {
-			t.Fatalf("%s: settings %+v", lang, it)
+	{
+		it := BuildTrayRightMenu(RightMenuOpts{Svc: SvcStateRunning})
+		if len(it) == 0 || it[0].ID != CmdSettings || it[0].Disabled || it[0].Text != i18n.T(i18n.KeyMenuSettings) {
+			t.Fatalf("%s: settings %+v", i18n.RU, it)
 		}
 		if it[len(it)-1].ID != CmdExit {
-			t.Fatalf("%s: exit %+v", lang, it[len(it)-1])
+			t.Fatalf("%s: exit %+v", i18n.RU, it[len(it)-1])
 		}
 	}
 }
@@ -213,7 +205,7 @@ func TestCHK_TRAY_02_IndicatorPriority(t *testing.T) {
 	for _, c := range cases {
 		st := connected(sampleSnapshot())
 		c.mod(&st)
-		ind := Evaluate(st, i18n.RU)
+		ind := Evaluate(st)
 		if ind.Service != c.svc || ind.Icon != c.icon {
 			t.Errorf("%s: service %v icon %v, want %v %v", c.name, ind.Service, ind.Icon, c.svc, c.icon)
 		}
@@ -226,7 +218,7 @@ func TestCHK_TRAY_02_IndicatorPriority(t *testing.T) {
 	}
 	v1 := connected(sampleSnapshot())
 	v1.Version, v1.Heartbeat = 1, nil
-	if ind := Evaluate(v1, i18n.RU); ind.Service != SvcOK || !strings.Contains(ind.ServiceLine, "протокол 1") {
+	if ind := Evaluate(v1); ind.Service != SvcOK || !strings.Contains(ind.ServiceLine, "протокол 1") {
 		t.Errorf("v1 service line %q", ind.ServiceLine)
 	}
 }
@@ -236,12 +228,12 @@ func TestCHK_TRAY_02_IndicatorPriority(t *testing.T) {
 func TestCHK_TRAY_02_ConfigStaleInvalid(t *testing.T) {
 	snap := sampleSnapshot()
 	snap.ConfigErrorKey = model.MsgMonitorConfigStale
-	ind := Evaluate(connected(snap), i18n.EN)
-	if ind.ConfigLine != model.MonitorMessage(model.MsgMonitorConfigStale, i18n.EN) || ind.Icon != IconError {
+	ind := Evaluate(connected(snap))
+	if ind.ConfigLine != model.MonitorMessage(model.MsgMonitorConfigStale) || ind.Icon != IconError {
 		t.Errorf("stale: %+v", ind)
 	}
 	snap.ConfigErrorKey, snap.ConfigError = "", "settings.json: bad"
-	if ind := Evaluate(connected(snap), i18n.RU); ind.ConfigLine != model.MonitorMessage(model.MsgMonitorConfigInvalid, i18n.RU) {
+	if ind := Evaluate(connected(snap)); ind.ConfigLine != model.MonitorMessage(model.MsgMonitorConfigInvalid) {
 		t.Errorf("error without key: %q", ind.ConfigLine)
 	}
 }
@@ -264,7 +256,7 @@ func TestCHK_TRAY_02_TooltipTruncate(t *testing.T) {
 	}
 	snap := sampleSnapshot()
 	snap.ConfigErrorKey = model.MsgMonitorConfigInvalid
-	if ind := Evaluate(connected(snap), i18n.RU); len(utf16.Encode([]rune(ind.Tooltip))) > MaxTooltip {
+	if ind := Evaluate(connected(snap)); len(utf16.Encode([]rune(ind.Tooltip))) > MaxTooltip {
 		t.Errorf("tooltip too long: %q", ind.Tooltip)
 	}
 }
@@ -296,16 +288,16 @@ func TestCHK_TRAY_02_Pixels(t *testing.T) {
 
 // TestCHK_TRAY_01_AboutText — product, version, service protocol.
 func TestCHK_TRAY_01_AboutText(t *testing.T) {
-	txt := AboutText(connected(nil), i18n.RU)
+	txt := AboutText(connected(nil))
 	for _, part := range []string{version.ProductName, "Версия: " + version.Version, "Служба: протокол 2"} {
 		if !strings.Contains(txt, part) {
 			t.Errorf("about %q lacks %q", txt, part)
 		}
 	}
-	if !strings.Contains(AboutText(trayipc.Status{State: trayipc.StateNotRunning}, i18n.EN), "Service: not connected") {
+	if !strings.Contains(AboutText(trayipc.Status{State: trayipc.StateNotRunning}), "Служба: не подключена") {
 		t.Error("about without service")
 	}
-	if AboutTitle(i18n.EN) != "About Exchange Checker" {
+	if AboutTitle() != "О программе Exchange Checker" {
 		t.Error("title")
 	}
 }
@@ -320,32 +312,33 @@ func databases(items []Item) []Item {
 	return items
 }
 
-// TestCHK_TRAY_08_LanguageMenu — «Язык (Language)»: as in Windows /
-// Русский / English, exactly the stored preference checked.
-func TestCHK_TRAY_08_LanguageMenu(t *testing.T) {
-	for pref, want := range map[string]int{"": CmdLangAuto, "ru": CmdLangRU, "en": CmdLangEN} {
-		sub := BuildRightMenu(i18n.RU, pref, SvcStateUnknown)[2]
-		if sub.Text != "Язык (Language)" {
-			t.Errorf("submenu text %q", sub.Text)
-		}
-		n := 0
-		for _, s := range sub.Sub {
-			if s.Checked {
-				n++
-				if s.ID != want {
-					t.Errorf("pref %q: checked %d, want %d", pref, s.ID, want)
-				}
-			}
-			if LangCommands[s.ID] != map[int]string{CmdLangAuto: "", CmdLangRU: "ru", CmdLangEN: "en"}[s.ID] {
-				t.Errorf("command %d", s.ID)
-			}
-		}
-		if n != 1 {
-			t.Errorf("pref %q: %d checked", pref, n)
-		}
+// TestCHK_TRAY_86_NoLanguageMenu — phase 13: the product is Russian only;
+// neither right-click menu has a language submenu or item, every item
+// text is the Russian catalog text (no Latin-only «Language»/«English»).
+func TestCHK_TRAY_86_NoLanguageMenu(t *testing.T) {
+	menus := map[string][]Item{
+		"BuildRightMenu":     BuildRightMenu(SvcStateRunning),
+		"BuildTrayRightMenu": BuildTrayRightMenu(RightMenuOpts{Svc: SvcStateRunning, Connected: true, SummaryAvailable: true}),
 	}
-	if BuildRightMenu(i18n.EN, "en", SvcStateUnknown)[2].Text != "Language (Язык)" {
-		t.Error("EN submenu text")
+	for name, m := range menus {
+		var walk func([]Item)
+		walk = func(items []Item) {
+			for _, it := range items {
+				low := strings.ToLower(it.Text)
+				if strings.Contains(low, "язык") || strings.Contains(low, "language") || strings.Contains(low, "english") || strings.Contains(low, "как в windows") {
+					t.Errorf("%s: language item %q", name, it.Text)
+				}
+				if it.ID >= 1011 && it.ID <= 1013 { // the old CmdLangAuto/RU/EN
+					t.Errorf("%s: old language command %d", name, it.ID)
+				}
+				walk(it.Sub)
+			}
+		}
+		walk(m)
+	}
+	if m := BuildRightMenu(SvcStateRunning); len(m) != 5 || m[0].ID != CmdSettings || m[1].ID != CmdAbout ||
+		m[2].Text != i18n.T(i18n.KeyMenuService) || !m[3].Separator || m[4].ID != CmdExit {
+		t.Errorf("right menu %+v", m)
 	}
 }
 
@@ -365,16 +358,16 @@ func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
 		{SvcStateNoAccess, true, true, i18n.KeySvcNoAccess},
 		{SvcStateUnknown, true, true, i18n.KeySvcUnknown},
 	}
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		for _, c := range cases {
-			m := ServiceMenu(c.s, lang)
-			if len(m) != 4 || !m[0].Disabled || !strings.Contains(m[0].Text, i18n.T(c.key, lang)) || !m[1].Separator ||
+			m := ServiceMenu(c.s)
+			if len(m) != 4 || !m[0].Disabled || !strings.Contains(m[0].Text, i18n.T(c.key)) || !m[1].Separator ||
 				m[2].ID != CmdSvcStart || m[2].Disabled == c.start || m[3].ID != CmdSvcStop || m[3].Disabled == c.stop {
-				t.Errorf("%s %d: %+v", lang, c.s, m)
+				t.Errorf("%s %d: %+v", i18n.RU, c.s, m)
 			}
 		}
 	}
-	if it := BuildRightMenu(i18n.EN, "", SvcStateStopped)[3]; it.Text != "Service" || it.Sub[2].Disabled {
+	if it := BuildRightMenu(SvcStateStopped)[2]; it.Text != i18n.T(i18n.KeyMenuService) || it.Sub[2].Disabled {
 		t.Errorf("service submenu %+v", it)
 	}
 }

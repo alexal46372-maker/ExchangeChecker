@@ -66,12 +66,6 @@ func isTrayReloadPrefs(msg uint32) bool {
 
 // Options configure the tray application.
 type Options struct {
-	Lang string
-	// LangPref is the per-user language preference Lang was resolved from
-	// ("" = as in Windows); LangStore keeps a new choice of the menu
-	// (nil = not stored, tests).
-	LangPref  string
-	LangStore LangStore
 	Session   trayipc.Options // Dial and Verify; OnEvent is set by the App
 	// NoNotifyIcon skips Shell_NotifyIconW (tests without Explorer).
 	NoNotifyIcon bool
@@ -116,10 +110,14 @@ type Options struct {
 	// UIModeStore keeps «Простой» / «Экспертный» of the settings window
 	// (phase 10 D; nil = every field, tests).
 	UIModeStore UIModeStore
-	// ThemeStore keeps light/dark chrome (phase 12, CHK-TRAY-55; nil = light).
-	ThemeStore ThemeStore
 	// NoBlink disables the icon blinking timer (tests drive blinkTick).
 	NoBlink bool
+	// ScreenFlashStore keeps «Мигание экрана» (HKCU; nil = on, phase 13,
+	// CHK-TRAY-95).
+	ScreenFlashStore ScreenFlashStore
+	// HiddenFlash keeps the full-screen flash overlay hidden (tests); its
+	// state and timer are maintained.
+	HiddenFlash bool
 }
 
 // exitWait bounds the wait for the session goroutine in Exit (well under
@@ -156,6 +154,7 @@ type App struct {
 	// phase 10: sound profiles (CHK-TRAY-33..35), problem list, blinking
 	// icon and panel (CHK-TRAY-38/39)
 	soundPrefs  trayalert.SoundPrefs
+	volumeDraws int // WM_DRAWITEM of the menu volume slider (CHK-TRAY-96)
 	soundStored bool
 	soundWin    *soundWindow
 	volWin      *volumeWindow
@@ -185,6 +184,10 @@ type App struct {
 	// phase 9a: balloons (CHK-TRAY-18), «Состояние» (CHK-TRAY-19/21),
 	// «Проверить сейчас» results (CHK-TRAY-20, test hook)
 	balloonsOn   bool
+	// flashes: active flash pushes by profile / point; flashWin: the
+	// full-screen overlay (CHK-TRAY-95)
+	flashes  map[flashKey]flashState
+	flashWin *flashWindow
 	balloons     []trayui.Balloon
 	statusWin    *statusWindow
 	checkResults []string
@@ -207,9 +210,7 @@ type App struct {
 // service session. Call on a locked OS thread, then Loop.
 func NewApp(opt Options) (*App, error) {
 	a := &App{opt: opt, done: make(chan struct{})}
-	a.opt.Lang = i18n.Normalize(opt.Lang)
-	LoadTheme(a.opt.ThemeStore) // phase 12 CHK-TRAY-55 (before any window chrome)
-	hwnd, err := createWindow(mainClass, i18n.T(i18n.KeyAppName, a.opt.Lang), 0, winapi.WS_OVERLAPPED, 0, 0, 0, 0, 0, a.wndProc)
+	hwnd, err := createWindow(mainClass, i18n.T(i18n.KeyAppName), 0, winapi.WS_OVERLAPPED, 0, 0, 0, 0, 0, a.wndProc)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +218,7 @@ func NewApp(opt Options) (*App, error) {
 	trayExitMsg()
 	trayReloadPrefsMsg()
 	a.taskbarCreated = winapi.RegisterWindowMessage("TaskbarCreated")
-	a.alerts = trayalert.New(a.opt.Lang)
+	a.alerts = trayalert.New()
 	a.sounder = opt.Sounder
 	if a.sounder == nil && opt.Beeper != nil {
 		a.sounder = trayalert.BeeperSounder{B: opt.Beeper}
@@ -225,13 +226,12 @@ func NewApp(opt Options) (*App, error) {
 	a.testSounder = a.sounder
 	if a.sounder == nil {
 		logf := func(l string) { a.logf("%s", l) }
-		lang := func() string { return a.opt.Lang }
-		a.sounder = &winSounder{alias: aliasAlarm, log: logf, lang: lang}
-		a.testSounder = &winSounder{alias: aliasTest, log: logf, lang: lang}
+		a.sounder = &winSounder{alias: aliasAlarm, log: logf}
+		a.testSounder = &winSounder{alias: aliasTest, log: logf}
 	}
 	a.player = trayalert.NewSoundPlayer(a.sounder)
 	a.loadSoundPrefs()
-	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
+	a.ind = trayui.Evaluate(a.status)
 	a.loadBalloonPref()
 	a.addIcon()
 
@@ -297,7 +297,7 @@ func (a *App) applyAlert(v trayalert.View) {
 			return
 		}
 		// unowned: own taskbar button (flashes when the foreground lock refuses)
-		aw, err := newAlertWindow(0, a.opt.Lang, a.ackAlerts, a.closeAlerts)
+		aw, err := newAlertWindow(0, a.ackAlerts, a.closeAlerts)
 		if err != nil {
 			return
 		}
@@ -309,7 +309,10 @@ func (a *App) applyAlert(v trayalert.View) {
 
 // closeAlerts: the user closed the alert window (mute until the next
 // change, PLAN §12 p.50).
-func (a *App) closeAlerts() { a.applyAlert(a.alerts.Close()) }
+func (a *App) closeAlerts() {
+	a.applyAlert(a.alerts.Close())
+	a.dismissFlashes() // «Закрыть» = dismiss_flash (CHK-TRAY-95)
+}
 
 // muteAlerts: «Звук вкл/выкл» of the current alarm (CHK-TRAY-36).
 func (a *App) muteAlerts() { a.applyAlert(a.alerts.ToggleMute()) }
@@ -455,11 +458,15 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 		a.taskbarRecreated++
 		a.addIcon()
 		return 0, true
+	case msg == winapi.WM_MEASUREITEM && measureVolumeItem(lp):
+		return 1, true
+	case msg == winapi.WM_DRAWITEM && a.onDrawItem(lp):
+		return 1, true
 	case msg == winapi.WM_TIMER && wp == blinkTimerID:
 		a.blinkTick()
 		return 0, true
 	case isTrayReloadPrefs(msg):
-		// CHK-TRAY-57: reread Sound / UIMode / Theme / balloons / lang
+		// CHK-TRAY-57: reread Sound / UIMode / Theme / balloons
 		// from HKCU without Exit (wParam / lParam ignored)
 		a.reloadTrayPrefs()
 		return 0, true
@@ -498,6 +505,10 @@ func (a *App) drain() {
 				w.onSessionState(e.Status)
 			case trayipc.EventStatus: // e.g. trayAutostartError after a reconnection
 				w.onSessionStatus()
+			case trayipc.EventProfileEnabled: // CHK-TRAY-91
+				if m := e.Message; m != nil && m.Enabled != nil {
+					w.onProfileEnabled(m.ProfileID, *m.Enabled, m.Revision)
+				}
 			}
 		}
 	}
@@ -514,7 +525,7 @@ func (a *App) drain() {
 	a.statusExt = trayalert.ExtOf(a.status)
 	a.applyAlert(a.alerts.Update(a.status, a.session.Supported(model.CmdAckAlert)))
 	old := a.ind
-	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
+	a.ind = trayui.Evaluate(a.status)
 	if !a.nidAdded {
 		a.addIcon()
 	} else if old.Icon != a.ind.Icon || old.Tooltip != a.ind.Tooltip {
@@ -523,6 +534,7 @@ func (a *App) drain() {
 	a.updateProblems()
 	a.afterDrain(q)
 	a.balloonEvents(q)
+	a.onFlashEvents(q) // CHK-TRAY-95
 	if sw := a.statusWin; sw != nil && winapi.IsWindow(sw.hwnd) {
 		sw.update(a.status, a.connected() && !a.check.Busy)
 	}
@@ -546,12 +558,12 @@ func (a *App) onNotify(ev uint32) {
 }
 
 // LeftMenu / RightMenu are the current menu models.
-func (a *App) LeftMenu() []trayui.Item { return trayui.BuildLeftMenu(a.status, a.opt.Lang) }
+func (a *App) LeftMenu() []trayui.Item { return trayui.BuildLeftMenu(a.status) }
 func (a *App) RightMenu() []trayui.Item {
 	sum := a.session != nil && (a.session.Supported(model.CmdSummary) || a.session.Status().Has(model.CapSummary))
 	return trayui.BuildTrayRightMenu(trayui.RightMenuOpts{
-		Lang: a.opt.Lang, Pref: a.opt.LangPref, Svc: a.serviceState(),
-		Theme: trayui.Current(), Balloons: a.balloonsOn,
+		Svc:   a.serviceState(),
+		Balloons: a.balloonsOn,
 		Connected: a.connected() && !a.check.Busy, SummaryAvailable: sum,
 	})
 }
@@ -560,7 +572,12 @@ func (a *App) RightMenu() []trayui.Item {
 func (a *App) ShowLeftMenu() { a.Command(trackMenu(a.hwnd, a.LeftMenu(), &a.squares)) }
 
 // ShowRightMenu shows Settings / About / Exit at the cursor.
-func (a *App) ShowRightMenu() { a.Command(trackMenu(a.hwnd, a.RightMenu(), &a.squares)) }
+func (a *App) ShowRightMenu() {
+	menuVolume.app = a
+	cmd := trackMenu(a.hwnd, a.RightMenu(), &a.squares)
+	menuVolume.app = nil
+	a.Command(cmd)
+}
 
 // Command executes a menu command.
 func (a *App) Command(cmd int) {
@@ -577,8 +594,6 @@ func (a *App) Command(cmd int) {
 		a.ShowAbout(true)
 	case trayui.CmdExit:
 		a.Exit()
-	case trayui.CmdLangAuto, trayui.CmdLangRU, trayui.CmdLangEN:
-		a.SetLanguage(trayui.LangCommands[cmd])
 	case trayui.CmdSvcStart, trayui.CmdSvcStop:
 		a.serviceCommand(cmd == trayui.CmdSvcStart)
 	case trayui.CmdSummary:
@@ -595,96 +610,54 @@ func (a *App) Command(cmd int) {
 		a.OpenVolume()
 	case trayui.CmdPinHelp:
 		a.ShowPinHelp()
-	case trayui.CmdThemeLight, trayui.CmdThemeDark:
-		a.SetChromeTheme(trayui.ThemeCommands[cmd])
 	default:
-		if i, mute, ok := trayui.MuteProfileIndex(cmd); ok {
-			a.muteProfile(i, mute)
+		if i, ok := trayui.ToggleProfileIndex(cmd); ok {
+			a.toggleProfile(i)
 		}
 	}
 }
 
-// muteProfile sends mute_until_recovered / unmute_profile for
-// status.Snapshot.Profiles[i] (CHK-TRAY-59).
-func (a *App) muteProfile(i int, mute bool) {
-	if a.session == nil || !a.session.Supported(model.CmdMuteUntilRecovered) {
+// toggleProfile sends set_enabled with the inverted polling flag of
+// status.Snapshot.Profiles[i] (the database check mark, CHK-TRAY-91). The
+// profile_enabled push updates the menu and the settings window list.
+func (a *App) toggleProfile(i int) {
+	if a.session == nil || !trayui.CanToggle(a.session.Status()) {
 		return
 	}
 	st := a.session.Status()
 	if st.Snapshot == nil || i < 0 || i >= len(st.Snapshot.Profiles) {
 		return
 	}
-	id := st.Snapshot.Profiles[i].ProfileID
-	cmd := model.CmdMuteUntilRecovered
-	if !mute {
-		cmd = model.CmdUnmuteProfile
-	}
+	p := st.Snapshot.Profiles[i]
+	on := !p.Enabled
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
 		defer cancel()
-		m, err := a.session.Do(ctx, model.IPCRequest{Cmd: cmd, ProfileID: id})
+		m, err := a.session.Do(ctx, model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: p.ProfileID, Enabled: &on})
 		if err != nil || m.Type == model.MsgError {
-			return // menu is ephemeral; next status push refreshes the indicator
+			a.runOnUI(func() { a.toggleFailed(p, err, m) })
+			return
 		}
 		_ = a.session.Refresh(ctx)
 	}()
 }
 
-// SetLanguage applies a per-user language preference at once to the
-// menus, the icon tooltip and the alert window, and stores it (HKCU).
-// Already open settings / About windows take it when opened next time.
-func (a *App) SetLanguage(pref string) error {
-	pref = NormalizePref(pref)
-	var err error
-	if a.opt.LangStore != nil {
-		err = a.opt.LangStore.Save(pref)
+// toggleFailed reports a failed set_enabled of the database check mark.
+func (a *App) toggleFailed(p model.ProfileSnapshot, err error, m model.IPCMessage) {
+	name := p.Name
+	if name == "" {
+		name = p.ProfileID
 	}
-	a.opt.LangPref = pref
-	a.opt.Lang = ResolveLang(pref)
-	a.alerts.SetLang(a.opt.Lang)
-	if a.awin != nil {
-		a.awin.setLang(a.opt.Lang)
-		a.awin.apply(a.alerts.View(), !a.opt.HiddenAlerts)
-	}
-	old := a.ind
-	a.ind = trayui.Evaluate(a.status, a.opt.Lang)
-	if a.nidAdded && old.Tooltip != a.ind.Tooltip {
-		a.modifyIcon()
-	}
-	return err
+	a.showBalloon(trayui.ToggleFailedBalloon(name, m, err))
 }
 
-// reloadTrayPrefs rereads Sound / UIMode / Theme / balloons / lang from
+// reloadTrayPrefs rereads Sound / UIMode / balloons from
 // HKCU and applies them live without Exit (CHK-TRAY-57).
 func (a *App) reloadTrayPrefs() {
-	if a.opt.LangStore != nil {
-		if pref, err := a.opt.LangStore.Load(); err == nil {
-			a.opt.LangPref = pref
-			a.opt.Lang = ResolveLang(pref)
-			a.alerts.SetLang(a.opt.Lang)
-			if a.awin != nil {
-				a.awin.setLang(a.opt.Lang)
-			}
-			a.ind = trayui.Evaluate(a.status, a.opt.Lang)
-			a.modifyIcon()
-		}
-	}
 	a.loadBalloonPref()
 	a.loadSoundPrefs()
 	_ = loadUIMode(a.opt.UIModeStore) // next settings open reads the store
-	LoadTheme(a.opt.ThemeStore)
-	ApplyWindowTheme(a.hwnd)
-	if a.settings != nil && winapi.IsWindow(a.settings.hwnd) {
-		ApplyWindowTheme(a.settings.hwnd)
-		if a.settings.host != 0 {
-			ApplyWindowTheme(a.settings.host)
-		}
-	}
-	if a.awin != nil && winapi.IsWindow(a.awin.hwnd) {
-		ApplyWindowTheme(a.awin.hwnd)
-	}
 }
-
 
 // OpenSettings opens (or focuses) the settings window and returns its
 // handle (the open Discovery dialog's when there is one, brought to the
@@ -714,9 +687,9 @@ func (a *App) OpenSettings() uintptr {
 		mode = traysettings.Admin
 	}
 	var w *settingsWindow
-	w, err := newSettingsWindow(settingsConfig{lang: a.opt.Lang, mode: mode, session: a.session, elevator: a.opt.Elevator,
-		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore, themeStore: a.opt.ThemeStore,
-		stores:  trayStores{Lang: a.opt.LangStore, Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
+	w, err := newSettingsWindow(settingsConfig{mode: mode, session: a.session, elevator: a.opt.Elevator,
+		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
+		stores:  trayStores{Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore, Flash: a.opt.ScreenFlashStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onSoundSave: a.SaveSoundPrefs, onSoundTest: a.testSound,
 		onSoundStop: a.stopTestSound,
@@ -761,9 +734,8 @@ func (a *App) ShowAbout(show bool) uintptr {
 		}
 		return a.about
 	}
-	lang := a.opt.Lang
-	h, err := newAboutWindow(a.hwnd, trayui.AboutTitle(lang), trayui.AboutText(a.session.Status(), lang),
-		i18n.T(i18n.KeyAboutOK, lang), i18n.T(i18n.KeyTipAboutOK, lang), show, func() { a.about = 0 })
+	h, err := newAboutWindow(a.hwnd, trayui.AboutTitle(), trayui.AboutText(a.session.Status()),
+		i18n.T(i18n.KeyAboutOK), i18n.T(i18n.KeyTipAboutOK), show, func() { a.about = 0 })
 	if err != nil {
 		return 0
 	}

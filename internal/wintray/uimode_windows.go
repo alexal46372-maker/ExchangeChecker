@@ -8,17 +8,17 @@ import (
 )
 
 // UIModeValue is the HKCU value of «Простой» / «Экспертный» (phase 10 D,
-// CHK-TRAY-40) under LangKey.
+// CHK-TRAY-40) under TrayKey.
 const UIModeValue = "UIMode"
 
 // RegistryUIModeStore keeps the settings window mode per user.
 type RegistryUIModeStore struct {
-	Key string // "" = LangKey
+	Key string // "" = TrayKey
 }
 
 func (s RegistryUIModeStore) key() string {
 	if s.Key == "" {
-		return LangKey
+		return TrayKey
 	}
 	return s.Key
 }

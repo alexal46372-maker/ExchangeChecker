@@ -28,7 +28,7 @@ const (
 const (
 	UninstallKeyPath = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\` + model.ServiceName
 	EventLogKeyPath  = `SYSTEM\CurrentControlSet\Services\EventLog\Application\` + model.EventSource
-	// UserKeyPath is the tray's per-user key (HKCU, language); removed for
+	// UserKeyPath is the tray's per-user key (HKCU preferences); removed for
 	// the current user only on /PURGEDATA.
 	UserKeyPath = `Software\ExchangeChecker`
 	// EventTypesSupported: ERROR | WARNING | INFORMATION.
@@ -54,11 +54,8 @@ const FirewallRuleName = "Exchange Checker (SQL Browser)"
 // FirewallProfilePublic is NET_FW_PROFILE2_PUBLIC (must match winapi).
 const FirewallProfilePublic = 0x4
 
-// ServiceDescription is the SCM description in the installer language.
-func ServiceDescription(lang string) string {
-	if lang == "en" {
-		return "Exchange Checker: monitors 1C exchange times in MS SQL databases; alerts in the tray and the event log."
-	}
+// ServiceDescription is the SCM description.
+func ServiceDescription() string {
 	return "Exchange Checker: контроль времени обмена 1С по базам MS SQL; тревоги в трее и журнале событий."
 }
 

@@ -60,56 +60,36 @@ func TestCHK_TRAY_51_Theme(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_55_ThemeSwitch — dark palette differs from light; helpers
-// follow SetTheme; NormalizeTheme; round-trip of theme name (PLAN §12 p.194).
-func TestCHK_TRAY_55_ThemeSwitch(t *testing.T) {
-	t.Cleanup(func() { SetTheme(ThemeLight) })
-	if NormalizeTheme("") != ThemeLight || NormalizeTheme("DARK") != ThemeDark || NormalizeTheme("x") != ThemeLight {
-		t.Fatalf("NormalizeTheme: %q %q %q", NormalizeTheme(""), NormalizeTheme("DARK"), NormalizeTheme("x"))
+// TestCHK_TRAY_88_NoDarkTheme — phase 13: the dark theme is gone; the
+// palette is always light whatever SetTheme gets, helpers return the
+// light constants and theme.go has no dark palette left.
+func TestCHK_TRAY_88_NoDarkTheme(t *testing.T) {
+	SetTheme(Theme("dark"))
+	if Current() != ThemeLight {
+		t.Fatalf("Current %q", Current())
 	}
-	SetTheme(ThemeLight)
-	lightPale := map[Color]uint32{}
-	lightHTML := map[Color]string{}
-	for _, c := range []Color{ColorGreen, ColorYellow, ColorRed, ColorGrey} {
-		lightPale[c] = PaleColorRef(c)
-		lightHTML[c] = PaleHTML(c)
+	if ChromePage() != Page || ChromePanel() != Panel || ChromeText() != Text || ChromeBorder() != Border ||
+		ChromeHeaderRow() != HeaderRow || ChromeCardFace() != CardFace || ChromeCardFrame() != CardFrame ||
+		ChromeCardStripeOff() != CardStripeOff || ChromeRequired() != RequiredField || ChromeAxis() != Axis ||
+		ChromeGrid() != Grid || ChromeBrandDark() != BrandDark || ChromeAccent() != Accent {
+		t.Fatal("chrome helpers must return the light constants")
 	}
-	lightBorder, lightHeader := ChromeBorder(), ChromeHeaderRow()
-	lightPage, lightText := ChromePage(), ChromeText()
-
-	SetTheme(ThemeDark)
-	if !IsDark() || Current() != ThemeDark {
-		t.Fatal("IsDark / Current")
+	if PaleColorRef(ColorGreen) != ColorRef(0xDF, 0xF3, 0xDF) || PaleHTML(ColorGreen) != "#dff3df" {
+		t.Fatal("pale must be light")
 	}
-	if ChromeBorder() == lightBorder || ChromeHeaderRow() == lightHeader {
-		t.Error("dark Border/HeaderRow must differ from light")
+	b, err := os.ReadFile("theme.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if ChromePage() == lightPage || ChromeText() == lightText {
-		t.Error("dark page/text must differ from light")
+	for _, bad := range []string{"Theme" + "Dark", "Is" + "Dark", "dark" + "Pale", "dark" + "Page", "dark" + "Panel", "sync.RWMutex"} {
+		if strings.Contains(string(b), bad) {
+			t.Errorf("theme.go still has %s", bad)
 	}
-	for _, c := range []Color{ColorGreen, ColorYellow, ColorRed, ColorGrey} {
-		if PaleColorRef(c) == lightPale[c] {
-			t.Errorf("%d: dark pale == light", c)
-		}
-		if PaleHTML(c) == lightHTML[c] {
-			t.Errorf("%d: dark PaleHTML == light", c)
-		}
-		if PaleColorRef(c) == ColorRefOf(c) {
-			t.Errorf("%d: dark pale == strong", c)
-		}
-	}
-	// light constants themselves are unchanged (CHK-TRAY-51 contract)
-	if Border != 0x00999999 || HeaderRow != 0x00EEEEEE {
-		t.Error("light Border/HeaderRow constants must stay")
-	}
-	SetTheme(ThemeLight)
-	if IsDark() || ChromeBorder() != Border {
-		t.Error("back to light")
 	}
 }
 
 // TestCHK_TRAY_56_HTMLFromChrome — export/history HTML take Border /
-// HeaderRow from the active chrome theme; no #999 / #eee literals in
+// HeaderRow from the chrome helpers; no #999 / #eee literals in
 // the builders (PLAN §12 p.195).
 func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 	t.Cleanup(func() { SetTheme(ThemeLight) })
@@ -118,7 +98,7 @@ func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 	at := now
 
 	SetTheme(ThemeLight)
-	hLight := string(ExportHTML(rows, "en", at))
+	hLight := string(ExportHTML(rows, at))
 	if !strings.Contains(hLight, ChromeHTML(Border)) || !strings.Contains(hLight, ChromeHTML(HeaderRow)) {
 		t.Fatalf("light html missing chrome: %s", hLight)
 	}
@@ -126,23 +106,10 @@ func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 		t.Fatalf("light html expected #999999/#eeeeee via helpers: %s", hLight)
 	}
 
-	SetTheme(ThemeDark)
-	hDark := string(ExportHTML(rows, "en", at))
 	wantBorder, wantHeader := ChromeHTML(ChromeBorder()), ChromeHTML(ChromeHeaderRow())
-	if !strings.Contains(hDark, wantBorder) || !strings.Contains(hDark, wantHeader) {
-		t.Fatalf("dark html missing chrome %s %s: %s", wantBorder, wantHeader, hDark)
-	}
-	if strings.Contains(strings.ToLower(hDark), "#999999") || strings.Contains(strings.ToLower(hDark), "#eeeeee") {
-		t.Fatalf("dark html must not keep light #999/#eee: %s", hDark)
-	}
-	if wantBorder == "#999999" || wantHeader == "#eeeeee" {
-		t.Fatal("dark chrome helpers still light")
-	}
-
-	SetTheme(ThemeDark)
-	hist := string(ExportHistoryHTML(nil, "t", at, at, "en", false))
+	hist := string(ExportHistoryHTML(nil, "t", at, at, false))
 	if !strings.Contains(hist, wantBorder) || !strings.Contains(hist, wantHeader) {
-		t.Fatalf("history dark: %s", hist)
+		t.Fatalf("history: %s", hist)
 	}
 
 	// source scan: export.go / history.go must not embed #999 / #eee
@@ -161,8 +128,8 @@ func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_65_PaletteExact — exact installer hex (COLORREF BGR) and
-// dark Brand/Accent mappings (CHK-TRAY-65). Pure Go; Linux OK.
+// TestCHK_TRAY_65_PaletteExact — exact installer hex (COLORREF BGR)
+// (CHK-TRAY-65; dark mappings removed with the dark theme, CHK-TRAY-88). Pure Go; Linux OK.
 func TestCHK_TRAY_65_PaletteExact(t *testing.T) {
 	t.Cleanup(func() { SetTheme(ThemeLight) })
 	// #0F2744 / #FAFBFC / #F1F5F9 / #0677D9 as COLORREF (0x00BBGGRR)
@@ -187,19 +154,6 @@ func TestCHK_TRAY_65_PaletteExact(t *testing.T) {
 	}
 	if ChromePage() != Page || ChromePanel() != Panel {
 		t.Fatal("light ChromePage/Panel must match constants")
-	}
-	SetTheme(ThemeDark)
-	if ChromeBrandDark() != darkPanel {
-		t.Fatalf("dark Brand %#x want darkPanel %#x", ChromeBrandDark(), darkPanel)
-	}
-	if ChromeAccent() != StateOK {
-		t.Fatalf("dark Accent %#x want StateOK %#x", ChromeAccent(), StateOK)
-	}
-	if ChromePage() != darkPage || ChromePanel() != darkPanel {
-		t.Fatal("dark Page/Panel helpers")
-	}
-	if ChromeBrandDark() == BrandDark || ChromeAccent() == Accent {
-		t.Fatal("dark Brand/Accent must differ from light constants")
 	}
 }
 

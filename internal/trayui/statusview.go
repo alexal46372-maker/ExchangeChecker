@@ -39,20 +39,20 @@ func (r StatusRow) Cells() []string {
 
 // AgoText is «N мин назад» («только что» under a minute, hours and days
 // for long gaps); "" for an unknown time.
-func AgoText(t *time.Time, now time.Time, lang string) (string, int) {
+func AgoText(t *time.Time, now time.Time) (string, int) {
 	if t == nil || t.IsZero() {
 		return "", -1
 	}
 	m := int(now.Sub(*t) / time.Minute)
 	switch {
 	case m < 1:
-		return i18n.T(i18n.KeyAgoNow, lang), 0
+		return i18n.T(i18n.KeyAgoNow), 0
 	case m < 120:
-		return fmt.Sprintf(i18n.T(i18n.KeyAgoMin, lang), m), m
+		return fmt.Sprintf(i18n.T(i18n.KeyAgoMin), m), m
 	case m < 48*60:
-		return fmt.Sprintf(i18n.T(i18n.KeyAgoHours, lang), m/60, m%60), m
+		return fmt.Sprintf(i18n.T(i18n.KeyAgoHours), m/60, m%60), m
 	}
-	return fmt.Sprintf(i18n.T(i18n.KeyAgoDays, lang), m/(24*60)), m
+	return fmt.Sprintf(i18n.T(i18n.KeyAgoDays), m/(24*60)), m
 }
 
 func timeText(t *time.Time) string {
@@ -64,7 +64,7 @@ func timeText(t *time.Time) string {
 
 // StatusRows builds the rows of the snapshot; now is the clock for «N мин
 // назад» (the tray and the service share the machine clock).
-func StatusRows(st trayipc.Status, lang string, now time.Time) []StatusRow {
+func StatusRows(st trayipc.Status, now time.Time) []StatusRow {
 	if st.Snapshot == nil {
 		return nil
 	}
@@ -78,63 +78,53 @@ func StatusRows(st trayipc.Status, lang string, now time.Time) []StatusRow {
 			r := StatusRow{Database: db, AgoMinutes: -1, Level: p.Level, Color: LevelColor(p.Level), ProfileID: p.ProfileID}
 			switch {
 			case !p.Enabled:
-				r.State, r.Color = i18n.T(i18n.KeyStDisabled, lang), ColorGrey
+				r.State, r.Color = i18n.T(i18n.KeyStDisabled), ColorGrey
 			case p.ErrorKey != "":
-				r.State, r.Note = levelText(model.LevelError, lang), i18n.Message(p.ErrorKey, lang)
+				r.State, r.Note = levelText(model.LevelError), i18n.Message(p.ErrorKey)
 			case p.Error != "":
-				r.State, r.Note = levelText(model.LevelError, lang), p.Error
+				r.State, r.Note = levelText(model.LevelError), p.Error
 			case !p.Polled:
-				r.State, r.Color = i18n.T(i18n.KeyStNotPolled, lang), ColorGrey
+				r.State, r.Color = i18n.T(i18n.KeyStNotPolled), ColorGrey
 			default:
-				r.State, r.Note = levelText(p.Level, lang), i18n.T(i18n.KeyDBNoPoints, lang)
-			}
-			if p.Muted {
-				if r.Note != "" {
-					r.Note += "; "
-				}
-				r.Note += i18n.T(i18n.KeyCardMuted, lang)
+				r.State, r.Note = levelText(p.Level), i18n.T(i18n.KeyDBNoPoints)
 			}
 			rows = append(rows, r)
 			if len(p.Points) == 0 {
 				continue
 			}
 		}
-		if p.Muted && p.Enabled && p.Error == "" && p.ErrorKey == "" && p.Polled && len(p.Points) > 0 {
-			rows = append(rows, StatusRow{Database: db, AgoMinutes: -1, Level: p.Level, Color: LevelColor(p.Level),
-				ProfileID: p.ProfileID, State: levelText(p.Level, lang), Note: i18n.T(i18n.KeyCardMuted, lang)})
-		}
 		ps := append([]model.PointStatus(nil), p.Points...)
 		model.SortPoints(ps)
 		for _, pt := range ps {
 			r := StatusRow{Database: db, Point: pt.Name, Plan: pt.PlanLabel, Level: pt.Level, Color: LevelColor(pt.Level),
 				LastSend: timeText(pt.LastSend), LastRecv: timeText(pt.LastRecv), Fresh: timeText(pt.FreshAt),
-				State: levelText(pt.Level, lang), ProfileID: p.ProfileID, PointKey: pt.Key, WarnMin: p.WarnMinutes, ErrMin: p.ErrorMinutes}
+				State: levelText(pt.Level), ProfileID: p.ProfileID, PointKey: pt.Key, WarnMin: p.WarnMinutes, ErrMin: p.ErrorMinutes}
 			if r.PointKey == "" {
 				r.PointKey = model.PointKey(pt.ExchangePoint)
 			}
 			if r.Plan == "" {
 				r.Plan = pt.PlanTable
 			}
-			r.Ago, r.AgoMinutes = AgoText(pt.FreshAt, now, lang)
+			r.Ago, r.AgoMinutes = AgoText(pt.FreshAt, now)
 			if pt.FreshAt == nil {
-				r.Fresh = i18n.T(i18n.KeyPtNever, lang)
+				r.Fresh = i18n.T(i18n.KeyPtNever)
 			}
 			if pt.Baseline {
-				r.Note = i18n.T(i18n.KeyPtBaseline, lang)
+				r.Note = i18n.T(i18n.KeyPtBaseline)
 			}
 			if pt.Acknowledged {
 				if r.Note != "" {
 					r.Note += "; "
 				}
-				r.Note += i18n.T(i18n.KeyPtAcked, lang)
+				r.Note += i18n.T(i18n.KeyPtAcked)
 			}
 			if pt.Stalled {
 				if r.Note != "" {
 					r.Note += "; "
 				}
-				r.Note += i18n.T(i18n.KeyPtStalled, lang)
+				r.Note += i18n.T(i18n.KeyPtStalled)
 				if r.Level < model.LevelWarning {
-					r.Level, r.Color, r.State = model.LevelWarning, ColorYellow, levelText(model.LevelWarning, lang)
+					r.Level, r.Color, r.State = model.LevelWarning, ColorYellow, levelText(model.LevelWarning)
 				}
 			}
 			rows = append(rows, r)

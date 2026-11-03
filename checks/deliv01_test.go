@@ -157,6 +157,7 @@ func TestCHK_DELIV_01_InstallerAnyName(t *testing.T) {
 		"1.0.0",
 		1,
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		true,
 	)
 	var uninstallStr string
 	for _, v := range vals {

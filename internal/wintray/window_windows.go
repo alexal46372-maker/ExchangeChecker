@@ -137,7 +137,7 @@ func createWindowPx(class, title string, exStyle, style uint32, x, y, w, hgt int
 	}
 	if style&winapi.WS_CHILD == 0 && style&winapi.WS_CAPTION != 0 {
 		setWindowIcons(hwnd) // phase 11 (CHK-TRAY-49): the app icon in the title bar
-		ApplyWindowTheme(hwnd) // phase 12 (CHK-TRAY-55): immersive dark + chrome
+		ApplyWindowTheme(hwnd) // phase 12 (CHK-TRAY-55): chrome
 	}
 	hmu.Lock()
 	handlers[hwnd] = h

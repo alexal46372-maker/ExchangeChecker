@@ -281,20 +281,17 @@ func TestCHK_TRAY_82_NoSoundSaveButton(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke — phase 13 (CHK-TRAY-86):
-// no Language submenu; Theme is followed by a separator and About.
+// TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke — phase 13: no Language
+// (CHK-TRAY-86) and no Theme (CHK-TRAY-88) submenu; rest, sep, About, sep, Exit.
 func TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke(t *testing.T) {
-	m := trayui.BuildTrayRightMenu(trayui.RightMenuOpts{Theme: trayui.ThemeLight})
-	themeAt := -1
-	for i, it := range m {
-		if len(it.Sub) == 2 && it.Sub[0].ID == trayui.CmdThemeLight {
-			themeAt = i
-		}
-		if strings.Contains(it.Text, "Язык") {
-			t.Fatalf("language item %q", it.Text)
+	m := trayui.BuildTrayRightMenu(trayui.RightMenuOpts{})
+	for _, it := range m {
+		if strings.Contains(it.Text, "Язык") || it.Text == "Тема" {
+			t.Fatalf("removed item %q", it.Text)
 		}
 	}
-	if themeAt < 0 || !m[themeAt+1].Separator || m[themeAt+2].ID != trayui.CmdAbout {
-		t.Fatalf("theme@%d menu=%+v", themeAt, m)
+	n := len(m)
+	if n < 5 || m[n-1].ID != trayui.CmdExit || !m[n-2].Separator || m[n-3].ID != trayui.CmdAbout || !m[n-4].Separator {
+		t.Fatalf("menu=%+v", m)
 	}
 }

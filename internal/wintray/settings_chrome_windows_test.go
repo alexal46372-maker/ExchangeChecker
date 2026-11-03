@@ -217,22 +217,17 @@ func TestCHK_TRAY_65_LayoutContract(t *testing.T) {
 	if trayui.ChromeBrandDark() == trayui.ChromePage() {
 		t.Fatal("brand/content collapsed")
 	}
-	trayui.SetTheme(trayui.ThemeDark)
-	if trayui.ChromePage() == trayui.Page {
-		t.Fatal("dark ChromePage must differ from light Page")
-	}
-	trayui.SetTheme(trayui.ThemeLight)
 	if len(pageActionIDs) < 3 {
 		t.Fatal("pageActionIDs must include Test/Cancel/…")
 	}
 }
 
 // TestCHK_TRAY_65_ChromeSmoke — Segoe UI (not DEFAULT_GUI_FONT) and
-// solid brushes for settings chrome resolve (light + dark).
+// solid brushes for settings chrome resolve (light; dark removed, CHK-TRAY-88).
 func TestCHK_TRAY_65_ChromeSmoke(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	for _, theme := range []trayui.Theme{trayui.ThemeLight, trayui.ThemeDark} {
+	for _, theme := range []trayui.Theme{trayui.ThemeLight} {
 		trayui.SetTheme(theme)
 		invalidateThemeBrushes()
 		panel, page := ensureThemeBrushes()
@@ -250,7 +245,7 @@ func TestCHK_TRAY_65_ChromeSmoke(t *testing.T) {
 	trayui.SetTheme(trayui.ThemeLight)
 }
 
-// TestCHK_TRAY_65_SettingsChromeErase — every erase branch + dark +
+// TestCHK_TRAY_65_SettingsChromeErase — every erase branch +
 // contentErase + CTLCOLOR brush ≠ COLOR_BTNFACE.
 func TestCHK_TRAY_65_SettingsChromeErase(t *testing.T) {
 	runtime.LockOSThread()
@@ -297,13 +292,6 @@ func TestCHK_TRAY_65_SettingsChromeErase(t *testing.T) {
 	}
 	w.footerTop, w.tabChromeH = savedFT, savedTH
 
-	// dark theme erase
-	trayui.SetTheme(trayui.ThemeDark)
-	invalidateThemeBrushes()
-	if r := w.settingsChromeErase(hdc); r != 1 {
-		t.Fatalf("dark erase: %d", r)
-	}
-	trayui.SetTheme(trayui.ThemeLight)
 	invalidateThemeBrushes()
 
 	// contentErase on host + active pagePanel

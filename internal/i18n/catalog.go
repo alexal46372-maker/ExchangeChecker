@@ -313,9 +313,6 @@ const (
 	KeyGenErrorFreq       = "gen.error_freq"
 	KeyGenErrorDur        = "gen.error_dur"
 	KeyGenGap             = "gen.gap"
-	KeyGenTheme           = "gen.theme"
-	KeyGenThemeLight      = "gen.theme_light"
-	KeyGenThemeDark       = "gen.theme_dark"
 	KeyGenAutostart       = "gen.autostart"
 	KeyGenNote            = "gen.note"
 	KeyGenSaved           = "gen.saved"
@@ -429,7 +426,6 @@ const (
 	KeyTipGenErrFreq      = "tip.gen.err_freq"
 	KeyTipGenErrDur       = "tip.gen.err_dur"
 	KeyTipGenGap          = "tip.gen.gap"
-	KeyTipGenTheme        = "tip.gen.theme"
 	KeyTipGenAutostart    = "tip.gen.autostart"
 	KeyTipDiscFind        = "tip.disc.find"
 	KeyTipDiscPoints      = "tip.disc.points"
@@ -688,7 +684,6 @@ const (
 	KeyAlertUnmute      = "alert.unmute"
 	KeyTipAlertMute     = "tip.alert_mute"
 	KeyMenuSound        = "menu.sound"
-	KeyMenuTheme        = "menu.theme"
 	KeyMenuVolume       = "menu.volume"
 	KeyMenuPinHelp      = "menu.pin_help"
 	KeyPinHelpTitle     = "pin.title"
@@ -1263,9 +1258,6 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyGenErrorFreq:           "Ошибка: частота, Гц:",
 	KeyGenErrorDur:            "Ошибка: длительность, мс:",
 	KeyGenGap:                 "Пауза между сигналами, мс:",
-	KeyGenTheme:               "Тема:",
-	KeyGenThemeLight:          "Светлая",
-	KeyGenThemeDark:           "Тёмная",
 	KeyGenAutostart:           "Запускать значок в трее при входе в Windows (для всех пользователей)",
 	KeyGenNote:                "Общие настройки действуют на весь компьютер и применяются службой. Звук выключает только сигнал: окно тревоги показывается всегда.",
 	KeyGenSaved:               "Общие настройки сохранены.",
@@ -1374,7 +1366,6 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyTipGenErrFreq:       "Частота звука ошибки, Гц.",
 	KeyTipGenErrDur:        "Длительность звука ошибки, мс.",
 	KeyTipGenGap:           "Пауза между сигналами, мс.",
-	KeyTipGenTheme:         "Светлое или тёмное оформление окон трея (для этого пользователя).",
 	KeyTipGenAutostart:     "Запускать значок в трее при входе любого пользователя.",
 	KeyTipDiscFind:         "Найти в базе таблицы, похожие на время обмена.",
 	KeyTipDiscPoints:       "Загрузить список точек обмена (узлов планов обмена).",
@@ -1517,7 +1508,6 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyAlertUnmute:        "Звук вкл",
 	KeyTipAlertMute:       "Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком",
 	KeyMenuSound:          "Звук тревог…",
-	KeyMenuTheme:          "Тема",
 	KeyMenuVolume:         "Громкость…",
 	KeyMenuPinHelp:        "Как закрепить значок…",
 	KeyPinHelpTitle:       "Значок Exchange Checker",
@@ -1641,7 +1631,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyXferNoChanges:      "Базы данных не изменятся.",
 	KeyXferNoTray:         "В файле нет настроек трея.",
 	KeyXferTrayKept:       "Звук и вид трея не меняются.",
-	KeyXferTraySummary:    "Трей: всплывающие уведомления %s, громкость %s, %s, тема %s",
+	KeyXferTraySummary:    "Трей: всплывающие уведомления %s, громкость %s, %s",
 	KeyXferOn:             "вкл.",
 	KeyXferOff:            "выкл.",
 	KeyXferNoSoundFile:    "Внимание: звуковой файл не найден на этом компьютере, будет звучать тон: %s",
@@ -1656,7 +1646,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyXferExportTitle:    "Экспорт настроек",
 	KeyTipXferMerge:       "Базы с тем же идентификатором обновляются, новые добавляются, остальные остаются",
 	KeyTipXferReplace:     "Список баз становится таким, как в файле",
-	KeyTipXferTray:        "Всплывающие уведомления, звук, режим окна и тема этого пользователя",
+	KeyTipXferTray:        "Всплывающие уведомления, звук и режим окна этого пользователя",
 	KeyTipXferViber:       "Несекретные получатели Viber в файле (токен бота никогда не переносится)",
 	KeyTipXferDo:          "Выполнить импорт, как показано выше",
 	KeyTipXferPreview:     "Что изменит импорт",

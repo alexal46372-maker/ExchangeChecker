@@ -95,9 +95,6 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 	w.Reload()
 	pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() && w.viberAvailable() })
 
-	if w.ctl[idGenTheme] != 0 {
-		t.Fatal("idGenTheme must be removed from General (CHK-TRAY-61)")
-	}
 	common := []int32{idSetUIMode, idSetExport, idSetImport}
 	for _, page := range []int{0, 1, pageViber} {
 		w.setPage(page)
@@ -203,22 +200,20 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	if app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Volume != 60 {
 		t.Fatalf("prefs=%+v", app.SoundPrefs())
 	}
-	// menu: no CmdSound; Theme present (CHK-TRAY-63 also)
+	// menu: no CmdSound; no Theme submenu (CHK-TRAY-88)
 	var sound, theme bool
 	for _, it := range app.RightMenu() {
 		if it.ID == trayui.CmdSound {
 			sound = true
 		}
-		for _, s := range it.Sub {
-			if s.ID == trayui.CmdThemeLight || s.ID == trayui.CmdThemeDark {
+		if it.Text == "Тема" {
 				theme = true
-			}
 		}
 	}
 	if sound {
 		t.Fatal("CmdSound must not appear in tray menu")
 	}
-	if !theme {
-		t.Fatal("Theme submenu missing from tray menu")
+	if theme {
+		t.Fatal("Theme submenu must be gone from tray menu (CHK-TRAY-88)")
 	}
 }

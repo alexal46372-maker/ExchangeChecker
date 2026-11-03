@@ -32,8 +32,7 @@ type TrayBlock struct {
 	Balloons bool                  `json:"balloons"`
 	Sound    *trayalert.SoundPrefs `json:"sound,omitempty"`
 	UIMode   UIMode                `json:"uiMode,omitempty"`
-	// Theme: "light" / "dark" (HKCU Theme, CHK-TRAY-55/57); empty = light.
-	Theme string `json:"theme,omitempty"`
+	// An old "theme" field (dark theme removed, CHK-TRAY-88) is ignored.
 }
 
 // stripViber drops the Viber part of the settings (default export /
@@ -160,11 +159,6 @@ func ParseImport(data []byte) (*ImportFile, error) {
 			if t.UIMode != UIExpert {
 				t.UIMode = UISimple
 			}
-			switch t.Theme {
-			case "light", "dark":
-			default:
-				t.Theme = ""
-			}
 			f.Tray = &t
 		}
 	}
@@ -249,11 +243,7 @@ func (t *TrayBlock) Summary() string {
 	if t.UIMode == UIExpert {
 		m = i18n.T(i18n.KeySetModeExpert)
 	}
-	th := i18n.T(i18n.KeyGenThemeLight)
-	if t.Theme == "dark" {
-		th = i18n.T(i18n.KeyGenThemeDark)
-	}
-	return fmt.Sprintf(i18n.T(i18n.KeyXferTraySummary), b, vol, m, th)
+	return fmt.Sprintf(i18n.T(i18n.KeyXferTraySummary), b, vol, m)
 }
 
 // ImportRequest is the import_config request (dryRun or the real one

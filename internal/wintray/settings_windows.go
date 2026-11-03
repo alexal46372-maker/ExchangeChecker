@@ -72,7 +72,6 @@ const (
 	idGenErrDur
 	idGenGap
 	idGenStalled // phase 11 CHK-TRAY-53
-	idGenTheme // phase 12 CHK-TRAY-55
 	idGenAutostart
 	idGenNote
 	idGenAutostartErr
@@ -154,8 +153,6 @@ type settingsConfig struct {
 	// D, CHK-TRAY-40); nil store = not stored
 	uiMode  traysettings.UIMode
 	uiStore UIModeStore
-	// themeStore: light/dark chrome (HKCU Theme, phase 12, CHK-TRAY-55); nil = not stored
-	themeStore ThemeStore
 	// phase 10 E (CHK-TRAY-44): the tray block stores, the file dialog
 	// and the warning box (nil = GetSaveFileNameW / GetOpenFileNameW,
 	// MessageBoxW)
@@ -330,7 +327,7 @@ var settingsTips = map[int32]string{
 	idGenBeep: i18n.KeyTipGenBeep, idGenWarnFreq: i18n.KeyTipGenWarnFreq, idGenWarnDur: i18n.KeyTipGenWarnDur,
 	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
 	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
-	idGenTheme: i18n.KeyTipGenTheme, idGenAutostart: i18n.KeyTipGenAutostart,
+	idGenAutostart: i18n.KeyTipGenAutostart,
 	// CHK-TRAY-62: General «Звук» section (same tips as soundwin)
 	idSndSave: i18n.KeyTipSoundSave,
 	idSndWarn + idSndBeep: i18n.KeyTipSoundKind, idSndWarn + idSndFile: i18n.KeyTipSoundKind,
@@ -1892,7 +1889,6 @@ type SettingsOptions struct {
 	// tray block of export / import (phase 10 E; HKCU, nil = not stored)
 	BalloonStore BalloonStore
 	SoundStore   SoundStore
-	ThemeStore   ThemeStore // phase 12 CHK-TRAY-55
 	// OwnerSID: the user SID of the tray that started the elevated window
 	// (--owner-sid=; "" = unknown, treated as the same user)
 	OwnerSID string
@@ -1945,9 +1941,8 @@ func RunSettings(opt SettingsOptions) int {
 		}
 	}
 	s := trayipc.New(so)
-	LoadTheme(opt.ThemeStore)
 	w, err = newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: s,
-		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore, themeStore: opt.ThemeStore,
+		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
 		stores:    trayStores{Balloon: opt.BalloonStore, Sound: opt.SoundStore},
 		otherUser: OtherUser(opt.OwnerSID, CurrentUserSID()),
 		onSoundSave: func(p trayalert.SoundPrefs) error {

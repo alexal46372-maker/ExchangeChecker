@@ -13,7 +13,6 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
@@ -108,13 +107,6 @@ func (w *settingsWindow) trayBlock() traysettings.TrayBlock {
 	if t.UIMode == "" {
 		t.UIMode = traysettings.UISimple
 	}
-	if w.cfg.themeStore != nil {
-		if th, err := w.cfg.themeStore.Load(); err == nil {
-			t.Theme = string(th)
-		}
-	} else {
-		t.Theme = string(trayui.Current())
-	}
 	return t
 }
 
@@ -135,9 +127,6 @@ func (w *settingsWindow) saveTray(t *traysettings.TrayBlock) error {
 	}
 	if w.cfg.uiStore != nil {
 		keep(w.cfg.uiStore.Save(t.UIMode))
-	}
-	if w.cfg.themeStore != nil && t.Theme != "" {
-		keep(w.cfg.themeStore.Save(trayui.NormalizeTheme(t.Theme)))
 	}
 	if first == nil {
 		broadcastTrayReloadPrefs()
@@ -193,7 +182,7 @@ func (w *settingsWindow) openExport() {
 	d.tips.set(d.ctl[idExpDo], w.t(i18n.KeyTipXferExport))
 	d.tips.set(d.ctl[idExpCancel], w.t(i18n.KeyTipClose))
 	d.syncWarn()
-	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full dark chrome on export dialog
+	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full chrome on export dialog
 	winapi.EnableWindow(w.hwnd, false)
 }
 
@@ -402,7 +391,7 @@ func (w *settingsWindow) openImport(path string, f *traysettings.ImportFile) {
 		d.tips.set(d.ctl[id], w.t(k))
 	}
 	d.syncViberWarn()
-	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full dark chrome on import dialog
+	ApplyWindowTheme(hwnd) // CHK-TRAY-57 note: full chrome on import dialog
 	winapi.EnableWindow(w.hwnd, false)
 	d.dryRun()
 }

@@ -174,7 +174,7 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 // for the older index-based tests below.
 func TestCHK_TRAY_01_RightClickItems(t *testing.T) {
 	{
-		it := BuildTrayRightMenu(RightMenuOpts{Svc: SvcStateRunning, Theme: ThemeLight})
+		it := BuildTrayRightMenu(RightMenuOpts{Svc: SvcStateRunning})
 		if len(it) == 0 || it[0].ID != CmdSettings || it[0].Disabled || it[0].Text != i18n.T(i18n.KeyMenuSettings) {
 			t.Fatalf("%s: settings %+v", i18n.RU, it)
 		}
@@ -322,7 +322,7 @@ func databases(items []Item) []Item {
 func TestCHK_TRAY_86_NoLanguageMenu(t *testing.T) {
 	menus := map[string][]Item{
 		"BuildRightMenu":     BuildRightMenu(SvcStateRunning),
-		"BuildTrayRightMenu": BuildTrayRightMenu(RightMenuOpts{Svc: SvcStateRunning, Theme: ThemeLight, Connected: true, SummaryAvailable: true}),
+		"BuildTrayRightMenu": BuildTrayRightMenu(RightMenuOpts{Svc: SvcStateRunning, Connected: true, SummaryAvailable: true}),
 	}
 	for name, m := range menus {
 		var walk func([]Item)

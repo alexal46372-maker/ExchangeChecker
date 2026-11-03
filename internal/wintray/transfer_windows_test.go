@@ -16,7 +16,6 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -524,8 +523,6 @@ func TestCHK_TRAY_57_ExportImportViberFlag(t *testing.T) {
 		}
 	}
 	e := newXferEnv(t, i18n.RU)
-	theme := &memTheme{v: "dark"}
-	e.w.cfg.themeStore = theme
 	e.w.click(t, idSetExport)
 	d := e.w.exp
 	if d == nil || d.checked(idExpViber) {
@@ -548,8 +545,8 @@ func TestCHK_TRAY_57_ExportImportViberFlag(t *testing.T) {
 	var f struct {
 		Tray traysettings.TrayBlock `json:"tray"`
 	}
-	if err := json.Unmarshal(b, &f); err != nil || f.Tray.Theme != "dark" {
-		t.Fatalf("tray theme in file: %v %+v", err, f.Tray)
+	if err := json.Unmarshal(b, &f); err != nil || f.Tray.Format != traysettings.TrayFormat || strings.Contains(string(b), `"theme"`) {
+		t.Fatalf("tray block in file (no theme, CHK-TRAY-88): %v %+v", err, f.Tray)
 	}
 	// import dialog shows viber checkbox (disabled without recipients in file)
 	e.w.click(t, idSetImport)
@@ -564,11 +561,6 @@ func TestCHK_TRAY_57_ExportImportViberFlag(t *testing.T) {
 	imp.close()
 }
 
-type memTheme struct{ v string }
-
-func (m *memTheme) Load() (trayui.Theme, error) { return trayui.NormalizeTheme(m.v), nil }
-func (m *memTheme) Save(t trayui.Theme) error   { m.v = string(t); return nil }
-
 // TestCHK_TRAY_57_ReloadPrefsMessage — RegisterWindowMessage for
 // TrayReloadPrefs; handler rereads HKCU without Exit.
 func TestCHK_TRAY_57_ReloadPrefsMessage(t *testing.T) {
@@ -580,28 +572,25 @@ func TestCHK_TRAY_57_ReloadPrefsMessage(t *testing.T) {
 	}
 	bal := &memBalloon{on: false}
 	snd := &memSound{raw: trayalert.DefaultSoundPrefs(nil).String()}
-	theme := &memTheme{v: "light"}
 	ui := &memUI{m: traysettings.UIExpert}
 	app := startCfgApp(t, newCfgService(), false, nil)
 	app.opt.BalloonStore = bal
 	app.opt.SoundStore = snd
-	app.opt.ThemeStore = theme
 	app.opt.UIModeStore = ui
 	app.loadBalloonPref()
 	if app.balloonsOn || appClosed(app) {
 		t.Fatalf("pre: balloons %v closed %v", app.balloonsOn, appClosed(app))
 	}
 	bal.on = true
-	theme.v = "dark"
 	prefs := trayalert.DefaultSoundPrefs(nil)
 	prefs.Master = 55
 	snd.raw = prefs.String()
 	ui.m = traysettings.UISimple
 	winapi.PostMessage(app.hwnd, m, 0x111, 0x222)
-	pumpUntil(t, "reload prefs", func() bool { return app.balloonsOn && trayui.IsDark() })
-	if appClosed(app) || !app.balloonsOn || !trayui.IsDark() {
-		t.Fatalf("after reload: closed %v balloons %v dark %v",
-			appClosed(app), app.balloonsOn, trayui.IsDark())
+	pumpUntil(t, "reload prefs", func() bool { return app.balloonsOn })
+	if appClosed(app) || !app.balloonsOn {
+		t.Fatalf("after reload: closed %v balloons %v",
+			appClosed(app), app.balloonsOn)
 	}
 	if app.soundPrefs.Master != 55 {
 		t.Errorf("sound master %d", app.soundPrefs.Master)
@@ -615,11 +604,9 @@ func TestCHK_TRAY_57_TrayBlockApplyNoRestart(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	e := newXferEnv(t, i18n.RU)
-	theme := &memTheme{v: "light"}
-	e.w.cfg.themeStore = theme
 	snd := trayalert.DefaultSoundPrefs(nil)
 	snd.Master = 40
-	writeImportFile(t, e.path, &traysettings.TrayBlock{Balloons: true, Sound: &snd, UIMode: traysettings.UISimple, Theme: "dark"}, e.x.profiles[0])
+	writeImportFile(t, e.path, &traysettings.TrayBlock{Balloons: true, Sound: &snd, UIMode: traysettings.UISimple}, e.x.profiles[0])
 	e.w.click(t, idSetImport)
 	d := e.w.imp
 	if d == nil {
@@ -633,8 +620,8 @@ func TestCHK_TRAY_57_TrayBlockApplyNoRestart(t *testing.T) {
 		strings.Contains(strings.ToLower(st), "restart") || strings.Contains(st, "перезапуск") {
 		t.Errorf("status %q", st)
 	}
-	if !e.bal.on || e.ui.m != traysettings.UISimple || theme.v != "dark" {
-		t.Errorf("tray block: bal %v ui %q theme %q", e.bal.on, e.ui.m, theme.v)
+	if !e.bal.on || e.ui.m != traysettings.UISimple {
+		t.Errorf("tray block: bal %v ui %q", e.bal.on, e.ui.m)
 	}
 }
 

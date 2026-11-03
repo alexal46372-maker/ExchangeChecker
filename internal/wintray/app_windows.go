@@ -110,8 +110,6 @@ type Options struct {
 	// UIModeStore keeps «Простой» / «Экспертный» of the settings window
 	// (phase 10 D; nil = every field, tests).
 	UIModeStore UIModeStore
-	// ThemeStore keeps light/dark chrome (phase 12, CHK-TRAY-55; nil = light).
-	ThemeStore ThemeStore
 	// NoBlink disables the icon blinking timer (tests drive blinkTick).
 	NoBlink bool
 }
@@ -201,7 +199,6 @@ type App struct {
 // service session. Call on a locked OS thread, then Loop.
 func NewApp(opt Options) (*App, error) {
 	a := &App{opt: opt, done: make(chan struct{})}
-	LoadTheme(a.opt.ThemeStore) // phase 12 CHK-TRAY-55 (before any window chrome)
 	hwnd, err := createWindow(mainClass, i18n.T(i18n.KeyAppName), 0, winapi.WS_OVERLAPPED, 0, 0, 0, 0, 0, a.wndProc)
 	if err != nil {
 		return nil, err
@@ -543,7 +540,7 @@ func (a *App) RightMenu() []trayui.Item {
 	sum := a.session != nil && (a.session.Supported(model.CmdSummary) || a.session.Status().Has(model.CapSummary))
 	return trayui.BuildTrayRightMenu(trayui.RightMenuOpts{
 		Svc:   a.serviceState(),
-		Theme: trayui.Current(), Balloons: a.balloonsOn,
+		Balloons: a.balloonsOn,
 		Connected: a.connected() && !a.check.Busy, SummaryAvailable: sum,
 	})
 }
@@ -585,8 +582,6 @@ func (a *App) Command(cmd int) {
 		a.OpenVolume()
 	case trayui.CmdPinHelp:
 		a.ShowPinHelp()
-	case trayui.CmdThemeLight, trayui.CmdThemeDark:
-		a.SetChromeTheme(trayui.ThemeCommands[cmd])
 	default:
 		if i, mute, ok := trayui.MuteProfileIndex(cmd); ok {
 			a.muteProfile(i, mute)
@@ -620,23 +615,12 @@ func (a *App) muteProfile(i int, mute bool) {
 	}()
 }
 
-// reloadTrayPrefs rereads Sound / UIMode / Theme / balloons from
+// reloadTrayPrefs rereads Sound / UIMode / balloons from
 // HKCU and applies them live without Exit (CHK-TRAY-57).
 func (a *App) reloadTrayPrefs() {
 	a.loadBalloonPref()
 	a.loadSoundPrefs()
 	_ = loadUIMode(a.opt.UIModeStore) // next settings open reads the store
-	LoadTheme(a.opt.ThemeStore)
-	ApplyWindowTheme(a.hwnd)
-	if a.settings != nil && winapi.IsWindow(a.settings.hwnd) {
-		ApplyWindowTheme(a.settings.hwnd)
-		if a.settings.host != 0 {
-			ApplyWindowTheme(a.settings.host)
-		}
-	}
-	if a.awin != nil && winapi.IsWindow(a.awin.hwnd) {
-		ApplyWindowTheme(a.awin.hwnd)
-	}
 }
 
 // OpenSettings opens (or focuses) the settings window and returns its
@@ -668,7 +652,7 @@ func (a *App) OpenSettings() uintptr {
 	}
 	var w *settingsWindow
 	w, err := newSettingsWindow(settingsConfig{mode: mode, session: a.session, elevator: a.opt.Elevator,
-		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore, themeStore: a.opt.ThemeStore,
+		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
 		stores:  trayStores{Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onSoundSave: a.SaveSoundPrefs, onSoundTest: a.testSound,

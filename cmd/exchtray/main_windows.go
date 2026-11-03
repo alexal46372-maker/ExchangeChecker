@@ -37,7 +37,6 @@ func run() int {
 			// read-only window): own process, own connection
 			return wintray.RunSettings(wintray.SettingsOptions{Session: session, UIModeStore: wintray.RegistryUIModeStore{},
 				BalloonStore: wintray.RegistryBalloonStore{}, SoundStore: wintray.RegistrySoundStore{},
-				ThemeStore: wintray.RegistryThemeStore{},
 				OwnerSID: wintray.OwnerSIDFromArgs(os.Args[1:])})
 		}
 	}
@@ -55,7 +54,6 @@ func run() int {
 		BalloonStore: wintray.RegistryBalloonStore{},
 		SoundStore:   wintray.RegistrySoundStore{},
 		UIModeStore:  wintray.RegistryUIModeStore{},
-		ThemeStore:   wintray.RegistryThemeStore{},
 		Session:      session,
 		// %LOCALAPPDATA%\ExchangeChecker\tray.log, 1 MB + tray.log.1
 		// (phase 9b, CHK-TRAY-28); no passwords / logins are written

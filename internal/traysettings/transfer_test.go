@@ -19,7 +19,7 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 	exp := model.ConfigExport{Format: model.ConfigFormatV1, ContainsLogins: true,
 		Settings: &model.Settings{Viber: &model.ViberSettings{}},
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад"}}}
-	b, err := ExportFile(exp, &TrayBlock{Balloons: true, Sound: &snd, UIMode: UIExpert, Theme: "dark"}, false, false)
+	b, err := ExportFile(exp, &TrayBlock{Balloons: true, Sound: &snd, UIMode: UIExpert}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,19 +122,46 @@ func TestCHK_TRAY_44_ErrorTexts(t *testing.T) {
 }
 
 
+// TestCHK_TRAY_88_OldThemeFieldIgnored — a file exported before phase 13
+// with "theme": "dark" in the tray block still imports; the field is
+// silently dropped (not re-exported, not in the summary).
+func TestCHK_TRAY_88_OldThemeFieldIgnored(t *testing.T) {
+	snd := trayalert.DefaultSoundPrefs(nil)
+	exp := model.ConfigExport{Format: model.ConfigFormatV1, Profiles: []model.Profile{{ID: "p1", Name: "Склад"}}}
+	b, err := ExportFile(exp, &TrayBlock{Balloons: true, Sound: &snd, UIMode: UIExpert}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.Replace(string(b), `"uiMode": "expert"`, `"theme": "dark", "uiMode": "expert"`, 1)
+	if old == string(b) {
+		t.Fatalf("no uiMode in %s", b)
+	}
+	f, err := ParseImport([]byte(old))
+	if err != nil || f.Tray == nil || !f.Tray.Balloons || f.Tray.UIMode != UIExpert || len(f.Config.Profiles) != 1 {
+		t.Fatalf("old file: %v %+v", err, f)
+	}
+	again, err := ExportFile(exp, f.Tray, false, false)
+	if err != nil || strings.Contains(string(again), "theme") || strings.Contains(string(again), "dark") {
+		t.Fatalf("re-export keeps theme: %v %s", err, again)
+	}
+	if s := f.Tray.Summary(); strings.Contains(s, "тема") || strings.Contains(s, "Тёмная") {
+		t.Errorf("summary %q", s)
+	}
+}
+
 // TestCHK_TRAY_57_RequestJSON — includeViberRecipients on export/import
-// request JSON; Theme in the tray block; default export still omits Viber.
+// request JSON; no theme in the tray block (CHK-TRAY-88); default export still omits Viber.
 func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 	snd := trayalert.DefaultSoundPrefs(nil)
 	exp := model.ConfigExport{Format: model.ConfigFormatV1, ContainsViberRecipients: true,
 		Settings: &model.Settings{Viber: &model.ViberSettings{Enabled: true, HasToken: true,
 			Recipients: []model.ViberRecipient{{ID: "u1", Name: "Ann"}}, Status: &model.ViberStatus{}}}}
-	b, err := ExportFile(exp, &TrayBlock{Balloons: true, Sound: &snd, UIMode: UISimple, Theme: "dark"}, true, false)
+	b, err := ExportFile(exp, &TrayBlock{Balloons: true, Sound: &snd, UIMode: UISimple}, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(b)
-	if !strings.Contains(s, `"recipients"`) || !strings.Contains(s, `"theme": "dark"`) || strings.Contains(s, `"hasToken": true`) {
+	if !strings.Contains(s, `"recipients"`) || strings.Contains(s, `"theme"`) || strings.Contains(s, `"hasToken": true`) {
 		t.Fatalf("export with viber: %s", b)
 	}
 	b0, err := ExportFile(exp, &TrayBlock{}, false, false)
@@ -152,8 +179,8 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 		t.Fatalf("omit empty: %s", raw0)
 	}
 	f, err := ParseImport(b)
-	if err != nil || f.Tray == nil || f.Tray.Theme != "dark" {
-		t.Fatalf("parse theme: %v %+v", err, f)
+	if err != nil || f.Tray == nil || f.Tray.UIMode != UISimple {
+		t.Fatalf("parse: %v %+v", err, f)
 	}
 	ir := ImportRequest(f, model.ImportMerge, false, "r1", true, false)
 	raw, _ = json.Marshal(ir)

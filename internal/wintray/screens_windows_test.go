@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -30,27 +29,18 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	defer func() { testDPI = 0; trayui.SetTheme(trayui.ThemeLight) }()
+	defer func() { testDPI = 0 }()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	n := 0
-	for _, theme := range []trayui.Theme{trayui.ThemeLight, trayui.ThemeDark} {
-		trayui.SetTheme(theme)
-		suffix := ""
-		if theme == trayui.ThemeDark {
-			suffix = "_dark"
-		}
+	{ // one light theme (dark removed, CHK-TRAY-88)
 		for _, dpi := range []int32{96, 144} {
 			{
 				testDPI = dpi
 				uiScenes(t, i18n.RU, func(name string, hwnd uintptr) {
-					// re-assert: NewApp must not clobber (LoadTheme nil-safe);
-					// keep this as a belt-and-braces for paint/PrintWindow
-					trayui.SetTheme(theme)
-					syncThemeComboHwnd(hwnd)
 					ApplyWindowTheme(hwnd)
-					file := fmt.Sprintf("%s%s-%s-%d", strings.ReplaceAll(name, " ", "_"), suffix, i18n.RU, dpi)
+					file := fmt.Sprintf("%s-%s-%d", strings.ReplaceAll(name, " ", "_"), i18n.RU, dpi)
 					if err := screenshot(hwnd, filepath.Join(dir, file)); err != nil {
 						t.Errorf("%s: %v", file, err)
 						return

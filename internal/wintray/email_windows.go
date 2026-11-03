@@ -345,6 +345,10 @@ func (w *settingsWindow) saveEmail() {
 	})
 }
 
+// testEmail is «Тест» of the page (CHK-TRAY-87): it first saves the page
+// (save_settings, as «Сохранить») and sends email_test only after the save
+// succeeded, so the test always uses the recipients shown. A refused or
+// failed save shows its error and sends no email_test.
 func (w *settingsWindow) testEmail() {
 	if w.busy || w.emTesting != nil {
 		return
@@ -354,6 +358,36 @@ func (w *settingsWindow) testEmail() {
 	if i := int(winapi.SendMessage(w.ctl[idEmTestTo], winapi.CB_GETCURSEL, 0, 0)); i > 0 && i < len(w.emTestIDs) {
 		id = w.emTestIDs[i]
 	}
+	save, pr := w.ed.EmailRequest()
+	if pr != nil {
+		w.problem(pr)
+		winapi.SetWindowText(w.ctl[idEmResult], strings.TrimSpace(pr.Text))
+		w.relayoutAll()
+		return
+	}
+	w.status = w.t(i18n.KeySetSaving)
+	w.call(save, func(m model.IPCMessage, err error) {
+		var pr *traysettings.Problem
+		switch {
+		case err != nil:
+			pr = w.ed.ErrorProblem(err, traysettings.CallTimeout)
+		case m.Type == model.MsgError:
+			pr = w.ed.Reply(m)
+		}
+		if pr != nil {
+			w.problem(pr)
+			winapi.SetWindowText(w.ctl[idEmResult], strings.TrimSpace(pr.Text))
+			w.relayoutAll()
+			return
+		}
+		w.status = w.ed.EmailDone(m, save)
+		w.fill()
+		w.runEmailTest(id)
+	})
+}
+
+// runEmailTest sends email_test for recipient id ("" = all saved ones).
+func (w *settingsWindow) runEmailTest(id string) {
 	req, pr := w.ed.EmailTestRequest(id, "")
 	if pr != nil {
 		w.problem(pr)

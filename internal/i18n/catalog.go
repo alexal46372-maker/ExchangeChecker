@@ -264,6 +264,7 @@ const (
 	KeyEmPasswordClear    = "set.em_password_clear"
 	KeyEmPasswordNoneTLS  = "set.em_password_none_tls"
 	KeyEmRecipients       = "set.em_recipients"
+	KeyEmBadAddr          = "set.em_bad_addr"
 	KeyEmDays             = "set.em_days"
 	KeyEmFrom             = "set.em_from"
 	KeyEmTo               = "set.em_to"
@@ -1222,7 +1223,8 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyEmPasswordNew:          {"Новый пароль будет сохранён.", "The new password will be saved."},
 	KeyEmPasswordClear:        {"Сохранённый пароль будет удалён.", "The saved password will be deleted."},
 	KeyEmPasswordNoneTLS:      {"Пароль не используется (tlsMode = none).", "Password is unused (tlsMode = none)."},
-	KeyEmRecipients:           {"Получатели (по одному в строке: ID адрес имя):", "Recipients (one per line: ID address name):"},
+	KeyEmRecipients:           {"Получатели (адреса через запятую, точку с запятой, пробел или с новой строки):", "Recipients (addresses separated by commas, semicolons, spaces or new lines):"},
+	KeyEmBadAddr:              {"Неверный адрес e-mail получателя: «%s». Укажите адреса через запятую, точку с запятой, пробел или с новой строки, например: ivanov@mail.ru, petrov@mail.ru", "Invalid recipient e-mail address: \"%s\". Separate addresses with commas, semicolons, spaces or new lines, e.g.: ivanov@mail.ru, petrov@mail.ru"},
 	KeyEmDays:                 {"Дни:", "Days:"},
 	KeyEmFrom:                 {"Время с (ЧЧ:ММ):", "From (HH:MM):"},
 	KeyEmTo:                   {"по:", "to:"},
@@ -1247,7 +1249,7 @@ var catalog = map[string][2]string{ // key -> {ru, en}
 	KeyTipEmFromAddr:          {"Адрес отправителя (и логин SMTP AUTH)", "Sender address (and SMTP AUTH username)"},
 	KeyTipEmPassword:          {"Пароль SMTP (только запись; при tlsMode=none не используется)", "SMTP password (write-only; unused when tlsMode=none)"},
 	KeyTipEmClearPassword:     {"Удалить пароль, сохранённый службой", "Delete the password saved by the service"},
-	KeyTipEmRecipients:        {"По одному получателю в строке: ID адрес имя", "One recipient per line: ID address name"},
+	KeyTipEmRecipients:        {"Адреса через запятую, точку с запятой, пробел или с новой строки (например: ivanov@mail.ru, petrov@mail.ru); строка «ID адрес имя» тоже допускается", "Addresses separated by commas, semicolons, spaces or new lines (e.g. ivanov@mail.ru, petrov@mail.ru); a line \"ID address name\" works too"},
 	KeyTipEmDay:               {"День недели окна рассылки", "Weekday of the send window"},
 	KeyTipEmFrom:              {"Начало окна (локальное время службы)", "Start of the window (service local time)"},
 	KeyTipEmTo:                {"Конец окна (локальное время службы)", "End of the window (service local time)"},

@@ -154,6 +154,9 @@ type Options struct {
 	OnAlertRepeat func(model.AlertEvent)
 	// OnFlash receives flash / flash_stop pushes (phase 13, CHK-MON-22).
 	OnFlash func(model.FlashEvent)
+	// BeforeFlashDelivery (tests only) runs after a publish computed its
+	// flash pushes and released m.mu, before they are delivered.
+	BeforeFlashDelivery func([]model.FlashEvent)
 	// ViberStatus is settings.viber.status of the views (phase 10,
 	// CHK-SVC-06; notify.Notifier.Status); nil = none.
 	ViberStatus func() *model.ViberStatus
@@ -360,7 +363,9 @@ type Monitor struct {
 	// key, suppressed (dismiss_flash) event ids
 	flashing       map[string]flashEntry
 	flashDismissed map[uint64]bool
-	muteSave       sync.Mutex
+	// flashSendMu orders flash / flash_stop delivery (deliverFlashes)
+	flashSendMu sync.Mutex
+	muteSave    sync.Mutex
 
 	tester   *Tester
 	explorer *Explorer // interactive commands (G2/G3)
@@ -1408,11 +1413,10 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	if m.opt.OnSnapshot != nil {
 		m.opt.OnSnapshot(snap)
 	}
-	if m.opt.OnFlash != nil {
-		for _, f := range flashes {
-			m.opt.OnFlash(f)
-		}
+	if m.opt.BeforeFlashDelivery != nil { // tests: widen the race window
+		m.opt.BeforeFlashDelivery(flashes)
 	}
+	m.deliverFlashes(flashes)
 	if m.opt.OnAlertRepeat != nil {
 		for _, ev := range repEvents {
 			if m.mutedOutbound(ev.ProfileID) {

@@ -65,6 +65,8 @@ type appConfig struct {
 	ViberURL    string
 	// EmailSendHook replaces the SMTP send of the email notifier (tests:
 	// fake SMTP); nil = net/smtp.
+	// BeforeFlashDelivery: monitor test hook (CHK-MON-22 race test).
+	BeforeFlashDelivery func([]model.FlashEvent)
 	// Protector overrides DPAPI (tests on non-Windows hosts).
 	Protector config.Protector
 	// TelegramBaseURL overrides the Bot API base URL (tests: httptest).
@@ -237,8 +239,9 @@ func runService(ctx context.Context, ac appConfig) error {
 		Warn: func(msg string) { report(alert.EventTypeWarning, alert.EventIDInternal, msg) },
 		// alert_repeat after every failing check of an active alert, to
 		// the tray only (CHK-MON-17)
-		OnAlertRepeat: func(e model.AlertEvent) { srv.AlertRepeat(e) },
-		OnFlash:       func(f model.FlashEvent) { srv.Flash(f) }, // CHK-MON-22
+		OnAlertRepeat:       func(e model.AlertEvent) { srv.AlertRepeat(e) },
+		OnFlash:             func(f model.FlashEvent) { srv.Flash(f) }, // CHK-MON-22
+		BeforeFlashDelivery: ac.BeforeFlashDelivery,
 		// settings.viber.status of get_config / get_status, token reload
 		// after save_settings (CHK-SVC-06)
 		ViberStatus:     viber.Status,

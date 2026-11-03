@@ -64,6 +64,42 @@ func (m *Monitor) flashesLocked(cands, active []model.AlertEvent) []model.FlashE
 	return out
 }
 
+// deliverFlashes sends the pushes of one publish in order. Publishes run
+// concurrently (workers, mute, set_enabled, reload) and compute their
+// pushes under m.mu but send after it: a flash computed by an older
+// publish could otherwise reach the clients after the flash_stop of a
+// newer one (eternal flashing). flashSendMu serializes delivery, and a
+// flash is re-checked under m.mu right before it is sent: dropped when
+// its alert is no longer flashing (stopped / muted / dismissed / new
+// alert on the key) — a stop computed later is always sent after it.
+func (m *Monitor) deliverFlashes(fs []model.FlashEvent) {
+	if m.opt.OnFlash == nil || len(fs) == 0 {
+		return
+	}
+	m.flashSendMu.Lock()
+	defer m.flashSendMu.Unlock()
+	for _, f := range fs {
+		if !f.Stop && !m.flashCurrent(f) {
+			continue
+		}
+		m.opt.OnFlash(f)
+	}
+}
+
+func (m *Monitor) flashCurrent(f model.FlashEvent) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.mutedLocked(f.ProfileID) || m.flashDismissed[f.EventID] {
+		return false
+	}
+	for _, e := range m.flashing {
+		if e.id == f.EventID && e.profileID == f.ProfileID {
+			return true
+		}
+	}
+	return false
+}
+
 // DismissFlash implements ipc.FlashDismisser (CHK-IPC-19): no more flash
 // pushes for the active alert eventID until it recovers.
 func (m *Monitor) DismissFlash(eventID uint64) error {

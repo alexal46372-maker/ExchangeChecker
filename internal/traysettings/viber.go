@@ -148,7 +148,7 @@ var viberKeyFocus = map[string]Field{
 func IsViber(f Field) bool { return strings.HasPrefix(string(f), "viber.") }
 
 // viberFieldLabel is the label of a viber path in validation texts.
-func viberFieldLabel(path, lang string) (string, bool) {
+func viberFieldLabel(path string) (string, bool) {
 	f, ok := ViberFocus(path)
 	if !ok {
 		return "", false
@@ -158,7 +158,7 @@ func viberFieldLabel(path, lang string) (string, bool) {
 		FieldViberFrom: i18n.KeyVbFrom, FieldViberTo: i18n.KeyVbTo, FieldViberEvents: i18n.KeyVbEvents,
 		FieldViberReminder: i18n.KeyVbReminder,
 	}[f]
-	l := strings.TrimSuffix(strings.TrimSpace(i18n.T(key, lang)), ":")
+	l := strings.TrimSuffix(strings.TrimSpace(i18n.T(key)), ":")
 	if i := strings.Index(path, "["); i >= 0 && f == FieldViberRecipients {
 		if n, err := strconv.Atoi(strings.TrimSuffix(strings.SplitN(path[i+1:], "]", 2)[0], "]")); err == nil {
 			l += fmt.Sprintf(" (%d)", n+1)
@@ -239,7 +239,7 @@ func (e *Editor) ViberTestRequest(recipientID string) (model.IPCRequest, *Proble
 		return model.IPCRequest{}, e.fieldProblem(fieldErr("viberToken", model.ValRequired))
 	}
 	if e.Viber.Token == "" && (e.Settings.Viber == nil || !e.Settings.Viber.HasToken) {
-		return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgViberNoToken, e.Lang), Field: FieldViberToken}
+		return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgViberNoToken), Field: FieldViberToken}
 	}
 	return model.IPCRequest{Cmd: model.CmdViberTest, RecipientID: recipientID, ViberToken: e.Viber.Token}, nil
 }
@@ -264,9 +264,9 @@ func (e *Editor) ViberTestText(r *model.ViberTestResult) string {
 		}
 		res := e.t(i18n.KeyVbTestItemOK)
 		if !it.OK {
-			res = i18n.Message(it.ErrorKey, e.Lang)
+			res = i18n.Message(it.ErrorKey)
 			if it.ErrorKey == "" {
-				res = i18n.Message(model.MsgViberFailed, e.Lang)
+				res = i18n.Message(model.MsgViberFailed)
 			}
 		}
 		lines = append(lines, who+": "+res)
@@ -276,18 +276,18 @@ func (e *Editor) ViberTestText(r *model.ViberTestResult) string {
 
 // ViberStatusText renders settings.viber.status (times in the local zone
 // of the tray machine).
-func ViberStatusText(v *model.ViberSettings, lang string) string {
+func ViberStatusText(v *model.ViberSettings) string {
 	if v == nil || v.Status == nil {
 		return ""
 	}
 	st := v.Status
-	t := fmt.Sprintf(i18n.T(i18n.KeyVbStatus, lang), st.Sent, st.Queued, st.Dropped)
+	t := fmt.Sprintf(i18n.T(i18n.KeyVbStatus), st.Sent, st.Queued, st.Dropped)
 	if st.LastOKAt != nil {
-		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyVbLastOK, lang), st.LastOKAt.Local().Format("02.01.2006 15:04"))
+		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyVbLastOK), st.LastOKAt.Local().Format("02.01.2006 15:04"))
 	}
 	if st.LastErrorAt != nil {
-		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyVbLastError, lang), st.LastErrorAt.Local().Format("02.01.2006 15:04"),
-			strings.TrimSuffix(i18n.Message(st.LastErrorKey, lang), "."))
+		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyVbLastError), st.LastErrorAt.Local().Format("02.01.2006 15:04"),
+			strings.TrimSuffix(i18n.Message(st.LastErrorKey), "."))
 	}
 	return t
 }

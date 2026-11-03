@@ -91,7 +91,7 @@ func (c *setupChrome) HintFont() uintptr {
 }
 
 // paintWizard draws the brand panel, content background and button bar.
-func (c *setupChrome) paintWizard(hwnd uintptr, lang string, page Page) {
+func (c *setupChrome) paintWizard(hwnd uintptr, page Page) {
 	var ps winapi.PAINTSTRUCT
 	dc := winapi.BeginPaint(hwnd, &ps)
 	if dc == 0 {
@@ -132,7 +132,7 @@ func (c *setupChrome) paintWizard(hwnd uintptr, lang string, page Page) {
 	winapi.SetTextColor(dc, ColorBrandMuted)
 	if c.fontStep != 0 {
 		old := winapi.SelectObject(dc, c.fontStep)
-		tag := T(lang, "setup.brand.tagline")
+		tag := T("setup.brand.tagline")
 		tr := winapi.RECT{Left: WizardPad, Top: y, Right: WizardBrandW - WizardPad, Bottom: y + 40}
 		winapi.DrawText(dc, tag, tr, winapi.DT_WORDBREAK|winapi.DT_NOPREFIX)
 		winapi.SelectObject(dc, old)
@@ -140,7 +140,7 @@ func (c *setupChrome) paintWizard(hwnd uintptr, lang string, page Page) {
 	}
 	cur := StepIndex(page)
 	for i, key := range StepKeys {
-		label := T(lang, key)
+		label := T(key)
 		on := i == cur
 		font := c.fontStep
 		col := ColorBrandMuted

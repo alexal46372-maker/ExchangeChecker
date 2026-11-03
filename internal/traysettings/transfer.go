@@ -15,7 +15,7 @@ import (
 // Phase 10 E (CHK-TRAY-44) + phase 12 (CHK-TRAY-57): export / import of
 // the configuration in the administrator settings window. The file is
 // the export_config reply ("ec-config/1") with EC Tray's own "tray"
-// block added (HKCU of the user who exports: language, balloons, sound
+// block added (HKCU of the user who exports: balloons, sound
 // with the master volume, window mode, theme). Viber recipients are
 // optional via includeViberRecipients (never the token; CHK-CFG-07).
 
@@ -28,14 +28,11 @@ const TransferFileMax = model.IPCMaxImportRequest
 
 // TrayBlock is the "tray" block of the file.
 type TrayBlock struct {
-	Format string `json:"format"`
-	// Language: "" = the language of Windows, "ru", "en".
-	Language string                `json:"language"`
+	Format   string                `json:"format"`
 	Balloons bool                  `json:"balloons"`
 	Sound    *trayalert.SoundPrefs `json:"sound,omitempty"`
 	UIMode   UIMode                `json:"uiMode,omitempty"`
-	// Theme: "light" / "dark" (HKCU Theme, CHK-TRAY-55/57); empty = light.
-	Theme string `json:"theme,omitempty"`
+	// An old "theme" field (dark theme removed, CHK-TRAY-88) is ignored.
 }
 
 // stripViber drops the Viber part of the settings (default export /
@@ -135,21 +132,21 @@ type ImportFile struct {
 // ErrFileTooLarge: the file is above TransferFileMax.
 var ErrFileTooLarge = errors.New("file too large")
 
-// ParseImport reads a file. The error texts are for the user (lang).
-func ParseImport(data []byte, lang string) (*ImportFile, error) {
+// ParseImport reads a file. The error texts are for the user.
+func ParseImport(data []byte) (*ImportFile, error) {
 	if len(data) > TransferFileMax {
-		return nil, fmt.Errorf(i18n.T(i18n.KeyXferTooLarge, lang), TransferFileMax/1024)
+		return nil, fmt.Errorf(i18n.T(i18n.KeyXferTooLarge), TransferFileMax/1024)
 	}
 	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
 	var cfg model.ConfigExport
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf(i18n.T(i18n.KeyXferBadFile, lang), err.Error())
+		return nil, fmt.Errorf(i18n.T(i18n.KeyXferBadFile), err.Error())
 	}
 	if cfg.Format != model.ConfigFormatV1 {
-		return nil, errors.New(i18n.Message(model.MsgImportFormat, lang))
+		return nil, errors.New(i18n.Message(model.MsgImportFormat))
 	}
 	if len(cfg.Tray) > model.ImportTrayMax {
-		return nil, errors.New(i18n.Message(model.MsgImportTrayTooLarge, lang) + fmt.Sprintf(" (> %d KB)", model.ImportTrayMax/1024))
+		return nil, errors.New(i18n.Message(model.MsgImportTrayTooLarge) + fmt.Sprintf(" (> %d KB)", model.ImportTrayMax/1024))
 	}
 	f := &ImportFile{}
 	if len(cfg.Tray) > 0 {
@@ -161,16 +158,6 @@ func ParseImport(data []byte, lang string) (*ImportFile, error) {
 			}
 			if t.UIMode != UIExpert {
 				t.UIMode = UISimple
-			}
-			switch t.Language {
-			case "ru", "en":
-			default:
-				t.Language = ""
-			}
-			switch t.Theme {
-			case "light", "dark":
-			default:
-				t.Theme = ""
 			}
 			f.Tray = &t
 		}
@@ -202,7 +189,7 @@ func (t *TrayBlock) MissingSounds(exists func(string) bool) []string {
 
 // Preview is the text of a dry run. names: profile id -> name (of the
 // file and of the current configuration).
-func Preview(res model.ImportResult, names map[string]string, tray *TrayBlock, applyTray bool, exists func(string) bool, lang string) string {
+func Preview(res model.ImportResult, names map[string]string, tray *TrayBlock, applyTray bool, exists func(string) bool) string {
 	list := func(ids []string) string {
 		n := make([]string, 0, len(ids))
 		for _, id := range ids {
@@ -218,7 +205,7 @@ func Preview(res model.ImportResult, names map[string]string, tray *TrayBlock, a
 	var lines []string
 	add := func(key string, ids []string) {
 		if len(ids) > 0 {
-			lines = append(lines, fmt.Sprintf(i18n.T(key, lang), len(ids), list(ids)))
+			lines = append(lines, fmt.Sprintf(i18n.T(key), len(ids), list(ids)))
 		}
 	}
 	add(i18n.KeyXferAdded, res.Added)
@@ -226,48 +213,37 @@ func Preview(res model.ImportResult, names map[string]string, tray *TrayBlock, a
 	add(i18n.KeyXferRemoved, res.Removed)
 	add(i18n.KeyXferNeedPw, res.NeedPassword)
 	if len(res.Added)+len(res.Updated)+len(res.Removed) == 0 {
-		lines = append(lines, i18n.T(i18n.KeyXferNoChanges, lang))
+		lines = append(lines, i18n.T(i18n.KeyXferNoChanges))
 	}
 	switch {
 	case tray == nil:
-		lines = append(lines, i18n.T(i18n.KeyXferNoTray, lang))
+		lines = append(lines, i18n.T(i18n.KeyXferNoTray))
 	case !applyTray:
-		lines = append(lines, i18n.T(i18n.KeyXferTrayKept, lang))
+		lines = append(lines, i18n.T(i18n.KeyXferTrayKept))
 	default:
-		lines = append(lines, tray.Summary(lang))
+		lines = append(lines, tray.Summary())
 		for _, f := range tray.MissingSounds(exists) {
-			lines = append(lines, fmt.Sprintf(i18n.T(i18n.KeyXferNoSoundFile, lang), f))
+			lines = append(lines, fmt.Sprintf(i18n.T(i18n.KeyXferNoSoundFile), f))
 		}
 	}
 	return strings.Join(lines, "\r\n")
 }
 
 // Summary describes the tray block in one line.
-func (t *TrayBlock) Summary(lang string) string {
-	l := i18n.T(i18n.KeyXferLangAuto, lang)
-	switch t.Language {
-	case "ru":
-		l = i18n.T(i18n.KeyMenuLangRU, lang)
-	case "en":
-		l = i18n.T(i18n.KeyMenuLangEN, lang)
-	}
-	b := i18n.T(i18n.KeyXferOff, lang)
+func (t *TrayBlock) Summary() string {
+	b := i18n.T(i18n.KeyXferOff)
 	if t.Balloons {
-		b = i18n.T(i18n.KeyXferOn, lang)
+		b = i18n.T(i18n.KeyXferOn)
 	}
 	vol := "—"
 	if t.Sound != nil {
 		vol = fmt.Sprintf("%d %%", t.Sound.Master)
 	}
-	m := i18n.T(i18n.KeySetModeSimple, lang)
+	m := i18n.T(i18n.KeySetModeSimple)
 	if t.UIMode == UIExpert {
-		m = i18n.T(i18n.KeySetModeExpert, lang)
+		m = i18n.T(i18n.KeySetModeExpert)
 	}
-	th := i18n.T(i18n.KeyGenThemeLight, lang)
-	if t.Theme == "dark" {
-		th = i18n.T(i18n.KeyGenThemeDark, lang)
-	}
-	return fmt.Sprintf(i18n.T(i18n.KeyXferTraySummary, lang), l, b, vol, m, th)
+	return fmt.Sprintf(i18n.T(i18n.KeyXferTraySummary), b, vol, m)
 }
 
 // ImportRequest is the import_config request (dryRun or the real one

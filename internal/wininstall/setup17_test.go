@@ -64,7 +64,7 @@ func TestCHK_SETUP_17_MigrateOnUpgrade(t *testing.T) {
 
 	res := Install(f, InstallConfig{
 		Opts: Options{Silent: true}, DefaultDir: neu, DataDir: `C:\ProgramData\ExchangeChecker`,
-		Files: sampleFiles(), Version: "1.1.0", Lang: "ru", Now: time.Now(),
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
 	}, &memLog{})
 	if res.Code != ExitOK && res.Code != ExitRebootRequired {
 		t.Fatalf("code=%d err=%v", res.Code, res.Err)
@@ -139,7 +139,7 @@ func TestCHK_SETUP_17_MigrateRollback(t *testing.T) {
 
 	res := Install(f, InstallConfig{
 		Opts: Options{Silent: true}, DefaultDir: neu, DataDir: `C:\ProgramData\ExchangeChecker`,
-		Files: sampleFiles(), Version: "1.1.0", Lang: "ru", Now: time.Now(),
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
 	}, &memLog{})
 	if res.Code == ExitOK {
 		t.Fatal("expected failure")
@@ -181,7 +181,7 @@ func TestCHK_SETUP_17_FreshUsesTwoWordDefault(t *testing.T) {
 	neu := `C:\Program Files\Exchange Checker`
 	res := Install(f, InstallConfig{
 		Opts: Options{Silent: true, NoStart: true}, DefaultDir: neu, DataDir: `C:\ProgramData\ExchangeChecker`,
-		Files: sampleFiles(), Version: "1.0.0", Lang: "ru", Now: time.Now(),
+		Files: sampleFiles(), Version: "1.0.0", Now: time.Now(),
 	}, &memLog{})
 	if res.Code != ExitOK {
 		t.Fatalf("code=%d err=%v", res.Code, res.Err)
@@ -205,7 +205,7 @@ func TestCHK_SETUP_17_DirIgnoredRussian(t *testing.T) {
 	lg := &memLog{}
 	res := Install(f, InstallConfig{
 		Opts: Options{Silent: true, Dir: `D:\Elsewhere`, NoStart: true}, DefaultDir: neu,
-		DataDir: `C:\ProgramData\ExchangeChecker`, Files: sampleFiles(), Version: "1.1.0", Lang: "ru", Now: time.Now(),
+		DataDir: `C:\ProgramData\ExchangeChecker`, Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
 	}, lg)
 	if res.Code != ExitOK && res.Code != ExitRebootRequired {
 		t.Fatalf("code=%d err=%v", res.Code, res.Err)

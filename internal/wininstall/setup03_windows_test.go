@@ -52,7 +52,7 @@ func TestCHK_SETUP_03_RealSCM(t *testing.T) {
 	sys := NewSystem()
 	spec := ServiceSpec{
 		Name: name, DisplayName: "ExchangeChecker Test " + name,
-		ImagePath: ServiceImagePath(exe), Description: ServiceDescription("en"),
+		ImagePath: ServiceImagePath(exe), Description: ServiceDescription(),
 		AutoStart: true, ResetPeriod: FailureResetPeriod, FailureDelays: FailureDelays, SDDL: ServiceSDDL,
 	}
 	if err := sys.CreateService(spec); err != nil {

@@ -25,7 +25,6 @@ type InstallConfig struct {
 	DataDir    string // %ProgramData%\ExchangeChecker
 	Files      map[string][]byte
 	Version    string
-	Lang       string
 	Now        time.Time
 }
 
@@ -259,7 +258,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// 5. service — journal previous ImagePath / description for upgrade rollback (§7.4)
 	spec := ServiceSpec{
 		Name: model.ServiceName, DisplayName: version.ProductName, ImagePath: ServiceImagePath(svcExe),
-		Description: ServiceDescription(c.Lang), AutoStart: !c.Opts.NoStart,
+		Description: ServiceDescription(), AutoStart: !c.Opts.NoStart,
 		ResetPeriod: FailureResetPeriod, FailureDelays: FailureDelays, SDDL: ServiceSDDL,
 	}
 	if svc.Exists {
@@ -322,7 +321,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// 7b. Start-menu shortcut (§6.3) — not fatal; kept on upgrade unless
 	// re-created; /NOSHORTCUT leaves an existing one alone
 	if !c.Opts.NoShortcut {
-		desc := T(c.Lang, "setup.shortcut.desc")
+		desc := T("setup.shortcut.desc")
 		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
 			warn("start menu shortcut: %v", err)
 		} else {
@@ -347,7 +346,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// Uninstall\DesktopShortcut; /NODESKTOPSHORTCUT or saved 0 skips create
 	// and removes an existing desktop .lnk on upgrade.
 	if !c.Opts.NoDesktopShortcut {
-		desc := T(c.Lang, "setup.shortcut.desc")
+		desc := T("setup.shortcut.desc")
 		if lnk, err := sys.CreateDesktopShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
 			warn("desktop shortcut: %v", err)
 		} else {

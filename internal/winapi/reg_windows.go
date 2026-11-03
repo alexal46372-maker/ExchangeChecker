@@ -5,7 +5,7 @@ import (
 	"unsafe"
 )
 
-// Registry access of the tray (per-user language, phase 6e, CHK-TRAY-08):
+// Registry access of the tray (per-user preferences, HKCU):
 // RegCreateKeyExW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
 // RegDeleteValueW, RegDeleteKeyW, RegCloseKey (NT 3.1+), through callProc.
 var (

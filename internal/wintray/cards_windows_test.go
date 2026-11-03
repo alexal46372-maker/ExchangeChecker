@@ -79,7 +79,7 @@ func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
 		if want := map[int32]int32{96: 16, 144: 24}[dpi]; px(icoSmall) != want {
 			t.Errorf("%d dpi: small icon %d px, want %d", dpi, px(icoSmall), want)
 		}
-		sw, err := newStatusWindow(i18n.RU, false, nil)
+		sw, err := newStatusWindow(false, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,8 +114,8 @@ func TestCHK_TRAY_48_CardPanel(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	done, _ := useComCtl6()
 	defer done()
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		sw, err := newStatusWindow(lang, false, nil)
+	{
+		sw, err := newStatusWindow(false, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,34 +123,34 @@ func TestCHK_TRAY_48_CardPanel(t *testing.T) {
 		sw.update(sampleCardsStatus(), true)
 		p := sw.cards
 		if p.visible() != 3 {
-			t.Fatalf("%s: %d cards, want 3", lang, p.visible())
+			t.Fatalf("%s: %d cards, want 3", i18n.RU, p.visible())
 		}
 		pr := winapi.GetWindowRect(p.hwnd)
 		var prev []winapi.RECT
 		for i := 0; i < p.visible(); i++ {
 			s := p.slots[i]
 			if winapi.WindowStyle(s)&winapi.WS_VISIBLE == 0 {
-				t.Errorf("%s: card %d hidden", lang, i)
+				t.Errorf("%s: card %d hidden", i18n.RU, i)
 			}
 			r := winapi.GetWindowRect(s)
 			if r.Left < pr.Left || r.Top < pr.Top || r.Right > pr.Right || r.Bottom > pr.Bottom || r.Right-r.Left < px(cardW)-1 {
-				t.Errorf("%s: card %d %+v outside the panel %+v or too narrow", lang, i, r, pr)
+				t.Errorf("%s: card %d %+v outside the panel %+v or too narrow", i18n.RU, i, r, pr)
 			}
 			for j, q := range prev {
 				if r.Left < q.Right && q.Left < r.Right && r.Top < q.Bottom && q.Top < r.Bottom {
-					t.Errorf("%s: cards %d and %d overlap", lang, i, j)
+					t.Errorf("%s: cards %d and %d overlap", i18n.RU, i, j)
 				}
 			}
 			prev = append(prev, r)
 		}
 		if tip := sw.tips.text(p.slots[0]); !strings.Contains(tip, "Магазин 12") {
-			t.Errorf("%s: tooltip of the first card %q", lang, tip)
+			t.Errorf("%s: tooltip of the first card %q", i18n.RU, tip)
 		}
-		if sw.tips.text(p.hwnd) != i18n.T(i18n.KeyTipCards, lang) {
-			t.Errorf("%s: panel tooltip", lang)
+		if sw.tips.text(p.hwnd) != i18n.T(i18n.KeyTipCards) {
+			t.Errorf("%s: panel tooltip", i18n.RU)
 		}
 		if c := p.shown[1]; c.Info != "login failed" {
-			t.Errorf("%s: error card %+v", lang, c)
+			t.Errorf("%s: error card %+v", i18n.RU, c)
 		}
 		// more databases than places
 		st := sampleCardsStatus()
@@ -159,8 +159,8 @@ func TestCHK_TRAY_48_CardPanel(t *testing.T) {
 		}
 		sw.update(st, true)
 		last := p.shown[len(p.shown)-1]
-		if p.visible() > cardSlots || !strings.Contains(last.Tip, i18n.T(i18n.KeyCardMoreHint, lang)) {
-			t.Errorf("%s: %d places, last %+v", lang, p.visible(), last)
+		if p.visible() > cardSlots || !strings.Contains(last.Tip, i18n.T(i18n.KeyCardMoreHint)) {
+			t.Errorf("%s: %d places, last %+v", i18n.RU, p.visible(), last)
 		}
 		winapi.DestroyWindow(sw.hwnd)
 	}

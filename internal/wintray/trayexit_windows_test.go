@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -217,7 +216,7 @@ func TestCHK_TRAY_11_ExitHungSession(t *testing.T) {
 		<-hang
 		return nil, io.EOF
 	}
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenSettings: true, Beeper: &testBeeper{},
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenSettings: true, Beeper: &testBeeper{},
 		Session: trayipc.Options{Dial: dial}})
 	if err != nil {
 		t.Fatal(err)

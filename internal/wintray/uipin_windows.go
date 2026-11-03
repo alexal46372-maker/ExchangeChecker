@@ -19,7 +19,7 @@ const ScrollHostClass = "ExchangeCheckerScrollHost"
 var pinnedHosts = map[uintptr]uintptr{}
 
 // fitForm lays content above bar out in hwnd and sizes the window
-// (centred; keep: keep the position, e.g. a relayout after a language
+// (centred; keep: keep the position, e.g. a relayout after a text
 // change). It returns the client size.
 func fitForm(hwnd uintptr, content, bar ui.Node, minW int32, keep bool) (int32, int32) {
 	syncCues(content)

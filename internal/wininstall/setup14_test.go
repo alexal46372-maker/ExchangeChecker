@@ -64,7 +64,7 @@ func TestCHK_SETUP_14_LayoutContract(t *testing.T) {
 	if len(StepKeys) != 5 {
 		t.Fatalf("StepKeys len %d", len(StepKeys))
 	}
-	ru, en := CatalogKeys("ru"), CatalogKeys("en")
+	ru, en := CatalogKeys(), CatalogKeys()
 	for _, k := range append([]string{"setup.brand.tagline"}, StepKeys...) {
 		if ru[k] == "" || en[k] == "" {
 			t.Errorf("missing catalog key %s", k)

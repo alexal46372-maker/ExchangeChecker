@@ -23,43 +23,34 @@ func TestCHK_SQL_04_SQLMessagesModel(t *testing.T) {
 		if !strings.HasPrefix(k, "sql.") && !strings.HasPrefix(k, "validation.sql_") {
 			t.Errorf("key %s", k)
 		}
-		if MonitorMessage(k, LangEN) != "" {
+		if MonitorMessage(k) != "" {
 			t.Errorf("%s must not be a monitor message (tray i18n)", k)
 		}
-		for _, lang := range []string{LangRU, LangEN} {
-			if SQLMessage(k, lang) == "" {
-				t.Errorf("%s/%s empty", k, lang)
-			}
+		if SQLMessage(k) == "" {
+			t.Errorf("%s empty", k)
 		}
-		if strings.HasPrefix(k, "validation.") && !strings.Contains(SQLMessage(k, LangRU), "{0}") {
+		if strings.HasPrefix(k, "validation.") && !strings.Contains(SQLMessage(k), "{0}") {
 			t.Errorf("%s: no {0} (field)", k)
 		}
 	}
 	if len(SQLMessages()) != len(keys) {
 		t.Errorf("SQLMessages %d, keys %d", len(SQLMessages()), len(keys))
 	}
-	if SQLMessage("sql.unknown", LangEN) != "" || SQLMessage(ValRequired, LangEN) != "" {
+	if SQLMessage("sql.unknown") != "" || SQLMessage(ValRequired) != "" {
 		t.Error("unknown key")
 	}
-	if SQLMessage(MsgSQLTLSCertificate, "de") != SQLMessage(MsgSQLTLSCertificate, LangRU) {
-		t.Error("unknown lang -> RU (as MonitorMessage)")
-	}
-	lt := LocalizedText{RU: "р", EN: "e"}
-	if lt.In(LangRU) != "р" || lt.In(LangEN) != "e" || lt.In("") != "р" {
-		t.Error("LocalizedText.In")
-	}
 	// FormatMessage: monitor keys unchanged, SQL keys through the fallback
-	if FormatMessage(ValRequired, []string{"server", ValRequired}, LangEN) != MonitorMessage(ValRequired, LangEN) &&
-		!strings.Contains(FormatMessage(ValRequired, []string{"server", ValRequired}, LangEN), "server") {
+	if FormatMessage(ValRequired, []string{"server", ValRequired}) != MonitorMessage(ValRequired) &&
+		!strings.Contains(FormatMessage(ValRequired, []string{"server", ValRequired}), "server") {
 		t.Error("monitor key")
 	}
-	got := FormatMessage(ValSQLColumnType, []string{"mapping.lastSendColumn", ValSQLColumnType, "dbo.t", "c", "int", SQLTypesDateTime}, LangRU)
+	got := FormatMessage(ValSQLColumnType, []string{"mapping.lastSendColumn", ValSQLColumnType, "dbo.t", "c", "int", SQLTypesDateTime})
 	for _, want := range []string{"mapping.lastSendColumn", "dbo.t", "int", SQLTypesDateTime} {
 		if !strings.Contains(got, want) || strings.Contains(got, "{") {
 			t.Errorf("format %q lacks %s", got, want)
 		}
 	}
-	if FormatMessage(MsgSQLTLSEnableTLS10, nil, LangRU) != SQLMessage(MsgSQLTLSEnableTLS10, LangRU) {
+	if FormatMessage(MsgSQLTLSEnableTLS10, nil) != SQLMessage(MsgSQLTLSEnableTLS10) {
 		t.Error("sql.* through FormatMessage")
 	}
 }
@@ -86,7 +77,7 @@ func TestCHK_SQL_04_SQLManualTemplatesModel(t *testing.T) {
 	tpls := SQLManualTemplates()
 	ids := map[string]bool{}
 	for _, tp := range tpls {
-		if ids[tp.ID] || tp.ID == "" || tp.Title.RU == "" || tp.Title.EN == "" || tp.Description.RU == "" || tp.Description.EN == "" ||
+		if ids[tp.ID] || tp.ID == "" || tp.Title == "" || tp.Description == "" ||
 			!(strings.HasPrefix(tp.SQL, "SELECT ") || strings.HasPrefix(tp.SQL, "WITH ")) || strings.Contains(tp.SQL, ";") {
 			t.Errorf("template %+v", tp)
 		}

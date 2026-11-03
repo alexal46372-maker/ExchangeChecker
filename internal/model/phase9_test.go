@@ -52,7 +52,7 @@ func TestCHK_CFG_05_ValidateSQLServerAddr(t *testing.T) {
 	if fe == nil || fe.Field != "server" || fe.Key != ValSQLServerForbidden || len(fe.Args) != 1 || fe.Args[0] != "np" {
 		t.Fatalf("validate: %+v", fe)
 	}
-	if MonitorMessage(ValSQLServerForbidden, LangEN) == "" || MonitorMessage(MsgPasswordTargetChange, LangRU) == "" {
+	if MonitorMessage(ValSQLServerForbidden) == "" || MonitorMessage(MsgPasswordTargetChange) == "" {
 		t.Error("no text")
 	}
 }

@@ -160,7 +160,6 @@ var UIFields = []UIField{
 	{ID: FieldEmailEvents, Section: SecNotifications, Capability: CapEmail, HasDefault: true},
 	{ID: FieldEmailTest, Section: SecNotifications, Capability: CapEmail},
 	{ID: FieldHistoryWindow, Section: SecHistory},
-	{ID: FieldLanguage, Section: SecService, Simple: true, HasDefault: true},
 	{ID: FieldAutostart, Section: SecService, Simple: true, HasDefault: true},
 	{ID: FieldServiceControl, Section: SecService},
 	{ID: FieldExport, Section: SecTransfer},
@@ -182,12 +181,12 @@ func FieldsOf(mode UIMode, caps []string) []UIField {
 	return out
 }
 
-// CueText is the cue banner of f in lang ("" if none).
-func (f UIField) CueText(lang string) string {
+// CueText is the cue banner of f ("" if none).
+func (f UIField) CueText() string {
 	if f.Cue == "" {
 		return ""
 	}
-	t := i18n.T(f.Cue, lang)
+	t := i18n.T(f.Cue)
 	if f.CueDefault > 0 {
 		return fmt.Sprintf(t, f.CueDefault)
 	}

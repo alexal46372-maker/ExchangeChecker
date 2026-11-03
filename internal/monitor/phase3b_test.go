@@ -343,7 +343,7 @@ func TestCHK_MON_13_HungReaderRecreated(t *testing.T) {
 	if p := profileByID(m.Snapshot(), "h"); p.Level != model.LevelOK || f.get(f.created, "h") != 2 {
 		t.Errorf("after the old poll returned: %+v created %d", p, f.get(f.created, "h"))
 	}
-	if model.MonitorMessage(model.MsgMonitorHung, model.LangRU) == "" {
+	if model.MonitorMessage(model.MsgMonitorHung) == "" {
 		t.Error("monitor.hung has no text")
 	}
 }
@@ -551,11 +551,11 @@ func TestCHK_MON_10_SettingsBrokenOnFirstStart(t *testing.T) {
 	if s.ConfigStale || s.ConfigError == "" || s.ConfigErrorKey != model.MsgMonitorConfigInvalid {
 		t.Errorf("snapshot flags %+v", s)
 	}
-	// the invalid key has its own RU/EN texts, distinct from "stale"
-	ru, en := model.MonitorMessage(model.MsgMonitorConfigInvalid, model.LangRU), model.MonitorMessage(model.MsgMonitorConfigInvalid, model.LangEN)
-	if ru == "" || en == "" || ru == model.MonitorMessage(model.MsgMonitorConfigStale, model.LangRU) ||
-		strings.Contains(en, "last valid") || !strings.Contains(en, "default") {
-		t.Errorf("config_invalid texts: %q / %q", ru, en)
+	// the invalid key has its own text, distinct from "stale"
+	ru := model.MonitorMessage(model.MsgMonitorConfigInvalid)
+	if ru == "" || ru == model.MonitorMessage(model.MsgMonitorConfigStale) ||
+		strings.Contains(ru, "последние корректные") || !strings.Contains(ru, "по умолчанию") {
+		t.Errorf("config_invalid text: %q", ru)
 	}
 	if w.n() != 1 || !strings.Contains(w.last(), "using default settings") {
 		t.Errorf("warn %v", w.msgs)

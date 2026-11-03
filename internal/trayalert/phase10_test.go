@@ -169,7 +169,7 @@ func snapAt(seq uint64, checked time.Time, alerts ...model.AlertEvent) trayipc.S
 func TestCHK_TRAY_36_AckUntilNextCheck(t *testing.T) {
 	t0 := fresh
 	a1 := pointAlert("a", "Склад", "k1", model.LevelError, 70)
-	c := New(i18n.RU)
+	c := New()
 	c.Update(snapAt(1, t0, a1), true)
 	reqs := c.BeginAck()
 	if v, _ := c.AckDone([]AckResult{{Req: reqs[0], Msg: okReply()}}); v.Visible {
@@ -206,7 +206,7 @@ func TestCHK_TRAY_36_AckUntilNextCheck(t *testing.T) {
 	}
 
 	// an older service: no checkedAt, no ackedAt — hidden until a change
-	old := New(i18n.RU)
+	old := New()
 	ack0 := a1
 	ack0.Acknowledged = true
 	for i := uint64(1); i < 4; i++ {
@@ -229,22 +229,22 @@ func TestCHK_TRAY_36_AckUntilNextCheck(t *testing.T) {
 // snapshot, or taken from the optional phase10-svc fields.
 func TestCHK_TRAY_38_Blink(t *testing.T) {
 	st := snapAt(1, fresh, pointAlert("a", "Склад", "k1", model.LevelWarning, 40))
-	ps := Problems(st, StatusExt{}, i18n.RU)
+	ps := Problems(st, StatusExt{})
 	if len(ps) != 1 || BlinkFor(ps) != BlinkYellow || ps[0].Kind != ProblemWarning || !strings.Contains(ps[0].Text, "Склад") {
 		t.Fatalf("warning %+v", ps)
 	}
 	st.Snapshot.Profiles = append(st.Snapshot.Profiles, model.ProfileSnapshot{ProfileID: "b", Name: "DB-b", Enabled: true, Error: "refused"})
-	if ps = Problems(st, StatusExt{}, i18n.RU); len(ps) != 2 || BlinkFor(ps) != BlinkRed {
+	if ps = Problems(st, StatusExt{}); len(ps) != 2 || BlinkFor(ps) != BlinkRed {
 		t.Fatalf("sql error %+v", ps)
 	}
-	if ps = Problems(trayipc.Status{State: trayipc.StateUnavailable}, StatusExt{}, i18n.EN); len(ps) != 1 ||
-		ps[0].Kind != ProblemNoConnection || BlinkFor(ps) != BlinkRed || ps[0].Text != i18n.T(i18n.KeyPanelNoService, i18n.EN) {
+	if ps = Problems(trayipc.Status{State: trayipc.StateUnavailable}, StatusExt{}); len(ps) != 1 ||
+		ps[0].Kind != ProblemNoConnection || BlinkFor(ps) != BlinkRed || ps[0].Text != i18n.T(i18n.KeyPanelNoService) {
 		t.Fatalf("no service %+v", ps)
 	}
-	if ps = Problems(trayipc.Status{State: trayipc.StateConnecting}, StatusExt{}, i18n.RU); ps != nil {
+	if ps = Problems(trayipc.Status{State: trayipc.StateConnecting}, StatusExt{}); ps != nil {
 		t.Error("starting is not a problem")
 	}
-	if BlinkFor(Problems(snapAt(1, fresh), StatusExt{}, i18n.RU)) != BlinkNone {
+	if BlinkFor(Problems(snapAt(1, fresh), StatusExt{})) != BlinkNone {
 		t.Error("all fine")
 	}
 	// optional fields (phase10-svc)
@@ -252,7 +252,7 @@ func TestCHK_TRAY_38_Blink(t *testing.T) {
 	if x.HasProblems == nil || !*x.HasProblems || !x.ProblemsTruncated || len(x.Problems) != 1 {
 		t.Fatalf("ext %+v", x)
 	}
-	ps = Problems(snapAt(2, fresh), x, i18n.RU)
+	ps = Problems(snapAt(2, fresh), x)
 	if len(ps) != 1 || BlinkFor(ps) != BlinkRed || !strings.Contains(ps[0].Text, "DB-a") {
 		t.Fatalf("ext problems %+v", ps)
 	}
@@ -261,11 +261,11 @@ func TestCHK_TRAY_38_Blink(t *testing.T) {
 	sv.Capabilities = []string{model.CapProblems}
 	sv.Snapshot.HasProblems = true
 	sv.Snapshot.Problems = []model.Problem{{Kind: model.ProblemWarning, ProfileID: "a", PointKey: "k9", Since: &fresh}}
-	if ps = Problems(sv, ExtOf(sv), i18n.RU); len(ps) != 1 || BlinkFor(ps) != BlinkYellow || ps[0].PointKey != "k9" {
+	if ps = Problems(sv, ExtOf(sv)); len(ps) != 1 || BlinkFor(ps) != BlinkYellow || ps[0].PointKey != "k9" {
 		t.Fatalf("svc problems %+v", ps)
 	}
 	sv.Snapshot.HasProblems, sv.Snapshot.Problems = false, nil
-	if Problems(sv, ExtOf(sv), i18n.RU) != nil {
+	if Problems(sv, ExtOf(sv)) != nil {
 		t.Error("svc hasProblems=false")
 	}
 	if ExtOf(snapAt(1, fresh)).HasProblems != nil {
@@ -278,7 +278,7 @@ func TestCHK_TRAY_38_Blink(t *testing.T) {
 		t.Error("repeat")
 	}
 	no := false
-	if Problems(st, StatusExt{HasProblems: &no}, i18n.RU) != nil {
+	if Problems(st, StatusExt{HasProblems: &no}) != nil {
 		t.Error("hasProblems=false")
 	}
 	if x := ParseStatusExt([]byte(`{"seq":1}`)); x.HasProblems != nil {
@@ -300,25 +300,22 @@ func TestCHK_TRAY_39_PanelLines(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		ps = append(ps, Problem{Kind: ProblemError, Text: "e"})
 	}
-	l := PanelLines(ps, i18n.RU)
+	l := PanelLines(ps)
 	if len(l) != MaxPanelLines || l[0] != "e" || l[len(l)-1] != "…и ещё 4" {
 		t.Fatalf("%q", l)
 	}
-	if PanelLines(nil, i18n.RU) != nil {
+	if PanelLines(nil) != nil {
 		t.Error("empty")
 	}
 }
 
 func TestCHK_TRAY_53_TestBadge(t *testing.T) {
 	v := View{Level: model.LevelWarning, Alerts: []model.AlertEvent{{ProfileID: model.AlarmTestProfileID, To: model.LevelWarning, Test: true}}}
-	if title := Title(v, i18n.RU); !strings.Contains(title, "ТЕСТ") {
+	if title := Title(v); !strings.Contains(title, "ТЕСТ") {
 		t.Fatalf("title %q", title)
 	}
-	if body := Text(v, i18n.RU); !strings.Contains(body, "ТЕСТ") {
+	if body := Text(v); !strings.Contains(body, "ТЕСТ") {
 		t.Fatalf("body %q", body)
-	}
-	if titleEN := Title(v, i18n.EN); !strings.Contains(titleEN, "TEST") {
-		t.Fatalf("en title %q", titleEN)
 	}
 }
 
@@ -333,7 +330,7 @@ func TestCHK_TRAY_54_ProblemsFilter(t *testing.T) {
 		},
 		Profiles: []model.ProfileSnapshot{{ProfileID: "p1", Name: "A"}, {ProfileID: "p2", Name: "B"}, {ProfileID: "p3", Name: "C"}},
 	}}
-	ps := Problems(st, StatusExt{}, i18n.RU)
+	ps := Problems(st, StatusExt{})
 	if len(ps) != 2 {
 		t.Fatalf("want 2 problems (test filtered), got %d %+v", len(ps), ps)
 	}

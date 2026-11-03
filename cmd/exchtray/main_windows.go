@@ -31,15 +31,12 @@ func run() int {
 		Dial:   trayipc.PipeDialer(model.PipeName, pipeDialTimeout),
 		Verify: trayipc.ServiceVerifier(model.ServiceName), // G7 before any command
 	}
-	// per-user tray language (HKCU, menu «Язык (Language)»), else Windows
-	langPref, lang := wintray.LoadLang(wintray.RegistryLangStore{})
 	for _, a := range os.Args[1:] {
 		if a == wintray.SettingsArg {
 			// elevated settings window (ShellExecuteExW "runas" from the
 			// read-only window): own process, own connection
-			return wintray.RunSettings(wintray.SettingsOptions{Lang: lang, Session: session, UIModeStore: wintray.RegistryUIModeStore{},
-				LangStore: wintray.RegistryLangStore{}, BalloonStore: wintray.RegistryBalloonStore{}, SoundStore: wintray.RegistrySoundStore{},
-				ThemeStore: wintray.RegistryThemeStore{},
+			return wintray.RunSettings(wintray.SettingsOptions{Session: session, UIModeStore: wintray.RegistryUIModeStore{},
+				BalloonStore: wintray.RegistryBalloonStore{}, SoundStore: wintray.RegistrySoundStore{},
 				OwnerSID: wintray.OwnerSIDFromArgs(os.Args[1:])})
 		}
 	}
@@ -54,13 +51,9 @@ func run() int {
 	defer release()
 
 	app, err := wintray.NewApp(wintray.Options{
-		Lang:         lang,
-		LangPref:     langPref,
-		LangStore:    wintray.RegistryLangStore{},
 		BalloonStore: wintray.RegistryBalloonStore{},
 		SoundStore:   wintray.RegistrySoundStore{},
 		UIModeStore:  wintray.RegistryUIModeStore{},
-		ThemeStore:   wintray.RegistryThemeStore{},
 		Session:      session,
 		// %LOCALAPPDATA%\ExchangeChecker\tray.log, 1 MB + tray.log.1
 		// (phase 9b, CHK-TRAY-28); no passwords / logins are written

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
@@ -29,7 +28,7 @@ func TestCHK_TRAY_41_SettingsModes(t *testing.T) {
 	svc := newCfgService()
 	app := startCfgApp(t, svc, true, nil)
 	store := &memUIMode{}
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session, hidden: true,
+	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true,
 		uiMode: loadUIMode(store), uiStore: store})
 	if err != nil {
 		t.Fatal(err)

@@ -89,28 +89,28 @@ func SQLDiagnosisKeys() []string {
 
 var sqlCodeDiagnoses = []SQLDiagnosis{
 	{Key: "sql.diag_browser", Category: SQLConnNetwork,
-		Title: lt{"Служба SQL Server Browser не ответила", "The SQL Server Browser did not answer"},
-		Steps: []LocalizedText{
-			{"Запустите на сервере службу «SQL Server Browser» (тип запуска — автоматически).", "Start the \"SQL Server Browser\" service on the server (startup type automatic)."},
-			{"Откройте в брандмауэре сервера UDP-порт 1434; широковещательный поиск не проходит через маршрутизаторы — укажите имя сервера.", "Open UDP port 1434 in the server firewall; broadcast discovery does not cross routers — enter the server name."},
-			{"Либо укажите TCP-порт экземпляра явно — тогда Browser не нужен.", "Or enter the instance's TCP port explicitly — then the Browser is not needed."},
+		Title: "Служба SQL Server Browser не ответила",
+		Steps: []string{
+			"Запустите на сервере службу «SQL Server Browser» (тип запуска — автоматически).",
+			"Откройте в брандмауэре сервера UDP-порт 1434; широковещательный поиск не проходит через маршрутизаторы — укажите имя сервера.",
+			"Либо укажите TCP-порт экземпляра явно — тогда Browser не нужен.",
 		}},
 	{Key: "sql.diag_instance", Category: SQLConnNetwork,
-		Title: lt{"Экземпляр SQL Server не найден", "SQL Server instance not found"},
-		Steps: []LocalizedText{
-			{"Проверьте имя экземпляра после «\\» (кнопка «Найти серверы» показывает существующие).", "Check the instance name after \"\\\" (\"Find servers\" lists the existing ones)."},
-			{"Экземпляр по умолчанию указывается без «\\имя»; скрытый экземпляр — только с явным TCP-портом.", "The default instance is entered without \"\\name\"; a hidden instance only with an explicit TCP port."},
+		Title: "Экземпляр SQL Server не найден",
+		Steps: []string{
+			"Проверьте имя экземпляра после «\\» (кнопка «Найти серверы» показывает существующие).",
+			"Экземпляр по умолчанию указывается без «\\имя»; скрытый экземпляр — только с явным TCP-портом.",
 		}},
 	{Key: "sql.diag_permission", Category: SQLConnOther,
-		Title: lt{"Недостаточно прав", "Permission denied"},
-		Steps: []LocalizedText{
-			{"Логину нужна роль db_datareader в базе: выполните скрипт «Выдать права».", "The login needs the db_datareader role in the database: run the \"Grant access\" script."},
-			{"Если права выдавались на отдельные таблицы, добавьте нужные таблицы в скрипт.", "If access was granted per table, add the needed tables to the script."},
+		Title: "Недостаточно прав",
+		Steps: []string{
+			"Логину нужна роль db_datareader в базе: выполните скрипт «Выдать права».",
+			"Если права выдавались на отдельные таблицы, добавьте нужные таблицы в скрипт.",
 		}},
 	{Key: "sql.diag_not_1c", Category: SQLConnOther,
-		Title: lt{"База не похожа на базу 1С", "The database does not look like a 1C database"},
-		Steps: []LocalizedText{
-			{"Проверьте, что выбрана база 1С:Предприятия (в ней есть таблицы Config, Params и _Node…).", "Check that a 1C:Enterprise database is selected (it has the Config, Params and _Node… tables)."},
-			{"Для другой базы задайте таблицы сопоставления вручную.", "For another database set the mapping tables manually."},
+		Title: "База не похожа на базу 1С",
+		Steps: []string{
+			"Проверьте, что выбрана база 1С:Предприятия (в ней есть таблицы Config, Params и _Node…).",
+			"Для другой базы задайте таблицы сопоставления вручную.",
 		}},
 }

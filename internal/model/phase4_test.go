@@ -110,7 +110,7 @@ func TestCHK_IPC_03_PasswordReuseRules(t *testing.T) {
 		t.Error("SameConnection")
 	}
 	for _, cat := range []string{TestOK, TestNetwork, TestLogin, TestDatabase, TestTLS, TestTimeout, TestConfig, TestOther} {
-		if MonitorMessage(TestCategoryKey(cat), LangEN) == "" {
+		if MonitorMessage(TestCategoryKey(cat)) == "" {
 			t.Errorf("no message for category %s", cat)
 		}
 	}

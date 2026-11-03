@@ -104,7 +104,7 @@ func TestCHK_SETUP_16_DesktopShortcutPlan(t *testing.T) {
 	}
 
 	// catalog
-	ru, en := CatalogKeys("ru"), CatalogKeys("en")
+	ru, en := CatalogKeys(), CatalogKeys()
 	if ru["setup.options.desktop"] == "" || en["setup.options.desktop"] == "" {
 		t.Fatal("setup.options.desktop missing")
 	}

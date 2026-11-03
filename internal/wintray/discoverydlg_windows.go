@@ -188,7 +188,7 @@ func (w *settingsWindow) openDiscovery() {
 		return
 	}
 	w.readForm()
-	dd := &discoveryDialog{w: w, ctl: map[int32]uintptr{}, d: traysettings.NewDiscovery(w.cfg.lang, w.ed.EffectiveMapping()),
+	dd := &discoveryDialog{w: w, ctl: map[int32]uintptr{}, d: traysettings.NewDiscovery(w.ed.EffectiveMapping()),
 		profileID: w.ed.Base.ID, isNew: w.ed.IsNew}
 	title := w.t(i18n.KeyDiscTitle)
 	if n := w.ed.Base.DisplayName(); n != "" && !w.ed.IsNew {
@@ -308,9 +308,9 @@ func (dd *discoveryDialog) build() {
 	for _, f := range traysettings.UIFields {
 		switch f.ID {
 		case traysettings.FieldDiscTime:
-			winapi.SetCueBanner(dd.ctl[idDiscTime], f.CueText(dd.w.cfg.lang))
+			winapi.SetCueBanner(dd.ctl[idDiscTime], f.CueText())
 		case traysettings.FieldDiscTolerance:
-			winapi.SetCueBanner(dd.ctl[idDiscTol], f.CueText(dd.w.cfg.lang))
+			winapi.SetCueBanner(dd.ctl[idDiscTol], f.CueText())
 		}
 	}
 	for _, e := range discMapEdits {
@@ -324,7 +324,7 @@ func (dd *discoveryDialog) build() {
 	for _, k := range []string{i18n.KeyDiscModeAuto, i18n.KeyDiscModeManual, i18n.KeyDiscModeCounters} {
 		winapi.SendMessageString(dd.ctl[idDiscMode], winapi.CB_ADDSTRING, 0, dd.t(k))
 	}
-	for _, s := range traysettings.TemplateTitles(dd.w.cfg.lang) {
+	for _, s := range traysettings.TemplateTitles() {
 		winapi.SendMessageString(dd.ctl[idDiscTemplate], winapi.CB_ADDSTRING, 0, s)
 	}
 	dd.tips = newTooltips(dd.hwnd)

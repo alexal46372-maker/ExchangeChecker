@@ -57,7 +57,6 @@ type AckResult struct {
 // Controller is the alert state machine. Not safe for concurrent use (the
 // UI thread owns it).
 type Controller struct {
-	lang      string
 	connected bool
 	ackable   bool // service supports ack_alert
 	ackByEvent bool // capability ack_event: ack by eventId
@@ -80,12 +79,9 @@ type Controller struct {
 	msg    string
 }
 
-// SetLang switches the UI language of the texts (tray menu choice).
-func (c *Controller) SetLang(lang string) { c.lang = i18n.Normalize(lang) }
-
-// New returns a controller for the UI language lang.
-func New(lang string) *Controller {
-	return &Controller{Policy: CheckedAtPolicy{}, lang: i18n.Normalize(lang), shown: map[ID]model.AlertEvent{},
+// New returns a controller.
+func New() *Controller {
+	return &Controller{Policy: CheckedAtPolicy{}, shown: map[ID]model.AlertEvent{},
 		acked: map[ID]ackMark{}, checked: map[string]time.Time{}}
 }
 
@@ -243,7 +239,7 @@ func (c *Controller) BeginAck() []AckRequest {
 		return nil
 	}
 	c.pending = true
-	c.msg = i18n.T(i18n.KeyAlertAckPending, c.lang)
+	c.msg = i18n.T(i18n.KeyAlertAckPending)
 	return reqs
 }
 
@@ -265,20 +261,20 @@ func (c *Controller) AckDone(results []AckResult) (v View, refresh bool) {
 			resolved, gone = true, true
 		case errors.Is(r.Err, trayipc.ErrUnsupported):
 			c.ackable = false
-			fail = i18n.T(i18n.KeyAlertAckUnsupported, c.lang)
+			fail = i18n.T(i18n.KeyAlertAckUnsupported)
 		case r.Err != nil:
-			fail = failText(c.lang, errText(r.Err, c.lang))
+			fail = failText(errText(r.Err))
 		case r.Msg.Type == model.MsgError:
 			txt := r.Msg.Error
 			if r.Msg.ErrorKey != "" {
-				txt = model.FormatMessage(r.Msg.ErrorKey, r.Msg.ErrorArgs, c.lang)
+				txt = model.FormatMessage(r.Msg.ErrorKey, r.Msg.ErrorArgs)
 				if txt == "" {
-					txt = i18n.Message(r.Msg.ErrorKey, c.lang)
+					txt = i18n.Message(r.Msg.ErrorKey)
 				}
 			}
-			fail = failText(c.lang, txt)
+			fail = failText(txt)
 		default:
-			fail = failText(c.lang, r.Msg.Type)
+			fail = failText(r.Msg.Type)
 		}
 		if resolved {
 			refresh = true
@@ -294,7 +290,7 @@ func (c *Controller) AckDone(results []AckResult) (v View, refresh bool) {
 	case fail != "":
 		c.msg = fail
 	case gone && len(c.shown) > 0:
-		c.msg = i18n.T(i18n.KeyAlertAckGone, c.lang)
+		c.msg = i18n.T(i18n.KeyAlertAckGone)
 	}
 	if len(c.shown) == 0 {
 		c.visible, c.sound = false, false
@@ -303,14 +299,14 @@ func (c *Controller) AckDone(results []AckResult) (v View, refresh bool) {
 	return c.View(), refresh
 }
 
-func failText(lang, s string) string {
-	return sprintf(i18n.T(i18n.KeyAlertAckFailed, lang), s)
+func failText(s string) string {
+	return sprintf(i18n.T(i18n.KeyAlertAckFailed), s)
 }
 
-func errText(err error, lang string) string {
+func errText(err error) string {
 	switch {
 	case errors.Is(err, trayipc.ErrNotConnected), errors.Is(err, trayipc.ErrServiceNotRunning):
-		return i18n.T(i18n.KeySvcUnavailable, lang)
+		return i18n.T(i18n.KeySvcUnavailable)
 	}
 	return err.Error()
 }

@@ -77,36 +77,36 @@ func discoveryFocus(path string) (Field, bool) {
 
 // mappingLabel is the localized name of a mapping field ("table",
 // "timesLinkRTRef", ...; "" for an unknown one).
-func mappingLabel(field, lang string) string {
+func mappingLabel(field string) string {
 	k := mappingLabels["mapping."+field]
 	if k == "" {
 		return ""
 	}
-	return strings.TrimSuffix(i18n.T(k, lang), ":")
+	return strings.TrimSuffix(i18n.T(k), ":")
 }
 
 // discoveryFieldLabel is the label of a Discovery path for validation
 // texts of the settings window: «Таблицы обмена — Ручной SQL»,
 // «Доп. план обмена 2 — Таблица точек», «Точка», «Число строк (limit)».
-func discoveryFieldLabel(path, lang string) (string, bool) {
+func discoveryFieldLabel(path string) (string, bool) {
 	sub := func(rest string) string {
-		if l := mappingLabel(rest, lang); l != "" {
+		if l := mappingLabel(rest); l != "" {
 			return l
 		}
 		return rest
 	}
 	switch {
 	case path == "mapping":
-		return i18n.T(i18n.KeyDiscTitle, lang), true
+		return i18n.T(i18n.KeyDiscTitle), true
 	case path == "mappings":
-		return i18n.T(i18n.KeyDiscExtraPlans, lang), true
+		return i18n.T(i18n.KeyDiscExtraPlans), true
 	case strings.HasPrefix(path, "mapping."):
-		return fmt.Sprintf(i18n.T(i18n.KeyDiscFieldMain, lang), sub(strings.TrimPrefix(path, "mapping."))), true
+		return fmt.Sprintf(i18n.T(i18n.KeyDiscFieldMain), sub(strings.TrimPrefix(path, "mapping."))), true
 	case strings.HasPrefix(path, "mappings["):
 		rest := strings.TrimPrefix(path, "mappings[")
 		if j := strings.Index(rest, "]."); j > 0 {
 			if n, err := strconv.Atoi(rest[:j]); err == nil {
-				return fmt.Sprintf(i18n.T(i18n.KeyDiscFieldExtra, lang), n+1, sub(rest[j+2:])), true
+				return fmt.Sprintf(i18n.T(i18n.KeyDiscFieldExtra), n+1, sub(rest[j+2:])), true
 			}
 		}
 		return path, true
@@ -117,7 +117,7 @@ func discoveryFieldLabel(path, lang string) (string, bool) {
 	if key == "" {
 		return "", false
 	}
-	return strings.TrimSuffix(i18n.T(key, lang), ":"), true
+	return strings.TrimSuffix(i18n.T(key), ":"), true
 }
 
 // InteractiveRequest is the profile part of the four commands, with the
@@ -135,7 +135,6 @@ func (e *Editor) InteractiveRequest(cmd, password string) (model.IPCRequest, *Pr
 
 // Discovery is the state of the Discovery dialog.
 type Discovery struct {
-	Lang            string
 	Candidates      []model.DiscoveryCandidate
 	Truncated       bool
 	Reason          string // truncatedReason of the discovery reply
@@ -164,8 +163,8 @@ type Discovery struct {
 }
 
 // NewDiscovery starts with the mapping m of the profile.
-func NewDiscovery(lang string, m model.Mapping) *Discovery {
-	d := &Discovery{Lang: i18n.Normalize(lang), Sel: -1, Map: FromMapping(m), orig: m}
+func NewDiscovery(m model.Mapping) *Discovery {
+	d := &Discovery{Sel: -1, Map: FromMapping(m), orig: m}
 	d.initial = d.Map.Mapping()
 	d.loaded = d.initial
 	return d
@@ -194,7 +193,7 @@ func (d *Discovery) Edited() bool { return d.Map.Mapping() != d.loaded }
 // search); the next result fills the form again.
 func (d *Discovery) AcceptOverwrite() { d.loaded = d.Map.Mapping() }
 
-func (d *Discovery) t(key string) string { return i18n.T(key, d.Lang) }
+func (d *Discovery) t(key string) string { return i18n.T(key) }
 
 // DiscoveryDone takes a discovery reply (discover / discover_by_value):
 // a missing list is an empty one; the candidate ResolveDiscovery picks as
@@ -207,7 +206,7 @@ func (d *Discovery) DiscoveryDone(m model.IPCMessage) {
 	d.Truncated, d.Reason = m.Truncated, m.TruncatedReason
 	d.Sel = -1
 	d.Check = nil
-	main, plans, idx, pr := resolveDiscovery(d.Candidates, d.Lang)
+	main, plans, idx, pr := resolveDiscovery(d.Candidates)
 	d.resMain, d.resPlans, d.Problem = main, plans, pr
 	if pr != nil {
 		// nothing is applied, but «все планы обмена» still offers the
@@ -254,7 +253,7 @@ func (d *Discovery) IncompleteNote() string {
 	if !d.Truncated {
 		return ""
 	}
-	return IncompleteText(ReplyDiscovery, d.Reason, d.Lang)
+	return IncompleteText(ReplyDiscovery, d.Reason)
 }
 
 // PointsNote is the truncatedReason text of the last node_points reply.
@@ -262,7 +261,7 @@ func (d *Discovery) PointsNote() string {
 	if !d.PointsTruncated {
 		return ""
 	}
-	return IncompleteText(ReplyNodePoints, d.PointsReason, d.Lang)
+	return IncompleteText(ReplyNodePoints, d.PointsReason)
 }
 
 // Status is the line under the result lists: count, partial result.
@@ -272,7 +271,7 @@ func (d *Discovery) Status() string {
 		s = d.t(i18n.KeyDiscNone)
 	}
 	if d.Truncated {
-		s += " " + IncompleteText(ReplyDiscovery, d.Reason, d.Lang)
+		s += " " + IncompleteText(ReplyDiscovery, d.Reason)
 	}
 	return s
 }
@@ -296,19 +295,19 @@ var incompleteKeys = map[string]map[string]string{
 // IncompleteText is «Результат неполный» with the truncatedReason of a
 // reply of kind (Reply*); absent, unknown or not defined for the reply —
 // the general text.
-func IncompleteText(kind, reason, lang string) string {
+func IncompleteText(kind, reason string) string {
 	key := incompleteKeys[kind][reason]
 	if key == "" {
-		return i18n.T(i18n.KeyDiscIncomplete, lang)
+		return i18n.T(i18n.KeyDiscIncomplete)
 	}
-	return i18n.T(key, lang)
+	return i18n.T(key)
 }
 
 // PointsStatus describes the node_points list.
 func (d *Discovery) PointsStatus() string {
 	s := fmt.Sprintf(d.t(i18n.KeyDiscPointsFound), len(d.NodePoints))
 	if d.PointsTruncated {
-		s += " " + IncompleteText(ReplyNodePoints, d.PointsReason, d.Lang)
+		s += " " + IncompleteText(ReplyNodePoints, d.PointsReason)
 	}
 	return s
 }
@@ -345,7 +344,7 @@ func (d *Discovery) Query(f ValueForm) (*model.ValueQuery, *Problem) {
 		}
 	}
 	if q.PointName == "" && q.PointRef == "" {
-		return nil, &Problem{Text: i18n.Message(model.MsgDiscoverPointNameEmpty, d.Lang), Field: FieldDiscPoint}
+		return nil, &Problem{Text: i18n.Message(model.MsgDiscoverPointNameEmpty), Field: FieldDiscPoint}
 	}
 	if s := strings.TrimSpace(f.ApproxTime); s != "" {
 		t, err := time.ParseInLocation(TimeLayout, s, model.DBZone)
@@ -583,7 +582,7 @@ func (d *Discovery) ValidationProblem(fe *model.FieldError) *Problem {
 	args := fe.IPCArgs()
 	if strings.HasPrefix(field, "mapping.") {
 		f := strings.TrimPrefix(field, "mapping.")
-		if l := mappingLabel(f, d.Lang); l != "" {
+		if l := mappingLabel(f); l != "" {
 			args[0] = l
 		}
 		if !FieldEditable(d.Map.Kind, f) {
@@ -593,10 +592,10 @@ func (d *Discovery) ValidationProblem(fe *model.FieldError) *Problem {
 			}
 			field = "mapping." + f
 		}
-	} else if l, ok := discoveryFieldLabel(field, d.Lang); ok {
+	} else if l, ok := discoveryFieldLabel(field); ok {
 		args[0] = l
 	}
-	return &Problem{Text: model.FormatMessage(fe.Key, args, d.Lang), Field: Field(field)}
+	return &Problem{Text: model.FormatMessage(fe.Key, args), Field: Field(field)}
 }
 
 // PlanKey identifies the exchange plan of a mapping for merging:
@@ -703,7 +702,7 @@ func (d *Discovery) CheckResult(mc model.MappingCheck) (text, field string) {
 	if mc.OK {
 		b = append(b, d.t(i18n.KeyDiscCheckOK))
 	} else {
-		head := i18n.Message(mc.ErrorKey, d.Lang)
+		head := i18n.Message(mc.ErrorKey)
 		if mc.ErrorKey == "" {
 			head = d.t(i18n.KeyDiscCheckFailed)
 		}
@@ -714,7 +713,7 @@ func (d *Discovery) CheckResult(mc model.MappingCheck) (text, field string) {
 			if k := mappingLabels[field]; k != "" {
 				args[0] = strings.TrimSuffix(d.t(k), ":")
 			}
-			if s := model.FormatMessage(mc.ErrorArgs[1], args, d.Lang); s != "" {
+			if s := model.FormatMessage(mc.ErrorArgs[1], args); s != "" {
 				b = append(b, s)
 			}
 		} else if mc.Error != "" && mc.ErrorKey == "" {
@@ -728,7 +727,7 @@ func (d *Discovery) CheckResult(mc model.MappingCheck) (text, field string) {
 		b = append(b, SampleLine(r))
 	}
 	if mc.Truncated {
-		b = append(b, IncompleteText(ReplyCheck, mc.TruncatedReason, d.Lang))
+		b = append(b, IncompleteText(ReplyCheck, mc.TruncatedReason))
 	}
 	return strings.Join(b, "\r\n"), field
 }
@@ -757,7 +756,7 @@ func (d *Discovery) CandidateLine(c model.DiscoveryCandidate) string {
 	if c.TimesTable != "" {
 		tbl += " → " + c.TimesTable
 	}
-	s := tbl + "  [" + CandidateModeText(c.Mode, d.Lang) + "]  " + fmt.Sprintf(d.t(i18n.KeyDiscScore), c.Score)
+	s := tbl + "  [" + CandidateModeText(c.Mode) + "]  " + fmt.Sprintf(d.t(i18n.KeyDiscScore), c.Score)
 	if c.Points > 0 {
 		s += "  " + fmt.Sprintf(d.t(i18n.KeyDiscPoints), c.Points)
 	}
@@ -768,20 +767,20 @@ func (d *Discovery) CandidateLine(c model.DiscoveryCandidate) string {
 }
 
 // CandidateModeText localizes a candidate mode (unknown: as is).
-func CandidateModeText(m model.CandidateMode, lang string) string {
+func CandidateModeText(m model.CandidateMode) string {
 	key := map[model.CandidateMode]string{model.CandidateSingle: i18n.KeyDiscCandSingle, model.CandidateLinked: i18n.KeyDiscCandLinked,
 		model.CandidateCounters: i18n.KeyDiscCandCounters}[m]
 	if key == "" {
 		return string(m)
 	}
-	return i18n.T(key, lang)
+	return i18n.T(key)
 }
 
 // HintText localizes a discovery hint (unknown hints are shown as is).
-func HintText(h, lang string) string {
+func HintText(h string) string {
 	key := "hint." + h
 	if i18n.Has(key) {
-		return i18n.T(key, lang)
+		return i18n.T(key)
 	}
 	return h
 }
@@ -801,7 +800,7 @@ func (d *Discovery) CandidateDetails(c model.DiscoveryCandidate) string {
 		b = append(b, d.t(i18n.KeyDiscYearOffset))
 	}
 	for _, h := range c.Hints {
-		b = append(b, "• "+HintText(h, d.Lang))
+		b = append(b, "• "+HintText(h))
 	}
 	if c.Matched != nil {
 		b = append(b, d.t(i18n.KeyDiscMatched)+" "+SampleLine(*c.Matched))
@@ -829,7 +828,7 @@ func (e *Editor) InteractiveProblem(m model.IPCMessage, err error) *Problem {
 			return &Problem{Text: e.t(i18n.KeyDiscCanceled)}
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
-			return &Problem{Text: i18n.Message(model.MsgDiscoverTimeout, e.Lang)}
+			return &Problem{Text: i18n.Message(model.MsgDiscoverTimeout)}
 		}
 		return e.ErrorProblem(err, DiscoveryTimeout)
 	}
@@ -840,26 +839,26 @@ func (e *Editor) InteractiveProblem(m model.IPCMessage, err error) *Problem {
 	case model.ErrCodeCanceled:
 		return &Problem{Text: e.t(i18n.KeyDiscCanceled)}
 	case model.ErrCodeBusy:
-		return &Problem{Text: i18n.Message(m.ErrorKey, e.Lang)}
+		return &Problem{Text: i18n.Message(m.ErrorKey)}
 	case model.ErrCodeFailed:
 		key := m.ErrorKey
 		if key == "" {
 			key = model.MsgDiscoverFailed
 		}
-		return &Problem{Text: i18n.Message(key, e.Lang)}
+		return &Problem{Text: i18n.Message(key)}
 	case model.ErrCodeInvalidRequest:
 		if m.ErrorKey == model.MsgDiscoverPointNameEmpty {
-			return &Problem{Text: i18n.Message(m.ErrorKey, e.Lang), Field: FieldDiscPoint}
+			return &Problem{Text: i18n.Message(m.ErrorKey), Field: FieldDiscPoint}
 		}
 	}
 	return e.Reply(m) // invalid_request query.* / limit: label + field (fieldLabel, FocusField)
 }
 
-// TemplateTitles are the manual SQL template names in lang.
-func TemplateTitles(lang string) []string {
+// TemplateTitles are the manual SQL template names.
+func TemplateTitles() []string {
 	var out []string
 	for _, t := range model.SQLManualTemplates() {
-		out = append(out, t.Title.In(lang))
+		out = append(out, t.Title)
 	}
 	return out
 }

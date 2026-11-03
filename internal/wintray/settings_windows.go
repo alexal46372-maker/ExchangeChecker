@@ -72,8 +72,6 @@ const (
 	idGenErrDur
 	idGenGap
 	idGenStalled // phase 11 CHK-TRAY-53
-	idGenLang
-	idGenTheme // phase 12 CHK-TRAY-55
 	idGenAutostart
 	idGenNote
 	idGenAutostartErr
@@ -140,7 +138,6 @@ type settingsSession interface {
 
 // settingsConfig configures a settings window.
 type settingsConfig struct {
-	lang     string
 	mode     traysettings.Mode
 	session  settingsSession
 	elevator Elevator
@@ -156,8 +153,6 @@ type settingsConfig struct {
 	// D, CHK-TRAY-40); nil store = not stored
 	uiMode  traysettings.UIMode
 	uiStore UIModeStore
-	// themeStore: light/dark chrome (HKCU Theme, phase 12, CHK-TRAY-55); nil = not stored
-	themeStore ThemeStore
 	// phase 10 E (CHK-TRAY-44): the tray block stores, the file dialog
 	// and the warning box (nil = GetSaveFileNameW / GetOpenFileNameW,
 	// MessageBoxW)
@@ -302,7 +297,7 @@ func (w *settingsWindow) setCue(id int32, text string) {
 // applyFieldCues sets EM_SETCUEBANNER from UIField.CueText (CHK-TRAY-50 note).
 func (w *settingsWindow) applyFieldCues() {
 	for _, f := range traysettings.UIFields {
-		text := f.CueText(w.cfg.lang)
+		text := f.CueText()
 		if text == "" {
 			continue
 		}
@@ -332,7 +327,7 @@ var settingsTips = map[int32]string{
 	idGenBeep: i18n.KeyTipGenBeep, idGenWarnFreq: i18n.KeyTipGenWarnFreq, idGenWarnDur: i18n.KeyTipGenWarnDur,
 	idGenErrFreq: i18n.KeyTipGenErrFreq, idGenErrDur: i18n.KeyTipGenErrDur, idGenGap: i18n.KeyTipGenGap,
 	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
-	idGenLang: i18n.KeyTipGenLang, idGenTheme: i18n.KeyTipGenTheme, idGenAutostart: i18n.KeyTipGenAutostart,
+	idGenAutostart: i18n.KeyTipGenAutostart,
 	// CHK-TRAY-62: General «Звук» section (same tips as soundwin)
 	idSndSave: i18n.KeyTipSoundSave,
 	idSndWarn + idSndBeep: i18n.KeyTipSoundKind, idSndWarn + idSndFile: i18n.KeyTipSoundKind,
@@ -371,8 +366,7 @@ func profText(f *traysettings.Form, id int32) *string {
 }
 
 func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
-	cfg.lang = i18n.Normalize(cfg.lang)
-	w := &settingsWindow{cfg: cfg, ed: traysettings.NewEditor(cfg.lang, cfg.mode), ctl: map[int32]uintptr{},
+	w := &settingsWindow{cfg: cfg, ed: traysettings.NewEditor(cfg.mode), ctl: map[int32]uintptr{},
 		labels: map[int32]uintptr{}, labelText: map[int32]string{}, missing: map[int32]bool{}, groups: map[string]uintptr{}}
 	// no mode given (tests, older callers): every field, as before
 	w.uiMode = traysettings.UIExpert
@@ -382,9 +376,9 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	if w.cfg.elevator == nil {
 		w.cfg.elevator = ShellElevator{}
 	}
-	title := i18n.T(i18n.KeySetTitleRead, cfg.lang)
+	title := i18n.T(i18n.KeySetTitleRead)
 	if cfg.mode == traysettings.Admin {
-		title = i18n.T(i18n.KeySetTitleAdmin, cfg.lang)
+		title = i18n.T(i18n.KeySetTitleAdmin)
 	}
 	class := SettingsViewClass
 	if cfg.mode == traysettings.Admin {
@@ -412,7 +406,7 @@ func newSettingsWindow(cfg settingsConfig) (*settingsWindow, error) {
 	return w, nil
 }
 
-func (w *settingsWindow) t(key string) string { return i18n.T(key, w.cfg.lang) }
+func (w *settingsWindow) t(key string) string { return i18n.T(key) }
 
 func (w *settingsWindow) add(class, text string, ex, style uint32, id, x, y, cw, ch int32) uintptr {
 	x, y, cw, ch = pxRect(x, y, cw, ch)
@@ -667,7 +661,6 @@ func (w *settingsWindow) build() {
 		}
 		gRows = append(gRows, field(w.t(g.key), g.id, "EDIT", edit|winapi.ES_NUMBER, gw))
 	}
-	gRows = append(gRows, field(w.t(i18n.KeyGenLanguage), idGenLang, "COMBOBOX", winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, 260))
 	auto := add("BUTTON", w.t(i18n.KeyGenAutostart), 0, winapi.WS_TABSTOP|winapi.BS_AUTOCHECKBOX|winapi.BS_MULTILINE, idGenAutostart, ui.Box, 260, 34)
 	// a wrapped check box: the page width, not its one-line text (phase 11)
 	auto.Grow, auto.NoShrink = true, true
@@ -693,7 +686,7 @@ func (w *settingsWindow) build() {
 	button := func(id int32, key string, width int32, right bool) {
 		w.add("BUTTON", w.t(key), 0, winapi.WS_TABSTOP, id, 12, 674, width, gridButtonH)
 		bw, _ := ui.Layout(&ui.Ctl{Kind: ui.Button, Text: w.t(key), W: width}, m, 0, 0, 0)
-		width = max32(width, unpx(bw)) // at least its text in this language
+		width = max32(width, unpx(bw)) // at least its text
 		if right {
 			w.barRight = append(w.barRight, barButton{id, width})
 		} else {
@@ -763,9 +756,6 @@ func (w *settingsWindow) build() {
 		if key, ok := settingsTips[id]; ok {
 			w.tips.set(h, w.t(key))
 		}
-	}
-	for _, k := range []string{i18n.KeyGenLangAuto, i18n.KeyGenLangRU, i18n.KeyGenLangEN} {
-		winapi.SendMessageString(w.ctl[idGenLang], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
 	// Theme combo removed from General (CHK-TRAY-61); tray menu in CHK-TRAY-63.
 	for _, h := range w.pageCtl[1] {
@@ -860,10 +850,6 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		}
 	case idGenPoll, idGenWarn, idGenError, idGenStalled:
 		if code == winapi.EN_CHANGE && !w.loading {
-			w.readGeneral()
-		}
-	case idGenLang:
-		if code == winapi.CBN_SELCHANGE && !w.loading {
 			w.readGeneral()
 		}
 	case idGenBeep, idGenAutostart:
@@ -1147,7 +1133,7 @@ func (w *settingsWindow) update() {
 	for _, e := range genEdits {
 		winapi.SendMessage(w.ctl[e.id], winapi.EM_SETREADONLY, boolPtr(!gen), 0)
 	}
-	for _, id := range []int32{idGenBeep, idGenAutostart, idGenLang} {
+	for _, id := range []int32{idGenBeep, idGenAutostart} {
 		winapi.EnableWindow(w.ctl[id], gen)
 	}
 	if ed.Mode == traysettings.Admin {
@@ -1240,7 +1226,7 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldStalledMinutes: idGenStalled,
 	traysettings.FieldBeepEnabled:    idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
 	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
-	traysettings.FieldLanguage: idGenLang, traysettings.FieldAutostart: idGenAutostart,
+	traysettings.FieldAutostart: idGenAutostart,
 	traysettings.FieldDiscoverButton: idSetDiscover, // mapping.* / mappings[i].*
 	traysettings.FieldPreset:         idSetPreset, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
 	traysettings.FieldProfStalled: idSetStalled,
@@ -1358,9 +1344,6 @@ func (w *settingsWindow) readGeneral() {
 		*genText(g, e.id) = w.text(e.id)
 	}
 	g.BeepEnabled, g.Autostart = w.check(idGenBeep), w.check(idGenAutostart)
-	if i := int(winapi.SendMessage(w.ctl[idGenLang], winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(traysettings.LanguageChoices) {
-		g.Language = traysettings.LanguageChoices[i]
-	}
 }
 
 // fillGeneral shows the general page of the editor.
@@ -1373,11 +1356,6 @@ func (w *settingsWindow) fillGeneral() {
 	}
 	w.setCheck(idGenBeep, g.BeepEnabled)
 	w.setCheck(idGenAutostart, g.Autostart)
-	lang := traysettings.LanguageIndex(g.Language)
-	if !w.ed.HasSettings {
-		lang = -1
-	}
-	winapi.SendMessage(w.ctl[idGenLang], winapi.CB_SETCURSEL, uintptr(lang), 0)
 }
 
 // saveSettings sends save_settings of the general page.
@@ -1436,7 +1414,7 @@ func (w *settingsWindow) autostartError() string {
 	if !st.Has(model.CapTrayAutostartStatus) {
 		return ""
 	}
-	return traysettings.AutostartErrorText(st.TrayAutostartError, w.cfg.lang)
+	return traysettings.AutostartErrorText(st.TrayAutostartError)
 }
 
 // listIndex is the list row of the edited profile (-1 = none).
@@ -1648,7 +1626,7 @@ func (w *settingsWindow) testDiagnosis(m model.IPCMessage, text string) {
 	}
 	detail := "" // TestText / Reply already show the technical error
 	show := func(d *model.SQLDiagnosis) {
-		w.setStatus(text + "\r\n" + traysettings.ErrorText(code, d, detail, w.cfg.lang))
+		w.setStatus(text + "\r\n" + traysettings.ErrorText(code, d, detail))
 	}
 	if w.cfg.mode != traysettings.Admin || !w.cfg.session.Supported(model.CmdSQLDiagnose) {
 		show(nil)
@@ -1903,17 +1881,14 @@ func (w *settingsWindow) close() {
 // SettingsOptions configure the elevated settings process (exchtray
 // --settings).
 type SettingsOptions struct {
-	Lang string
 	// Session: Dial and Verify (G7: the pipe server PID is checked
 	// before any command, so no password goes to a foreign process).
 	Session trayipc.Options
 	// UIModeStore: «Простой» / «Экспертный» (HKCU; nil = every field).
 	UIModeStore UIModeStore
 	// tray block of export / import (phase 10 E; HKCU, nil = not stored)
-	LangStore    LangStore
 	BalloonStore BalloonStore
 	SoundStore   SoundStore
-	ThemeStore   ThemeStore // phase 12 CHK-TRAY-55
 	// OwnerSID: the user SID of the tray that started the elevated window
 	// (--owner-sid=; "" = unknown, treated as the same user)
 	OwnerSID string
@@ -1966,10 +1941,9 @@ func RunSettings(opt SettingsOptions) int {
 		}
 	}
 	s := trayipc.New(so)
-	LoadTheme(opt.ThemeStore)
-	w, err = newSettingsWindow(settingsConfig{lang: opt.Lang, mode: traysettings.Admin, session: s,
-		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore, themeStore: opt.ThemeStore,
-		stores:    trayStores{Lang: opt.LangStore, Balloon: opt.BalloonStore, Sound: opt.SoundStore},
+	w, err = newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: s,
+		uiMode: loadUIMode(opt.UIModeStore), uiStore: opt.UIModeStore,
+		stores:    trayStores{Balloon: opt.BalloonStore, Sound: opt.SoundStore},
 		otherUser: OtherUser(opt.OwnerSID, CurrentUserSID()),
 		onSoundSave: func(p trayalert.SoundPrefs) error {
 			if opt.SoundStore == nil {

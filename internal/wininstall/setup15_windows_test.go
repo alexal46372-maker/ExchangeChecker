@@ -19,12 +19,12 @@ import (
 // growth rule (hh = max(FolderHintMinH, need+4)) must still fit. EN is not
 // required.
 func TestCHK_SETUP_15_FolderHintFits(t *testing.T) {
-	text := T("ru", "setup.folder.upgrade")
+	text := T("setup.folder.upgrade")
 	if text == "" || text == "setup.folder.upgrade" {
 		t.Fatal("missing Russian setup.folder.upgrade")
 	}
 
-	st := NewWizardState("ru", "1.1.0", ModeUpgrade, "1.0.0", `C:\Program Files\Exchange Checker`, true, `C:\ProgramData\ExchangeChecker`, false)
+	st := NewWizardState("1.1.0", ModeUpgrade, "1.0.0", `C:\Program Files\Exchange Checker`, true, `C:\ProgramData\ExchangeChecker`, false)
 	done := make(chan struct{})
 	go func() {
 		_, _ = RunWizard(WizardConfig{State: st, LogPath: `C:\x.log`, NoCancelConfirm: true,

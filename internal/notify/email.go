@@ -31,7 +31,6 @@ type SMTPDialer func(ctx context.Context, network, address string) (net.Conn, er
 type EmailOptions struct {
 	Store EmailPasswordStore
 	Dial  SMTPDialer // nil = net.Dialer{Timeout:15s}.DialContext
-	Lang  string
 	Log   Logger
 	Now   func() time.Time
 	Loc   *time.Location
@@ -173,7 +172,7 @@ func (n *EmailNotifier) Alert(e model.AlertEvent) {
 		n.status.Dropped++
 		return
 	}
-	subj, body := EmailSubjectBody(e, n.o.Lang)
+	subj, body := EmailSubjectBody(e)
 	for _, r := range n.settings.Recipients {
 		if len(n.queue) >= MaxQueue {
 			n.status.Dropped++
@@ -185,13 +184,9 @@ func (n *EmailNotifier) Alert(e model.AlertEvent) {
 }
 
 // EmailSubjectBody renders an alert for email (localized, no raw SQL).
-func EmailSubjectBody(e model.AlertEvent, lang string) (subject, body string) {
-	body = EventText(e, lang)
-	if lang == model.LangEN {
-		subject = "ExchangeChecker: " + e.Kind
-	} else {
-		subject = "ExchangeChecker: " + e.Kind
-	}
+func EmailSubjectBody(e model.AlertEvent) (subject, body string) {
+	body = EventText(e)
+	subject = "ExchangeChecker: " + e.Kind
 	return subject, body
 }
 
@@ -462,9 +457,6 @@ func (n *EmailNotifier) EmailTest(ctx context.Context, recipientID, addr, smtpPa
 
 	subj := "ExchangeChecker: test"
 	body := "ExchangeChecker: тестовое сообщение"
-	if n.o.Lang == model.LangEN {
-		body = "ExchangeChecker: test message"
-	}
 	res := model.EmailTestResult{OK: true, Results: []model.EmailTestItem{}}
 	for _, t := range targets {
 		if ctx.Err() != nil {

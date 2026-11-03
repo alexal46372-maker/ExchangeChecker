@@ -18,9 +18,9 @@ const (
 // Options is the parsed command line.
 //
 // Install: [/S] [/DIR=<folder>] [/NOSTART] [/NOSHORTCUT] [/NODESKTOPSHORTCUT]
-// [/LOG=<file>] [/ALLOWDOWNGRADE] [/LANG=ru|en]. Uninstall: /uninstall [/S] [/PURGEDATA]
-// [/LOG=<file>] [/LANG=ru|en]. Switches are case-insensitive; "-" works
-// like "/".
+// [/LOG=<file>] [/ALLOWDOWNGRADE]. Uninstall: /uninstall [/S] [/PURGEDATA]
+// [/LOG=<file>]. /LANG=xx of old scripts is ignored (Russian only, CHK-TRAY-86).
+// Switches are case-insensitive; "-" works like "/".
 type Options struct {
 	Silent            bool
 	Uninstall         bool
@@ -31,7 +31,6 @@ type Options struct {
 	Log               string
 	AllowDowngrade    bool
 	PurgeData         bool
-	Lang              string // "", "ru", "en"
 }
 
 // ErrUsage: an unknown or malformed switch.
@@ -83,11 +82,8 @@ func ParseArgs(args []string) (Options, error) {
 		case "LOG":
 			o.Log, err = needVal()
 		case "LANG":
-			o.Lang, err = needVal()
-			o.Lang = strings.ToLower(o.Lang)
-			if err == nil && o.Lang != "ru" && o.Lang != "en" {
-				err = fmt.Errorf("%w: /LANG=%s (ru or en)", ErrUsage, o.Lang)
-			}
+			// phase 13 (CHK-TRAY-86): Russian only; /LANG=xx accepted and ignored.
+			_, err = needVal()
 		default:
 			err = fmt.Errorf("%w: unknown switch /%s", ErrUsage, name)
 		}

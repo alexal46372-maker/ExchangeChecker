@@ -56,7 +56,7 @@ func TestCHK_CFG_03_BeepEnabledFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		st, err := s.LoadSettings()
-		if err != nil || st.Beep.Enabled != model.OptTrue || st.Language != model.LangRU {
+		if err != nil || st.Beep.Enabled != model.OptTrue {
 			t.Fatalf("%s: %+v %v", name, st, err)
 		}
 	}

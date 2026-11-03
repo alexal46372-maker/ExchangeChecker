@@ -114,7 +114,6 @@ func TestCHK_CFG_01_SettingsRoundtrip(t *testing.T) {
 	st.ErrorMinutes = 45
 	st.Beep.WarningFreqHz = 1000
 	st.Beep.GapMs = 0
-	st.Language = model.LangEN
 	st.TrayAutostart = false
 	if err := s.SaveSettings(st); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
@@ -299,18 +298,41 @@ func TestCHK_CFG_01_SecretsErrors(t *testing.T) {
 	}
 }
 
-func TestCHK_CFG_01_EffectiveLanguage(t *testing.T) {
-	st := model.DefaultSettings()
-	st.Language = model.LangEN
-	if got := EffectiveLanguage(st); got != "en" {
-		t.Errorf("explicit en -> %q", got)
-	}
-	st.Language = model.LangRU
-	if got := EffectiveLanguage(st); got != "ru" {
-		t.Errorf("explicit ru -> %q", got)
-	}
-	st.Language = model.LangAuto
-	if got := EffectiveLanguage(st); got != "ru" && got != "en" {
-		t.Errorf("auto -> %q", got)
+// TestCHK_TRAY_86_OldLanguageFieldIgnored — phase 13: the product is
+// Russian only. A settings.json written by an older version with
+// "language" (and the legacy "lang") loads without an error through the
+// real LoadSettings, every other field is read, and the next SaveSettings
+// writes no language field at all.
+func TestCHK_TRAY_86_OldLanguageFieldIgnored(t *testing.T) {
+	for _, field := range []string{`"language":"en"`, `"language":"ru"`, `"language":""`, `"lang":"en"`, `"language":"de","lang":"en"`} {
+		s := NewStore(t.TempDir())
+		body := `{"version":1,"pollIntervalSec":90,"warnMinutes":20,"errorMinutes":50,` +
+			`"beep":{"warningFreqHz":800,"warningDurMs":300,"errorFreqHz":1500,"errorDurMs":500,"gapMs":700},` + field + `,"trayAutostart":false}`
+		if err := os.WriteFile(s.Path(SettingsFile), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		st, err := s.LoadSettings()
+		if err != nil {
+			t.Fatalf("%s: LoadSettings: %v", field, err)
+		}
+		if st.PollIntervalSec != 90 || st.WarnMinutes != 20 || st.ErrorMinutes != 50 || st.TrayAutostart {
+			t.Fatalf("%s: fields not read: %+v", field, st)
+		}
+		if err := st.Validate(); err != nil {
+			t.Fatalf("%s: Validate: %v", field, err)
+		}
+		if err := s.SaveSettings(st); err != nil {
+			t.Fatalf("%s: SaveSettings: %v", field, err)
+		}
+		raw, err := os.ReadFile(s.Path(SettingsFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(raw), `"language"`) || strings.Contains(string(raw), `"lang"`) {
+			t.Fatalf("%s: saved file still has a language field: %s", field, raw)
+		}
+		if back, err := s.LoadSettings(); err != nil || back.PollIntervalSec != 90 {
+			t.Fatalf("%s: reload %+v %v", field, back, err)
+		}
 	}
 }

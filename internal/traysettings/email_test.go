@@ -2,6 +2,7 @@ package traysettings
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ func emailEditor(t *testing.T, hasPassword bool, tlsMode string) *Editor {
 	s.Email.Port = 587
 	s.Email.From = "mon@example.com"
 	s.Email.Recipients = []model.EmailRecipient{{ID: "ops", Addr: "ops@example.com", Name: "Дежурный"}}
-	e := NewEditor(i18n.RU, Admin)
+	e := NewEditor(Admin)
 	e.LoadConfig(model.ConfigView{Settings: s}, "r1")
 	if !e.CanEditEmail() || e.EmailUnsaved() {
 		t.Fatal("email page not loaded")
@@ -68,7 +69,7 @@ func TestCHK_TRAY_64_EmailForm(t *testing.T) {
 		t.Error("clearSmtpPassword")
 	}
 	e.EmailDone(model.IPCMessage{Type: model.MsgOK}, req)
-	if e.Settings.Email.HasPassword || e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNone, i18n.RU) {
+	if e.Settings.Email.HasPassword || e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNone) {
 		t.Error("password cleared")
 	}
 
@@ -80,7 +81,7 @@ func TestCHK_TRAY_64_EmailForm(t *testing.T) {
 	if pr != nil || req.SmtpPassword != "" || req.ClearSmtpPassword {
 		t.Fatalf("none mode must ignore password: %+v %v", req, pr)
 	}
-	if e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNoneTLS, i18n.RU) {
+	if e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNoneTLS) {
 		t.Errorf("none state %q", e.PasswordStateText())
 	}
 
@@ -123,9 +124,9 @@ func TestCHK_TRAY_64_EmailForm(t *testing.T) {
 	for _, k := range []string{model.MsgEmailNoPassword, model.MsgEmailNoRecipients, model.MsgEmailNoHost, model.MsgEmailNoFrom,
 		model.MsgEmailAuthFailed, model.MsgEmailInvalidAddr, model.MsgEmailNetwork, model.MsgEmailTLS, model.MsgEmailFailed,
 		model.MsgEmailInvalid, model.MsgEmailRateLimited} {
-		ru, en := i18n.Message(k, i18n.RU), i18n.Message(k, i18n.EN)
-		if ru == "" || en == "" || ru == en || strings.Contains(ru, k) {
-			t.Errorf("%s: %q / %q", k, ru, en)
+		ru := i18n.Message(k)
+		if ru == "" || strings.Contains(ru, k) {
+			t.Errorf("%s: %q", k, ru)
 		}
 	}
 }
@@ -155,8 +156,8 @@ func TestCHK_TRAY_64_EmailTest(t *testing.T) {
 	txt := e.EmailTestText(&model.EmailTestResult{OK: false, Results: []model.EmailTestItem{
 		{ID: "ops", Addr: "ops@example.com", OK: true},
 		{ID: "zz", Addr: "zz@x.com", ErrorKey: model.MsgEmailInvalidAddr}}})
-	if !strings.Contains(txt, "Дежурный (ops)") || !strings.Contains(txt, i18n.Message(model.MsgEmailInvalidAddr, i18n.RU)) ||
-		!strings.HasPrefix(txt, i18n.T(i18n.KeyEmTestFailed, i18n.RU)) {
+	if !strings.Contains(txt, "Дежурный (ops)") || !strings.Contains(txt, i18n.Message(model.MsgEmailInvalidAddr)) ||
+		!strings.HasPrefix(txt, i18n.T(i18n.KeyEmTestFailed)) {
 		t.Errorf("result text %q", txt)
 	}
 	if e.EmailTestText(nil) == "" {
@@ -167,7 +168,7 @@ func TestCHK_TRAY_64_EmailTest(t *testing.T) {
 		m.EmailTest == nil || !m.EmailTest.OK || len(m.EmailTest.Results) != 1 {
 		t.Errorf("emailTest JSON %+v %v", m, err)
 	}
-	if EmailStatusText(&model.EmailSettings{Status: &model.ViberStatus{Sent: 3, Queued: 1}}, i18n.EN) != "Sent: 3, queued: 1, dropped: 0" {
+	if EmailStatusText(&model.EmailSettings{Status: &model.ViberStatus{Sent: 3, Queued: 1}}) != "Отправлено: 3, в очереди: 1, отброшено: 0" {
 		t.Error("status text")
 	}
 }
@@ -194,7 +195,7 @@ func TestCHK_TRAY_64_EmailExportFlags(t *testing.T) {
 	if !strings.Contains(string(b), `"includeEmailRecipients":true`) || er.Cmd != model.CmdExportConfig {
 		t.Errorf("export request %s", b)
 	}
-	f, err := ParseImport(raw, i18n.RU)
+	f, err := ParseImport(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,5 +207,84 @@ func TestCHK_TRAY_64_EmailExportFlags(t *testing.T) {
 	ir0 := ImportRequest(f, model.ImportMerge, true, "r1", false, false)
 	if ir0.IncludeEmailRecipients || (ir0.Config.Settings != nil && ir0.Config.Settings.Email != nil) {
 		t.Errorf("import without email must strip: %+v", ir0.Config.Settings)
+	}
+}
+
+// TestCHK_TRAY_87_ParseRecipients — the recipients box (phase 13): a bare
+// address gets a generated id; commas, semicolons, spaces and new lines
+// separate addresses; ids never contain a separator, are unique and pass
+// model.ValidEmailID; "id addr name" keeps working; a wrong address is a
+// Russian text naming it.
+func TestCHK_TRAY_87_ParseRecipients(t *testing.T) {
+	type r = model.EmailRecipient
+	cases := []struct {
+		in   string
+		want []r
+	}{
+		{"alex@mail.ru", []r{{ID: "alex", Addr: "alex@mail.ru"}}},
+		{"a@b.ru;c@d.ru", []r{{ID: "a", Addr: "a@b.ru"}, {ID: "c", Addr: "c@d.ru"}}},
+		{"a@b.ru, c@d.ru", []r{{ID: "a", Addr: "a@b.ru"}, {ID: "c", Addr: "c@d.ru"}}},
+		{"a@b.ru c@d.ru", []r{{ID: "a", Addr: "a@b.ru"}, {ID: "c", Addr: "c@d.ru"}}},
+		{"a@b.ru\r\nc@d.ru\n\n", []r{{ID: "a", Addr: "a@b.ru"}, {ID: "c", Addr: "c@d.ru"}}},
+		{" a@b.ru ;; , c@d.ru; ", []r{{ID: "a", Addr: "a@b.ru"}, {ID: "c", Addr: "c@d.ru"}}},
+		{"ops ops@example.com Дежурный инженер", []r{{ID: "ops", Addr: "ops@example.com", Name: "Дежурный инженер"}}},
+		{"ops ops@example.com\r\nalex@mail.ru", []r{{ID: "ops", Addr: "ops@example.com"}, {ID: "alex", Addr: "alex@mail.ru"}}},
+		// same local part: deduplicated, also against an explicit id
+		{"info@a.ru, info@b.ru", []r{{ID: "info", Addr: "info@a.ru"}, {ID: "info-2", Addr: "info@b.ru"}}},
+		{"info@a.ru\ninfo x@y.ru", []r{{ID: "info-2", Addr: "info@a.ru"}, {ID: "info", Addr: "x@y.ru"}}},
+		{"Ivan.Petrov+mon@Mail.ru", []r{{ID: "ivan.petrov-mon", Addr: "Ivan.Petrov+mon@Mail.ru"}}},
+		{"", []r{}},
+	}
+	for _, c := range cases {
+		got, fe := ParseEmailRecipients(c.in)
+		if fe != nil {
+			t.Errorf("%q: %+v", c.in, fe)
+			continue
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%q: got %+v want %+v", c.in, got, c.want)
+		}
+		ids := map[string]bool{}
+		for _, x := range got {
+			if strings.ContainsAny(x.ID, ",; ") || !model.ValidEmailID(x.ID) || ids[x.ID] {
+				t.Errorf("%q: bad id %q", c.in, x.ID)
+			}
+			ids[x.ID] = true
+		}
+		// the saved list re-renders and re-parses to the same recipients
+		e := model.DefaultEmailSettings()
+		e.Recipients = got
+		back, fe := ParseEmailRecipients(FromEmail(e).Recipients)
+		if fe != nil || !reflect.DeepEqual(back, got) {
+			t.Errorf("%q: round trip %+v %v", c.in, back, fe)
+		}
+	}
+	if s := FromEmail(model.EmailSettings{Recipients: []model.EmailRecipient{{ID: "alex", Addr: "alex@mail.ru"}}}).Recipients; s != "alex@mail.ru" {
+		t.Errorf("bare render %q", s)
+	}
+	// ids from non-ASCII / empty local parts
+	for addr, want := range map[string]string{"иван@почта.рф": "mail", "a,b@c.ru": "a-b", "x;y@c.ru": "x-y"} {
+		if id := EmailIDFromAddr(addr); id != want || !model.ValidEmailID(id) {
+			t.Errorf("EmailIDFromAddr(%q) = %q, want %q", addr, id, want)
+		}
+	}
+	// invalid addresses: an error naming the address, in Russian, through
+	// the real EmailRequest of the editor
+	for _, bad := range []string{"alex", "alex@", "@mail.ru", "a@b.ru, мусор", "a@b.ru Иван"} {
+		if _, fe := ParseEmailRecipients(bad); fe == nil || !strings.HasPrefix(fe.Field, "email.recipients[") {
+			t.Errorf("%q accepted: %+v", bad, fe)
+		}
+		ed := NewEditor(Admin)
+		s := model.DefaultSettings()
+		ed.LoadConfig(model.ConfigView{Settings: s}, "rev1")
+		ed.Email.Recipients = bad
+		_, pr := ed.EmailRequest()
+		if pr == nil || pr.Field != FieldEmailRecipients || !strings.Contains(pr.Text, "Неверный адрес e-mail получателя") {
+			t.Fatalf("%q: problem %+v", bad, pr)
+		}
+		word := strings.Fields(strings.NewReplacer(",", " ", ";", " ").Replace(bad))
+		if last := word[len(word)-1]; !strings.Contains(pr.Text, "«"+last+"»") {
+			t.Errorf("%q: text %q does not name %q", bad, pr.Text, last)
+		}
 	}
 }

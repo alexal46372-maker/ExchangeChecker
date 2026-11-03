@@ -21,7 +21,7 @@ func TestCHK_SETUP_15_FolderHintLayout(t *testing.T) {
 	if hh < FolderHintMinH {
 		t.Fatalf("hint min height %d", hh)
 	}
-	ru := CatalogKeys("ru")
+	ru := CatalogKeys()
 	title := ru["setup.folder.label"]
 	if title != "Выбор папки установки" {
 		t.Fatalf("folder title %q", title)

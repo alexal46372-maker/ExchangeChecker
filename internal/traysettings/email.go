@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -25,7 +26,8 @@ type EmailForm struct {
 	Port    string
 	TLSMode string // none | starttls | tls
 	From    string
-	// Recipients: one per line, "id addr name" (id/addr have no spaces).
+	// Recipients: addresses separated by commas, semicolons, spaces or
+	// new lines; a line "id addr name" keeps its id and name.
 	Recipients string
 	Days       [7]bool
 	FromTime, ToTime string
@@ -51,8 +53,15 @@ func FromEmail(e model.EmailSettings) EmailForm {
 	}
 	var lines []string
 	for _, r := range e.Recipients {
+		// an id derived from the address and no name: just the address
+		// (re-parsing gives the same id); otherwise "id addr name"
+		n := strings.TrimSpace(r.Name)
+		if n == "" && r.ID == EmailIDFromAddr(r.Addr) {
+			lines = append(lines, r.Addr)
+			continue
+		}
 		line := strings.TrimSpace(r.ID + " " + r.Addr)
-		if n := strings.TrimSpace(r.Name); n != "" {
+		if n != "" {
 			line += " " + n
 		}
 		lines = append(lines, line)
@@ -69,36 +78,100 @@ func FromEmail(e model.EmailSettings) EmailForm {
 	return f
 }
 
-// ParseEmailRecipients reads the recipients box: "id addr name" per line.
+// ParseEmailRecipients reads the recipients box (phase 13, CHK-TRAY-87):
+// a plain list of addresses separated by commas, semicolons, spaces or
+// new lines ("a@b.ru, c@d.ru"); every address gets an id derived from
+// its local part (EmailIDFromAddr, deduplicated, never with a separator).
+// A line "id addr name" (the old format: the first word is not an
+// address, the second is) keeps its id and name. An invalid address is
+// an error of email.recipients[i].addr with the address as Args[0]
+// (shown by EmailRequest as a Russian text naming it).
 func ParseEmailRecipients(text string) ([]model.EmailRecipient, *model.FieldError) {
 	out := []model.EmailRecipient{}
+	type entry struct{ id, addr, name string }
+	var entries []entry
+	used := map[string]bool{}
 	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		parts := strings.Fields(line)
-		path := "email.recipients[" + strconv.Itoa(len(out)) + "]"
-		if len(parts) < 2 {
-			return out, fieldErr(path+".addr", model.ValRequired)
+		words := strings.Fields(line)
+		if !strings.ContainsAny(line, ",;") && len(words) >= 2 && !looksLikeAddr(words[0]) && looksLikeAddr(words[1]) {
+			// old format "id addr name"
+			path := "email.recipients[" + strconv.Itoa(len(entries)) + "]"
+			if !model.ValidEmailID(words[0]) {
+				return out, fieldErr(path+".id", model.ValRequired)
+			}
+			name := strings.Join(words[2:], " ")
+			if len([]rune(name)) > model.EmailMaxNameLen {
+				return out, fieldErr(path+".name", model.ValTooLong, strconv.Itoa(model.EmailMaxNameLen))
+			}
+			entries = append(entries, entry{id: words[0], addr: words[1], name: name})
+			used[words[0]] = true
+			continue
 		}
-		id, addr := parts[0], parts[1]
-		name := ""
-		if len(parts) > 2 {
-			name = strings.Join(parts[2:], " ")
+		for _, a := range strings.FieldsFunc(line, func(r rune) bool { return r == ',' || r == ';' || unicode.IsSpace(r) }) {
+			entries = append(entries, entry{addr: a})
 		}
-		if !model.ValidEmailID(id) {
-			return out, fieldErr(path+".id", model.ValRequired)
+	}
+	for i, en := range entries {
+		path := "email.recipients[" + strconv.Itoa(i) + "]"
+		if !model.ValidEmailAddr(en.addr) || !looksLikeAddr(en.addr) {
+			return out, fieldErr(path+".addr", model.ValRequired, en.addr)
 		}
-		if !model.ValidEmailAddr(addr) {
-			return out, fieldErr(path+".addr", model.ValRequired)
+		if en.id == "" {
+			base := EmailIDFromAddr(en.addr)
+			id := base
+			for n := 2; used[id]; n++ {
+				suf := "-" + strconv.Itoa(n)
+				b := base
+				if len(b)+len(suf) > model.ViberMaxIDLen {
+					b = b[:model.ViberMaxIDLen-len(suf)]
+				}
+				id = b + suf
+			}
+			en.id = id
 		}
-		if len([]rune(name)) > model.EmailMaxNameLen {
-			return out, fieldErr(path+".name", model.ValTooLong, strconv.Itoa(model.EmailMaxNameLen))
-		}
-		out = append(out, model.EmailRecipient{ID: id, Addr: addr, Name: name})
+		used[en.id] = true
+		out = append(out, model.EmailRecipient{ID: en.id, Addr: en.addr, Name: en.name})
 	}
 	return out, nil
+}
+
+// looksLikeAddr: a bare mailbox "local@domain" (no display name, no
+// separators); model.ValidEmailAddr checks the syntax.
+func looksLikeAddr(s string) bool {
+	at := strings.LastIndexByte(s, '@')
+	return at > 0 && at < len(s)-1 && !strings.ContainsAny(s, ",;<>\" \t")
+}
+
+// EmailIDFromAddr is the recipient id derived from an address: the local
+// part lower-cased, only [a-z0-9._-] (other characters become "-"),
+// at most model.ViberMaxIDLen bytes; "mail" when nothing is left. It
+// always passes model.ValidEmailID and never contains ',' or ';'.
+func EmailIDFromAddr(addr string) string {
+	local := addr
+	if at := strings.LastIndexByte(addr, '@'); at >= 0 {
+		local = addr[:at]
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(local) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	id := strings.Trim(b.String(), "-.")
+	if len(id) > model.ViberMaxIDLen {
+		id = id[:model.ViberMaxIDLen]
+	}
+	if id == "" {
+		id = "mail"
+	}
+	return id
 }
 
 // Apply returns base with the page applied and validated (model rules).
@@ -196,7 +269,7 @@ var emailKeyFocus = map[string]Field{
 func IsEmail(f Field) bool { return strings.HasPrefix(string(f), "email.") }
 
 // emailFieldLabel is the label of an email path in validation texts.
-func emailFieldLabel(path, lang string) (string, bool) {
+func emailFieldLabel(path string) (string, bool) {
 	f, ok := EmailFocus(path)
 	if !ok {
 		return "", false
@@ -208,7 +281,7 @@ func emailFieldLabel(path, lang string) (string, bool) {
 		FieldEmailDays: i18n.KeyEmDays, FieldEmailSchedFrom: i18n.KeyEmFrom,
 		FieldEmailSchedTo: i18n.KeyEmTo, FieldEmailEvents: i18n.KeyEmEvents,
 	}[f]
-	l := strings.TrimSuffix(strings.TrimSpace(i18n.T(key, lang)), ":")
+	l := strings.TrimSuffix(strings.TrimSpace(i18n.T(key)), ":")
 	if i := strings.Index(path, "["); i >= 0 && f == FieldEmailRecipients {
 		if n, err := strconv.Atoi(strings.TrimSuffix(strings.SplitN(path[i+1:], "]", 2)[0], "]")); err == nil {
 			l += fmt.Sprintf(" (%d)", n+1)
@@ -241,6 +314,14 @@ func (e *Editor) EmailRequest() (model.IPCRequest, *Problem) {
 	e.settingsCtx = true
 	em, fe := e.Email.Apply(*e.Settings.Email)
 	if fe != nil {
+		if strings.HasPrefix(fe.Field, "email.recipients[") && strings.HasSuffix(fe.Field, ".addr") {
+			// CHK-TRAY-87: a clear text naming the wrong address
+			bad := ""
+			if len(fe.Args) > 0 {
+				bad = fe.Args[0]
+			}
+			return model.IPCRequest{}, &Problem{Text: fmt.Sprintf(e.t(i18n.KeyEmBadAddr), bad), Field: FieldEmailRecipients}
+		}
 		return model.IPCRequest{}, e.fieldProblem(fe)
 	}
 	// tlsMode none: never send / clear password (AUTH off).
@@ -253,7 +334,7 @@ func (e *Editor) EmailRequest() (model.IPCRequest, *Problem) {
 			has = false
 		}
 		if e.Email.Password == "" && !has && !e.Email.ClearPassword {
-			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword, e.Lang), Field: FieldEmailPassword}
+			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword), Field: FieldEmailPassword}
 		}
 	}
 	s := e.Settings
@@ -311,7 +392,7 @@ func (e *Editor) EmailTestRequest(recipientID, addr string) (model.IPCRequest, *
 			return model.IPCRequest{}, e.fieldProblem(fieldErr("smtpPassword", model.ValRequired))
 		}
 		if pw == "" && (e.Settings.Email == nil || !e.Settings.Email.HasPassword) {
-			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword, e.Lang), Field: FieldEmailPassword}
+			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword), Field: FieldEmailPassword}
 		}
 	} else {
 		pw = "" // none: never AUTH
@@ -351,9 +432,9 @@ func (e *Editor) EmailTestText(r *model.EmailTestResult) string {
 		}
 		res := e.t(i18n.KeyEmTestItemOK)
 		if !it.OK {
-			res = i18n.Message(it.ErrorKey, e.Lang)
+			res = i18n.Message(it.ErrorKey)
 			if it.ErrorKey == "" {
-				res = i18n.Message(model.MsgEmailFailed, e.Lang)
+				res = i18n.Message(model.MsgEmailFailed)
 			}
 		}
 		lines = append(lines, who+": "+res)
@@ -362,18 +443,18 @@ func (e *Editor) EmailTestText(r *model.EmailTestResult) string {
 }
 
 // EmailStatusText renders settings.email.status.
-func EmailStatusText(e *model.EmailSettings, lang string) string {
+func EmailStatusText(e *model.EmailSettings) string {
 	if e == nil || e.Status == nil {
 		return ""
 	}
 	st := e.Status
-	t := fmt.Sprintf(i18n.T(i18n.KeyEmStatus, lang), st.Sent, st.Queued, st.Dropped)
+	t := fmt.Sprintf(i18n.T(i18n.KeyEmStatus), st.Sent, st.Queued, st.Dropped)
 	if st.LastOKAt != nil {
-		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastOK, lang), st.LastOKAt.Local().Format("02.01.2006 15:04"))
+		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastOK), st.LastOKAt.Local().Format("02.01.2006 15:04"))
 	}
 	if st.LastErrorAt != nil {
-		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastError, lang), st.LastErrorAt.Local().Format("02.01.2006 15:04"),
-			strings.TrimSuffix(i18n.Message(st.LastErrorKey, lang), "."))
+		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastError), st.LastErrorAt.Local().Format("02.01.2006 15:04"),
+			strings.TrimSuffix(i18n.Message(st.LastErrorKey), "."))
 	}
 	return t
 }

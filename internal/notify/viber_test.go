@@ -103,7 +103,7 @@ func newN(t *testing.T, f *fakeViber, ck *clock, enabled bool) (*Notifier, *memS
 	if enabled {
 		st.tok = "tok-1"
 	}
-	n := New(Options{Store: st, Client: f.client(), URL: f.srv.URL + "/pa/send_message", Lang: model.LangRU, Now: ck.now, Loc: loc})
+	n := New(Options{Store: st, Client: f.client(), URL: f.srv.URL + "/pa/send_message", Now: ck.now, Loc: loc})
 	return n, st
 }
 
@@ -363,7 +363,7 @@ func TestCHK_SVC_06_SummaryStateAndReadyCap(t *testing.T) {
 	dir := t.TempDir()
 	ck := &clock{t: at(10, 0)}
 	mk := func() *Notifier {
-		n := New(Options{Store: &memStore{tok: "t"}, Client: f.client(), URL: f.srv.URL + "/pa/send_message", Lang: model.LangRU,
+		n := New(Options{Store: &memStore{tok: "t"}, Client: f.client(), URL: f.srv.URL + "/pa/send_message",
 			Now: ck.now, Loc: loc, StateDir: dir})
 		return n
 	}
@@ -475,8 +475,8 @@ func TestCHK_SVC_06_NoRawErrorText(t *testing.T) {
 	if len(got) != 8 {
 		t.Fatalf("sent %d", len(got))
 	}
-	known := model.SQLMessage(model.MsgSQLTLSCertificate, model.LangRU)
-	unknown := model.MonitorMessage(model.MsgViberErrorUnknown, model.LangRU)
+	known := model.SQLMessage(model.MsgSQLTLSCertificate)
+	unknown := model.MonitorMessage(model.MsgViberErrorUnknown)
 	for _, m := range got {
 		if strings.Contains(m.Text, "RAW-SQL") || strings.Contains(m.Text, "Login failed") {
 			t.Fatalf("raw error text sent: %q", m.Text)
@@ -485,10 +485,6 @@ func TestCHK_SVC_06_NoRawErrorText(t *testing.T) {
 	if known == "" || unknown == "" || !strings.Contains(got[0].Text, known) || !strings.Contains(got[2].Text, unknown) ||
 		!strings.Contains(got[4].Text, known) || !strings.Contains(got[4].Text, unknown) || !strings.Contains(got[6].Text, known) {
 		t.Fatalf("texts %q", []string{got[0].Text, got[2].Text, got[4].Text, got[6].Text})
-	}
-	if en := EventText(model.AlertEvent{ProfileName: "X", From: model.LevelOK, To: model.LevelError, Error: raw}, model.LangEN); strings.Contains(en, "RAW") ||
-		!strings.Contains(en, "connection or query error") {
-		t.Fatalf("en %q", en)
 	}
 }
 

@@ -39,7 +39,6 @@ type alertWindow struct {
 	level                    model.AlertLevel
 	shown                    bool
 	raised                   int // bring-to-front requests (tests)
-	lang                     string
 	onAck, onClose           func()
 	onMute                   func()
 	style                    uint32 // window style (tests: only Minimize / Close)
@@ -50,9 +49,9 @@ type alertWindow struct {
 // layout places the controls (phase 11, CHK-TRAY-45): icon | text and
 // status, the hint, «Звук» on the left, «Подтвердить» / «Закрыть» right.
 // The text and the status are dynamic: fixed boxes; the buttons are as
-// wide as their longest text in this language.
+// wide as their longest text.
 func (aw *alertWindow) layout() {
-	mute := uiCtl(aw.mute, ui.Button, longest(i18n.T(i18n.KeyAlertMute, aw.lang), i18n.T(i18n.KeyAlertUnmute, aw.lang)))
+	mute := uiCtl(aw.mute, ui.Button, longest(i18n.T(i18n.KeyAlertMute), i18n.T(i18n.KeyAlertUnmute)))
 	root := &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: []ui.Node{
 		&ui.Row{Align: ui.Top, Gap: ui.P16, Grow: true, Items: []ui.Node{
 			&ui.Ctl{H: aw.icon, Kind: ui.Box, W: 32, Hgt: 32},
@@ -67,7 +66,7 @@ func (aw *alertWindow) layout() {
 		&ui.Row{Grow: true, Items: []ui.Node{mute, &ui.Row{Right: true, Items: []ui.Node{
 			uiCtl(aw.ack, ui.Button, ""), uiCtl(aw.close, ui.Button, "")}}}},
 	}}}
-	// a relayout (language change, new text) keeps the position
+	// a relayout (new text) keeps the position
 	fitForm(aw.hwnd, &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: root.Child.(*ui.Col).Items[:2]}},
 		&ui.Pad{Left: ui.P16, Right: ui.P16, Bottom: ui.P16, Child: root.Child.(*ui.Col).Items[2]}, 0, aw.laid)
 	aw.laid = true
@@ -84,11 +83,11 @@ func longest(s ...string) string {
 	return l
 }
 
-func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWindow, error) {
+func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) {
 	const w, h = 560, 330
 	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2
 	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 3
-	aw := &alertWindow{lang: lang, onAck: onAck, onClose: onClose, level: -1}
+	aw := &alertWindow{onAck: onAck, onClose: onClose, level: -1}
 	handler := func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 		switch msg {
 		case winapi.WM_COMMAND:
@@ -119,7 +118,7 @@ func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWi
 		return 0, false
 	}
 	aw.style = winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | winapi.WS_MINIMIZEBOX
-	hwnd, err := createWindow(alertClass, i18n.T(i18n.KeyAlertTitleWarning, lang), winapi.WS_EX_DLGMODALFRAME|winapi.WS_EX_TOPMOST,
+	hwnd, err := createWindow(alertClass, i18n.T(i18n.KeyAlertTitleWarning), winapi.WS_EX_DLGMODALFRAME|winapi.WS_EX_TOPMOST,
 		aw.style, x, y, w, h, owner, handler)
 	if err != nil {
 		return nil, err
@@ -129,10 +128,10 @@ func newAlertWindow(owner uintptr, lang string, onAck, onClose func()) (*alertWi
 	aw.icon = child(hwnd, "STATIC", "", winapi.SS_ICON, idAlertIcon, 0, 0, 0, 0)
 	aw.text = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertText, 0, 0, 0, 0)
 	aw.status = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertStatus, 0, 0, 0, 0)
-	aw.hint = child(hwnd, "STATIC", i18n.T(i18n.KeyAlertCloseHint, lang), winapi.SS_LEFT, idAlertHint, 0, 0, 0, 0)
-	aw.mute = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertMute, lang), winapi.WS_TABSTOP, idAlertMute, 0, 0, 0, 0)
-	aw.ack = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertAck, lang), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idAlertAck, 0, 0, 0, 0)
-	aw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertClose, lang), winapi.WS_TABSTOP, idAlertClose, 0, 0, 0, 0)
+	aw.hint = child(hwnd, "STATIC", i18n.T(i18n.KeyAlertCloseHint), winapi.SS_LEFT, idAlertHint, 0, 0, 0, 0)
+	aw.mute = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertMute), winapi.WS_TABSTOP, idAlertMute, 0, 0, 0, 0)
+	aw.ack = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertAck), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idAlertAck, 0, 0, 0, 0)
+	aw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertClose), winapi.WS_TABSTOP, idAlertClose, 0, 0, 0, 0)
 	aw.layout()
 	aw.tips = newTooltips(hwnd) // CHK-TRAY-15
 	aw.setTips()
@@ -149,8 +148,8 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 		}
 		winapi.SendMessage(aw.icon, winapi.STM_SETICON, winapi.LoadSystemIcon(icon), 0)
 	}
-	winapi.SetWindowText(aw.hwnd, trayalert.Title(v, aw.lang))
-	text := trayalert.Text(v, aw.lang)
+	winapi.SetWindowText(aw.hwnd, trayalert.Title(v))
+	text := trayalert.Text(v)
 	winapi.SetWindowText(aw.text, text)
 	winapi.SetWindowText(aw.status, v.Message)
 	if t := strings.ReplaceAll(text, "\r\n", "\n"); t != aw.textStr || v.Message != aw.statusStr {
@@ -189,29 +188,17 @@ func (aw *alertWindow) bringToFront() {
 	}
 }
 
-// setLang switches the texts of the window to lang (the view texts follow
-// with the next apply).
-func (aw *alertWindow) setLang(lang string) {
-	aw.lang = lang
-	winapi.SetWindowText(aw.hint, i18n.T(i18n.KeyAlertCloseHint, lang))
-	winapi.SetWindowText(aw.ack, i18n.T(i18n.KeyAlertAck, lang))
-	winapi.SetWindowText(aw.close, i18n.T(i18n.KeyAlertClose, lang))
-	winapi.SetWindowText(aw.mute, aw.muteText())
-	aw.setTips()
-	aw.layout() // texts of the other language
-}
-
-// setTips sets the button tooltips in the current language.
+// setTips sets the button tooltips .
 func (aw *alertWindow) setTips() {
-	aw.tips.set(aw.ack, i18n.T(i18n.KeyTipAlertAck, aw.lang))
-	aw.tips.set(aw.close, i18n.T(i18n.KeyTipAlertClose, aw.lang))
-	aw.tips.set(aw.mute, i18n.T(i18n.KeyTipAlertMute, aw.lang))
+	aw.tips.set(aw.ack, i18n.T(i18n.KeyTipAlertAck))
+	aw.tips.set(aw.close, i18n.T(i18n.KeyTipAlertClose))
+	aw.tips.set(aw.mute, i18n.T(i18n.KeyTipAlertMute))
 }
 
 // muteText: the button names the action («Звук выкл» while it sounds).
 func (aw *alertWindow) muteText() string {
 	if aw.muted {
-		return i18n.T(i18n.KeyAlertUnmute, aw.lang)
+		return i18n.T(i18n.KeyAlertUnmute)
 	}
-	return i18n.T(i18n.KeyAlertMute, aw.lang)
+	return i18n.T(i18n.KeyAlertMute)
 }

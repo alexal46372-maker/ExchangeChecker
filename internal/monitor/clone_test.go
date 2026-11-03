@@ -44,20 +44,15 @@ func TestCHK_CFG_08_CloneProfile(t *testing.T) {
 		t.Fatalf("profiles %d", len(view.Profiles))
 	}
 
-	// explicit newId + newName (EN settings)
-	st := model.DefaultSettings()
-	st.Language = model.LangEN
-	if _, err := e.m.SaveSettings(st, e.rev(), "a"); err != nil {
-		t.Fatal(err)
-	}
+	// explicit newId + newName
 	res2, needPW, err := e.m.CloneProfile("s1", "clone-x", "My Copy", e.rev(), "a")
 	if err != nil || !needPW || res2.Profile.ID != "clone-x" || res2.Profile.Name != "My Copy" {
 		t.Fatalf("%+v %v %v", res2, needPW, err)
 	}
-	// default EN name
+	// default name (Russian only, CHK-TRAY-86)
 	res3, _, err := e.m.CloneProfile("s1", "", "", e.rev(), "a")
-	if err != nil || res3.Profile.Name != "Склад (copy)" {
-		t.Fatalf("en name %+v %v", res3, err)
+	if err != nil || res3.Profile.Name != "Склад (копия)" {
+		t.Fatalf("default name %+v %v", res3, err)
 	}
 
 	wantCode(t, "dup", func() error {
@@ -80,7 +75,7 @@ func TestCHK_CFG_08_CloneProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	rw, needPW, err := e.m.CloneProfile("w1", "", "", e.rev(), "a")
-	if err != nil || !needPW || rw.Profile.Name != "Win (copy)" {
+	if err != nil || !needPW || rw.Profile.Name != "Win (копия)" {
 		t.Fatalf("win %+v %v %v", rw, needPW, err)
 	}
 }

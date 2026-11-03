@@ -57,6 +57,7 @@ func (m *Monitor) ExportConfigBoth(includeViberRecipients, includeEmailRecipient
 	} else {
 		st.Email = nil
 	}
+	st.Telegram = nil // CHK-CFG-10: never exported (token stays in telegram.dpapi)
 	logins := false
 	for _, p := range view.Profiles {
 		if p.AuthMode == model.AuthSQL && strings.TrimSpace(p.Login) != "" {
@@ -178,6 +179,7 @@ func (m *Monitor) ImportConfigBoth(in *model.ConfigExport, mode, expectedRevisio
 		} else {
 			cp.Email = nil
 		}
+		cp.Telegram = nil // CHK-CFG-10: telegram is never imported
 		in.Settings = &cp
 		if err := in.Settings.Validate(); err != nil {
 			return res, invalid(model.MsgMonitorSettingsInvalid, err)
@@ -230,6 +232,7 @@ func (m *Monitor) ImportConfigBoth(in *model.ConfigExport, mode, expectedRevisio
 		} else {
 			in.Settings.Email = curSet.Normalized().Email
 		}
+		in.Settings.Telegram = curSet.Normalized().Telegram // keep stored
 	}
 	old := map[string]model.Profile{}
 	for _, p := range cur {

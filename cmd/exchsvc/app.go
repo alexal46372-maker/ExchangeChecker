@@ -65,7 +65,11 @@ type appConfig struct {
 	ViberURL    string
 	// EmailSendHook replaces the SMTP send of the email notifier (tests:
 	// fake SMTP); nil = net/smtp.
-	EmailSendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
+	// Protector overrides DPAPI (tests on non-Windows hosts).
+	Protector config.Protector
+	// TelegramBaseURL overrides the Bot API base URL (tests: httptest).
+	TelegramBaseURL string
+	EmailSendHook   func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -103,6 +107,9 @@ func runService(ctx context.Context, ac appConfig) error {
 	log.Printf("%s %s starting, config %s", model.ServiceName, version.Version, ac.Dir)
 
 	store := config.NewStore(ac.Dir)
+	if ac.Protector != nil {
+		store.Protector = ac.Protector
+	}
 	// phase 6b (CHK-CFG-03): an existing secrets.dpapi (e.g. written before
 	// phase 6 with the inherited Users-read DACL) is brought to SY+BA,
 	// protected, at start; a failure is a warning, the service keeps going.
@@ -184,6 +191,8 @@ func runService(ctx context.Context, ac appConfig) error {
 	vdone := make(chan struct{})
 	email := notify.NewEmail(notify.EmailOptions{Store: store, Lang: lang, Log: log, Now: ac.Now, SendHook: ac.EmailSendHook})
 	defer email.Close()
+	telegram := notify.NewTelegram(notify.TelegramOptions{Store: store, BaseURL: ac.TelegramBaseURL, Lang: lang, Log: log, Now: ac.Now})
+	defer telegram.Close()
 	go func() { defer close(vdone); viber.Run(vctx) }()
 	defer func() { vcancel(); <-vdone }()
 
@@ -219,9 +228,10 @@ func runService(ctx context.Context, ac appConfig) error {
 		Sink: alert.Multi{
 			&alert.EventLogSink{R: events, Lang: lang, Fallback: log},
 			alert.SinkFunc(func(e model.AlertEvent) { srv.Alert(e) }),
-			hist,  // transition records of the history (CHK-SVC-03)
-			viber, // Viber (CHK-SVC-06)
-			email, // Email (CHK-SVC-08)
+			hist,     // transition records of the history (CHK-SVC-03)
+			viber,    // Viber (CHK-SVC-06)
+			email,    // Email (CHK-SVC-08)
+			telegram, // Telegram (CHK-SVC-10)
 		},
 		// config-load failures and hung readers (already rate-limited by
 		// the monitor) -> Event Log warning (CHK-MON-10, CHK-MON-13)
@@ -235,11 +245,14 @@ func runService(ctx context.Context, ac appConfig) error {
 		OnViberToken:    viber.ReloadToken,
 		EmailStatus:     email.Status,
 		OnEmailPassword: email.ReloadPassword,
+		TelegramStatus:  telegram.Status,
+		OnTelegramToken: telegram.ReloadToken,
 		OnSnapshot: func(s model.StatusSnapshot) {
 			srv.PublishStatus(s)
 			hist.RecordSnapshot(s) // profiles polled since the last snapshot
 			viber.Snapshot(s)
 			email.Snapshot(s)
+			telegram.Snapshot(s)
 		},
 		Now:          ac.Now,
 		PollInterval: ac.PollInterval,
@@ -251,6 +264,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	srv.Summary = summarySource{historySource: historySource{h: hist, mon: mon}, now: ac.Now}
 	srv.Viber = viber
 	srv.Email = email
+	srv.Telegram = telegram
 	srv.AlarmTest = alarmTester{viber: viber, lang: lang} // alarm_test (CHK-IPC-11)
 	if autostart != nil {
 		// get_status.trayAutostartError + capability tray_autostart_status

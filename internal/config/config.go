@@ -134,6 +134,8 @@ func ParseSettings(raw []byte) (model.Settings, error) {
 	doc.Settings.Viber = &v
 	e := doc.Settings.Email.Stored() // hasPassword / status are views only
 	doc.Settings.Email = &e
+	tg := doc.Settings.Telegram.Stored() // hasToken / status are views only
+	doc.Settings.Telegram = &tg
 	if err := doc.Settings.Validate(); err != nil {
 		return doc.Settings, fmt.Errorf("config: %s: %w", SettingsFile, err)
 	}
@@ -152,6 +154,10 @@ func (s *Store) SaveSettings(st model.Settings) error {
 	if st.Email != nil { // hasPassword / status are views only
 		e := st.Email.Stored()
 		st.Email = &e
+	}
+	if st.Telegram != nil { // hasToken / status are views only
+		t := st.Telegram.Stored()
+		st.Telegram = &t
 	}
 	b, err := marshalJSON(settingsDoc{Version: SchemaVersion, Settings: st})
 	if err != nil {

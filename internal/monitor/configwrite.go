@@ -530,8 +530,34 @@ func (m *Monitor) viberView(st *model.Settings) {
 	}
 }
 
-// emailView fills settings.email.hasPassword / status (CHK-CFG-09).
+// telegramTokenStore is the bot token part of config.Store (CHK-CFG-10).
+type telegramTokenStore interface {
+	HasTelegramToken() bool
+	LoadTelegramToken() (string, error)
+	SaveTelegramToken(string) error
+}
+
+// telegramView fills settings.telegram.hasToken / status (CHK-CFG-10).
+func (m *Monitor) telegramView(st *model.Settings) {
+	if st.Telegram == nil {
+		return
+	}
+	t := *st.Telegram
+	t.Events = append([]string{}, t.Events...)
+	t.Schedule.Days = append([]int{}, t.Schedule.Days...)
+	st.Telegram = &t
+	if ts, ok := m.configWriter().(telegramTokenStore); ok && m.configWriter() != nil {
+		st.Telegram.HasToken = ts.HasTelegramToken()
+	}
+	if m.opt.TelegramStatus != nil {
+		st.Telegram.Status = m.opt.TelegramStatus()
+	}
+}
+
+// emailView fills settings.email.hasPassword / status (CHK-CFG-09) and
+// settings.telegram (CHK-CFG-10).
 func (m *Monitor) emailView(st *model.Settings) {
+	m.telegramView(st)
 	if st.Email == nil {
 		return
 	}
@@ -552,6 +578,15 @@ func (m *Monitor) SaveSettingsViber(st model.Settings, token string, clearToken 
 // save_settings with viberToken / smtpPassword (write-only) and clear*
 // flags. settings.viber / settings.email absent = keep stored.
 func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken bool, smtpPassword string, clearSmtp bool, expectedRevision, account string) (string, error) {
+	return m.SaveSettingsAll(st, model.SettingsSecrets{ViberToken: token, ClearViber: clearToken, SmtpPassword: smtpPassword, ClearSmtp: clearSmtp}, expectedRevision, account)
+}
+
+// SaveSettingsAll implements ipc.TelegramSettingsSaver (CHK-CFG-10):
+// save_settings with all write-only secrets. settings.viber / email /
+// telegram absent = keep stored.
+func (m *Monitor) SaveSettingsAll(st model.Settings, sec model.SettingsSecrets, expectedRevision, account string) (string, error) {
+	token, clearToken, smtpPassword, clearSmtp := sec.ViberToken, sec.ClearViber, sec.SmtpPassword, sec.ClearSmtp
+	botToken, clearBot := sec.BotToken, sec.ClearBotToken
 	if st.Email != nil { // CHK-SVC-09: recipients sent without an id
 		e := *st.Email
 		e.Recipients = append([]model.EmailRecipient{}, e.Recipients...)
@@ -581,10 +616,18 @@ func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken 
 		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailInvalid,
 			Message: "email: invalid smtpPassword", Args: []string{"smtpPassword", model.ValRequired}}
 	}
+	if botToken != "" && !model.ValidTelegramToken(botToken) {
+		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgTelegramInvalid,
+			Message: "telegram: invalid botToken", Args: []string{"botToken", model.ValRequired}}
+	}
 	m.cfgMu.Lock()
 	defer m.cfgMu.Unlock()
 	if err := m.checkRevisionLocked(w, expectedRevision); err != nil {
 		return "", err
+	}
+	if st.Telegram == nil {
+		cur, _ := w.LoadSettings()
+		st.Telegram = cur.Normalized().Telegram
 	}
 	if st.Viber == nil || st.Email == nil || st.StalledMinutes == nil {
 		// a client that does not know settings.viber / email / stalledMinutes:
@@ -607,6 +650,10 @@ func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken 
 	if st.Email != nil {
 		e := st.Email.Stored()
 		st.Email = &e
+	}
+	if st.Telegram != nil {
+		t := st.Telegram.Stored()
+		st.Telegram = &t
 	}
 	ts, _ := w.(viberTokenStore)
 	if (token != "" || clearToken) && ts == nil {
@@ -656,6 +703,30 @@ func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken 
 		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailNoPassword,
 			Message: "email: enabled without a password", Args: []string{"smtpPassword", model.ValRequired}}
 	}
+	gs, _ := w.(telegramTokenStore)
+	if (botToken != "" || clearBot) && gs == nil {
+		return "", saveFailed(errors.New("telegram: no token store"))
+	}
+	var oldBot string
+	hasBot := false
+	if gs != nil {
+		var err error
+		if oldBot, err = gs.LoadTelegramToken(); err != nil && (botToken != "" || clearBot) {
+			return "", saveFailed(fmt.Errorf("telegram token: %w", err))
+		}
+		hasBot = oldBot != "" || gs.HasTelegramToken()
+	}
+	newBot, botChanged := oldBot, false
+	if clearBot {
+		newBot, hasBot, botChanged = "", false, oldBot != "" || gs.HasTelegramToken()
+	}
+	if botToken != "" {
+		newBot, hasBot, botChanged = botToken, true, botToken != oldBot
+	}
+	if st.Telegram != nil && st.Telegram.Enabled && !hasBot {
+		return "", &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgTelegramNoToken,
+			Message: "telegram: enabled without a bot token", Args: []string{"botToken", model.ValRequired}}
+	}
 	if tokChanged {
 		if err := ts.SaveViberToken(newTok); err != nil {
 			return "", saveFailed(fmt.Errorf("save viber token: %w", err))
@@ -667,6 +738,17 @@ func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken 
 				_ = ts.SaveViberToken(oldTok)
 			}
 			return "", saveFailed(fmt.Errorf("save email password: %w", err))
+		}
+	}
+	if botChanged {
+		if err := gs.SaveTelegramToken(newBot); err != nil {
+			if tokChanged {
+				_ = ts.SaveViberToken(oldTok)
+			}
+			if smtpChanged {
+				_ = es.SaveEmailPassword(oldSmtp)
+			}
+			return "", saveFailed(errors.New("save telegram token failed"))
 		}
 	}
 	if st.Beep.Enabled == model.OptUnset {
@@ -689,6 +771,11 @@ func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken 
 				m.opt.Log.Printf("config: save_settings: restoring the SMTP password failed: %v", rerr)
 			}
 		}
+		if botChanged {
+			if rerr := gs.SaveTelegramToken(oldBot); rerr != nil {
+				m.opt.Log.Printf("config: save_settings: restoring the Telegram token failed")
+			}
+		}
 		return "", saveFailed(fmt.Errorf("save settings: %w", err))
 	}
 	if tokChanged && m.opt.OnViberToken != nil {
@@ -696,6 +783,9 @@ func (m *Monitor) SaveSettingsEmail(st model.Settings, token string, clearToken 
 	}
 	if smtpChanged && m.opt.OnEmailPassword != nil {
 		m.opt.OnEmailPassword()
+	}
+	if botChanged && m.opt.OnTelegramToken != nil {
+		m.opt.OnTelegramToken()
 	}
 	rev := m.afterWriteLocked(w)
 	if m.opt.ApplySettings != nil {

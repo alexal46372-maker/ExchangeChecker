@@ -186,6 +186,16 @@ var monitorMessages = map[string][2]string{ // key -> {ru, en}
 	MsgViberInvalid:            {"Неверные настройки Viber.", "Invalid Viber settings."},
 	MsgEmailNoPassword:         {"Не задан пароль SMTP.", "The SMTP password is not set."},
 	MsgEmailNoRecipients:       {"Нет сохранённых получателей e-mail: добавьте получателя и сохраните настройки e-mail, затем повторите тест.", "No email recipients are set."},
+	MsgTelegramNoToken:         {"Не задан токен бота Telegram.", "The Telegram bot token is not set."},
+	MsgTelegramNoChat:          {"Не задан ID чата Telegram.", "The Telegram chat ID is not set."},
+	MsgTelegramAuthFailed:      {"Telegram отклонил токен бота.", "Telegram rejected the bot token."},
+	MsgTelegramChatInvalid:     {"Чат Telegram не найден или бот не добавлен в чат.", "The Telegram chat was not found or the bot is not in it."},
+	MsgTelegramRateLimited:     {"Слишком много запросов к Telegram; повторите позже.", "Too many Telegram requests; try again later."},
+	MsgTelegramNetwork:         {"Нет связи с сервером Telegram (сеть, прокси).", "Cannot reach the Telegram server (network, proxy)."},
+	MsgTelegramFailed:          {"Telegram не принял сообщение.", "Telegram did not accept the message."},
+	MsgTelegramTimeout:         {"Время отправки в Telegram истекло.", "Sending to Telegram timed out."},
+	MsgTelegramCanceled:        {"Отправка в Telegram отменена.", "Sending to Telegram was canceled."},
+	MsgTelegramInvalid:         {"Неверные настройки Telegram.", "Invalid Telegram settings."},
 	MsgEmailRecipientNotFound:  {"Получатель e-mail с таким ID не найден среди сохранённых: сохраните настройки e-mail и повторите тест.", "No saved e-mail recipient has this ID: save the e-mail settings and test again."},
 	MsgEmailNoHost:             {"Не задан SMTP-сервер.", "The SMTP host is not set."},
 	MsgEmailNoFrom:             {"Не задан адрес отправителя.", "The From address is not set."},
@@ -262,5 +272,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailRecipientNotFound, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailRecipientNotFound, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited}
 }

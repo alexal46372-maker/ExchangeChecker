@@ -164,6 +164,10 @@ type Options struct {
 	// OnEmailPassword is called after save_settings changed the SMTP
 	// password (so the email notifier reloads it).
 	OnEmailPassword func()
+	// TelegramStatus / OnTelegramToken: settings.telegram.status and the
+	// bot token reload hook (phase 13, CHK-CFG-10).
+	TelegramStatus  func() *model.ViberStatus
+	OnTelegramToken func()
 }
 
 // entry is the per-profile runtime state.

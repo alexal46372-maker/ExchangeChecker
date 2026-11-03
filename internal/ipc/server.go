@@ -258,6 +258,9 @@ type Server struct {
 	// Email (phase 13b, CHK-IPC-16 / CHK-SVC-08): email_test and capability
 	// email; nil = not offered.
 	Email EmailTester
+	// Telegram (phase 13, CHK-IPC-17): telegram_test and capability
+	// telegram; nil = not offered.
+	Telegram TelegramTester
 	// AlarmTest (phase 11, CHK-IPC-11): alarm_test and capability
 	// alarm_test; nil = not offered.
 	AlarmTest AlarmTester
@@ -439,6 +442,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if s.Email != nil {
 		caps = append(caps, model.CapEmail) // phase 13b (CHK-CFG-09)
+	}
+	if s.Telegram != nil {
+		caps = append(caps, model.CapTelegram) // phase 13 (CHK-CFG-10)
 	}
 	if s.AlarmTest != nil {
 		caps = append(caps, model.CapAlarmTest) // phase 11 (CHK-IPC-11)
@@ -832,6 +838,12 @@ func (s *Server) readLoop(c *conn) {
 				return
 			}
 			continue
+		case s.Telegram != nil && telegramCommand(req.Cmd):
+			if !s.startTelegram(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
 		case model.AdminCommand(req.Cmd):
 			reply = s.handleAdmin(c, req)
 		default:
@@ -1206,7 +1218,7 @@ func (s *Server) runRecovered(ctx context.Context, req model.IPCRequest, run fun
 
 // scrubRequest removes the password and manual SQL texts of req from msg.
 func scrubRequest(msg string, req model.IPCRequest) string {
-	secrets := []string{req.Password, req.ViberToken, req.SmtpPassword}
+	secrets := []string{req.Password, req.ViberToken, req.SmtpPassword, req.BotToken}
 	if req.Mapping != nil {
 		secrets = append(secrets, req.Mapping.ManualSQL)
 	}
@@ -1342,7 +1354,13 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 				Message: "ipc: save_settings without settings", Args: []string{"settings", model.ValRequired}}, "")
 		}
 		var rev string
-		if es, ok := s.H.(EmailSettingsSaver); ok {
+		if ts, ok := s.H.(TelegramSettingsSaver); ok {
+			rev, err = ts.SaveSettingsAll(*req.Settings, model.SettingsSecrets{ViberToken: req.ViberToken, ClearViber: req.ClearViberToken,
+				SmtpPassword: req.SmtpPassword, ClearSmtp: req.ClearSmtpPassword, BotToken: req.BotToken, ClearBotToken: req.ClearBotToken},
+				req.ExpectedRevision, cl.Account)
+		} else if req.BotToken != "" || req.ClearBotToken {
+			return errorReply(req.ID, errors.New("telegram: bot token not supported"), model.ErrCodeUnknownCommand)
+		} else if es, ok := s.H.(EmailSettingsSaver); ok {
 			rev, err = es.SaveSettingsEmail(*req.Settings, req.ViberToken, req.ClearViberToken, req.SmtpPassword, req.ClearSmtpPassword, req.ExpectedRevision, cl.Account)
 		} else if vs, ok := s.H.(ViberSettingsSaver); ok {
 			if req.SmtpPassword != "" || req.ClearSmtpPassword {

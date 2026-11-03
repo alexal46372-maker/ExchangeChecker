@@ -179,5 +179,6 @@ func DrawIconEx(dc uintptr, x, y int32, icon uintptr, w, h int32) {
 // Icon statics of the settings navigation (phase 11, CHK-TRAY-49).
 const (
 	SS_CENTERIMAGE = 0x0200
+	SS_CENTER      = 0x0001
 	STM_GETICON    = 0x0171
 )

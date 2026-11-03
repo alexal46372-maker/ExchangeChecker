@@ -19,6 +19,7 @@ const (
 	idAlertText   = 301
 	idAlertStatus = 302
 	idAlertHint   = 303
+	idAlertTitle  = 304
 	idAlertAck    = 310
 	idAlertMute   = 311
 	idAlertClose  = winapi.IDCANCEL
@@ -44,6 +45,69 @@ type alertWindow struct {
 	style                    uint32 // window style (tests: only Minimize / Close)
 	laid                     bool   // laid out once: relayouts keep the position
 	textStr, statusStr       string // the shown texts (their size, phase 11)
+	// title: the blinking title strip at the top (phase 13, item 8,
+	// CHK-TRAY-93): bright red / black, white bold text, every
+	// alertTitleBlinkMs while the window is shown.
+	title      uintptr
+	titleRed   bool
+	titleBlink bool // the timer runs
+	titleFlips int  // phase changes (tests)
+}
+
+// Title strip blink (CHK-TRAY-93).
+const (
+	alertTitleTimer   = 7
+	alertTitleBlinkMs = 250
+	// AlertTitleRed / AlertTitleBlack / AlertTitleText: COLORREF 0x00BBGGRR.
+	AlertTitleRed   = 0x000000FF
+	AlertTitleBlack = 0x00000000
+	AlertTitleText  = 0x00FFFFFF
+)
+
+var alertTitleBrushes [2]uintptr
+var alertTitleFont uintptr
+
+// titleBrush is the brush of the current phase (red / black).
+func (aw *alertWindow) titleBrush() uintptr {
+	i, c := 0, uint32(AlertTitleBlack)
+	if aw.titleRed {
+		i, c = 1, AlertTitleRed
+	}
+	if alertTitleBrushes[i] == 0 {
+		alertTitleBrushes[i] = winapi.CreateSolidBrush(c)
+	}
+	return alertTitleBrushes[i]
+}
+
+// TitleColor is the current strip color (COLORREF; tests).
+func (aw *alertWindow) TitleColor() uint32 {
+	if aw.titleRed {
+		return AlertTitleRed
+	}
+	return AlertTitleBlack
+}
+
+// titleTick switches the strip phase (WM_TIMER; tests call it directly).
+func (aw *alertWindow) titleTick() {
+	aw.titleRed = !aw.titleRed
+	aw.titleFlips++
+	winapi.InvalidateRect(aw.title, true)
+}
+
+func (aw *alertWindow) startTitleBlink() {
+	if aw.titleBlink {
+		return
+	}
+	aw.titleRed = true
+	aw.titleBlink = winapi.SetTimer(aw.hwnd, alertTitleTimer, alertTitleBlinkMs)
+	winapi.InvalidateRect(aw.title, true)
+}
+
+func (aw *alertWindow) stopTitleBlink() {
+	if aw.titleBlink {
+		winapi.KillTimer(aw.hwnd, alertTitleTimer)
+		aw.titleBlink = false
+	}
 }
 
 // layout places the controls (phase 11, CHK-TRAY-45): icon | text and
@@ -52,7 +116,9 @@ type alertWindow struct {
 // wide as their longest text.
 func (aw *alertWindow) layout() {
 	mute := uiCtl(aw.mute, ui.Button, longest(i18n.T(i18n.KeyAlertMute), i18n.T(i18n.KeyAlertUnmute)))
+	title := &ui.Ctl{H: aw.title, Kind: ui.Box, W: 528, Hgt: 36, Grow: true}
 	root := &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: []ui.Node{
+		title,
 		&ui.Row{Align: ui.Top, Gap: ui.P16, Grow: true, Items: []ui.Node{
 			&ui.Ctl{H: aw.icon, Kind: ui.Box, W: 32, Hgt: 32},
 			&ui.Col{Gap: ui.P8, Items: []ui.Node{
@@ -67,8 +133,8 @@ func (aw *alertWindow) layout() {
 			uiCtl(aw.ack, ui.Button, ""), uiCtl(aw.close, ui.Button, "")}}}},
 	}}}
 	// a relayout (new text) keeps the position
-	fitForm(aw.hwnd, &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: root.Child.(*ui.Col).Items[:2]}},
-		&ui.Pad{Left: ui.P16, Right: ui.P16, Bottom: ui.P16, Child: root.Child.(*ui.Col).Items[2]}, 0, aw.laid)
+	fitForm(aw.hwnd, &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: root.Child.(*ui.Col).Items[:3]}},
+		&ui.Pad{Left: ui.P16, Right: ui.P16, Bottom: ui.P16, Child: root.Child.(*ui.Col).Items[3]}, 0, aw.laid)
 	aw.laid = true
 }
 
@@ -90,6 +156,17 @@ func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) 
 	aw := &alertWindow{onAck: onAck, onClose: onClose, level: -1}
 	handler := func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 		switch msg {
+		case winapi.WM_TIMER:
+			if wp == alertTitleTimer {
+				aw.titleTick()
+				return 0, true
+			}
+		case winapi.WM_CTLCOLORSTATIC:
+			if lp != 0 && lp == aw.title {
+				winapi.SetTextColor(wp, AlertTitleText)
+				winapi.SetBkColor(wp, aw.TitleColor())
+				return aw.titleBrush(), true
+			}
 		case winapi.WM_COMMAND:
 			switch wp & 0xFFFF {
 			case idAlertAck:
@@ -125,6 +202,11 @@ func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) 
 	}
 	aw.hwnd = hwnd
 	// phase 11 (CHK-TRAY-45): laid out by the ui framework
+	aw.title = child(hwnd, "STATIC", "", winapi.SS_CENTER|winapi.SS_CENTERIMAGE, idAlertTitle, 0, 0, 0, 0)
+	if alertTitleFont == 0 {
+		alertTitleFont = winapi.CreateFontWeight(uiFontFace, -px(18), winapi.FW_BOLD)
+	}
+	winapi.SendMessage(aw.title, winapi.WM_SETFONT, alertTitleFont, 1)
 	aw.icon = child(hwnd, "STATIC", "", winapi.SS_ICON, idAlertIcon, 0, 0, 0, 0)
 	aw.text = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertText, 0, 0, 0, 0)
 	aw.status = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertStatus, 0, 0, 0, 0)
@@ -149,6 +231,7 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 		winapi.SendMessage(aw.icon, winapi.STM_SETICON, winapi.LoadSystemIcon(icon), 0)
 	}
 	winapi.SetWindowText(aw.hwnd, trayalert.Title(v))
+	winapi.SetWindowText(aw.title, trayalert.Title(v))
 	text := trayalert.Text(v)
 	winapi.SetWindowText(aw.text, text)
 	winapi.SetWindowText(aw.status, v.Message)
@@ -165,11 +248,13 @@ func (aw *alertWindow) apply(v trayalert.View, show bool) {
 		// to the front again (foreground, else the taskbar flashes)
 		aw.shown = true
 		aw.raised++
+		aw.startTitleBlink()
 		if show {
 			aw.bringToFront()
 		}
 	case !v.Visible && aw.shown:
 		aw.shown = false
+		aw.stopTitleBlink()
 		winapi.ShowWindow(aw.hwnd, winapi.SW_HIDE)
 	}
 }

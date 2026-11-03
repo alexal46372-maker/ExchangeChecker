@@ -31,7 +31,7 @@ func status(seq uint64, settings *model.Settings, alerts ...model.AlertEvent) tr
 // TestCHK_TRAY_03_ShowOnNewAlert — a new active alert opens the window and
 // starts the beep with the tone of the worst level from the settings.
 func TestCHK_TRAY_03_ShowOnNewAlert(t *testing.T) {
-	c := New(i18n.RU)
+	c := New()
 	if v := c.Update(status(1, nil), true); v.Visible || v.Sound {
 		t.Fatal("no alerts: nothing shown")
 	}
@@ -75,7 +75,7 @@ func TestCHK_TRAY_03_ToneDefaults(t *testing.T) {
 // mutes; the same alerts do not reopen it; a new alert or a worse level
 // does; an improvement does not.
 func TestCHK_TRAY_03_CloseMutesUntilChange(t *testing.T) {
-	c := New(i18n.RU)
+	c := New()
 	w := pointAlert("a", "Склад", "k1", model.LevelWarning, 35)
 	c.Update(status(1, nil, w), true)
 	v := c.Close()
@@ -105,7 +105,7 @@ func TestCHK_TRAY_03_CloseMutesUntilChange(t *testing.T) {
 // TestCHK_TRAY_03_AcknowledgedHidden — acknowledged and OK alerts are not
 // shown; a disconnected session keeps the last state and disables ack.
 func TestCHK_TRAY_03_AcknowledgedHidden(t *testing.T) {
-	c := New(i18n.RU)
+	c := New()
 	ack := pointAlert("a", "Склад", "k1", model.LevelError, 70)
 	ack.Acknowledged = true
 	ok := pointAlert("a", "Магазин", "k2", model.LevelOK, 0)
@@ -121,7 +121,7 @@ func TestCHK_TRAY_03_AcknowledgedHidden(t *testing.T) {
 		t.Error("no ack while disconnected")
 	}
 	// v1 service: no ack_alert
-	c2 := New(i18n.EN)
+	c2 := New()
 	if v := c2.Update(status(1, nil, pointAlert("a", "P", "k", model.LevelWarning, 31)), false); !v.Visible || v.CanAck {
 		t.Fatalf("v1: %+v", v)
 	}
@@ -130,7 +130,7 @@ func TestCHK_TRAY_03_AcknowledgedHidden(t *testing.T) {
 // TestCHK_TRAY_03_AckRequests — one request per profile with an alert of
 // the database itself (covers its points), otherwise per point.
 func TestCHK_TRAY_03_AckRequests(t *testing.T) {
-	c := New(i18n.RU)
+	c := New()
 	c.Update(status(1, nil,
 		pointAlert("a", "Склад", "k1", model.LevelError, 70),
 		pointAlert("a", "Магазин", "k2", model.LevelWarning, 40),
@@ -174,7 +174,7 @@ func TestCHK_TRAY_03_AckReplies(t *testing.T) {
 	a1 := pointAlert("a", "Склад", "k1", model.LevelError, 70)
 	a2 := pointAlert("a", "Магазин", "k2", model.LevelWarning, 40)
 
-	c := New(i18n.RU)
+	c := New()
 	c.Update(status(1, nil, a1, a2), true)
 	reqs := c.BeginAck()
 	v, refresh := c.AckDone([]AckResult{{Req: reqs[0], Msg: okReply()}, {Req: reqs[1], Msg: okReply()}})
@@ -196,7 +196,7 @@ func TestCHK_TRAY_03_AckReplies(t *testing.T) {
 
 	// not_found / no_active_alert: gone, no crash, window closes when empty
 	for _, code := range []string{model.ErrCodeNotFound, model.ErrCodeNoActiveAlert} {
-		c := New(i18n.RU)
+		c := New()
 		c.Update(status(1, nil, a1), true)
 		reqs := c.BeginAck()
 		v, refresh := c.AckDone([]AckResult{{Req: reqs[0], Msg: model.IPCMessage{Type: model.MsgError, Code: code, ErrorKey: model.MsgMonitorNoActiveAlert}}})
@@ -205,7 +205,7 @@ func TestCHK_TRAY_03_AckReplies(t *testing.T) {
 		}
 	}
 	// partially gone: message, remaining alert stays
-	c = New(i18n.RU)
+	c = New()
 	c.Update(status(1, nil, a1, a2), true)
 	reqs = c.BeginAck()
 	v, _ = c.AckDone([]AckResult{{Req: reqs[0], Msg: model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeNoActiveAlert}},
@@ -218,48 +218,48 @@ func TestCHK_TRAY_03_AckReplies(t *testing.T) {
 	}
 
 	// transport errors
-	c = New(i18n.EN)
+	c = New()
 	c.Update(status(1, nil, a1), true)
 	reqs = c.BeginAck()
 	v, refresh = c.AckDone([]AckResult{{Req: reqs[0], Err: trayipc.ErrNotConnected}})
-	if !v.Visible || refresh || !strings.Contains(v.Message, "No connection") {
+	if !v.Visible || refresh || !strings.Contains(v.Message, i18n.T(i18n.KeySvcUnavailable)) {
 		t.Fatalf("not connected: %+v", v)
 	}
 	reqs = c.BeginAck()
 	v, _ = c.AckDone([]AckResult{{Req: reqs[0], Err: errors.Join(trayipc.ErrUnsupported)}})
-	if v.CanAck || !strings.Contains(v.Message, "cannot acknowledge") {
+	if v.CanAck || !strings.Contains(v.Message, i18n.T(i18n.KeyAlertAckUnsupported)) {
 		t.Fatalf("unsupported: %+v", v)
 	}
 }
 
 // TestCHK_TRAY_03_Texts — window title/heading by level, lines for points
-// and for database errors (localized errorKey), RU/EN, overflow line.
+// and for database errors (localized errorKey), overflow line.
 func TestCHK_TRAY_03_Texts(t *testing.T) {
-	c := New(i18n.RU)
+	c := New()
 	v := c.Update(status(1, nil, pointAlert("a", "Склад", "k1", model.LevelWarning, 35), dbAlert("b", model.LevelError)), true)
-	if Title(v, i18n.RU) != "Exchange Checker — ошибка обмена" {
-		t.Errorf("title %q", Title(v, i18n.RU))
+	if Title(v) != "Exchange Checker — ошибка обмена" {
+		t.Errorf("title %q", Title(v))
 	}
-	txt := Text(v, i18n.RU)
+	txt := Text(v)
 	for _, want := range []string{"Обмен данными остановлен", "DB-a — Склад: предупреждение, нет обмена 35 мин",
-		"DB-b: ошибка — " + model.MonitorMessage(model.MsgMonitorConnError, i18n.RU)} {
+		"DB-b: ошибка — " + model.MonitorMessage(model.MsgMonitorConnError)} {
 		if !strings.Contains(txt, want) {
 			t.Errorf("text %q lacks %q", txt, want)
 		}
 	}
 	never := pointAlert("a", "Новая", "k9", model.LevelWarning, 0)
 	never.FreshAt = nil
-	if l := Line(never, i18n.EN); l != "DB-a — Новая: warning, no exchange yet" {
+	if l := Line(never); l != "DB-a — Новая: предупреждение, обмена ещё не было" {
 		t.Errorf("never line %q", l)
 	}
-	w := New(i18n.EN)
+	w := New()
 	var many []model.AlertEvent
 	for i := 0; i < MaxLines+3; i++ {
 		many = append(many, pointAlert("a", "P"+string(rune('A'+i)), "k"+string(rune('A'+i)), model.LevelWarning, 31))
 	}
 	v = w.Update(status(1, nil, many...), true)
-	if Title(v, i18n.EN) != "Exchange Checker — warning" || !strings.HasSuffix(Text(v, i18n.EN), "…and 3 more") {
-		t.Errorf("overflow: %q", Text(v, i18n.EN))
+	if Title(v) != "Exchange Checker — предупреждение" || !strings.HasSuffix(Text(v), "…и ещё 3") {
+		t.Errorf("overflow: %q", Text(v))
 	}
 }
 
@@ -355,7 +355,7 @@ func TestCHK_TRAY_03_PlayerMinGap(t *testing.T) {
 // new alert or a worse level (also while the window is visible), not for
 // an unchanged status or an improvement.
 func TestCHK_TRAY_03_RaiseOnChange(t *testing.T) {
-	c := New(i18n.RU)
+	c := New()
 	st := func(alerts ...model.AlertEvent) trayipc.Status {
 		return trayipc.Status{State: trayipc.StateConnected, Snapshot: &model.StatusSnapshot{Alerts: alerts}}
 	}
@@ -394,7 +394,7 @@ func TestCHK_TRAY_03_BeepDisabled(t *testing.T) {
 	}{{model.OptFalse, false}, {model.OptTrue, true}, {model.OptUnset, true}} {
 		s := model.DefaultSettings()
 		s.Beep.Enabled = tc.enabled
-		c := New(i18n.RU)
+		c := New()
 		v := c.Update(trayipc.Status{State: trayipc.StateConnected,
 			Snapshot: &model.StatusSnapshot{Alerts: []model.AlertEvent{a}, Settings: &s}}, true)
 		if !v.Visible || v.Sound != tc.sound {

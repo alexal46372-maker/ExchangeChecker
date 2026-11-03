@@ -24,7 +24,7 @@ func TestCHK_SETUP_01_ParseArgs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !o.Silent || o.Dir != `D:\Apps\EC` || !o.NoStart || !o.NoShortcut || o.Log != `C:\a.log` || !o.AllowDowngrade || o.Lang != "en" {
+	if !o.Silent || o.Dir != `D:\Apps\EC` || !o.NoStart || !o.NoShortcut || o.Log != `C:\a.log` || !o.AllowDowngrade {
 		t.Fatalf("%+v", o)
 	}
 	o, err = ParseArgs([]string{"/uninstall", "/S", "/PURGEDATA"})
@@ -37,8 +37,9 @@ func TestCHK_SETUP_01_ParseArgs(t *testing.T) {
 	if _, err := ParseArgs([]string{"/PURGEDATA"}); !errors.Is(err, ErrUsage) {
 		t.Fatalf("want ErrUsage, got %v", err)
 	}
-	if _, err := ParseArgs([]string{"/LANG=de"}); !errors.Is(err, ErrUsage) {
-		t.Fatalf("want ErrUsage, got %v", err)
+	// phase 13 (CHK-TRAY-86): /LANG= is accepted and ignored (Russian only)
+	if _, err := ParseArgs([]string{"/LANG=de"}); err != nil {
+		t.Fatalf("/LANG= must be ignored, got %v", err)
 	}
 }
 
@@ -83,7 +84,7 @@ func TestCHK_SETUP_01_FreshInstallPlan(t *testing.T) {
 	data := `C:\ProgramData\ExchangeChecker`
 	res := Install(f, InstallConfig{
 		Opts: Options{Silent: true}, DefaultDir: dir, DataDir: data,
-		Files: sampleFiles(), Version: "1.0.0", Lang: "ru", Now: time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC),
+		Files: sampleFiles(), Version: "1.0.0", Now: time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC),
 	}, log)
 	if res.Code != ExitOK || res.Err != nil {
 		t.Fatalf("code=%d err=%v log=%v", res.Code, res.Err, log.lines)
@@ -142,7 +143,7 @@ func TestCHK_SETUP_01_NoStart(t *testing.T) {
 	f := newFake()
 	res := Install(f, InstallConfig{
 		Opts: Options{Silent: true, NoStart: true}, DefaultDir: `C:\EC`, DataDir: `C:\ProgramData\ExchangeChecker`,
-		Files: sampleFiles(), Version: "1.0.0", Lang: "en", Now: time.Now(),
+		Files: sampleFiles(), Version: "1.0.0", Now: time.Now(),
 	}, &memLog{})
 	if res.Code != ExitOK {
 		t.Fatal(res.Err)

@@ -123,23 +123,18 @@ func TestCHK_MON_05_ActiveAndRetain(t *testing.T) {
 	}
 }
 
-// TestCHK_MON_05_FormatRUEN — texts contain names, levels, UTC+3 time.
+// TestCHK_MON_05_FormatRUEN — Russian texts contain names, levels, UTC+3 time.
 func TestCHK_MON_05_FormatRUEN(t *testing.T) {
 	f := time.Date(2026, 9, 29, 8, 30, 0, 0, time.UTC) // 11:30 UTC+3
 	e := model.AlertEvent{ProfileName: "Склад", PointName: "Магазин 1", PlanTable: "_Node123", From: ok, To: warn, FreshAt: &f, LagMinutes: 35, Baseline: true}
-	ru, en := Format(e, model.LangRU), Format(e, model.LangEN)
-	for _, want := range []string{"База «Склад»", "_Node123/Магазин 1", "норма -> предупреждение", "2026-09-29 11:30:00 UTC+3", "35 мин", model.MonitorMessage(model.MsgMonitorBaseline, model.LangRU)} {
+	ru := Format(e)
+	for _, want := range []string{"База «Склад»", "_Node123/Магазин 1", "норма -> предупреждение", "2026-09-29 11:30:00 UTC+3", "35 мин", model.MonitorMessage(model.MsgMonitorBaseline)} {
 		if !strings.Contains(ru, want) {
 			t.Errorf("RU lacks %q: %s", want, ru)
 		}
 	}
-	for _, want := range []string{`Database "Склад"`, "ok -> warning", "11:30:00 UTC+3", "35 min ago"} {
-		if !strings.Contains(en, want) {
-			t.Errorf("EN lacks %q: %s", want, en)
-		}
-	}
 	pe := model.AlertEvent{ProfileName: "DB", From: ok, To: er, Error: "login failed"}
-	if s := Format(pe, model.LangEN); !strings.Contains(s, "error: login failed") || strings.Contains(s, "point") {
+	if s := Format(pe); !strings.Contains(s, "ошибка: login failed") || strings.Contains(s, "точка") {
 		t.Errorf("profile event: %s", s)
 	}
 }
@@ -165,9 +160,9 @@ func (m *memLog) Printf(format string, args ...interface{}) {
 func TestCHK_MON_05_EventLogSink(t *testing.T) {
 	r := &fakeReporter{}
 	lg := &memLog{}
-	s := &EventLogSink{R: r, Lang: model.LangEN, Fallback: lg}
+	s := &EventLogSink{R: r, Fallback: lg}
 	var got []model.AlertEvent
-	m := Multi{s, nil, LogSink{Log: lg, Lang: model.LangEN}, SinkFunc(func(e model.AlertEvent) { got = append(got, e) })}
+	m := Multi{s, nil, LogSink{Log: lg}, SinkFunc(func(e model.AlertEvent) { got = append(got, e) })}
 	m.Alert(model.AlertEvent{ID: 1, ProfileName: "P", From: ok, To: warn})
 	m.Alert(model.AlertEvent{ID: 2, ProfileName: "P", From: warn, To: er})
 	m.Alert(model.AlertEvent{ID: 3, ProfileName: "P", From: er, To: ok})

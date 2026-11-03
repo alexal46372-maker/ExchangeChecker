@@ -11,43 +11,43 @@ import (
 	"time"
 )
 
-// TestCHK_SETUP_10_CatalogComplete — RU/EN have the same setup.* keys,
-// no empty strings and the same format verbs.
+// TestCHK_SETUP_10_CatalogComplete — the (Russian only, CHK-TRAY-86)
+// setup catalog: setup.* keys, no empty strings.
 func TestCHK_SETUP_10_CatalogComplete(t *testing.T) {
-	ru, en := CatalogKeys("ru"), CatalogKeys("en")
+	ru := CatalogKeys()
 	if len(ru) < 25 {
 		t.Fatalf("catalog too small: %d", len(ru))
-	}
-	for _, pair := range [][2]map[string]string{{ru, en}, {en, ru}} {
-		for k := range pair[0] {
-			if _, ok := pair[1][k]; !ok {
-				t.Errorf("key %s missing in one language", k)
-			}
-		}
-	}
-	verbs := func(s string) string {
-		s = strings.ReplaceAll(s, "%%", "")
-		var v []string
-		for i := 0; i < len(s)-1; i++ {
-			if s[i] == '%' {
-				v = append(v, s[i:i+2])
-			}
-		}
-		return strings.Join(v, ",")
 	}
 	for k, r := range ru {
 		if !strings.HasPrefix(k, "setup.") {
 			t.Errorf("key %s: want setup.* prefix", k)
 		}
-		if strings.TrimSpace(r) == "" || strings.TrimSpace(en[k]) == "" {
+		if strings.TrimSpace(r) == "" {
 			t.Errorf("key %s: empty", k)
 		}
-		if verbs(r) != verbs(en[k]) {
-			t.Errorf("key %s: format verbs differ ru=%q en=%q", k, verbs(r), verbs(en[k]))
+	}
+	if T("setup.btn.next") != "Далее >" || T("setup.no.such") != "setup.no.such" {
+		t.Error("T")
+	}
+}
+
+// TestCHK_TRAY_86_SetupRussianOnly — phase 13: /LANG=xx of old scripts is
+// accepted and ignored (no usage error), the service description and the
+// shortcut text are Russian.
+func TestCHK_TRAY_86_SetupRussianOnly(t *testing.T) {
+	for _, args := range [][]string{{"/S", "/LANG=en"}, {"/S", "/LANG=ru"}, {"/S", "/lang=de"}, {"/uninstall", "/S", "/LANG=en"}} {
+		if _, err := ParseArgs(args); err != nil {
+			t.Errorf("%v: %v", args, err)
 		}
 	}
-	if T("de", "setup.btn.next") != ru["setup.btn.next"] {
-		t.Error("fallback language must be ru")
+	if _, err := ParseArgs([]string{"/S", "/LANG"}); err == nil {
+		t.Error("/LANG without a value must still be a usage error")
+	}
+	if d := ServiceDescription(); !strings.Contains(d, "контроль времени обмена") {
+		t.Errorf("description %q", d)
+	}
+	if s := T("setup.shortcut.desc"); !strings.Contains(s, "контроль обменов") {
+		t.Errorf("shortcut %q", s)
 	}
 }
 
@@ -81,7 +81,7 @@ func TestCHK_SETUP_10_CatalogUsed(t *testing.T) {
 		t.Fatalf("found only %d used keys", len(used))
 	}
 	for _, k := range used {
-		if _, ok := CatalogKeys("ru")[k]; !ok {
+		if _, ok := CatalogKeys()[k]; !ok {
 			t.Errorf("key %s used but not in the catalog", k)
 		}
 	}
@@ -90,7 +90,7 @@ func TestCHK_SETUP_10_CatalogUsed(t *testing.T) {
 // TestCHK_SETUP_10_WizardModel — page order, Back/Cancel, folder
 // validation, defaults (§D.1, §D.8), upgrade keeps folder and start state.
 func TestCHK_SETUP_10_WizardModel(t *testing.T) {
-	s := NewWizardState("en", "1.1.0", ModeFresh, "", `C:\Program Files\ExchangeChecker`, false, `C:\ProgramData\ExchangeChecker`, false)
+	s := NewWizardState("1.1.0", ModeFresh, "", `C:\Program Files\ExchangeChecker`, false, `C:\ProgramData\ExchangeChecker`, false)
 	if !s.Shortcut || !s.Service || !s.LaunchTray {
 		t.Fatalf("defaults: %+v", s)
 	}
@@ -130,7 +130,7 @@ func TestCHK_SETUP_10_WizardModel(t *testing.T) {
 		t.Fatal("finish before result")
 	}
 	o := s.Options(Options{Silent: true})
-	if o.Silent || o.Dir != `D:\Apps\EC` || !o.NoShortcut || !o.NoStart || o.Lang != "en" {
+	if o.Silent || o.Dir != `D:\Apps\EC` || !o.NoShortcut || !o.NoStart {
 		t.Fatalf("options: %+v", o)
 	}
 	s.Result = &Result{Code: ExitOK}
@@ -143,7 +143,7 @@ func TestCHK_SETUP_10_WizardModel(t *testing.T) {
 		t.Fatal("finish error must show the log path, no tray checkbox")
 	}
 
-	u := NewWizardState("ru", "1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, `C:\ProgramData\ExchangeChecker`, false)
+	u := NewWizardState("1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, `C:\ProgramData\ExchangeChecker`, false)
 	if u.Service {
 		t.Fatal("upgrade: service checkbox = was running (false)")
 	}
@@ -238,7 +238,7 @@ func TestCHK_SETUP_08_PlanShortcut(t *testing.T) {
 // state and the passed NoStart always matches it.
 func TestCHK_SETUP_10_UpgradeServiceLocked(t *testing.T) {
 	for _, was := range []bool{true, false} {
-		s := NewWizardState("en", "1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, "", was)
+		s := NewWizardState("1.1.0", ModeUpgrade, "1.0.0", `C:\EC`, true, "", was)
 		if !s.ServiceLocked() || s.Service != was {
 			t.Fatalf("was=%v: locked=%v service=%v", was, s.ServiceLocked(), s.Service)
 		}
@@ -247,14 +247,14 @@ func TestCHK_SETUP_10_UpgradeServiceLocked(t *testing.T) {
 			t.Fatalf("was=%v: NoStart=%v", was, o.NoStart)
 		}
 	}
-	if NewWizardState("en", "1.1.0", ModeFresh, "", `C:\EC`, false, "", false).ServiceLocked() {
+	if NewWizardState("1.1.0", ModeFresh, "", `C:\EC`, false, "", false).ServiceLocked() {
 		t.Fatal("fresh install: checkbox must be editable")
 	}
 }
 
 // 7d review: a downgrade without /ALLOWDOWNGRADE is refused on Welcome.
 func TestCHK_SETUP_10_DowngradeBlockedOnWelcome(t *testing.T) {
-	s := NewWizardState("en", "1.0.0", ModeDowngrade, "1.1.0", `C:\EC`, true, "", true)
+	s := NewWizardState("1.0.0", ModeDowngrade, "1.1.0", `C:\EC`, true, "", true)
 	if !s.Blocked() || !errors.Is(s.Next(), ErrDowngradeRefused) || s.Page != PageWelcome {
 		t.Fatal("downgrade must stop on Welcome")
 	}

@@ -21,7 +21,7 @@ func TestCHK_TRAY_58_CloneButton(t *testing.T) {
 	if !cloneButtonVisible(traysettings.Admin, true) {
 		t.Fatal("admin+cap must show clone")
 	}
-	e := &traysettings.Editor{Mode: traysettings.Admin, Lang: i18n.RU, Revision: "r3",
+	e := &traysettings.Editor{Mode: traysettings.Admin, Revision: "r3",
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад", Server: "s", Database: "d", AuthMode: model.AuthSQL, Login: "u", HasPassword: true}}}
 	e.Select(0)
 	req, pr := e.CloneRequest()
@@ -40,9 +40,9 @@ func TestCHK_TRAY_58_CloneButton(t *testing.T) {
 	if cloneFocusField(false) != traysettings.FieldNone {
 		t.Fatal("no needPassword → no forced focus")
 	}
-	ru, en := i18n.T(i18n.KeySetClone, i18n.RU), i18n.T(i18n.KeySetClone, i18n.EN)
-	if ru == "" || en == "" || ru == i18n.KeySetClone {
-		t.Fatalf("labels %q %q", ru, en)
+	ru := i18n.T(i18n.KeySetClone)
+	if ru == "" || ru == i18n.KeySetClone {
+		t.Fatalf("label %q", ru)
 	}
 }
 
@@ -54,7 +54,7 @@ func TestCHK_TRAY_58_CloneHiddenReadOnly(t *testing.T) {
 	if cloneButtonVisible(traysettings.Admin, false) {
 		t.Fatal("no cap must hide")
 	}
-	e := &traysettings.Editor{Mode: traysettings.ReadOnly, Lang: i18n.RU, Revision: "r1",
+	e := &traysettings.Editor{Mode: traysettings.ReadOnly, Revision: "r1",
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад", Server: "s", Database: "d", AuthMode: model.AuthSQL}}}
 	e.Select(0)
 	if _, pr := e.CloneRequest(); pr == nil {
@@ -69,10 +69,10 @@ func TestCHK_TRAY_58_CloneHiddenReadOnly(t *testing.T) {
 
 // TestCHK_TRAY_58_CloneStrings — RU+EN.
 func TestCHK_TRAY_58_CloneStrings(t *testing.T) {
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		for _, k := range []string{i18n.KeySetClone, i18n.KeySetCloneConfirm, i18n.KeySetClonedNeedPw, i18n.KeyTipSetClone} {
-			if i18n.T(k, lang) == k || i18n.T(k, lang) == "" {
-				t.Errorf("%s %s missing", k, lang)
+			if i18n.T(k) == k || i18n.T(k) == "" {
+				t.Errorf("%s %s missing", k, i18n.RU)
 			}
 		}
 	}

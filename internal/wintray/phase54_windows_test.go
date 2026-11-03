@@ -54,11 +54,11 @@ func TestCHK_TRAY_54_LayoutV2(t *testing.T) {
 	defer func() { testDPI = 0; testWorkArea = nil }()
 
 	for _, dpi := range []int32{96, 144} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
+		{
 			testDPI = dpi
 			testWorkArea = nil
-			tag := fmt.Sprintf("%s %d dpi", lang, dpi)
-			uiScenes(t, lang, func(name string, hwnd uintptr) {
+			tag := fmt.Sprintf("%s %d dpi", i18n.RU, dpi)
+			uiScenes(t, i18n.RU, func(name string, hwnd uintptr) {
 				checkLayout(t, name+" "+tag, hwnd)
 			})
 		}
@@ -67,11 +67,11 @@ func TestCHK_TRAY_54_LayoutV2(t *testing.T) {
 	// summary + alarm_test under a constrained work area (demo screenshots)
 	work := winapi.RECT{Right: 1024, Bottom: 768}
 	for _, dpi := range []int32{96, 144} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
+		{
 			testDPI = dpi
 			testWorkArea = &work
-			tag := fmt.Sprintf("workarea %s %d dpi", lang, dpi)
-			sw, err := createSummary(nil, lang, nil)
+			tag := fmt.Sprintf("workarea %s %d dpi", i18n.RU, dpi)
+			sw, err := createSummary(nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,7 +82,7 @@ func TestCHK_TRAY_54_LayoutV2(t *testing.T) {
 			checkLayout(t, "summary "+tag, sw.hwnd)
 			winapi.DestroyWindow(sw.hwnd)
 
-			aw, err := createAlarmTest(nil, lang)
+			aw, err := createAlarmTest(nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -90,7 +90,7 @@ func TestCHK_TRAY_54_LayoutV2(t *testing.T) {
 				ViberTestResult: model.ViberTestResult{OK: true, Results: []model.ViberTestItem{
 					{ID: "u1", OK: true}, {ID: "u2", OK: true},
 				}},
-			}}, lang))
+			}}))
 			if r := winapi.GetWindowRect(aw.hwnd); !contains(work, r) {
 				t.Errorf("alarm_test %s: window %+v outside work area %+v", tag, r, work)
 			}

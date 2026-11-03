@@ -60,7 +60,6 @@ const expCW, expCH = 480, 260
 // trayStores are the per-user stores of the tray block (nil = not
 // stored; export then writes the defaults).
 type trayStores struct {
-	Lang    LangStore
 	Balloon BalloonStore
 	Sound   SoundStore
 }
@@ -94,9 +93,6 @@ func (w *settingsWindow) notice(text string) {
 func (w *settingsWindow) trayBlock() traysettings.TrayBlock {
 	st := w.cfg.stores
 	t := traysettings.TrayBlock{Balloons: true, UIMode: w.uiMode}
-	if st.Lang != nil {
-		t.Language, _ = st.Lang.Load()
-	}
 	if st.Balloon != nil {
 		if on, err := st.Balloon.Load(); err == nil {
 			t.Balloons = on
@@ -130,9 +126,6 @@ func (w *settingsWindow) saveTray(t *traysettings.TrayBlock) error {
 		if err != nil && first == nil {
 			first = err
 		}
-	}
-	if st.Lang != nil {
-		keep(st.Lang.Save(t.Language))
 	}
 	if st.Balloon != nil {
 		keep(st.Balloon.Save(t.Balloons))
@@ -323,7 +316,7 @@ func (w *settingsWindow) importConfig() {
 	} else if err == nil {
 		var b []byte
 		if b, err = os.ReadFile(path); err == nil {
-			f, err = traysettings.ParseImport(b, w.cfg.lang)
+			f, err = traysettings.ParseImport(b)
 		} else {
 			err = fmt.Errorf(w.t(i18n.KeyXferReadFailed), err.Error())
 		}
@@ -457,7 +450,7 @@ func (d *importDialog) showPreview() {
 	if d.res == nil {
 		return
 	}
-	p := d.head + traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists, d.w.cfg.lang)
+	p := d.head + traysettings.Preview(*d.res, d.w.ed.Names(d.file), d.file.Tray, d.applyTray(), fileExists)
 	if d.w.cfg.otherUser {
 		p += "\r\n" + d.w.t(i18n.KeyXferOtherUser)
 	}

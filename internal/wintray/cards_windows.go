@@ -39,15 +39,14 @@ type cardPanel struct {
 	cards []trayui.Card // all databases
 	shown []trayui.Card // the cards in the places
 	tips  *tooltips
-	lang  string
 	rows  int32
 }
 
 // cardPanelHeight in units for rows rows of cards.
 func cardPanelHeight(rows int32) int32 { return rows*cardH + (rows-1)*cardGap }
 
-func newCardPanel(parent uintptr, tips *tooltips, lang string, rows int32) (*cardPanel, error) {
-	p := &cardPanel{tips: tips, lang: lang, rows: rows}
+func newCardPanel(parent uintptr, tips *tooltips, rows int32) (*cardPanel, error) {
+	p := &cardPanel{tips: tips, rows: rows}
 	h, err := createWindow(cardsClass, "", 0, winapi.WS_CHILD|winapi.WS_VISIBLE|winapi.WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
 		func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 			switch msg {
@@ -126,9 +125,9 @@ func (p *cardPanel) place() {
 	if len(p.cards) > places {
 		more := len(p.cards) - places + 1
 		p.shown = append(append([]trayui.Card(nil), p.cards[:places-1]...), trayui.Card{
-			Name:  fmt.Sprintf(i18n.T(i18n.KeyCardMore, p.lang), more),
-			State: i18n.T(i18n.KeyCardMoreHint, p.lang),
-			Tip:   i18n.T(i18n.KeyCardMoreHint, p.lang)})
+			Name:  fmt.Sprintf(i18n.T(i18n.KeyCardMore), more),
+			State: i18n.T(i18n.KeyCardMoreHint),
+			Tip:   i18n.T(i18n.KeyCardMoreHint)})
 	}
 	for i, s := range p.slots {
 		if i >= len(p.shown) {

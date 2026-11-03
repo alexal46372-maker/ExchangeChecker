@@ -23,7 +23,7 @@ import (
 // tone with a log line) and the master volume.
 
 // SoundValue is the HKCU value of the sound profiles (REG_SZ JSON,
-// trayalert.SoundPrefs) under LangKey.
+// trayalert.SoundPrefs) under TrayKey.
 const SoundValue = "Sound"
 
 // SoundStore keeps the per-user sound settings; raw "" = not stored.
@@ -34,12 +34,12 @@ type SoundStore interface {
 
 // RegistrySoundStore stores them in HKCU\Key\Sound.
 type RegistrySoundStore struct {
-	Key string // "" = LangKey
+	Key string // "" = TrayKey
 }
 
 func (s RegistrySoundStore) key() string {
 	if s.Key == "" {
-		return LangKey
+		return TrayKey
 	}
 	return s.Key
 }
@@ -70,7 +70,6 @@ const (
 type winSounder struct {
 	alias string
 	log   func(string)
-	lang  func() string
 
 	mu     sync.Mutex
 	failed map[string]bool // files already logged as failing
@@ -98,11 +97,7 @@ func (w *winSounder) fallback(file string, err error) {
 	w.failed[file] = true
 	w.mu.Unlock()
 	if first && w.log != nil {
-		lang := i18n.RU
-		if w.lang != nil {
-			lang = w.lang()
-		}
-		w.log("tray: sound: " + fmt.Sprintf(i18n.T(i18n.KeySoundFallback, lang), file, err))
+		w.log("tray: sound: " + fmt.Sprintf(i18n.T(i18n.KeySoundFallback), file, err))
 	}
 }
 
@@ -205,7 +200,7 @@ func (a *App) loadSoundPrefs() {
 	}
 	raw, err := a.opt.SoundStore.Load()
 	if err != nil {
-		a.logf("tray: sound: read HKCU %s\\%s: %v (using defaults)", LangKey, SoundValue, err)
+		a.logf("tray: sound: read HKCU %s\\%s: %v (using defaults)", TrayKey, SoundValue, err)
 		return
 	}
 	if strings.TrimSpace(raw) == "" {
@@ -213,7 +208,7 @@ func (a *App) loadSoundPrefs() {
 	}
 	p, err := trayalert.ParseSoundPrefs(raw, d)
 	if err != nil {
-		a.logf("tray: sound: HKCU %s\\%s: %v (using defaults)", LangKey, SoundValue, err)
+		a.logf("tray: sound: HKCU %s\\%s: %v (using defaults)", TrayKey, SoundValue, err)
 		return
 	}
 	a.soundPrefs, a.soundStored = p, true

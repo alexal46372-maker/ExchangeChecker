@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
@@ -43,7 +42,7 @@ func startP10App(t *testing.T, svc *alertService, b *testBeeper, store SoundStor
 	t.Cleanup(func() { srv.Close() })
 	var notes []string
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
 		Beeper: b, SoundStore: store, Notify: func(s string, _ bool) { notes = append(notes, s) },
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
@@ -249,7 +248,7 @@ func TestCHK_TRAY_37_IconAndHelp(t *testing.T) {
 	if len(*notes) != 1 || !strings.Contains((*notes)[0], "Настроить") {
 		t.Fatalf("notes %q", *notes)
 	}
-	if !strings.Contains(PinHelpText(i18n.EN), "Customize") {
+	if !strings.Contains(PinHelpText(), "Customize") {
 		t.Error("EN note")
 	}
 }
@@ -325,7 +324,7 @@ func TestCHK_TRAY_39_Panel(t *testing.T) {
 func TestCHK_TRAY_34_SoundIsolation(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true,
 		Session: trayipc.Options{Dial: func(context.Context) (io.ReadWriteCloser, error) { return nil, io.EOF }}})
 	if err != nil {
 		t.Fatal(err)
@@ -395,7 +394,7 @@ func TestCHK_TRAY_36_AlertRepeatPush(t *testing.T) {
 	srv := ipc.NewServer(svc, nil)
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true, Beeper: &testBeeper{},
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true, Beeper: &testBeeper{},
 		Session: trayipc.Options{Dial: func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() },
 			BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {

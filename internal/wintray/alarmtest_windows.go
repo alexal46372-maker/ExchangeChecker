@@ -34,7 +34,6 @@ type alarmTestWindow struct {
 	owner   *settingsWindow
 	hwnd    uintptr
 	ctl     map[int32]uintptr
-	lang    string
 	mu      sync.Mutex
 	pend    *model.AlarmTestResult
 	pendErr string
@@ -50,7 +49,7 @@ func (w *settingsWindow) openAlarmTest() {
 	if sess == nil || !(sess.Supported(model.CmdAlarmTest) || sess.Status().Has(model.CapAlarmTest)) {
 		return
 	}
-	aw, err := createAlarmTest(w, w.cfg.lang)
+	aw, err := createAlarmTest(w)
 	if err != nil {
 		return
 	}
@@ -59,13 +58,13 @@ func (w *settingsWindow) openAlarmTest() {
 }
 
 // createAlarmTest builds the dialog (owner may be nil for screenshots).
-func createAlarmTest(owner *settingsWindow, lang string) (*alarmTestWindow, error) {
-	aw := &alarmTestWindow{owner: owner, lang: lang, ctl: map[int32]uintptr{}}
+func createAlarmTest(owner *settingsWindow) (*alarmTestWindow, error) {
+	aw := &alarmTestWindow{owner: owner, ctl: map[int32]uintptr{}}
 	var parent uintptr
 	if owner != nil {
 		parent = owner.hwnd
 	}
-	hwnd, err := createWindow(alarmClass, i18n.T(i18n.KeyAlarmTestTitle, lang), 0,
+	hwnd, err := createWindow(alarmClass, i18n.T(i18n.KeyAlarmTestTitle), 0,
 		winapi.WS_OVERLAPPED|winapi.WS_CAPTION|winapi.WS_SYSMENU, 0, 0, 440, 340, parent, aw.wndProc)
 	if err != nil {
 		return nil, err
@@ -75,7 +74,7 @@ func createAlarmTest(owner *settingsWindow, lang string) (*alarmTestWindow, erro
 	return aw, nil
 }
 
-func (aw *alarmTestWindow) t(k string) string { return i18n.T(k, aw.lang) }
+func (aw *alarmTestWindow) t(k string) string { return i18n.T(k) }
 
 func (aw *alarmTestWindow) build() {
 	add := func(class, text string, ex, style uint32, id int32, kind ui.Kind, wd, hg int32) *ui.Ctl {
@@ -220,7 +219,7 @@ func (aw *alarmTestWindow) onApply() {
 		winapi.SetWindowText(aw.ctl[idAlarmRun], aw.t(i18n.KeyAlarmTestRun))
 		return
 	}
-	winapi.SetWindowText(aw.ctl[idAlarmResult], formatAlarmViber(res, aw.lang))
+	winapi.SetWindowText(aw.ctl[idAlarmResult], formatAlarmViber(res))
 	winapi.EnableWindow(aw.ctl[idAlarmRun], true)
 	winapi.SetWindowText(aw.ctl[idAlarmRun], aw.t(i18n.KeyAlarmTestRun))
 }
@@ -251,12 +250,12 @@ func (aw *alarmTestWindow) setRunLabel(sec int) {
 	winapi.SetWindowText(aw.ctl[idAlarmRun], fmt.Sprintf(aw.t(i18n.KeyAlarmTestRetry), sec))
 }
 
-func formatAlarmViber(r *model.AlarmTestResult, lang string) string {
+func formatAlarmViber(r *model.AlarmTestResult) string {
 	if r == nil {
 		return ""
 	}
 	if r.Viber == nil || len(r.Viber.Results) == 0 {
-		return i18n.T(i18n.KeyAlarmTestNoViber, lang)
+		return i18n.T(i18n.KeyAlarmTestNoViber)
 	}
 	_ = r.Viber.ErrorKey
 	var lines []string
@@ -267,7 +266,7 @@ func formatAlarmViber(r *model.AlarmTestResult, lang string) string {
 		}
 		msg := it.ErrorKey
 		if msg != "" {
-			msg = i18n.Message(msg, lang)
+			msg = i18n.Message(msg)
 		}
 		if msg == "" {
 			msg = "error"
@@ -275,7 +274,7 @@ func formatAlarmViber(r *model.AlarmTestResult, lang string) string {
 		lines = append(lines, it.ID+": "+msg)
 	}
 	if len(lines) == 0 {
-		return i18n.T(i18n.KeyAlarmTestNoViber, lang)
+		return i18n.T(i18n.KeyAlarmTestNoViber)
 	}
 	return strings.Join(lines, "\r\n")
 }

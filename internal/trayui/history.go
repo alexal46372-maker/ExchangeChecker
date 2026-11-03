@@ -42,16 +42,16 @@ func HistoryRequest(profileID, pointKey string, from, to time.Time, bucket strin
 }
 
 // HistoryErrorText is the text of a history error reply / transport error.
-func HistoryErrorText(m model.IPCMessage, err error, lang string) string {
+func HistoryErrorText(m model.IPCMessage, err error) string {
 	switch {
 	case err != nil:
-		return i18n.T(i18n.KeyHistFailed, lang) + ": " + err.Error()
+		return i18n.T(i18n.KeyHistFailed) + ": " + err.Error()
 	case m.ErrorKey != "":
-		return i18n.Message(m.ErrorKey, lang)
+		return i18n.Message(m.ErrorKey)
 	case m.Error != "":
-		return i18n.T(i18n.KeyHistFailed, lang) + ": " + m.Error
+		return i18n.T(i18n.KeyHistFailed) + ": " + m.Error
 	}
-	return i18n.Message(model.MsgHistoryFailed, lang)
+	return i18n.Message(model.MsgHistoryFailed)
 }
 
 type bucketKey struct {
@@ -307,36 +307,36 @@ var HistoryColumns = []string{i18n.KeyHistColTime, i18n.KeyStDatabase, i18n.KeyS
 	i18n.KeyStState, i18n.KeyHistColLag, i18n.KeyStFresh, i18n.KeyHistColLatency, i18n.KeyHistColChange,
 	i18n.KeyHistColDuration, i18n.KeyStNote}
 
-func lvlText(l *model.AlertLevel, lang string) string {
+func lvlText(l *model.AlertLevel) string {
 	if l == nil {
 		return ""
 	}
-	return levelText(*l, lang)
+	return levelText(*l)
 }
 
-func kindText(k, lang string) string {
+func kindText(k string) string {
 	switch k {
 	case model.HistoryKindPoint:
-		return i18n.T(i18n.KeyHistKindPoint, lang)
+		return i18n.T(i18n.KeyHistKindPoint)
 	case model.HistoryKindProfile:
-		return i18n.T(i18n.KeyHistKindProfile, lang)
+		return i18n.T(i18n.KeyHistKindProfile)
 	case model.HistoryKindEvent:
-		return i18n.T(i18n.KeyHistKindEvent, lang)
+		return i18n.T(i18n.KeyHistKindEvent)
 	case model.HistoryKindRecovered:
-		return i18n.T(i18n.KeyHistKindRecovered, lang)
+		return i18n.T(i18n.KeyHistKindRecovered)
 	}
 	return k
 }
 
 // HistoryCells is one record in HistoryColumns order.
-func HistoryCells(r model.HistoryRecord, lang string) []string {
+func HistoryCells(r model.HistoryRecord) []string {
 	c := make([]string, len(HistoryColumns))
 	c[0] = r.CheckedAt.In(model.DBZone).Format("02.01.2006 15:04:05")
-	c[1], c[2], c[3] = r.ProfileName, r.PointName, kindText(r.Kind, lang)
+	c[1], c[2], c[3] = r.ProfileName, r.PointName, kindText(r.Kind)
 	if c[1] == "" {
 		c[1] = r.ProfileID
 	}
-	c[4] = lvlText(r.Level, lang)
+	c[4] = lvlText(r.Level)
 	if r.LagMin != nil {
 		c[5] = strconv.Itoa(*r.LagMin)
 	}
@@ -347,31 +347,31 @@ func HistoryCells(r model.HistoryRecord, lang string) []string {
 		c[7] = strconv.FormatInt(*r.LatencyMs, 10)
 	}
 	if r.From != nil || r.To != nil {
-		c[8] = lvlText(r.From, lang) + " → " + lvlText(r.To, lang)
+		c[8] = lvlText(r.From) + " → " + lvlText(r.To)
 	}
 	if r.DurationMin != nil {
 		c[9] = strconv.FormatInt(*r.DurationMin, 10)
 	}
 	switch {
 	case r.ErrorKey != "":
-		c[10] = i18n.Message(r.ErrorKey, lang)
+		c[10] = i18n.Message(r.ErrorKey)
 	case r.Baseline:
-		c[10] = i18n.T(i18n.KeyPtBaseline, lang)
+		c[10] = i18n.T(i18n.KeyPtBaseline)
 	}
 	return c
 }
 
-func headersOf(keys []string, lang string) []string {
+func headersOf(keys []string) []string {
 	h := make([]string, len(keys))
 	for i, k := range keys {
-		h[i] = i18n.T(k, lang)
+		h[i] = i18n.T(k)
 	}
 	return h
 }
 
 // ExportHistoryCSV renders the records (same rules as ExportCSV); partial
 // (a record / page limit was hit) adds a last line «показаны не все записи».
-func ExportHistoryCSV(recs []model.HistoryRecord, lang string, partial bool) []byte {
+func ExportHistoryCSV(recs []model.HistoryRecord, partial bool) []byte {
 	var b bytes.Buffer
 	b.WriteString("\uFEFF")
 	line := func(cells []string) {
@@ -383,30 +383,30 @@ func ExportHistoryCSV(recs []model.HistoryRecord, lang string, partial bool) []b
 		}
 		b.WriteString("\r\n")
 	}
-	line(headersOf(HistoryColumns, lang))
+	line(headersOf(HistoryColumns))
 	for _, r := range recs {
-		line(HistoryCells(r, lang))
+		line(HistoryCells(r))
 	}
 	if partial {
-		line([]string{i18n.T(i18n.KeyHistPartial, lang)})
+		line([]string{i18n.T(i18n.KeyHistPartial)})
 	}
 	return b.Bytes()
 }
 
 // ExportHistoryHTML renders the records as a page; title names the point.
-func ExportHistoryHTML(recs []model.HistoryRecord, title string, from, to time.Time, lang string, partial bool) []byte {
+func ExportHistoryHTML(recs []model.HistoryRecord, title string, from, to time.Time, partial bool) []byte {
 	var b bytes.Buffer
 	e := html.EscapeString
-	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + e(lang) + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
+	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + i18n.RU + "\"><head><meta charset=\"utf-8\"><title>" + e(title) + "</title>\n")
 	b.WriteString("<style>body{font-family:Segoe UI,Arial,sans-serif;font-size:13px}table{border-collapse:collapse}" +
 		"td,th{border:1px solid "+ChromeHTML(ChromeBorder())+";padding:3px 6px;text-align:left}th{background:"+ChromeHTML(ChromeHeaderRow())+"}</style></head><body>\n")
 	b.WriteString("<h1>" + e(title) + "</h1>\n<p>" + e(from.In(model.DBZone).Format("02.01.2006 15:04")) + " — " +
 		e(to.In(model.DBZone).Format("02.01.2006 15:04")) + " (UTC+3)</p>\n")
 	if partial {
-		b.WriteString("<p><strong>" + e(i18n.T(i18n.KeyHistPartial, lang)) + "</strong></p>\n")
+		b.WriteString("<p><strong>" + e(i18n.T(i18n.KeyHistPartial)) + "</strong></p>\n")
 	}
 	b.WriteString("<table>\n<tr>")
-	for _, h := range headersOf(HistoryColumns, lang) {
+	for _, h := range headersOf(HistoryColumns) {
 		b.WriteString("<th>" + e(h) + "</th>")
 	}
 	b.WriteString("</tr>\n")
@@ -423,7 +423,7 @@ func ExportHistoryHTML(recs []model.HistoryRecord, title string, from, to time.T
 			}
 		}
 		b.WriteString(">")
-		for _, c := range HistoryCells(r, lang) {
+		for _, c := range HistoryCells(r) {
 			b.WriteString("<td>" + e(c) + "</td>")
 		}
 		b.WriteString("</tr>\n")

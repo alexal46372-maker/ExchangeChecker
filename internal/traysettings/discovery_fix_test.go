@@ -14,7 +14,7 @@ import (
 // additional plan are refused with the dialog's label and the field to
 // highlight (a field the kind cannot edit moves to the box causing it).
 func TestCHK_TRAY_07_ApplyValidation(t *testing.T) {
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	d.Map.SetKind(KindSQL)
 	fe := ValidateMappings(d.Map.Mapping(), nil)
 	if fe == nil || fe.Field != "mapping.manualSql" {
@@ -145,7 +145,7 @@ func TestCHK_TRAY_07_MergePlans(t *testing.T) {
 	if PlanKey(model.Mapping{Table: "_Node10"}) != PlanKey(model.Mapping{Schema: " DBO ", Table: "_NODE10"}) || PlanKey(sql) != "" {
 		t.Error("PlanKey")
 	}
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{cand("_Node10", "_Node10", 9), cand("_NODE20", "_NODE20", 5), cand("_Node20", "_Node20", 4)}})
 	if pm := d.PlanMappings(d.Map.Mapping()); len(pm) != 1 {
 		t.Errorf("plan mappings %+v", pm)
@@ -156,7 +156,7 @@ func TestCHK_TRAY_07_MergePlans(t *testing.T) {
 // kind are part of the mapping; hidden link fields are reset when the
 // table is changed by hand; hand-edited columns are saved as manual.
 func TestCHK_TRAY_07_ManualColumns(t *testing.T) {
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	d.DiscoveryDone(model.IPCMessage{Type: model.MsgDiscovery, Candidates: []model.DiscoveryCandidate{cand("_Node10", "_Node10", 9)}})
 	if d.Edited() || !d.Unapplied() {
 		t.Error("a candidate is loaded, not applied")
@@ -212,7 +212,7 @@ func TestCHK_TRAY_07_ManualColumns(t *testing.T) {
 	}
 	// the profile's own manual mapping keeps its label
 	own := model.Mapping{Mode: model.MappingManual, Table: "_T", PointNameColumn: "p", LastSendColumn: "s"}
-	d2 := NewDiscovery(i18n.EN, own)
+	d2 := NewDiscovery(own)
 	if d2.Unapplied() || d2.Map.Mapping() != own {
 		t.Errorf("own mapping %+v", d2.Map.Mapping())
 	}
@@ -229,36 +229,28 @@ func TestCHK_TRAY_07_ToleranceAndTexts(t *testing.T) {
 	if model.DefaultValueToleranceMin != 1440 {
 		t.Fatal("DefaultValueToleranceMin changed: update the hint")
 	}
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		h := i18n.T(i18n.KeyDiscToleranceHint, lang)
+	{
+		h := i18n.T(i18n.KeyDiscToleranceHint)
 		if !strings.Contains(h, "0") || !strings.Contains(h, "1440") {
-			t.Errorf("hint %s %q", lang, h)
+			t.Errorf("hint %s %q", i18n.RU, h)
 		}
 	}
-	d := NewDiscovery(i18n.RU, model.Mapping{})
+	d := NewDiscovery(model.Mapping{})
 	q, pr := d.Query(ValueForm{Point: "Склад", PointIndex: -1, ApproxTime: "06.10.2026 09:00", Tolerance: "0"})
 	if pr != nil || q.ToleranceMin > 0 {
 		t.Errorf("tolerance 0 = service default: %+v %+v", q, pr)
 	}
 	e := adminEditor(savedSQL())
 	for _, k := range []string{model.ValSQLComment, model.ValSQLManualHint, model.ValSQLManualOption, model.ValSQLManualLiteral, model.ValSQLManualForbidden} {
-		var texts []string
-		for _, lang := range []string{i18n.RU, i18n.EN} {
-			e.Lang = lang
+		{
 			pr := e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeInvalidRequest, ErrorKey: model.MsgMonitorBadRequest,
 				ErrorArgs: []string{"mapping.manualSql", k, "x"}})
 			if pr == nil || pr.Text == "" || strings.Contains(pr.Text, "validation.") || strings.Contains(pr.Text, "{") || pr.Field != FieldDiscoverButton {
-				t.Errorf("%s/%s: %+v", k, lang, pr)
-				continue
+				t.Errorf("%s: %+v", k, pr)
 			}
-			texts = append(texts, pr.Text)
-		}
-		if len(texts) == 2 && texts[0] == texts[1] {
-			t.Errorf("%s not translated: %q", k, texts[0])
 		}
 	}
-	e.Lang = i18n.RU
-	if pr := e.InteractiveProblem(model.IPCMessage{}, context.DeadlineExceeded); pr == nil || pr.Text != i18n.Message(model.MsgDiscoverTimeout, i18n.RU) {
+	if pr := e.InteractiveProblem(model.IPCMessage{}, context.DeadlineExceeded); pr == nil || pr.Text != i18n.Message(model.MsgDiscoverTimeout) {
 		t.Errorf("timeout %+v", pr)
 	}
 }
@@ -303,7 +295,7 @@ func TestCHK_TRAY_07_MappingRoundTrip(t *testing.T) {
 		t.Errorf("table + SQL form keeps the SQL: %+v", got)
 	}
 	for name, m := range map[string]model.Mapping{"tables": tables, "hand": hand, "sql": sql, "counters": counters, "both": both, "none": {}} {
-		d := NewDiscovery(i18n.RU, m)
+		d := NewDiscovery(m)
 		if d.Unapplied() {
 			t.Errorf("%s: unapplied without edits", name)
 		}
@@ -318,7 +310,7 @@ func TestCHK_TRAY_07_MappingRoundTrip(t *testing.T) {
 		t.Errorf("table + SQL switched to tables: %+v", got)
 	}
 	// an edited SQL is an edit (SQL kind: no hidden table part)
-	d := NewDiscovery(i18n.RU, both)
+	d := NewDiscovery(both)
 	d.Map.ManualSQL = "SELECT x, y, z FROM t"
 	if r, edited := d.Result(); !edited || r.ManualSQL != "SELECT x, y, z FROM t" || r.Table != "" {
 		t.Errorf("edited SQL: %+v", r)

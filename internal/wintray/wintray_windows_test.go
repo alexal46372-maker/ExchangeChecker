@@ -87,7 +87,7 @@ func TestCHK_TRAY_01_NativeMenu(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	st := trayipc.Status{State: trayipc.StateConnected, Version: 2, Capabilities: []string{model.CapHeartbeat},
 		Heartbeat: &model.Heartbeat{Protocol: 2}, Snapshot: testSnapshot(model.LevelWarning), EverConnected: true}
-	items := trayui.BuildLeftMenu(st, i18n.RU)
+	items := trayui.BuildLeftMenu(st)
 	var bm bitmaps
 	defer bm.free()
 	hm, err := buildMenu(items, &bm)
@@ -130,7 +130,7 @@ func TestCHK_TRAY_01_NativeMenu(t *testing.T) {
 		t.Error("service status line must be a disabled item on top")
 	}
 
-	rm, err := buildMenu(trayui.BuildRightMenu(i18n.RU, "en", trayui.SvcStateRunning), &bm)
+	rm, err := buildMenu(trayui.BuildRightMenu(trayui.SvcStateRunning), &bm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,15 +142,14 @@ func TestCHK_TRAY_01_NativeMenu(t *testing.T) {
 	if _, mii := menuItem(t, rm, 1); mii.ID != trayui.CmdAbout || mii.State&winapi.MFS_DISABLED != 0 {
 		t.Error("about item")
 	}
-	// language submenu (6e): the stored preference is checked
+	// phase 13 (CHK-TRAY-86): no language submenu; «Служба» is third
 	text, mii = menuItem(t, rm, 2)
-	if mii.SubMenu == 0 || text != "Язык (Language)" {
-		t.Fatalf("language submenu %q %#x", text, mii.SubMenu)
+	if mii.SubMenu == 0 || text != i18n.T(i18n.KeyMenuService) || strings.Contains(text, "Язык") {
+		t.Fatalf("third item %q %#x", text, mii.SubMenu)
 	}
-	for pos, id := range []int{trayui.CmdLangAuto, trayui.CmdLangRU, trayui.CmdLangEN} {
-		_, li := menuItem(t, mii.SubMenu, pos)
-		if int(li.ID) != id || (li.State&winapi.MFS_CHECKED != 0) != (id == trayui.CmdLangEN) {
-			t.Errorf("language item %d: id %d state %#x", pos, li.ID, li.State)
+	for pos := 0; pos < 5; pos++ {
+		if txt, _ := menuItem(t, rm, pos); strings.Contains(txt, "Язык") || strings.Contains(txt, "Language") {
+			t.Errorf("language item at %d: %q", pos, txt)
 		}
 	}
 }
@@ -161,8 +160,8 @@ func TestCHK_TRAY_01_AboutWindow(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	closed := false
-	text := trayui.AboutText(trayipc.Status{State: trayipc.StateConnected, Version: 2}, i18n.EN)
-	h, err := newAboutWindow(0, trayui.AboutTitle(i18n.EN), text, "OK", "Close", false, func() { closed = true })
+	text := trayui.AboutText(trayipc.Status{State: trayipc.StateConnected, Version: 2})
+	h, err := newAboutWindow(0, trayui.AboutTitle(), text, "OK", "Close", false, func() { closed = true })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +215,7 @@ func TestCHK_TRAY_02_AppFollowsService(t *testing.T) {
 		}
 		return l.Dial()
 	}
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, Session: trayipc.Options{Dial: dial,
+	app, err := NewApp(Options{NoNotifyIcon: true, Session: trayipc.Options{Dial: dial,
 		BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +303,7 @@ func TestCHK_TRAY_02_NotifyIconSmoke(t *testing.T) {
 	dial := func(context.Context) (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("%w: test", trayipc.ErrServiceNotRunning)
 	}
-	app, err := NewApp(Options{Lang: i18n.EN, Session: trayipc.Options{Dial: dial}})
+	app, err := NewApp(Options{Session: trayipc.Options{Dial: dial}})
 	if err != nil {
 		t.Fatal(err)
 	}

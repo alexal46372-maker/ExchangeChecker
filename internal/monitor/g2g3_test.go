@@ -633,7 +633,7 @@ func TestCHK_IPC_08_ErrorKeys(t *testing.T) {
 	}
 	for _, k := range []string{model.MsgDiscoverBusy, model.MsgDiscoverProfileBusy, model.MsgDiscoverTimeout, model.MsgDiscoverFailed,
 		model.MsgDiscoverPointNameEmpty, model.MsgDiscoverMappingInvalid} {
-		if model.MonitorMessage(k, model.LangRU) == "" || model.MonitorMessage(k, model.LangEN) == "" {
+		if model.MonitorMessage(k) == "" || model.MonitorMessage(k) == "" {
 			t.Errorf("%s: no RU/EN text", k)
 		}
 	}

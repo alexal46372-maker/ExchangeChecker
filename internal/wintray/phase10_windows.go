@@ -71,7 +71,7 @@ func (a *App) Blinks() int { return a.blinks }
 // updateProblems recomputes the list; blinking and the panel follow at
 // once (the panel disappears immediately on recovery, decision 5).
 func (a *App) updateProblems() {
-	ps := trayalert.Problems(a.status, a.statusExt, a.opt.Lang)
+	ps := trayalert.Problems(a.status, a.statusExt)
 	if a.status.State == trayipc.StateConnecting && len(a.problems) > 0 && a.problems[0].Kind == trayalert.ProblemNoConnection {
 		ps = a.problems // a reconnect attempt: no flicker of the panel
 	}
@@ -132,7 +132,7 @@ type panelWindow struct {
 func (a *App) Panel() *panelWindow { return a.panel }
 
 func (a *App) updatePanel() {
-	lines := trayalert.PanelLines(a.problems, a.opt.Lang)
+	lines := trayalert.PanelLines(a.problems)
 	if len(lines) == 0 {
 		if a.panel != nil && a.panel.shown {
 			a.panel.shown = false
@@ -142,7 +142,7 @@ func (a *App) updatePanel() {
 	}
 	if a.panel == nil || !winapi.IsWindow(a.panel.hwnd) {
 		p := &panelWindow{}
-		h, err := createWindow(panelClass, i18n.T(i18n.KeyPanelTitle, a.opt.Lang),
+		h, err := createWindow(panelClass, i18n.T(i18n.KeyPanelTitle),
 			winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW|winapi.WS_EX_NOACTIVATE,
 			winapi.WS_POPUP|winapi.WS_BORDER, 0, 0, panelWidth, 40, a.hwnd,
 			func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
@@ -214,14 +214,14 @@ func (a *App) panelPos(w, h int32) (int32, int32) {
 }
 
 // PinHelpText is the «Как закрепить значок» note.
-func PinHelpText(lang string) string { return i18n.T(i18n.KeyPinHelpText, lang) }
+func PinHelpText() string { return i18n.T(i18n.KeyPinHelpText) }
 
 // ShowPinHelp shows the note (Options.Notify in tests).
 func (a *App) ShowPinHelp() {
-	txt := PinHelpText(a.opt.Lang)
+	txt := PinHelpText()
 	if a.opt.Notify != nil {
 		a.opt.Notify(txt, false)
 		return
 	}
-	winapi.MessageBox(a.hwnd, txt, i18n.T(i18n.KeyPinHelpTitle, a.opt.Lang), winapi.MB_ICONINFORMATION)
+	winapi.MessageBox(a.hwnd, txt, i18n.T(i18n.KeyPinHelpTitle), winapi.MB_ICONINFORMATION)
 }

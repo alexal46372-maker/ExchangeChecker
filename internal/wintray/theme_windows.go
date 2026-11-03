@@ -9,7 +9,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// ThemeValue is the HKCU REG_SZ of the tray chrome theme under LangKey
+// ThemeValue is the HKCU REG_SZ of the tray chrome theme under TrayKey
 // (phase 12, CHK-TRAY-55): "light" / "dark"; empty / missing = light.
 const ThemeValue = "Theme"
 
@@ -21,12 +21,12 @@ type ThemeStore interface {
 
 // RegistryThemeStore stores Theme in HKCU\Software\ExchangeChecker\Tray.
 type RegistryThemeStore struct {
-	Key string // "" = LangKey
+	Key string // "" = TrayKey
 }
 
 func (s RegistryThemeStore) key() string {
 	if s.Key == "" {
-		return LangKey
+		return TrayKey
 	}
 	return s.Key
 }

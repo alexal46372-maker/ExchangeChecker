@@ -118,7 +118,7 @@ func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 	at := now
 
 	SetTheme(ThemeLight)
-	hLight := string(ExportHTML(rows, "en", at))
+	hLight := string(ExportHTML(rows, at))
 	if !strings.Contains(hLight, ChromeHTML(Border)) || !strings.Contains(hLight, ChromeHTML(HeaderRow)) {
 		t.Fatalf("light html missing chrome: %s", hLight)
 	}
@@ -127,7 +127,7 @@ func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 	}
 
 	SetTheme(ThemeDark)
-	hDark := string(ExportHTML(rows, "en", at))
+	hDark := string(ExportHTML(rows, at))
 	wantBorder, wantHeader := ChromeHTML(ChromeBorder()), ChromeHTML(ChromeHeaderRow())
 	if !strings.Contains(hDark, wantBorder) || !strings.Contains(hDark, wantHeader) {
 		t.Fatalf("dark html missing chrome %s %s: %s", wantBorder, wantHeader, hDark)
@@ -140,7 +140,7 @@ func TestCHK_TRAY_56_HTMLFromChrome(t *testing.T) {
 	}
 
 	SetTheme(ThemeDark)
-	hist := string(ExportHistoryHTML(nil, "t", at, at, "en", false))
+	hist := string(ExportHistoryHTML(nil, "t", at, at, false))
 	if !strings.Contains(hist, wantBorder) || !strings.Contains(hist, wantHeader) {
 		t.Fatalf("history dark: %s", hist)
 	}

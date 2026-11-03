@@ -47,10 +47,10 @@ func TestCHK_TRAY_59_MuteIPC(t *testing.T) {
 	if err := svc.UnmuteProfile("p1"); err == nil {
 		t.Fatal("expected no-active-mute")
 	}
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		if i18n.T(i18n.KeyMenuMute, lang) == "" || i18n.T(i18n.KeyMenuUnmute, lang) == "" ||
-			i18n.T(i18n.KeyDBMuted, lang) == "" || i18n.T(i18n.KeyCardMuted, lang) == "" {
-			t.Errorf("strings %s", lang)
+	{
+		if i18n.T(i18n.KeyMenuMute) == "" || i18n.T(i18n.KeyMenuUnmute) == "" ||
+			i18n.T(i18n.KeyDBMuted) == "" || i18n.T(i18n.KeyCardMuted) == "" {
+			t.Errorf("strings %s", i18n.RU)
 		}
 	}
 }

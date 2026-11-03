@@ -36,14 +36,13 @@ func (m Multi) Alert(e model.AlertEvent) {
 
 // LogSink writes events to a Logger (the service log file).
 type LogSink struct {
-	Log  Logger
-	Lang string
+	Log Logger
 }
 
 // Alert implements Sink.
 func (s LogSink) Alert(e model.AlertEvent) {
 	if s.Log != nil {
-		s.Log.Printf("ALERT #%d %s", e.ID, Format(e, s.Lang))
+		s.Log.Printf("ALERT #%d %s", e.ID, Format(e))
 	}
 }
 
@@ -96,7 +95,6 @@ type Reporter interface {
 // Report failures go to Fallback (the log file), once per failure.
 type EventLogSink struct {
 	R        Reporter
-	Lang     string
 	Fallback Logger
 
 	mu sync.Mutex
@@ -122,7 +120,7 @@ func (s *EventLogSink) Alert(e model.AlertEvent) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	typ, id := EventTypeOf(e)
-	if err := s.R.Report(typ, id, Format(e, s.Lang)); err != nil && s.Fallback != nil {
+	if err := s.R.Report(typ, id, Format(e)); err != nil && s.Fallback != nil {
 		s.Fallback.Printf("event log: %v", err)
 	}
 }

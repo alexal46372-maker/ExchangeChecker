@@ -100,7 +100,7 @@ func TestCHK_IPC_04_PollerHung(t *testing.T) {
 	if w.n() != 2 {
 		t.Errorf("second hang reported %d", w.n())
 	}
-	if model.MonitorMessage(model.MsgMonitorPollerHung, "ru") == "" || model.MonitorMessage(model.MsgMonitorPollerHung, model.LangEN) == "" {
+	if model.MonitorMessage(model.MsgMonitorPollerHung) == "" || model.MonitorMessage(model.MsgMonitorPollerHung) == "" {
 		t.Error("poller_hung message")
 	}
 }

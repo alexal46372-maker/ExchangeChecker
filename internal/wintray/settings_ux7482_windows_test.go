@@ -4,6 +4,7 @@ package wintray
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
@@ -28,7 +29,7 @@ func openUXSettingsWithSound(t *testing.T, onTest func(trayalert.SoundProfile, i
 	app, _ := startChromeApp(t)
 	testDPI = 96
 	w, err := newSettingsWindow(settingsConfig{
-		lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+		mode: traysettings.Admin, session: app.session,
 		hidden: true, uiMode: traysettings.UIExpert,
 		onSoundTest: onTest,
 		onSoundStop: onStop,
@@ -163,7 +164,7 @@ func TestCHK_TRAY_80_PollColumnNotInChecks(t *testing.T) {
 	if !winapi.ListViewChecked(lv, 0) && winapi.SendMessage(lv, winapi.LVM_GETITEMCOUNT, 0, 0) > 0 {
 		t.Fatal("ListView checkbox round-trip failed")
 	}
-	if i18n.T(i18n.KeySetColPoll, i18n.RU) != "Опрос" || i18n.T(i18n.KeySetColPoll, i18n.EN) != "Poll" {
+	if i18n.T(i18n.KeySetColPoll) != "Опрос" || i18n.T(i18n.KeySetColPoll) != "Poll" {
 		t.Fatal("KeySetColPoll RU/EN")
 	}
 }
@@ -172,11 +173,11 @@ func TestCHK_TRAY_80_PollColumnNotInChecks(t *testing.T) {
 // Warning and Error, Stop halts it (onSoundStop), label returns to «Прослушать».
 // setSoundTestLabel alone is not enough (CHK-TRAY-81).
 func TestCHK_TRAY_81_SoundStopLabel(t *testing.T) {
-	if i18n.T(i18n.KeySoundStop, i18n.RU) != "Остановить" {
-		t.Fatalf("KeySoundStop RU=%q", i18n.T(i18n.KeySoundStop, i18n.RU))
+	if i18n.T(i18n.KeySoundStop) != "Остановить" {
+		t.Fatalf("KeySoundStop RU=%q", i18n.T(i18n.KeySoundStop))
 	}
-	listen := i18n.T(i18n.KeySoundTest, i18n.RU)
-	stop := i18n.T(i18n.KeySoundStop, i18n.RU)
+	listen := i18n.T(i18n.KeySoundTest)
+	stop := i18n.T(i18n.KeySoundStop)
 
 	var started []trayalert.SoundProfile
 	var stops int
@@ -280,19 +281,20 @@ func TestCHK_TRAY_82_NoSoundSaveButton(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke — Language directly under Theme.
+// TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke — phase 13 (CHK-TRAY-86):
+// no Language submenu; Theme is followed by a separator and About.
 func TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke(t *testing.T) {
-	m := trayui.BuildTrayRightMenu(trayui.RightMenuOpts{Lang: i18n.RU, Theme: trayui.ThemeLight})
-	themeAt, langAt := -1, -1
+	m := trayui.BuildTrayRightMenu(trayui.RightMenuOpts{Theme: trayui.ThemeLight})
+	themeAt := -1
 	for i, it := range m {
 		if len(it.Sub) == 2 && it.Sub[0].ID == trayui.CmdThemeLight {
 			themeAt = i
 		}
-		if len(it.Sub) >= 2 && it.Sub[0].ID == trayui.CmdLangAuto {
-			langAt = i
+		if strings.Contains(it.Text, "Язык") {
+			t.Fatalf("language item %q", it.Text)
 		}
 	}
-	if themeAt < 0 || langAt != themeAt+1 {
-		t.Fatalf("theme@%d lang@%d menu=%+v", themeAt, langAt, m)
+	if themeAt < 0 || !m[themeAt+1].Separator || m[themeAt+2].ID != trayui.CmdAbout {
+		t.Fatalf("theme@%d menu=%+v", themeAt, m)
 	}
 }

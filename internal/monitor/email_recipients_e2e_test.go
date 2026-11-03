@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/ipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/notify"
@@ -58,7 +57,7 @@ func TestCHK_TRAY_87_SingleAddressSaveThenTest(t *testing.T) {
 	t.Cleanup(func() { c.Close() })
 	e := &chainEnv{t: t, m: m, c: c}
 
-	ed := e.editor(i18n.RU)
+	ed := e.editor()
 	if !ed.CanEditEmail() {
 		t.Fatalf("email page not editable: %+v", ed.Settings.Email)
 	}
@@ -93,7 +92,7 @@ func TestCHK_TRAY_87_SingleAddressSaveThenTest(t *testing.T) {
 	tm := e.do(test)
 	if tm.Type == model.MsgError {
 		txt := ed.Reply(tm).Text
-		if strings.Contains(txt, model.MonitorMessage(model.MsgEmailNoRecipients, model.LangRU)) {
+		if strings.Contains(txt, model.MonitorMessage(model.MsgEmailNoRecipients)) {
 			t.Fatalf("email_test still sees no recipients: %q", txt)
 		}
 		t.Fatalf("email_test error %+v: %q", tm.Error, txt)

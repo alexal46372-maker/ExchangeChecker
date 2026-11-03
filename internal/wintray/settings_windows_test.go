@@ -203,7 +203,7 @@ func (f *cfgService) CloneProfile(profileID, newID, newName, rev, account string
 	}
 	dst.ID = newID
 	if newName == "" {
-		dst.Name = model.DefaultCloneName(src.Name, model.LangRU)
+		dst.Name = model.DefaultCloneName(src.Name)
 	} else {
 		dst.Name = newName
 	}
@@ -346,7 +346,7 @@ func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ..
 	if len(conf) > 0 {
 		c = conf[0]
 	}
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenSettings: true, Beeper: &testBeeper{},
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenSettings: true, Beeper: &testBeeper{},
 		Elevator: el, Confirm: c.ask,
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
@@ -413,7 +413,7 @@ func TestCHK_TRAY_06_SettingsSave(t *testing.T) {
 	if !strings.Contains(winapi.GetWindowText(w.ctl[idSetHints]), "db_datareader") {
 		t.Error("plain-text warning next to «no encryption»")
 	}
-	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwKeep, i18n.RU) {
+	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwKeep) {
 		t.Errorf("password hint %q", winapi.GetWindowText(w.ctl[idSetPwHint]))
 	}
 
@@ -477,7 +477,7 @@ func TestCHK_TRAY_06_SettingsSave(t *testing.T) {
 
 	// delete the saved password
 	w.click(t, idSetClearPw)
-	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwClear, i18n.RU) {
+	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwClear) {
 		t.Errorf("clear hint %q", winapi.GetWindowText(w.ctl[idSetPwHint]))
 	}
 	w.click(t, idSetSave)
@@ -515,7 +515,7 @@ func TestCHK_TRAY_06_SettingsSave(t *testing.T) {
 	// Windows authentication drops the password (warned)
 	winapi.SendMessage(w.ctl[idSetAuth], winapi.CB_SETCURSEL, 1, 0)
 	w.command(idSetAuth, winapi.CBN_SELCHANGE)
-	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwWindowsDrop, i18n.RU) || winapi.IsWindowEnabled(w.ctl[idSetPassword]) {
+	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwWindowsDrop) || winapi.IsWindowEnabled(w.ctl[idSetPassword]) {
 		t.Errorf("windows hint %q", winapi.GetWindowText(w.ctl[idSetPwHint]))
 	}
 	w.click(t, idSetSave)
@@ -572,7 +572,7 @@ func TestCHK_TRAY_06_SettingsAccessDenied(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	svc := newCfgService()
 	app := startCfgApp(t, svc, false, nil)
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session, hidden: true})
+	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,14 +612,14 @@ func TestCHK_TRAY_05_SettingsTestProfile(t *testing.T) {
 	if req.ProfileID != "p1" || req.Profile != nil {
 		t.Errorf("unchanged profile is tested by id: %+v", req)
 	}
-	if st := run("busy"); st != i18n.Message(model.MsgTestBusy, i18n.RU) {
+	if st := run("busy"); st != i18n.Message(model.MsgTestBusy) {
 		t.Errorf("busy: %q", st)
 	}
 	if st := run("rate"); !strings.Contains(st, "10 секунд") {
 		t.Errorf("rate_limited: %q", st)
 	}
 	w.set(idSetPassword, "pw2")
-	if st := run("timeout"); !strings.Contains(st, i18n.Message(model.MsgTestTimeout, i18n.RU)) || !strings.Contains(st, "15") {
+	if st := run("timeout"); !strings.Contains(st, i18n.Message(model.MsgTestTimeout)) || !strings.Contains(st, "15") {
 		t.Errorf("timeout: %q", st)
 	}
 	svc.mu.Lock()
@@ -639,7 +639,7 @@ func TestCHK_TRAY_05_SettingsTestProfile(t *testing.T) {
 	}
 	w.click(t, idSetCancelTest)
 	pumpUntil(t, "canceled by the button", func() bool { return svc.count("canceled") == 1 && w.testCancel == nil })
-	if st := w.statusText(); st != i18n.T(i18n.KeySetTestCanceled, i18n.RU) {
+	if st := w.statusText(); st != i18n.T(i18n.KeySetTestCanceled) {
 		t.Errorf("cancel status %q", st)
 	}
 
@@ -673,7 +673,7 @@ func TestCHK_TRAY_04_SettingsReadOnly(t *testing.T) {
 	if w.text(idSetHost) != "srv" || w.text(idSetDatabase) != "db1" || w.ed.Revision != "r1" {
 		t.Errorf("read-only data host %q db %q rev %q", w.text(idSetHost), w.text(idSetDatabase), w.ed.Revision)
 	}
-	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwSaved, i18n.RU) {
+	if winapi.GetWindowText(w.ctl[idSetPwHint]) != i18n.T(i18n.KeySetPwSaved) {
 		t.Errorf("password hint %q", winapi.GetWindowText(w.ctl[idSetPwHint]))
 	}
 	w.set(idSetHost, "typed") // read-only edit: ignored by the request
@@ -692,7 +692,7 @@ func TestCHK_TRAY_04_SettingsReadOnly(t *testing.T) {
 	}
 
 	w.click(t, idSetElevate)
-	if el.calls != 1 || w.statusText() != i18n.T(i18n.KeySetElevateCanceled, i18n.RU) {
+	if el.calls != 1 || w.statusText() != i18n.T(i18n.KeySetElevateCanceled) {
 		t.Errorf("elevate canceled: calls %d status %q", el.calls, w.statusText())
 	}
 	el.err = nil
@@ -872,7 +872,7 @@ func TestCHK_TRAY_06_SettingsReconnect(t *testing.T) {
 	gets := svc.count("get")
 
 	w.onSessionState(down)
-	if w.statusText() != i18n.T(i18n.KeySetNotConnected, i18n.RU) {
+	if w.statusText() != i18n.T(i18n.KeySetNotConnected) {
 		t.Errorf("disconnected status %q", w.statusText())
 	}
 	svc.mu.Lock()
@@ -901,7 +901,7 @@ func TestCHK_TRAY_06_SettingsReconnect(t *testing.T) {
 	svc.mu.Unlock()
 	w.onSessionState(up)
 	pumpUntil(t, "checked 2", func() bool { return svc.count("get") == gets+3 && !w.busy })
-	if w.statusText() != i18n.T(i18n.KeySetChangedOffline, i18n.RU) || w.text(idSetHost) != "edited" || w.ed.Revision != "r2" {
+	if w.statusText() != i18n.T(i18n.KeySetChangedOffline) || w.text(idSetHost) != "edited" || w.ed.Revision != "r2" {
 		t.Errorf("changed revision: status %q host %q rev %q", w.statusText(), w.text(idSetHost), w.ed.Revision)
 	}
 }
@@ -979,7 +979,7 @@ func TestCHK_TRAY_09_SettingsGeneralReadOnly(t *testing.T) {
 	if !w.ed.HasSettings || w.text(idGenPoll) == "" || !w.check(idGenAutostart) {
 		t.Errorf("read-only general: has %v poll %q", w.ed.HasSettings, w.text(idGenPoll))
 	}
-	if winapi.IsWindowEnabled(w.ctl[idGenAutostart]) || winapi.IsWindowEnabled(w.ctl[idGenBeep]) || winapi.IsWindowEnabled(w.ctl[idGenLang]) {
+	if winapi.IsWindowEnabled(w.ctl[idGenAutostart]) || winapi.IsWindowEnabled(w.ctl[idGenBeep]) {
 		t.Error("read-only general page is editable")
 	}
 }
@@ -996,7 +996,7 @@ func TestCHK_TRAY_09_AutostartError(t *testing.T) {
 	app := startCfgApp(t, svc, true, &fakeElevator{})
 	w := openAdmin(t, app)
 	w.setPage(1)
-	if got := w.text(idGenAutostartErr); got != i18n.T(i18n.KeyAutostartErrAccess, i18n.RU) {
+	if got := w.text(idGenAutostartErr); got != i18n.T(i18n.KeyAutostartErrAccess) {
 		t.Errorf("autostart error %q", got)
 	}
 	svc.mu.Lock()
@@ -1010,8 +1010,8 @@ func TestCHK_TRAY_09_AutostartError(t *testing.T) {
 	if got := w.text(idGenAutostartErr); got != "" {
 		t.Errorf("after save: %q", got)
 	}
-	if traysettings.AutostartErrorText("weird", i18n.EN) != i18n.T(i18n.KeyAutostartErrUnknown, i18n.EN)+" (weird)" ||
-		traysettings.AutostartErrorText(model.AutostartErrSettings, i18n.EN) == "" {
+	if traysettings.AutostartErrorText("weird") != i18n.T(i18n.KeyAutostartErrUnknown)+" (weird)" ||
+		traysettings.AutostartErrorText(model.AutostartErrSettings) == "" {
 		t.Error("autostart error texts")
 	}
 }

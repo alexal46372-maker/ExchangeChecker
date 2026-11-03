@@ -96,7 +96,7 @@ type SQLBrowseProgress struct {
 	Found int `json:"found"`
 }
 
-// Advice keys of SQLBrowseResult.Advice (RU/EN in SQLMessage).
+// Advice keys of SQLBrowseResult.Advice (texts in SQLMessage).
 const (
 	MsgSQLBrowseAdviceEnableBrowser = "sql.browse_advice_enable_browser"
 	MsgSQLBrowseAdviceOpenUDP1434   = "sql.browse_advice_open_udp1434"
@@ -180,33 +180,32 @@ func SQLCheckAdviceKey(step string) string { return "sql.check_advice_" + step }
 // ValSQLBrowseCIDR: SQLBrowseRequest.CIDR is not an IPv4 /24../30 network.
 const ValSQLBrowseCIDR = "validation.sql_browse_cidr"
 
-var sqlBrowseDiagMessages = map[string]LocalizedText{
-	MsgSQLBrowseAdviceEnableBrowser: {"Запустите на сервере службу «SQL Server Browser» (тип запуска — автоматически): без неё именованные экземпляры не находятся.",
-		"Start the \"SQL Server Browser\" service on the server (startup type automatic): named instances are not found without it."},
-	MsgSQLBrowseAdviceOpenUDP1434: {"Откройте в брандмауэре Windows сервера входящий UDP-порт 1434 (SQL Server Browser); широковещательный поиск не проходит через маршрутизаторы.",
-		"Allow inbound UDP port 1434 (SQL Server Browser) in the server's Windows Firewall; broadcast discovery does not cross routers."},
-	MsgSQLBrowseAdviceEnterServer: {"Введите имя или IP-адрес сервера вручную и нажмите «Проверить».",
-		"Enter the server name or IP address manually and press \"Check\"."},
-	MsgSQLBrowseAdvicePort1433: {"Экземпляр по умолчанию слушает TCP 1433: откройте этот порт в брандмауэре сервера или укажите порт явно («сервер,порт»).",
-		"A default instance listens on TCP 1433: open this port in the server firewall or enter the port explicitly (\"server,port\")."},
-	MsgSQLBrowseAdviceSendFailed: {"Запрос поиска не удалось отправить по сети (см. ошибки отправки): проверьте сетевое подключение и брандмауэр этого компьютера.",
-		"The discovery request could not be sent (see the send errors): check this computer's network connection and firewall."},
-	MsgSQLCheckAdviceParse:    {"Укажите сервер как «имя», «имя\\экземпляр» или «имя,порт» (без np:, lpc:, UNC).", "Enter the server as \"name\", \"name\\instance\" or \"name,port\" (no np:, lpc:, UNC)."},
-	MsgSQLCheckAdviceDNS:      {"Имя сервера не найдено в DNS: проверьте написание или укажите IP-адрес.", "The server name is not found in DNS: check the spelling or enter the IP address."},
-	MsgSQLCheckAdviceBrowser:  {"Порт экземпляра не получен от SQL Server Browser: запустите службу «SQL Server Browser», откройте UDP 1434 или укажите порт явно («имя,порт»).", "The instance port was not received from the SQL Server Browser: start the \"SQL Server Browser\" service, open UDP 1434 or enter the port (\"name,port\")."},
-	MsgSQLCheckAdviceTCP:      {"TCP-порт сервера недоступен: проверьте, что служба SQL Server запущена, протокол TCP/IP включён и порт открыт в брандмауэре сервера.", "The server TCP port is not reachable: check that SQL Server runs, TCP/IP is enabled and the port is open in the server firewall."},
-	MsgSQLCheckAdvicePrelogin: {"По этому порту отвечает не SQL Server (нет ответа TDS PRELOGIN): проверьте номер порта.", "Something other than SQL Server answers on this port (no TDS PRELOGIN answer): check the port number."},
-	MsgSQLCheckAdviceTLS:      {"Шифрование профиля не совпадает с сервером: выберите «Шифрование: Без шифрования» или включите TLS на сервере; для SQL Server 2008 — «Разрешить TLS 1.0».", "The profile encryption does not match the server: choose \"Encryption: No encryption\" or enable TLS on the server; for SQL Server 2008 \"Allow TLS 1.0\"."},
-	MsgSQLCheckAdviceLogin:    {"Вход отклонён: проверьте логин и пароль, смешанный режим проверки подлинности и права имени входа (скрипт «Выдать права»).", "The login was rejected: check the login and password, mixed mode authentication and the login's rights (\"Grant access\" script)."},
-	MsgSQLCheckAdviceDB:       {"База недоступна этому логину: выберите базу из списка или выполните скрипт «Выдать права».", "The database is not available to this login: pick it from the list or run the \"Grant access\" script."},
-	MsgSQLCheckAdviceTables:   {"В базе не видны таблицы планов обмена 1С (_Node…): проверьте, что выбрана база 1С, и права db_datareader.", "No 1C exchange plan tables (_Node…) are visible in the database: check that a 1C database is selected and the db_datareader rights."},
-	ValSQLBrowseCIDR:          {"Поле «{0}»: укажите сеть IPv4 вида 192.168.1.0/24 (от /24 до /30, не более 254 адресов) одного из сетевых интерфейсов этого компьютера.", "Field \"{0}\": enter an IPv4 network like 192.168.1.0/24 (/24 to /30, at most 254 addresses) of one of this computer's network interfaces."},
-	MsgSQLBrowseAdviceBrowserDisabled: {"Служба «SQL Server Browser» отключена (тип запуска «Отключена»): в «Службах» или SQL Server Configuration Manager задайте тип запуска «Автоматически» и запустите службу.",
-		"The \"SQL Server Browser\" service is disabled (start type Disabled): in Services or SQL Server Configuration Manager set the start type to Automatic and start the service."},
-	MsgSQLBrowseAdviceSubnetNarrowed: {"Сеть интерфейса шире /24: в одном сканировании проверяются /24 каждого локального интерфейса (до 254 адресов на сеть), но не вся широкая сеть. Для другой части той же сети укажите её /24 вручную или введите имя сервера.",
-		"The interface network is wider than /24: one Browse scans each local interface's /24 (up to 254 addresses per network), not the whole wide network. For another part of the same network enter its /24 or the server name."},
-	MsgSQLBrowseAdviceTCPDisabled: {"У локального экземпляра не задан TCP-порт: включите протокол TCP/IP в SQL Server Configuration Manager и перезапустите службу SQL Server.",
-		"The local instance has no TCP port: enable the TCP/IP protocol in SQL Server Configuration Manager and restart the SQL Server service."},
+var sqlBrowseDiagMessages = map[string]string{
+	MsgSQLBrowseAdviceEnableBrowser: "Запустите на сервере службу «SQL Server Browser» (тип запуска — автоматически): без неё именованные экземпляры не находятся.",
+
+	MsgSQLBrowseAdviceOpenUDP1434: "Откройте в брандмауэре Windows сервера входящий UDP-порт 1434 (SQL Server Browser); широковещательный поиск не проходит через маршрутизаторы.",
+
+	MsgSQLBrowseAdviceEnterServer: "Введите имя или IP-адрес сервера вручную и нажмите «Проверить».",
+
+	MsgSQLBrowseAdvicePort1433: "Экземпляр по умолчанию слушает TCP 1433: откройте этот порт в брандмауэре сервера или укажите порт явно («сервер,порт»).",
+
+	MsgSQLBrowseAdviceSendFailed: "Запрос поиска не удалось отправить по сети (см. ошибки отправки): проверьте сетевое подключение и брандмауэр этого компьютера.",
+
+	MsgSQLCheckAdviceParse:            "Укажите сервер как «имя», «имя\\экземпляр» или «имя,порт» (без np:, lpc:, UNC).",
+	MsgSQLCheckAdviceDNS:              "Имя сервера не найдено в DNS: проверьте написание или укажите IP-адрес.",
+	MsgSQLCheckAdviceBrowser:          "Порт экземпляра не получен от SQL Server Browser: запустите службу «SQL Server Browser», откройте UDP 1434 или укажите порт явно («имя,порт»).",
+	MsgSQLCheckAdviceTCP:              "TCP-порт сервера недоступен: проверьте, что служба SQL Server запущена, протокол TCP/IP включён и порт открыт в брандмауэре сервера.",
+	MsgSQLCheckAdvicePrelogin:         "По этому порту отвечает не SQL Server (нет ответа TDS PRELOGIN): проверьте номер порта.",
+	MsgSQLCheckAdviceTLS:              "Шифрование профиля не совпадает с сервером: выберите «Шифрование: Без шифрования» или включите TLS на сервере; для SQL Server 2008 — «Разрешить TLS 1.0».",
+	MsgSQLCheckAdviceLogin:            "Вход отклонён: проверьте логин и пароль, смешанный режим проверки подлинности и права имени входа (скрипт «Выдать права»).",
+	MsgSQLCheckAdviceDB:               "База недоступна этому логину: выберите базу из списка или выполните скрипт «Выдать права».",
+	MsgSQLCheckAdviceTables:           "В базе не видны таблицы планов обмена 1С (_Node…): проверьте, что выбрана база 1С, и права db_datareader.",
+	ValSQLBrowseCIDR:                  "Поле «{0}»: укажите сеть IPv4 вида 192.168.1.0/24 (от /24 до /30, не более 254 адресов) одного из сетевых интерфейсов этого компьютера.",
+	MsgSQLBrowseAdviceBrowserDisabled: "Служба «SQL Server Browser» отключена (тип запуска «Отключена»): в «Службах» или SQL Server Configuration Manager задайте тип запуска «Автоматически» и запустите службу.",
+
+	MsgSQLBrowseAdviceSubnetNarrowed: "Сеть интерфейса шире /24: в одном сканировании проверяются /24 каждого локального интерфейса (до 254 адресов на сеть), но не вся широкая сеть. Для другой части той же сети укажите её /24 вручную или введите имя сервера.",
+
+	MsgSQLBrowseAdviceTCPDisabled: "У локального экземпляра не задан TCP-порт: включите протокол TCP/IP в SQL Server Configuration Manager и перезапустите службу SQL Server.",
 }
 
 func init() {

@@ -105,7 +105,7 @@ func (a *App) OpenHistory(row trayui.StatusRow) *histWindow {
 			if !a.canHistory() {
 				key = i18n.KeyStHistoryOff
 			}
-			sw.setInfo(i18n.T(key, a.opt.Lang))
+			sw.setInfo(i18n.T(key))
 		}
 		return nil
 	}

@@ -21,13 +21,12 @@ const (
 	FieldErrorDur     Field = "beep.errorDurMs"
 	FieldGap             Field = "beep.gapMs"
 	FieldStalledMinutes  Field = "stalledMinutes"
-	FieldLanguage        Field = "language"
 	FieldAutostart       Field = "trayAutostart"
 )
 
 // GeneralFields are the fields of the general settings page.
 var GeneralFields = []Field{FieldPollInterval, FieldWarnMinutes, FieldErrorMinutes, FieldBeepEnabled, FieldWarnFreq,
-	FieldWarnDur, FieldErrorFreq, FieldErrorDur, FieldGap, FieldStalledMinutes, FieldLanguage, FieldAutostart}
+	FieldWarnDur, FieldErrorFreq, FieldErrorDur, FieldGap, FieldStalledMinutes, FieldAutostart}
 
 // IsGeneral tells whether f is on the general settings page.
 func IsGeneral(f Field) bool {
@@ -39,29 +38,14 @@ func IsGeneral(f Field) bool {
 	return false
 }
 
-// LanguageChoices are the items of the service language box (the
-// language of the service's Event Log messages, settings.language).
-var LanguageChoices = []string{model.LangAuto, model.LangRU, model.LangEN}
-
-// LanguageIndex is the index of lang in LanguageChoices (0 = auto).
-func LanguageIndex(lang string) int {
-	for i, l := range LanguageChoices {
-		if l == lang {
-			return i
-		}
-	}
-	return 0
-}
-
 // GeneralForm is the editable state of the general settings page: the
-// numbers as typed, the sound switch, the service language and the tray
+// numbers as typed, the sound switch and the tray
 // autostart switch (machine-wide, PLAN §12 p.47).
 type GeneralForm struct {
 	PollSec, WarnMin, ErrorMin             string
 	WarnFreq, WarnDur, ErrorFreq, ErrorDur string
 	Gap, StalledMin                        string
 	BeepEnabled                            bool
-	Language                               string
 	Autostart                              bool
 }
 
@@ -72,7 +56,7 @@ func FromSettings(s model.Settings) GeneralForm {
 		PollSec: it(s.PollIntervalSec), WarnMin: it(s.WarnMinutes), ErrorMin: it(s.ErrorMinutes),
 		WarnFreq: it(s.Beep.WarningFreqHz), WarnDur: it(s.Beep.WarningDurMs),
 		ErrorFreq: it(s.Beep.ErrorFreqHz), ErrorDur: it(s.Beep.ErrorDurMs), Gap: it(s.Beep.GapMs),
-		BeepEnabled: s.Beep.BeepEnabled(), Language: s.Language, Autostart: s.TrayAutostart,
+		BeepEnabled: s.Beep.BeepEnabled(), Autostart: s.TrayAutostart,
 	}
 	if s.StalledMinutes != nil {
 		g.StalledMin = it(*s.StalledMinutes)
@@ -123,7 +107,7 @@ func (g GeneralForm) Apply(base model.Settings) (model.Settings, *model.FieldErr
 	if g.BeepEnabled {
 		s.Beep.Enabled = model.OptTrue
 	}
-	s.Language, s.TrayAutostart = g.Language, g.Autostart
+	s.TrayAutostart = g.Autostart
 	if err := s.Validate(); err != nil {
 		if fe := model.AsFieldError(err); fe != nil {
 			return s, fe
@@ -189,7 +173,7 @@ func (e *Editor) SettingsDone(m model.IPCMessage, sent model.Settings) string {
 // AutostartErrorText is the text of a trayAutostartError code of
 // get_status (CHK-CFG-04): "" for no error, an unknown code is shown with
 // a generic text.
-func AutostartErrorText(code, lang string) string {
+func AutostartErrorText(code string) string {
 	key := map[string]string{
 		model.AutostartErrAccessDenied: i18n.KeyAutostartErrAccess,
 		model.AutostartErrRegistry:     i18n.KeyAutostartErrRegistry,
@@ -200,7 +184,7 @@ func AutostartErrorText(code, lang string) string {
 	case code == "":
 		return ""
 	case key == "":
-		return i18n.T(i18n.KeyAutostartErrUnknown, lang) + " (" + code + ")"
+		return i18n.T(i18n.KeyAutostartErrUnknown) + " (" + code + ")"
 	}
-	return i18n.T(key, lang)
+	return i18n.T(key)
 }

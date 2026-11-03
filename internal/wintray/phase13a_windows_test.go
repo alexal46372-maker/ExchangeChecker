@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
@@ -22,7 +21,7 @@ func TestCHK_TRAY_60_BasesChromeOnlyOnDatabases(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	svc := newViberCfg()
 	app := startCfgApp(t, svc.cfgService, true, nil)
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session,
 		hidden: true, uiMode: traysettings.UIExpert})
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +86,7 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	svc := newViberCfg()
 	app := startCfgApp(t, svc.cfgService, true, nil)
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session,
 		hidden: true, uiMode: traysettings.UIExpert})
 	if err != nil {
 		t.Fatal(err)
@@ -135,8 +134,8 @@ func TestCHK_TRAY_61_WindowCommonAndSimpleGeneral(t *testing.T) {
 		}
 	}
 	// basic General items stay; expert gen fields hide
-	if !visible(w.ctl[idGenLang]) || !visible(w.ctl[idGenWarn]) {
-		t.Fatal("Simple General: language / warn threshold must stay")
+	if !visible(w.ctl[idGenAutostart]) || !visible(w.ctl[idGenWarn]) {
+		t.Fatal("Simple General: autostart / warn threshold must stay")
 	}
 	if visible(w.ctl[idGenPoll]) {
 		t.Fatal("Simple General: expert poll must hide")
@@ -162,7 +161,7 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	app := startCfgApp(t, svc.cfgService, true, nil)
 	app.opt.SoundStore = store
 	app.loadSoundPrefs()
-	w, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app.session,
+	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session,
 		hidden: true, uiMode: traysettings.UIExpert,
 		stores: trayStores{Sound: store},
 		onSoundSave: app.SaveSoundPrefs, onSoundTest: app.testSound, onSoundStop: app.stopTestSound,

@@ -271,9 +271,9 @@ func (e *chainEnv) do(req model.IPCRequest) model.IPCMessage {
 	return m
 }
 
-func (e *chainEnv) editor(lang string) *traysettings.Editor {
+func (e *chainEnv) editor() *traysettings.Editor {
 	e.t.Helper()
-	ed := traysettings.NewEditor(lang, traysettings.Admin)
+	ed := traysettings.NewEditor(traysettings.Admin)
 	cfg := e.do(model.IPCRequest{Cmd: model.CmdGetConfig})
 	if cfg.Config == nil {
 		e.t.Fatalf("get_config %+v", cfg)
@@ -320,40 +320,40 @@ func plansOf(m model.Mapping, ms []model.Mapping) []string {
 // autopick_plans_v2 in client_hello.
 func TestCHK_TRAY_83_WizardFindsAll81Plans(t *testing.T) {
 	e := newChain(t, newStore81("_Node12", 5, "_Node34", 3, "_Node56", 2))
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		ed := e.editor(lang)
-		z := traysettings.NewWizard(lang)
+	{
+		ed := e.editor()
+		z := traysettings.NewWizard()
 		tm, m := e.wizardDiscover(ed, z, false)
 		if tm.Type != "" {
-			t.Fatalf("%s: unexpected test_profile %+v", lang, tm)
+			t.Fatalf("%s: unexpected test_profile %+v", i18n.RU, tm)
 		}
 		if m.Type != model.MsgDiscovery || m.AutoPick == nil || len(m.AutoPick.Plans) != 3 || !m.AutoPick.AutoApply ||
 			m.AutoPick.ReasonKey != model.MsgSQLAutoPickCountersOK {
-			t.Fatalf("%s: discover reply %+v", lang, m)
+			t.Fatalf("%s: discover reply %+v", i18n.RU, m)
 		}
 		idx, text := z.DiscoveryDone(m)
 		if idx < 0 || z.Problem != nil {
-			t.Fatalf("%s: not found by itself: %d %q", lang, idx, text)
+			t.Fatalf("%s: not found by itself: %d %q", i18n.RU, idx, text)
 		}
 		// no manual step: the wizard's own choice goes into the profile
 		if !z.Choose(ed, idx) || ed.MapEdit == nil {
-			t.Fatalf("%s: choose", lang)
+			t.Fatalf("%s: choose", i18n.RU)
 		}
 		want := []string{"dbo._node12", "dbo._node34", "dbo._node56"}
 		if got := plansOf(*ed.MapEdit, ed.MapsEdit); strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Fatalf("%s: applied plans %v, want %v", lang, got, want)
+			t.Fatalf("%s: applied plans %v, want %v", i18n.RU, got, want)
 		}
-		found := fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlan, lang), "_Node12") + fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlans, lang), 2)
+		found := fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlan), "_Node12") + fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlans), 2)
 		if !strings.Contains(text, found) || !strings.Contains(text, "_SentNo") ||
-			!strings.Contains(text, i18n.Message(model.MsgSQLAutoPickCountersOK, lang)) {
-			t.Errorf("%s: result text %q", lang, text)
+			!strings.Contains(text, i18n.Message(model.MsgSQLAutoPickCountersOK)) {
+			t.Errorf("%s: result text %q", i18n.RU, text)
 		}
 		sreq, pr := ed.SaveRequest("pw")
 		if pr != nil {
-			t.Fatalf("%s: save request %+v", lang, pr)
+			t.Fatalf("%s: save request %+v", i18n.RU, pr)
 		}
 		if r := e.do(sreq); r.Type == model.MsgError {
-			t.Fatalf("%s: save_profile %+v", lang, r)
+			t.Fatalf("%s: save_profile %+v", i18n.RU, r)
 		}
 		cfg := e.do(model.IPCRequest{Cmd: model.CmdGetConfig})
 		var saved *model.Profile
@@ -363,14 +363,14 @@ func TestCHK_TRAY_83_WizardFindsAll81Plans(t *testing.T) {
 			}
 		}
 		if saved == nil {
-			t.Fatalf("%s: saved profile missing: %+v", lang, cfg.Config.Profiles)
+			t.Fatalf("%s: saved profile missing: %+v", i18n.RU, cfg.Config.Profiles)
 		}
 		if got := plansOf(saved.Mapping, saved.Mappings); len(saved.Mappings) != 2 || strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Fatalf("%s: saved plans %v (mappings %d), want %v", lang, got, len(saved.Mappings), want)
+			t.Fatalf("%s: saved plans %v (mappings %d), want %v", i18n.RU, got, len(saved.Mappings), want)
 		}
 		for _, x := range append([]model.Mapping{saved.Mapping}, saved.Mappings...) {
 			if x.Mode != model.MappingCounters || x.SentNoColumn != "_SentNo" || x.ReceivedNoColumn != "_ReceivedNo" || x.PointNameColumn != "_Description" {
-				t.Errorf("%s: saved mapping %+v", lang, x)
+				t.Errorf("%s: saved mapping %+v", i18n.RU, x)
 			}
 		}
 	}
@@ -390,14 +390,14 @@ func TestCHK_TRAY_84_WizardEqualsExpert(t *testing.T) {
 	linked := newStore81("_Node12", 4, "_Node34", 3).link("_InfoRg100", "_Node12") // like CHK-SQL-17
 	for _, st := range []*store81{newStore81("_Node12", 5, "_Node34", 3, "_Node56", 2), newStore81("_Node7", 1), newStore81("_Node40", 2, "_Node41", 9), linked} {
 		e := newChain(t, st)
-		ed := e.editor(i18n.RU)
-		z := traysettings.NewWizard(i18n.RU)
+		ed := e.editor()
+		z := traysettings.NewWizard()
 		_, m := e.wizardDiscover(ed, z, false)
 		idx, text := z.DiscoveryDone(m)
 		if idx < 0 || !z.Choose(ed, idx) {
 			t.Fatalf("%v: wizard %d %q", st.order, idx, text)
 		}
-		d := traysettings.NewDiscovery(i18n.RU, model.Mapping{})
+		d := traysettings.NewDiscovery(model.Mapping{})
 		d.DiscoveryDone(m)
 		main, _ := d.Result()
 		expert := plansOf(main, d.PlanMappings(main))
@@ -405,7 +405,7 @@ func TestCHK_TRAY_84_WizardEqualsExpert(t *testing.T) {
 		if strings.Join(expert, ",") != strings.Join(wizard, ",") || d.Sel != idx {
 			t.Errorf("%v: expert %v (sel %d) != wizard %v (%d)", st.order, expert, d.Sel, wizard, idx)
 		}
-		rm, rp, pr := traysettings.ResolveDiscovery(m.Candidates, i18n.RU)
+		rm, rp, pr := traysettings.ResolveDiscovery(m.Candidates)
 		if pr != nil || rm != *ed.MapEdit || len(rp) != len(ed.MapsEdit) {
 			t.Errorf("%v: ResolveDiscovery %+v %d %+v", st.order, rm, len(rp), pr)
 		}
@@ -426,66 +426,66 @@ func TestCHK_TRAY_84_WizardEqualsExpert(t *testing.T) {
 // cut short, nothing found).
 func TestCHK_TRAY_85_WizardErrorTexts(t *testing.T) {
 	texts := map[string]map[string]string{}
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		texts[lang] = map[string]string{}
+	{
+		texts[i18n.RU] = map[string]string{}
 		// none: a database without exchange plans, through the chain
 		e := newChain(t, newStore81())
-		ed := e.editor(lang)
-		z := traysettings.NewWizard(lang)
+		ed := e.editor()
+		z := traysettings.NewWizard()
 		_, m := e.wizardDiscover(ed, z, false)
 		if idx, txt := z.DiscoveryDone(m); idx != -1 || z.Problem == nil || z.Problem.Code != traysettings.ProblemNone || txt != z.Problem.Text {
-			t.Fatalf("%s: none %d %q", lang, idx, txt)
+			t.Fatalf("%s: none %d %q", i18n.RU, idx, txt)
 		}
-		if !strings.Contains(z.Problem.Text, i18n.T(i18n.KeyWizGrant, lang)) {
-			t.Errorf("%s: none does not offer the permissions script: %q", lang, z.Problem.Text)
+		if !strings.Contains(z.Problem.Text, i18n.T(i18n.KeyWizGrant)) {
+			t.Errorf("%s: none does not offer the permissions script: %q", i18n.RU, z.Problem.Text)
 		}
-		texts[lang]["none"] = z.Problem.Text
+		texts[i18n.RU]["none"] = z.Problem.Text
 		// truncated: nothing found and the search was cut short
 		m.Truncated, m.TruncatedReason = true, model.TruncatedBudget
 		if idx, _ := z.DiscoveryDone(m); idx != -1 || z.Problem == nil || z.Problem.Code != traysettings.ProblemTruncated {
-			t.Fatalf("%s: truncated %+v", lang, z.Problem)
+			t.Fatalf("%s: truncated %+v", i18n.RU, z.Problem)
 		}
-		texts[lang]["truncated"] = z.Problem.Text
+		texts[i18n.RU]["truncated"] = z.Problem.Text
 		// windows_unsaved: the real test_profile of a new Windows profile
 		e2 := newChain(t, newStore81("_Node12", 5))
-		ed2 := e2.editor(lang)
-		z2 := traysettings.NewWizard(lang)
+		ed2 := e2.editor()
+		z2 := traysettings.NewWizard()
 		tm, _ := e2.wizardDiscover(ed2, z2, true)
 		pr := z2.TestProblem(tm)
 		if pr == nil || pr.Code != traysettings.ProblemWindowsUnsaved {
-			t.Fatalf("%s: windows_unsaved from %+v", lang, tm)
+			t.Fatalf("%s: windows_unsaved from %+v", i18n.RU, tm)
 		}
-		texts[lang]["windows_unsaved"] = pr.Text
+		texts[i18n.RU]["windows_unsaved"] = pr.Text
 		// ambiguous: two equally good candidates for the same table
 		a := model.DiscoveryCandidate{Mode: model.CandidateSingle, Schema: "dbo", Table: "ExchLog", PointCol: "Node", SendCol: "Sent", RecvCol: "Recv", Score: 150, Points: 4}
 		b := a
 		b.PointCol = "NodeCode"
-		_, _, apr := traysettings.ResolveDiscovery([]model.DiscoveryCandidate{a, b}, lang)
+		_, _, apr := traysettings.ResolveDiscovery([]model.DiscoveryCandidate{a, b})
 		if apr == nil || apr.Code != traysettings.ProblemAmbiguous {
-			t.Fatalf("%s: ambiguous %+v", lang, apr)
+			t.Fatalf("%s: ambiguous %+v", i18n.RU, apr)
 		}
 		if !strings.Contains(apr.Text, "(Node, Sent, Recv)") || !strings.Contains(apr.Text, "(NodeCode, Sent, Recv)") {
-			t.Errorf("%s: ambiguous must name both candidates: %q", lang, apr.Text)
+			t.Errorf("%s: ambiguous must name both candidates: %q", i18n.RU, apr.Text)
 		}
-		texts[lang]["ambiguous"] = apr.Text
-		texts[lang]["low_score"] = i18n.T(i18n.KeyWizErrLowScore, lang)
-		texts[lang]["incomplete"] = i18n.T(i18n.KeyWizErrIncomplete, lang)
+		texts[i18n.RU]["ambiguous"] = apr.Text
+		texts[i18n.RU]["low_score"] = i18n.T(i18n.KeyWizErrLowScore)
+		texts[i18n.RU]["incomplete"] = i18n.T(i18n.KeyWizErrIncomplete)
 		// ambiguous through the chain: a 1C directory with its own times
 		// and a register linked to it — two candidates for one table
 		e3 := newChain(t, newStore81().dir("_Reference20", 4).link("_InfoRg200", "_Reference20"))
-		ed3 := e3.editor(lang)
-		z3 := traysettings.NewWizard(lang)
+		ed3 := e3.editor()
+		z3 := traysettings.NewWizard()
 		_, m3 := e3.wizardDiscover(ed3, z3, false)
 		if idx, txt := z3.DiscoveryDone(m3); idx != -1 || z3.Problem == nil || z3.Problem.Code != traysettings.ProblemAmbiguous ||
 			!strings.Contains(txt, "_Fld2") || !strings.Contains(txt, "_Fld5") || z3.Best < 0 || ed3.MapEdit != nil {
-			t.Errorf("%s: chain ambiguous %d %q best %d", lang, idx, txt, z3.Best)
+			t.Errorf("%s: chain ambiguous %d %q best %d", i18n.RU, idx, txt, z3.Best)
 		}
-		if texts[lang]["ambiguous"] == z3.Problem.Text {
-			t.Errorf("%s: ambiguous texts must name the candidates", lang)
+		if texts[i18n.RU]["ambiguous"] == z3.Problem.Text {
+			t.Errorf("%s: ambiguous texts must name the candidates", i18n.RU)
 		}
 		// a single good candidate is no error
-		if _, _, p := traysettings.ResolveDiscovery([]model.DiscoveryCandidate{a}, lang); p != nil {
-			t.Errorf("%s: single candidate refused: %+v", lang, p)
+		if _, _, p := traysettings.ResolveDiscovery([]model.DiscoveryCandidate{a}); p != nil {
+			t.Errorf("%s: single candidate refused: %+v", i18n.RU, p)
 		}
 	}
 	seen := map[string]string{}
@@ -498,15 +498,12 @@ func TestCHK_TRAY_85_WizardErrorTexts(t *testing.T) {
 				t.Errorf("%s/%s duplicates %s: %q", lang, k, o, s)
 			}
 			seen[s] = lang + "/" + k
-			if lang == i18n.RU && s == texts[i18n.EN][k] {
-				t.Errorf("%s: RU == EN", k)
-			}
 		}
 	}
 	for _, key := range []string{model.MsgSQLAutoPickCountersOK} {
-		ru, en := i18n.Message(key, i18n.RU), i18n.Message(key, i18n.EN)
-		if ru == "" || en == "" || ru == en || strings.Contains(ru, key) {
-			t.Errorf("%s: RU %q EN %q", key, ru, en)
+		ru := i18n.Message(key)
+		if ru == "" || strings.Contains(ru, key) {
+			t.Errorf("%s: RU %q", key, ru)
 		}
 	}
 }
@@ -526,33 +523,33 @@ func TestCHK_TRAY_83_NotAutoAppliedWithoutAutoApply(t *testing.T) {
 		{"generic", newStore81().gen("ExchangeNodeLog", 4), traysettings.ProblemLowScore, i18n.KeyWizErrLowScore},
 		{"counters 0 points", newStore81("_Node12", 0), traysettings.ProblemIncomplete, i18n.KeyWizErrIncomplete},
 	}
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		for _, tc := range cases {
 			e := newChain(t, tc.st)
-			ed := e.editor(lang)
-			z := traysettings.NewWizard(lang)
+			ed := e.editor()
+			z := traysettings.NewWizard()
 			_, m := e.wizardDiscover(ed, z, false)
 			if m.Type != model.MsgDiscovery || len(m.Candidates) == 0 || m.AutoPick == nil || m.AutoPick.AutoApply {
-				t.Fatalf("%s/%s: reply %+v", lang, tc.name, m)
+				t.Fatalf("%s/%s: reply %+v", i18n.RU, tc.name, m)
 			}
 			idx, text := z.DiscoveryDone(m)
-			if idx != -1 || z.Problem == nil || z.Problem.Code != tc.code || text != i18n.T(tc.key, lang) {
-				t.Errorf("%s/%s: wizard applied or wrong text: %d %+v %q", lang, tc.name, idx, z.Problem, text)
+			if idx != -1 || z.Problem == nil || z.Problem.Code != tc.code || text != i18n.T(tc.key) {
+				t.Errorf("%s/%s: wizard applied or wrong text: %d %+v %q", i18n.RU, tc.name, idx, z.Problem, text)
 			}
 			if z.Best != m.AutoPick.Index || z.Best < 0 || ed.MapEdit != nil || z.Chosen != -1 {
-				t.Errorf("%s/%s: best %d (autoPick %d) map %+v chosen %d", lang, tc.name, z.Best, m.AutoPick.Index, ed.MapEdit, z.Chosen)
+				t.Errorf("%s/%s: best %d (autoPick %d) map %+v chosen %d", i18n.RU, tc.name, z.Best, m.AutoPick.Index, ed.MapEdit, z.Chosen)
 			}
-			if strings.Contains(text, fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlan, lang), "")) {
-				t.Errorf("%s/%s: «Найдено» shown for an unapplied result", lang, tc.name)
+			if strings.Contains(text, fmt.Sprintf(i18n.T(i18n.KeyWizFoundPlan), "")) {
+				t.Errorf("%s/%s: «Найдено» shown for an unapplied result", i18n.RU, tc.name)
 			}
 			// expert: same decision, best preselected, nothing applied
-			d := traysettings.NewDiscovery(lang, model.Mapping{})
+			d := traysettings.NewDiscovery(model.Mapping{})
 			d.DiscoveryDone(m)
 			if d.Problem == nil || d.Problem.Code != tc.code || d.Sel != z.Best {
-				t.Errorf("%s/%s: expert problem %+v sel %d", lang, tc.name, d.Problem, d.Sel)
+				t.Errorf("%s/%s: expert problem %+v sel %d", i18n.RU, tc.name, d.Problem, d.Sel)
 			}
-			if _, _, pr := traysettings.ResolveDiscovery(m.Candidates, lang); pr == nil || pr.Code != tc.code {
-				t.Errorf("%s/%s: ResolveDiscovery %+v", lang, tc.name, pr)
+			if _, _, pr := traysettings.ResolveDiscovery(m.Candidates); pr == nil || pr.Code != tc.code {
+				t.Errorf("%s/%s: ResolveDiscovery %+v", i18n.RU, tc.name, pr)
 			}
 		}
 	}

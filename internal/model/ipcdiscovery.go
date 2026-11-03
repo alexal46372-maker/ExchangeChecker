@@ -90,7 +90,7 @@ type MappingCheck struct {
 	// ErrorKey / ErrorArgs of a failed check: MsgDiscoverMappingInvalid
 	// with ErrorArgs [mapping.<field>, validation.* reason, params...]
 	// (model.FieldErrorArgs, texts model.FormatMessage(ErrorArgs[1],
-	// ErrorArgs, lang)), or a connection / query key (monitor.test_*,
+	// ErrorArgs)), or a connection / query key (monitor.test_*,
 	// monitor.query_error, monitor.discover_timeout, sql.*) without args.
 	ErrorKey  string   `json:"errorKey,omitempty"`
 	Error     string   `json:"error,omitempty"`

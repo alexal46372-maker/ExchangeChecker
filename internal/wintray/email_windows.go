@@ -318,7 +318,7 @@ func (w *settingsWindow) emailStatusText() string {
 		st.Snapshot.Settings.Email.Status != nil {
 		e = st.Snapshot.Settings.Email
 	}
-	return traysettings.EmailStatusText(e, w.cfg.lang)
+	return traysettings.EmailStatusText(e)
 }
 
 func (w *settingsWindow) saveEmail() {
@@ -417,7 +417,7 @@ func (w *settingsWindow) runEmailTest(id string) {
 	})
 }
 
-// fillEmailTLSCombo fills the tlsMode dropdown once (RU/EN labels).
+// fillEmailTLSCombo fills the tlsMode dropdown once (labels).
 func (w *settingsWindow) fillEmailTLSCombo() {
 	cb := w.ctl[idEmTLSMode]
 	if cb == 0 || winapi.SendMessage(cb, winapi.CB_GETCOUNT, 0, 0) > 0 {

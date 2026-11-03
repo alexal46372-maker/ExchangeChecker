@@ -382,7 +382,7 @@ type PlanPointLister interface { NodePoints(ctx) ([]model.NodePoint, error) }   
 1. **Профили** — список, добавить/изменить/удалить; поля host, port, database, user, password; кнопка **Тест**.
 2. **Мониторинг** — PollInterval, WarningAfterMin, ErrorAfterMin.
 3. **Звук** — частоты/длительности warning и error, gap.
- 4. **Язык** — Русский / English (полный UI).
+ 4. ~~**Язык** — Русский / English (полный UI).~~ Отменено фазой 13 (§12 п. 199): только русский.
 
 Сохранение → файлы + `ReloadConfig` службе.
 
@@ -657,9 +657,9 @@ Wizard Win32 (страницы):
 3. **Время в БД — UTC+3, точно.**
 4. **SQL Authentication и Windows Authentication** — оба в v1.
 5. **Автозапуск трея** вместе с входом пользователя — да.
-6. **UI:** русский и английский, полностью.
+6. ~~**UI:** русский и английский, полностью.~~ Фаза 13 (п. 199): только русский.
 7. **ЛКМ-список:** только базы; цвет базы жёлтый (warning) / красный (error) по худшему уровню точек; точки обмена — во **выпадающем меню при наведении** на базу.
-8. **Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).
+8. ~~**Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).~~ Фаза 13 (п. 199): только русский, язык ОС не определяется.
 
 9. **DPAPI LocalMachine (фаза 1):** `CryptProtectData` с флагами `CRYPTPROTECT_LOCAL_MACHINE` (0x4) и `CRYPTPROTECT_UI_FORBIDDEN` (0x1), опциональный entropy `ExchangeChecker/secrets.dpapi/v1`. Трей (пользователь) шифрует, служба под LocalSystem расшифровывает. Граница доступа — ACL каталога `%ProgramData%\ExchangeChecker\` (инсталлятор, фаза 7: ~~Administrators+SYSTEM+Users-read~~ — **изменено п. 90:** только SYSTEM+Administrators, без Users, логи тоже). (**Изменено решением Вики от 03.10, п. 58:** `secrets.dpapi` — DACL только SY+BA; трей больше не шифрует сам — пишет только служба по IPC.) Tradeoff v1: любой локальный процесс на машине может расшифровать blob — принято как допустимое для v1.
 
@@ -907,6 +907,8 @@ Wizard Win32 (страницы):
 197. **Клонирование базы в UI (фаза 12, `CHK-TRAY-58`):** в окне настроек (рядом с управлением профилями) кнопка «Клонировать базу» / «Clone database» → IPC `clone_profile {profileId, newId?, newName?, expectedRevision}` (capability `clone_profile`, админ). Успех с `needPassword:true` → выбирается новый профиль и фокус на поле пароля (пароль **не** копируется). Без capability кнопка скрыта; `access_denied` для не-админа. RU+EN. Скриншоты ui-screens. Tests: `TestCHK_TRAY_58_*`.
 
 198. **Mute до восстановления в UI (фаза 12, `CHK-TRAY-59`):** в меню базы (левый клик по значку): «Приглушить до восстановления» / «Mute until recovered» и «Снять» / «Unmute» → IPC `mute_until_recovered` / `unmute_profile` (capability `mute_profile`, как `ack_alert`). Индикатор `muted` в строке меню, в «Состояние» и на карточке. Без capability пункты скрыты. RU+EN. Скриншоты ui-screens. Tests: `TestCHK_TRAY_59_*`.
+
+199. **Только русский язык (фаза 13, `CHK-TRAY-86`; отменяет п. 6, 8, 76–78 и §7 «Язык»):** многоязычность удалена во всём проекте (трей, служба `cmd/exchsvc`, инсталлятор `cmd/exchsetup`): каталог `internal/i18n` — один русский текст на ключ (`map[string]string`), тексты службы `model.MonitorMessage` / `model.SQLMessage` — только русские; удалены английские тексты, переключение языка, настройка «Язык» (окно настроек и меню трея «Язык»), определение языка ОС (`internal/winapi/lang*.go`, `internal/config/lang.go`) и тесты RU≠EN. Журнал службы и инсталлятор — по-русски. Старое поле `language`/`lang` в `settings.json` и в блоке `tray` файла экспорта молча игнорируется (при сохранении не пишется); ключ инсталлятора `/LANG=` принимается и игнорируется. Скриншоты ui-screens — только RU. Тесты: `TestCHK_TRAY_86_*`.
 
 ### Ещё желательно (не блокер каркаса)
 

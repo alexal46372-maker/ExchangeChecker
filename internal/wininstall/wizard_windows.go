@@ -167,7 +167,7 @@ func RunWizard(cfg WizardConfig) (WizardOutcome, error) {
 	s := cfg.State
 	style := uint32(winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU | wsMinimizeBox)
 	x, y, ww, hh := centered(WizardClientW, WizardClientH, style)
-	hwnd, err := winapi.CreateWindowEx(0, WizardClass, T(s.Lang, "setup.title", s.Version), style,
+	hwnd, err := winapi.CreateWindowEx(0, WizardClass, T("setup.title", s.Version), style,
 		x, y, ww, hh, 0, 0, winapi.GetModuleHandle())
 	if err != nil {
 		return WizardOutcome{}, err
@@ -182,7 +182,7 @@ func RunWizard(cfg WizardConfig) (WizardOutcome, error) {
 }
 
 func (w *wizard) build() {
-	h, L := w.hwnd, w.cfg.State.Lang
+	h := w.hwnd
 	cx, cw := ContentLeft(), ContentWidth()
 	top := ContentTop()
 	// Title / body text (welcome, folder label, finish)
@@ -191,14 +191,14 @@ func (w *wizard) build() {
 	// Folder row
 	w.ctl[IDDir] = child(h, "EDIT", w.cfg.State.Dir, winapi.WS_TABSTOP|wsBorder|esAutoHScroll, IDDir, cx, top+36, cw-100, WizardEditH)
 	w.chrome.applyFont(w.ctl[IDDir], false)
-	w.ctl[IDBrowse] = child(h, "BUTTON", T(L, "setup.btn.browse"), winapi.WS_TABSTOP|bsPushButton, IDBrowse, cx+cw-96, top+34, 96, WizardBtnH)
+	w.ctl[IDBrowse] = child(h, "BUTTON", T("setup.btn.browse"), winapi.WS_TABSTOP|bsPushButton, IDBrowse, cx+cw-96, top+34, 96, WizardBtnH)
 	w.chrome.applyFont(w.ctl[IDBrowse], false)
 	w.ctl[IDError] = child(h, "STATIC", "", winapi.SS_LEFT, IDError, cx, top+72, cw, 60)
 	w.chrome.applyFont(w.ctl[IDError], false)
 	// Options
-	w.ctl[IDShortcut] = child(h, "BUTTON", T(L, "setup.options.shortcut"), winapi.WS_TABSTOP|bsAutoCheckbox, IDShortcut, cx, top+8, cw, 24)
+	w.ctl[IDShortcut] = child(h, "BUTTON", T("setup.options.shortcut"), winapi.WS_TABSTOP|bsAutoCheckbox, IDShortcut, cx, top+8, cw, 24)
 	w.chrome.applyFont(w.ctl[IDShortcut], false)
-	w.ctl[IDService] = child(h, "BUTTON", T(L, "setup.options.service"), winapi.WS_TABSTOP|bsAutoCheckbox, IDService, cx, top+8+32, cw, 24)
+	w.ctl[IDService] = child(h, "BUTTON", T("setup.options.service"), winapi.WS_TABSTOP|bsAutoCheckbox, IDService, cx, top+8+32, cw, 24)
 	w.chrome.applyFont(w.ctl[IDService], false)
 	// Progress
 	w.ctl[IDStatus] = child(h, "STATIC", "", winapi.SS_LEFT, IDStatus, cx, top+8, cw, 40)
@@ -207,15 +207,15 @@ func (w *wizard) build() {
 	winapi.SendMessage(w.ctl[IDProgress], pbmSetRange32, 0, 100)
 	winapi.SendMessage(w.ctl[IDProgress], pbmSetBarColor, 0, uintptr(ColorAccent))
 	// Finish tray checkbox
-	w.ctl[IDTray] = child(h, "BUTTON", T(L, "setup.finish.tray"), winapi.WS_TABSTOP|bsAutoCheckbox, IDTray, cx, ContentBottom()-36, cw, 24)
+	w.ctl[IDTray] = child(h, "BUTTON", T("setup.finish.tray"), winapi.WS_TABSTOP|bsAutoCheckbox, IDTray, cx, ContentBottom()-36, cw, 24)
 	w.chrome.applyFont(w.ctl[IDTray], false)
 	// Button bar (right-aligned primary)
 	by := ButtonBarTop() + (WizardBtnBarH-WizardBtnH)/2
 	right := int32(WizardClientW - WizardPad)
 	bw, bh, gap := int32(WizardBtnW), int32(WizardBtnH), int32(WizardBtnGap)
-	w.ctl[IDCancel] = child(h, "BUTTON", T(L, "setup.btn.cancel"), winapi.WS_TABSTOP|bsPushButton, IDCancel, right-bw, by, bw, bh)
-	w.ctl[IDNext] = child(h, "BUTTON", T(L, "setup.btn.next"), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, IDNext, right-bw*2-gap, by, bw, bh)
-	w.ctl[IDBack] = child(h, "BUTTON", T(L, "setup.btn.back"), winapi.WS_TABSTOP|bsPushButton, IDBack, right-bw*3-gap*2, by, bw, bh)
+	w.ctl[IDCancel] = child(h, "BUTTON", T("setup.btn.cancel"), winapi.WS_TABSTOP|bsPushButton, IDCancel, right-bw, by, bw, bh)
+	w.ctl[IDNext] = child(h, "BUTTON", T("setup.btn.next"), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, IDNext, right-bw*2-gap, by, bw, bh)
+	w.ctl[IDBack] = child(h, "BUTTON", T("setup.btn.back"), winapi.WS_TABSTOP|bsPushButton, IDBack, right-bw*3-gap*2, by, bw, bh)
 	for _, id := range []int{IDBack, IDNext, IDCancel} {
 		w.chrome.applyFont(w.ctl[id], false)
 	}
@@ -252,11 +252,11 @@ func (w *wizard) show(ids []int, on bool) {
 }
 
 func (w *wizard) render() {
-	s, L := w.cfg.State, w.cfg.State.Lang
+	s := w.cfg.State
 	cx, cw := ContentLeft(), ContentWidth()
 	top := ContentTop()
 	w.show([]int{IDText, IDDir, IDBrowse, IDError, IDShortcut, IDService, IDStatus, IDProgress, IDTray}, false)
-	winapi.SetWindowText(w.ctl[IDNext], T(L, "setup.btn.next"))
+	winapi.SetWindowText(w.ctl[IDNext], T("setup.btn.next"))
 	switch s.Page {
 	case PageWelcome:
 		winapi.MoveWindow(w.ctl[IDText], cx, top, cw, ContentBottom()-top-8)
@@ -264,9 +264,9 @@ func (w *wizard) render() {
 		winapi.SetWindowText(w.ctl[IDText], s.WelcomeText())
 		w.show([]int{IDText}, true)
 	case PageFolder:
-		lbl := T(L, "setup.folder.label")
+		lbl := T("setup.folder.label")
 		if s.DirLocked {
-			lbl += " " + T(L, "setup.folder.upgrade")
+			lbl += " " + T("setup.folder.upgrade")
 		}
 		winapi.MoveWindow(w.ctl[IDText], cx, top, cw, WizardTitleH)
 		w.chrome.applyFont(w.ctl[IDText], true)
@@ -279,11 +279,11 @@ func (w *wizard) render() {
 		winapi.MoveWindow(w.ctl[IDShortcut], cx, top+8, cw, 24)
 		winapi.MoveWindow(w.ctl[IDService], cx, top+8+32, cw, 24)
 		w.show([]int{IDShortcut, IDService}, true)
-		winapi.SetWindowText(w.ctl[IDNext], T(L, "setup.btn.install"))
+		winapi.SetWindowText(w.ctl[IDNext], T("setup.btn.install"))
 	case PageProgress:
 		winapi.MoveWindow(w.ctl[IDStatus], cx, top+8, cw, 40)
 		winapi.MoveWindow(w.ctl[IDProgress], cx, top+56, cw, WizardProgH)
-		winapi.SetWindowText(w.ctl[IDStatus], T(L, "setup.progress.label"))
+		winapi.SetWindowText(w.ctl[IDStatus], T("setup.progress.label"))
 		w.show([]int{IDStatus, IDProgress}, true)
 	case PageFinish:
 		trayH := int32(0)
@@ -298,7 +298,7 @@ func (w *wizard) render() {
 			winapi.MoveWindow(w.ctl[IDTray], cx, ContentBottom()-28, cw, 24)
 			w.show([]int{IDTray}, true)
 		}
-		winapi.SetWindowText(w.ctl[IDNext], T(L, "setup.btn.finish"))
+		winapi.SetWindowText(w.ctl[IDNext], T("setup.btn.finish"))
 	}
 	w.show([]int{IDBack}, s.Page != PageFinish)
 	winapi.EnableWindow(w.ctl[IDBack], s.CanBack())
@@ -316,7 +316,7 @@ func (w *wizard) proc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 	case winapi.WM_ERASEBKGND:
 		return 1, true
 	case winapi.WM_PAINT:
-		w.chrome.paintWizard(hwnd, s.Lang, s.Page)
+		w.chrome.paintWizard(hwnd, s.Page)
 		return 0, true
 	case winapi.WM_CTLCOLORSTATIC, winapi.WM_CTLCOLOREDIT:
 		return w.chrome.ctlColor(wp, true), true
@@ -336,10 +336,10 @@ func (w *wizard) proc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 		case IDCancel:
 			w.onCancel()
 		case IDBrowse:
-			dir, ok, err := winapi.BrowseForFolder(w.hwnd, T(s.Lang, "setup.folder.browse"))
+			dir, ok, err := winapi.BrowseForFolder(w.hwnd, T("setup.folder.browse"))
 			switch {
 			case err != nil:
-				winapi.SetWindowText(w.ctl[IDError], T(s.Lang, "setup.folder.browsefail", err.Error()))
+				winapi.SetWindowText(w.ctl[IDError], T("setup.folder.browsefail", err.Error()))
 			case ok:
 				winapi.SetWindowText(w.ctl[IDDir], dir)
 				winapi.SetWindowText(w.ctl[IDError], "")
@@ -437,8 +437,7 @@ func (w *wizard) onCancel() {
 		return
 	}
 	if !w.cfg.NoCancelConfirm {
-		L := w.cfg.State.Lang
-		if winapi.MessageBox(w.hwnd, T(L, "setup.cancel.confirm"), T(L, "setup.title", w.cfg.State.Version), mbYesNo|mbIconQuestion) != idYes {
+		if winapi.MessageBox(w.hwnd, T("setup.cancel.confirm"), T("setup.title", w.cfg.State.Version), mbYesNo|mbIconQuestion) != idYes {
 			return
 		}
 	}
@@ -463,7 +462,7 @@ type uninstallDlg struct {
 }
 
 // ConfirmUninstall shows the confirmation window; ok = false on Cancel.
-func ConfirmUninstall(lang string) (ok, purge bool, err error) {
+func ConfirmUninstall() (ok, purge bool, err error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	winapi.InitCommonControls()
@@ -478,22 +477,22 @@ func ConfirmUninstall(lang string) (ok, purge bool, err error) {
 	}()
 	style := uint32(winapi.WS_OVERLAPPED | winapi.WS_CAPTION | winapi.WS_SYSMENU)
 	x, y, ww, hh := centered(WizardUninstW, WizardUninstH, style)
-	hwnd, err := winapi.CreateWindowEx(0, UninstallClass, T(lang, "setup.uninstall.title"), style, x, y, ww, hh, 0, 0, winapi.GetModuleHandle())
+	hwnd, err := winapi.CreateWindowEx(0, UninstallClass, T("setup.uninstall.title"), style, x, y, ww, hh, 0, 0, winapi.GetModuleHandle())
 	if err != nil {
 		return false, false, err
 	}
 	u.hwnd = hwnd
 	pad := int32(WizardPad)
-	txt := child(hwnd, "STATIC", T(lang, "setup.uninstall.text"), winapi.SS_LEFT, IDText, pad, pad+12, WizardUninstW-pad*2, 56)
+	txt := child(hwnd, "STATIC", T("setup.uninstall.text"), winapi.SS_LEFT, IDText, pad, pad+12, WizardUninstW-pad*2, 56)
 	u.chrome.applyFont(txt, false)
-	u.purge = child(hwnd, "BUTTON", T(lang, "setup.uninstall.purge"), winapi.WS_TABSTOP|bsAutoCheckbox, IDPurge, pad, pad+76, WizardUninstW-pad*2, 24)
+	u.purge = child(hwnd, "BUTTON", T("setup.uninstall.purge"), winapi.WS_TABSTOP|bsAutoCheckbox, IDPurge, pad, pad+76, WizardUninstW-pad*2, 24)
 	u.chrome.applyFont(u.purge, false)
 	setCheck(u.purge, false)
 	by := int32(WizardUninstH - WizardBtnBarH + (WizardBtnBarH-WizardBtnH)/2)
 	right := int32(WizardUninstW) - pad
 	bw, bh, gap := int32(WizardBtnW), int32(WizardBtnH), int32(WizardBtnGap)
-	btnUn := child(hwnd, "BUTTON", T(lang, "setup.btn.uninstall"), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, IDUninstall, right-bw*2-gap, by, bw, bh)
-	btnCa := child(hwnd, "BUTTON", T(lang, "setup.btn.cancel"), winapi.WS_TABSTOP|bsPushButton, IDCancel, right-bw, by, bw, bh)
+	btnUn := child(hwnd, "BUTTON", T("setup.btn.uninstall"), winapi.WS_TABSTOP|winapi.BS_DEFPUSHBUTTON, IDUninstall, right-bw*2-gap, by, bw, bh)
+	btnCa := child(hwnd, "BUTTON", T("setup.btn.cancel"), winapi.WS_TABSTOP|bsPushButton, IDCancel, right-bw, by, bw, bh)
 	u.chrome.applyFont(btnUn, false)
 	u.chrome.applyFont(btnCa, false)
 	winapi.ShowWindow(hwnd, winapi.SW_SHOW)

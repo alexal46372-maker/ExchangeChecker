@@ -125,7 +125,7 @@ func TestCHK_IPC_08_AsyncHandlerPanic(t *testing.T) {
 	if len(h.slots) != 0 {
 		t.Fatalf("slots held: %d", len(h.slots))
 	}
-	if model.MonitorMessage(model.MsgMonitorInternal, "ru") == "" || model.MonitorMessage(model.MsgMonitorInternal, "en") == "" {
+	if model.MonitorMessage(model.MsgMonitorInternal) == "" || model.MonitorMessage(model.MsgMonitorInternal) == "" {
 		t.Fatal("monitor.internal has no text")
 	}
 	// the log: stack and panic text, no password / manual SQL

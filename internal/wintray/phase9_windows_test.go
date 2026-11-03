@@ -111,8 +111,7 @@ func TestCHK_TRAY_18_Balloons(t *testing.T) {
 			sw = &m[i]
 		}
 	}
-	hasLang := menuSubByCmd(m, trayui.CmdLangAuto) != nil
-	if sw == nil || !sw.Checked || sw.Text != "Уведомления о просрочке" || m[len(m)-1].ID != trayui.CmdExit || !hasLang {
+	if sw == nil || !sw.Checked || sw.Text != "Уведомления о просрочке" || m[len(m)-1].ID != trayui.CmdExit {
 		t.Fatalf("menu %+v", m)
 	}
 	app.Command(trayui.CmdBalloons)
@@ -248,7 +247,7 @@ func TestCHK_TRAY_19_StatusWindow(t *testing.T) {
 	want := map[uintptr]string{sw.list: i18n.KeyTipStList, sw.check: i18n.KeyTipCheckNow, sw.csv: i18n.KeyTipExportCSV,
 		sw.html: i18n.KeyTipExportHTML, sw.close: i18n.KeyTipClose, sw.info: i18n.KeyTipStInfo}
 	for h, k := range want {
-		if h == 0 || sw.tips.text(h) != i18n.T(k, i18n.RU) {
+		if h == 0 || sw.tips.text(h) != i18n.T(k) {
 			t.Errorf("tooltip %s: %q", k, sw.tips.text(h))
 		}
 	}
@@ -291,13 +290,13 @@ func TestCHK_TRAY_20_CheckNow(t *testing.T) {
 	if !winapi.IsWindowEnabled(sw.check) {
 		t.Error("check button disabled while connected")
 	}
-	if s, warn := CheckNowText(model.IPCMessage{}, trayipc.ErrNotConnected, i18n.EN); !warn || !strings.HasPrefix(s, "Check not requested: ") {
+	if s, warn := CheckNowText(model.IPCMessage{}, trayipc.ErrNotConnected); !warn || !strings.HasPrefix(s, "Check not requested: ") {
 		t.Errorf("offline text %q", s)
 	}
-	if s, warn := CheckNowText(model.IPCMessage{Type: model.MsgError, Error: "boom"}, nil, i18n.EN); !warn || !strings.Contains(s, "boom") {
+	if s, warn := CheckNowText(model.IPCMessage{Type: model.MsgError, Error: "boom"}, nil); !warn || !strings.Contains(s, "boom") {
 		t.Errorf("error text %q", s)
 	}
-	if !trayui.Phase9Items(i18n.RU, true, false)[1].Disabled {
+	if !trayui.Phase9Items(true, false)[1].Disabled {
 		t.Error("offline item must be disabled")
 	}
 }
@@ -358,7 +357,7 @@ func startPollApp(t *testing.T, svc *pollService) *App {
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
-	app, err := NewApp(Options{Lang: i18n.RU, NoNotifyIcon: true, HiddenAlerts: true, HiddenStatus: true, Beeper: &testBeeper{},
+	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenStatus: true, Beeper: &testBeeper{},
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
 	if err != nil {
 		t.Fatal(err)

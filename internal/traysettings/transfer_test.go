@@ -19,18 +19,18 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 	exp := model.ConfigExport{Format: model.ConfigFormatV1, ContainsLogins: true,
 		Settings: &model.Settings{Viber: &model.ViberSettings{}},
 		Profiles: []model.Profile{{ID: "p1", Name: "Склад"}}}
-	b, err := ExportFile(exp, &TrayBlock{Language: "en", Balloons: true, Sound: &snd, UIMode: UIExpert, Theme: "dark"}, false, false)
+	b, err := ExportFile(exp, &TrayBlock{Balloons: true, Sound: &snd, UIMode: UIExpert, Theme: "dark"}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(b), `"viber"`) || !strings.Contains(string(b), `"format": "ec-tray/1"`) {
 		t.Fatalf("export: %s", b)
 	}
-	f, err := ParseImport(b, i18n.RU)
+	f, err := ParseImport(b)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.Tray == nil || f.Tray.Language != "en" || !f.Tray.Balloons || f.Tray.Sound.Master != 40 || f.Tray.UIMode != UIExpert ||
+	if f.Tray == nil || !f.Tray.Balloons || f.Tray.Sound.Master != 40 || f.Tray.UIMode != UIExpert ||
 		f.Tray.Sound.Error.File != `C:\snd\err.wav` || f.Config.Tray != nil || len(f.Config.Profiles) != 1 {
 		t.Fatalf("parsed %+v / %+v", f.Tray, f.Config)
 	}
@@ -40,7 +40,7 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 	json.Unmarshal(b, &raw)
 	raw["settings"] = map[string]any{"viber": map[string]any{"enabled": true, "recipients": []any{map[string]any{"id": "1", "name": "A"}}}}
 	b2, _ := json.Marshal(raw)
-	f2, err := ParseImport(b2, i18n.RU)
+	f2, err := ParseImport(b2)
 	if err != nil || f2.Config.Settings == nil || f2.Config.Settings.Viber == nil || !f2.Config.Settings.Viber.Enabled {
 		t.Fatalf("parse keeps viber: %v %+v", err, f2)
 	}
@@ -61,14 +61,14 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 		"format":     {[]byte(`{"format":"ec-config/2","profiles":[]}`), "ec-config/1"},
 		"tray large": {[]byte(`{"format":"ec-config/1","profiles":[],"tray":"` + strings.Repeat("a", model.ImportTrayMax) + `"}`), "256"},
 	} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
-			if _, err := ParseImport(c.data, lang); err == nil || !strings.Contains(err.Error(), c.want) {
-				t.Errorf("%s %s: %v", name, lang, err)
+		{
+			if _, err := ParseImport(c.data); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("%s %s: %v", name, i18n.RU, err)
 			}
 		}
 	}
 	// a file without a tray block / with an unknown one: Tray nil
-	if f, err := ParseImport([]byte(`{"format":"ec-config/1","profiles":[],"tray":{"format":"x"}}`), i18n.EN); err != nil || f.Tray != nil {
+	if f, err := ParseImport([]byte(`{"format":"ec-config/1","profiles":[],"tray":{"format":"x"}}`)); err != nil || f.Tray != nil {
 		t.Fatalf("unknown tray block: %v %+v", err, f)
 	}
 }
@@ -81,19 +81,19 @@ func TestCHK_TRAY_44_Preview(t *testing.T) {
 	res := model.ImportResult{DryRun: true, Added: []string{"a"}, Updated: []string{"b"}, Removed: []string{"c"}, NeedPassword: []string{"a"}}
 	names := map[string]string{"a": "Альфа", "b": "Бета"}
 	no := func(string) bool { return false }
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		p := Preview(res, names, tray, true, no, lang)
+	{
+		p := Preview(res, names, tray, true, no)
 		for _, s := range []string{"Альфа", "Бета", "c", `D:\no.wav`, "100 %"} {
 			if !strings.Contains(p, s) {
-				t.Errorf("%s: %q missing in %q", lang, s, p)
+				t.Errorf("%s: %q missing in %q", i18n.RU, s, p)
 			}
 		}
 		if strings.Count(p, "\r\n") != 5 {
-			t.Errorf("%s: lines %q", lang, p)
+			t.Errorf("%s: lines %q", i18n.RU, p)
 		}
-		if p := Preview(model.ImportResult{}, nil, tray, false, no, lang); !strings.Contains(p, i18n.T(i18n.KeyXferTrayKept, lang)) ||
-			!strings.Contains(p, i18n.T(i18n.KeyXferNoChanges, lang)) || strings.Contains(p, `D:\no.wav`) {
-			t.Errorf("%s: tray kept: %q", lang, p)
+		if p := Preview(model.ImportResult{}, nil, tray, false, no); !strings.Contains(p, i18n.T(i18n.KeyXferTrayKept)) ||
+			!strings.Contains(p, i18n.T(i18n.KeyXferNoChanges)) || strings.Contains(p, `D:\no.wav`) {
+			t.Errorf("%s: tray kept: %q", i18n.RU, p)
 		}
 	}
 }
@@ -104,12 +104,12 @@ func TestCHK_TRAY_44_ErrorTexts(t *testing.T) {
 	for _, k := range []string{model.MsgImportFormat, model.MsgImportMode, model.MsgImportDuplicateID, model.MsgImportNoConfig,
 		model.MsgImportTrayTooLarge, model.MsgImportRollbackFailed, model.MsgMonitorProfileInvalid, model.MsgMonitorSettingsInvalid,
 		model.MsgMonitorConfigConflict, model.MsgMonitorAccessDenied} {
-		ru, en := i18n.Message(k, i18n.RU), i18n.Message(k, i18n.EN)
-		if ru == "" || en == "" || ru == en || strings.Contains(en, k) {
-			t.Errorf("%s: %q / %q", k, ru, en)
+		ru := i18n.Message(k)
+		if ru == "" {
+			t.Errorf("%s: %q", k, ru)
 		}
 	}
-	e := NewEditor(i18n.EN, Admin)
+	e := NewEditor(Admin)
 	pr := e.Reply(model.IPCMessage{Type: model.MsgError, Code: model.ErrCodeConflict, ErrorKey: model.MsgMonitorConfigConflict})
 	if pr == nil || !pr.Reload {
 		t.Errorf("conflict must offer a reload: %+v", pr)
@@ -129,7 +129,7 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 	exp := model.ConfigExport{Format: model.ConfigFormatV1, ContainsViberRecipients: true,
 		Settings: &model.Settings{Viber: &model.ViberSettings{Enabled: true, HasToken: true,
 			Recipients: []model.ViberRecipient{{ID: "u1", Name: "Ann"}}, Status: &model.ViberStatus{}}}}
-	b, err := ExportFile(exp, &TrayBlock{Language: "ru", Balloons: true, Sound: &snd, UIMode: UISimple, Theme: "dark"}, true, false)
+	b, err := ExportFile(exp, &TrayBlock{Balloons: true, Sound: &snd, UIMode: UISimple, Theme: "dark"}, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 	if !strings.Contains(s, `"recipients"`) || !strings.Contains(s, `"theme": "dark"`) || strings.Contains(s, `"hasToken": true`) {
 		t.Fatalf("export with viber: %s", b)
 	}
-	b0, err := ExportFile(exp, &TrayBlock{Language: "en"}, false, false)
+	b0, err := ExportFile(exp, &TrayBlock{}, false, false)
 	if err != nil || strings.Contains(string(b0), `"viber"`) || strings.Contains(string(b0), `"containsViberRecipients": true`) {
 		t.Fatalf("export without flag: %s / %v", b0, err)
 	}
@@ -151,7 +151,7 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 	if strings.Contains(string(raw0), "includeViberRecipients") {
 		t.Fatalf("omit empty: %s", raw0)
 	}
-	f, err := ParseImport(b, i18n.EN)
+	f, err := ParseImport(b)
 	if err != nil || f.Tray == nil || f.Tray.Theme != "dark" {
 		t.Fatalf("parse theme: %v %+v", err, f)
 	}
@@ -161,10 +161,10 @@ func TestCHK_TRAY_57_RequestJSON(t *testing.T) {
 		t.Fatalf("ImportRequest: %s", raw)
 	}
 	// no required restart string for the tray-block path (CHK-TRAY-57)
-	for _, lang := range []string{i18n.RU, i18n.EN} {
-		s := i18n.T(i18n.KeyXferTrayApplied, lang)
+	{
+		s := i18n.T(i18n.KeyXferTrayApplied)
 		if strings.Contains(s, "перезапуск") || strings.Contains(strings.ToLower(s), "restart") {
-			t.Errorf("%s: restart text still required: %q", lang, s)
+			t.Errorf("%s: restart text still required: %q", i18n.RU, s)
 		}
 	}
 }

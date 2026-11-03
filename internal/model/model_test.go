@@ -177,7 +177,7 @@ func TestCHK_CFG_01_SettingsValidate(t *testing.T) {
 	if err := d.Validate(); err != nil {
 		t.Fatalf("defaults invalid: %v", err)
 	}
-	if d.PollIntervalSec != 60 || d.WarnMinutes != 30 || d.ErrorMinutes != 60 || !d.TrayAutostart || d.Language != LangAuto {
+	if d.PollIntervalSec != 60 || d.WarnMinutes != 30 || d.ErrorMinutes != 60 || !d.TrayAutostart {
 		t.Errorf("unexpected defaults: %+v", d)
 	}
 	bad := map[string]func(*Settings){
@@ -186,7 +186,6 @@ func TestCHK_CFG_01_SettingsValidate(t *testing.T) {
 		"warn=0":       func(s *Settings) { s.WarnMinutes = 0 },
 		"poll too low": func(s *Settings) { s.PollIntervalSec = 1 },
 		"poll too big": func(s *Settings) { s.PollIntervalSec = MaxPollIntervalSec + 1 },
-		"lang de":      func(s *Settings) { s.Language = "de" },
 		"freq low":     func(s *Settings) { s.Beep.WarningFreqHz = 10 },
 		"freq high":    func(s *Settings) { s.Beep.ErrorFreqHz = 40000 },
 		"dur 0":        func(s *Settings) { s.Beep.ErrorDurMs = 0 },
@@ -198,13 +197,6 @@ func TestCHK_CFG_01_SettingsValidate(t *testing.T) {
 		mut(&s)
 		if err := s.Validate(); err == nil {
 			t.Errorf("%s: expected validation error", name)
-		}
-	}
-	for _, lang := range []string{LangAuto, LangRU, LangEN} {
-		s := DefaultSettings()
-		s.Language = lang
-		if err := s.Validate(); err != nil {
-			t.Errorf("lang %q: %v", lang, err)
 		}
 	}
 	if d.WarnAfter() != 30*time.Minute || d.ErrorAfter() != time.Hour || d.PollInterval() != time.Minute {

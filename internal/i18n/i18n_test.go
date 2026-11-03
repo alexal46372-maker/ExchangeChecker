@@ -11,28 +11,14 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// TestCHK_TRAY_08_CatalogComplete — every catalog key has non-empty RU and
-// EN texts with the same format verbs.
+// TestCHK_TRAY_08_CatalogComplete — every catalog key has a non-empty
+// (Russian) text.
 func TestCHK_TRAY_08_CatalogComplete(t *testing.T) {
 	for k, v := range catalog {
-		if strings.TrimSpace(v[0]) == "" || strings.TrimSpace(v[1]) == "" {
-			t.Errorf("%s: empty translation %q", k, v)
-		}
-		if verbs(v[0]) != verbs(v[1]) {
-			t.Errorf("%s: format verbs differ: %q vs %q", k, v[0], v[1])
+		if strings.TrimSpace(v) == "" {
+			t.Errorf("%s: empty text", k)
 		}
 	}
-}
-
-func verbs(s string) string {
-	var b strings.Builder
-	for i := 0; i+1 < len(s); i++ {
-		if s[i] == '%' {
-			b.WriteByte(s[i+1])
-			i++
-		}
-	}
-	return b.String()
 }
 
 // TestCHK_TRAY_08_AllKeyConstsInCatalog — every Key* constant of the
@@ -71,51 +57,28 @@ func TestCHK_TRAY_08_AllKeyConstsInCatalog(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_08_DefaultLanguage — explicit override wins, otherwise the
-// OS UI language, anything but RU/EN -> RU.
-func TestCHK_TRAY_08_DefaultLanguage(t *testing.T) {
-	os := func(l string) func() string { return func() string { return l } }
-	cases := []struct {
-		override, os, want string
-	}{
-		{"", "ru", RU}, {"", "en", EN}, {"", "de", RU}, {"", "", RU},
-		{"en", "ru", EN}, {"ru", "en", RU}, {"EN", "ru", EN}, {"fr", "en", EN},
-	}
-	for _, c := range cases {
-		if got := Resolve(c.override, os(c.os)); got != c.want {
-			t.Errorf("Resolve(%q, os=%q) = %q, want %q", c.override, c.os, got, c.want)
-		}
-	}
-	if Resolve("", nil) != RU {
-		t.Error("no OS language -> RU")
-	}
-	if d := Default(); d != RU && d != EN {
-		t.Errorf("Default() = %q", d)
-	}
-}
-
 // TestCHK_TRAY_08_ServiceKeys — every monitor.* key of the service renders
 // in both languages; unknown keys never give an empty text.
 func TestCHK_TRAY_08_ServiceKeys(t *testing.T) {
 	for _, k := range model.MonitorMessageKeys() {
-		ru, en := Message(k, RU), Message(k, EN)
-		if ru == "" || en == "" || ru == en {
-			t.Errorf("%s: ru %q en %q", k, ru, en)
+		ru := Message(k)
+		if ru == "" {
+			t.Errorf("%s: ru %q", k, ru)
 		}
 	}
-	if got := Message("sql.no_such_key", RU); !strings.Contains(got, "sql.no_such_key") {
+	if got := Message("sql.no_such_key"); !strings.Contains(got, "sql.no_such_key") {
 		t.Errorf("unknown key text %q must name the key", got)
 	}
 	// sql.* texts come from model.SQLMessage (G1, phase 6d: failed / test errors)
 	for _, k := range model.SQLMessageKeys() {
-		if ru, en := Message(k, RU), Message(k, EN); ru != model.SQLMessage(k, RU) || en != model.SQLMessage(k, EN) || ru == "" {
-			t.Errorf("%s: %q / %q", k, ru, en)
+		if ru := Message(k); ru != model.SQLMessage(k) || ru == "" {
+			t.Errorf("%s: %q", k, ru)
 		}
 	}
-	if Message("", RU) != "" {
+	if Message("") != "" {
 		t.Error("empty key -> empty text")
 	}
-	if T("no.such.key", EN) != "no.such.key" {
+	if T("no.such.key") != "no.such.key" {
 		t.Error("unknown catalog key is returned unchanged")
 	}
 }

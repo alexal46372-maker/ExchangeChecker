@@ -86,7 +86,7 @@ func startChromeApp(t *testing.T) (*App, *chromeCfg) {
 func openChromeSettings(t *testing.T, app *App, lang string, dpi int32, hidden bool) *settingsWindow {
 	t.Helper()
 	testDPI = dpi
-	w, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session,
+	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session,
 		hidden: hidden, uiMode: traysettings.UIExpert})
 	if err != nil {
 		t.Fatal(err)
@@ -358,11 +358,11 @@ func TestCHK_TRAY_66_AllTabsScrollNoOverlap(t *testing.T) {
 	defer func() { testDPI = 0 }()
 	assertScrollChromeFlags(t)
 
-	for _, lang := range []string{i18n.RU, i18n.EN} {
+	{
 		for _, dpi := range []int32{96, 120, 144} {
 			testDPI = dpi
-			w := openChromeSettings(t, app, lang, dpi, true)
-			tag := lang + "/" + strconv.Itoa(int(dpi))
+			w := openChromeSettings(t, app, i18n.RU, dpi, true)
+			tag := i18n.RU + "/" + strconv.Itoa(int(dpi))
 			tab := w.ctl[idSetTabs]
 			if tab == 0 || w.host == 0 {
 				w.close()
@@ -508,7 +508,7 @@ func TestCHK_TRAY_66_LayoutFitWrap144EN(t *testing.T) {
 	app, _ := startChromeApp(t)
 	defer app.Exit()
 	defer func() { testDPI = 0 }()
-	w := openChromeSettings(t, app, i18n.EN, 144, true)
+	w := openChromeSettings(t, app, i18n.RU, 144, true)
 	defer w.close()
 
 	w.setPage(0)

@@ -42,15 +42,15 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 			suffix = "_dark"
 		}
 		for _, dpi := range []int32{96, 144} {
-			for _, lang := range []string{i18n.RU, i18n.EN} {
+			{
 				testDPI = dpi
-				uiScenes(t, lang, func(name string, hwnd uintptr) {
+				uiScenes(t, i18n.RU, func(name string, hwnd uintptr) {
 					// re-assert: NewApp must not clobber (LoadTheme nil-safe);
 					// keep this as a belt-and-braces for paint/PrintWindow
 					trayui.SetTheme(theme)
 					syncThemeComboHwnd(hwnd)
 					ApplyWindowTheme(hwnd)
-					file := fmt.Sprintf("%s%s-%s-%d", strings.ReplaceAll(name, " ", "_"), suffix, lang, dpi)
+					file := fmt.Sprintf("%s%s-%s-%d", strings.ReplaceAll(name, " ", "_"), suffix, i18n.RU, dpi)
 					if err := screenshot(hwnd, filepath.Join(dir, file)); err != nil {
 						t.Errorf("%s: %v", file, err)
 						return

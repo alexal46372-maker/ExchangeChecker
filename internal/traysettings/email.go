@@ -269,7 +269,7 @@ var emailKeyFocus = map[string]Field{
 func IsEmail(f Field) bool { return strings.HasPrefix(string(f), "email.") }
 
 // emailFieldLabel is the label of an email path in validation texts.
-func emailFieldLabel(path, lang string) (string, bool) {
+func emailFieldLabel(path string) (string, bool) {
 	f, ok := EmailFocus(path)
 	if !ok {
 		return "", false
@@ -281,7 +281,7 @@ func emailFieldLabel(path, lang string) (string, bool) {
 		FieldEmailDays: i18n.KeyEmDays, FieldEmailSchedFrom: i18n.KeyEmFrom,
 		FieldEmailSchedTo: i18n.KeyEmTo, FieldEmailEvents: i18n.KeyEmEvents,
 	}[f]
-	l := strings.TrimSuffix(strings.TrimSpace(i18n.T(key, lang)), ":")
+	l := strings.TrimSuffix(strings.TrimSpace(i18n.T(key)), ":")
 	if i := strings.Index(path, "["); i >= 0 && f == FieldEmailRecipients {
 		if n, err := strconv.Atoi(strings.TrimSuffix(strings.SplitN(path[i+1:], "]", 2)[0], "]")); err == nil {
 			l += fmt.Sprintf(" (%d)", n+1)
@@ -334,7 +334,7 @@ func (e *Editor) EmailRequest() (model.IPCRequest, *Problem) {
 			has = false
 		}
 		if e.Email.Password == "" && !has && !e.Email.ClearPassword {
-			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword, e.Lang), Field: FieldEmailPassword}
+			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword), Field: FieldEmailPassword}
 		}
 	}
 	s := e.Settings
@@ -392,7 +392,7 @@ func (e *Editor) EmailTestRequest(recipientID, addr string) (model.IPCRequest, *
 			return model.IPCRequest{}, e.fieldProblem(fieldErr("smtpPassword", model.ValRequired))
 		}
 		if pw == "" && (e.Settings.Email == nil || !e.Settings.Email.HasPassword) {
-			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword, e.Lang), Field: FieldEmailPassword}
+			return model.IPCRequest{}, &Problem{Text: i18n.Message(model.MsgEmailNoPassword), Field: FieldEmailPassword}
 		}
 	} else {
 		pw = "" // none: never AUTH
@@ -432,9 +432,9 @@ func (e *Editor) EmailTestText(r *model.EmailTestResult) string {
 		}
 		res := e.t(i18n.KeyEmTestItemOK)
 		if !it.OK {
-			res = i18n.Message(it.ErrorKey, e.Lang)
+			res = i18n.Message(it.ErrorKey)
 			if it.ErrorKey == "" {
-				res = i18n.Message(model.MsgEmailFailed, e.Lang)
+				res = i18n.Message(model.MsgEmailFailed)
 			}
 		}
 		lines = append(lines, who+": "+res)
@@ -443,18 +443,18 @@ func (e *Editor) EmailTestText(r *model.EmailTestResult) string {
 }
 
 // EmailStatusText renders settings.email.status.
-func EmailStatusText(e *model.EmailSettings, lang string) string {
+func EmailStatusText(e *model.EmailSettings) string {
 	if e == nil || e.Status == nil {
 		return ""
 	}
 	st := e.Status
-	t := fmt.Sprintf(i18n.T(i18n.KeyEmStatus, lang), st.Sent, st.Queued, st.Dropped)
+	t := fmt.Sprintf(i18n.T(i18n.KeyEmStatus), st.Sent, st.Queued, st.Dropped)
 	if st.LastOKAt != nil {
-		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastOK, lang), st.LastOKAt.Local().Format("02.01.2006 15:04"))
+		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastOK), st.LastOKAt.Local().Format("02.01.2006 15:04"))
 	}
 	if st.LastErrorAt != nil {
-		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastError, lang), st.LastErrorAt.Local().Format("02.01.2006 15:04"),
-			strings.TrimSuffix(i18n.Message(st.LastErrorKey, lang), "."))
+		t += "\r\n" + fmt.Sprintf(i18n.T(i18n.KeyEmLastError), st.LastErrorAt.Local().Format("02.01.2006 15:04"),
+			strings.TrimSuffix(i18n.Message(st.LastErrorKey), "."))
 	}
 	return t
 }

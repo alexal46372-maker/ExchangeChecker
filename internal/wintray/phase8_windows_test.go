@@ -25,7 +25,7 @@ func (w *settingsWindow) selCombo(id int32, i int) {
 	w.command(id, winapi.CBN_SELCHANGE)
 }
 
-func plain(key string) string { return strings.TrimSuffix(i18n.T(key, i18n.RU), ":") }
+func plain(key string) string { return strings.TrimSuffix(i18n.T(key), ":") }
 
 // TestCHK_TRAY_12_SettingsLimitsFields — the settings window edits the
 // profile's thresholds, timeouts and server preset: values shown, saved
@@ -94,7 +94,7 @@ func TestCHK_TRAY_17_SettingsDefaults(t *testing.T) {
 		w.text(idSetConnTO) != fmt.Sprint(model.DefaultConnectTimeoutSec) || w.text(idSetQueryTO) != fmt.Sprint(model.DefaultQueryTimeoutSec) {
 		t.Errorf("defaults %q %q %q %q", w.text(idSetWarn), w.text(idSetError), w.text(idSetConnTO), w.text(idSetQueryTO))
 	}
-	if w.cues[idSetWarn] != i18n.T(i18n.KeySetThreshCue, i18n.RU) || w.cues[idSetError] != w.cues[idSetWarn] ||
+	if w.cues[idSetWarn] != i18n.T(i18n.KeySetThreshCue) || w.cues[idSetError] != w.cues[idSetWarn] ||
 		!strings.Contains(w.cues[idSetConnTO], "15") || !strings.Contains(w.cues[idSetQueryTO], "30") {
 		t.Errorf("cues %q", w.cues)
 	}
@@ -146,7 +146,7 @@ func checkTips(t *testing.T, what string, tips *tooltips, ctl map[int32]uintptr,
 			t.Errorf("%s: control %d (%s) has no tooltip key", what, id, winapi.GetClassName(h))
 			continue
 		}
-		if got := tips.text(h); got == "" || got != i18n.T(key, i18n.RU) {
+		if got := tips.text(h); got == "" || got != i18n.T(key) {
 			t.Errorf("%s: control %d tooltip %q, want %s", what, id, got, key)
 		}
 	}
@@ -164,12 +164,12 @@ func TestCHK_TRAY_15_Tooltips(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	for _, m := range []map[int32]string{settingsTips, discoveryTips} {
 		for id, k := range m {
-			if ru, en := i18n.T(k, i18n.RU), i18n.T(k, i18n.EN); ru == "" || en == "" || ru == en {
-				t.Errorf("tooltip %d %s: ru %q en %q", id, k, ru, en)
+			if ru := i18n.T(k); ru == "" {
+				t.Errorf("tooltip %d %s: ru %q", id, k, ru)
 			}
 		}
 	}
-	if !strings.Contains(i18n.T(i18n.KeyTipSetInstance, i18n.RU), "Только имя именованного экземпляра, например SQLEXPRESS. Не сервер и не IP") {
+	if !strings.Contains(i18n.T(i18n.KeyTipSetInstance), "Только имя именованного экземпляра, например SQLEXPRESS. Не сервер и не IP") {
 		t.Error("instance tooltip text")
 	}
 	func() {
@@ -190,25 +190,25 @@ func TestCHK_TRAY_15_Tooltips(t *testing.T) {
 	}
 	checkTips(t, "settings read-only", ro.settings.tips, ro.settings.ctl, settingsTips, settingsOutputs)
 
-	aw, err := newAlertWindow(0, i18n.RU, nil, nil)
+	aw, err := newAlertWindow(0, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer winapi.DestroyWindow(aw.hwnd)
-	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck, i18n.RU) || aw.tips.text(aw.close) != i18n.T(i18n.KeyTipAlertClose, i18n.RU) ||
-		aw.tips.text(aw.mute) != i18n.T(i18n.KeyTipAlertMute, i18n.RU) || aw.tips.count() != 3 {
+	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck) || aw.tips.text(aw.close) != i18n.T(i18n.KeyTipAlertClose) ||
+		aw.tips.text(aw.mute) != i18n.T(i18n.KeyTipAlertMute) || aw.tips.count() != 3 {
 		t.Error("alert tooltips")
 	}
-	aw.setLang(i18n.EN)
-	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck, i18n.EN) || aw.tips.count() != 3 {
-		t.Error("alert tooltips after the language switch")
+	aw.setTips() // set again (relayout): still exactly 3 tips
+	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck) || aw.tips.count() != 3 {
+		t.Error("alert tooltips after setting them again")
 	}
-	h, err := newAboutWindow(0, "About", "text", "OK", i18n.T(i18n.KeyTipAboutOK, i18n.EN), false, nil)
+	h, err := newAboutWindow(0, "About", "text", "OK", i18n.T(i18n.KeyTipAboutOK), false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer winapi.DestroyWindow(h)
-	if aboutTips.count() != 1 || aboutTips.text(winapi.GetDlgItem(h, winapi.IDOK)) != i18n.T(i18n.KeyTipAboutOK, i18n.EN) {
+	if aboutTips.count() != 1 || aboutTips.text(winapi.GetDlgItem(h, winapi.IDOK)) != i18n.T(i18n.KeyTipAboutOK) {
 		t.Error("about tooltip")
 	}
 }
@@ -245,18 +245,18 @@ func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
 	m := app.RightMenu()
 	var svc *trayui.Item
 	for i := range m {
-		if m[i].Text == i18n.T(i18n.KeyMenuService, i18n.RU) {
+		if m[i].Text == i18n.T(i18n.KeyMenuService) {
 			svc = &m[i]
 			break
 		}
 	}
-	if svc == nil || !strings.Contains(svc.Sub[0].Text, i18n.T(i18n.KeySvcStopped, i18n.RU)) ||
+	if svc == nil || !strings.Contains(svc.Sub[0].Text, i18n.T(i18n.KeySvcStopped)) ||
 		svc.Sub[2].Disabled || !svc.Sub[3].Disabled {
 		t.Fatalf("menu svc=%+v all=%+v", svc, m)
 	}
 	app.Command(trayui.CmdSvcStart)
 	pumpUntil(t, "start message", func() bool { return len(msgs) == 1 })
-	if fs.starts != 1 || warns[0] || msgs[0] != fmt.Sprintf(i18n.T(i18n.KeySvcStartSent, i18n.RU), model.ServiceName) {
+	if fs.starts != 1 || warns[0] || msgs[0] != fmt.Sprintf(i18n.T(i18n.KeySvcStartSent), model.ServiceName) {
 		t.Errorf("start: %d %q", fs.starts, msgs)
 	}
 	fs.mu.Lock()
@@ -264,7 +264,7 @@ func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
 	fs.mu.Unlock()
 	app.Command(trayui.CmdSvcStop)
 	pumpUntil(t, "access message", func() bool { return len(msgs) == 2 })
-	if fs.sts != 1 || !warns[1] || msgs[1] != fmt.Sprintf(i18n.T(i18n.KeySvcErrAccess, i18n.RU), model.ServiceName) {
+	if fs.sts != 1 || !warns[1] || msgs[1] != fmt.Sprintf(i18n.T(i18n.KeySvcErrAccess), model.ServiceName) {
 		t.Errorf("access denied: %q", msgs)
 	}
 	for _, c := range []struct {
@@ -276,13 +276,13 @@ func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
 		{errServiceAlreadyRunning, i18n.KeySvcErrRunning, false},
 		{errServiceNotActive, i18n.KeySvcErrNotActive, false},
 	} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
-			if txt, warn := ServiceResultText("X", true, c.err, lang); txt != fmt.Sprintf(i18n.T(c.key, lang), "X") || warn != c.warn {
-				t.Errorf("%v %s: %q", c.err, lang, txt)
+		{
+			if txt, warn := ServiceResultText("X", true, c.err); txt != fmt.Sprintf(i18n.T(c.key), "X") || warn != c.warn {
+				t.Errorf("%v %s: %q", c.err, i18n.RU, txt)
 			}
 		}
 	}
-	if txt, _ := ServiceResultText("X", false, syscall.Errno(1053), i18n.EN); !strings.Contains(txt, "X") {
+	if txt, _ := ServiceResultText("X", false, syscall.Errno(1053)); !strings.Contains(txt, "X") {
 		t.Errorf("other error %q", txt)
 	}
 	// real SCM: a running system service and a missing one
@@ -293,7 +293,7 @@ func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
 	if st, _ := missing.State(); st != trayui.SvcStateNotInstalled {
 		t.Errorf("missing state %v", st)
 	}
-	if txt, warn := ServiceResultText(missing.Name(), true, missing.Start(), i18n.RU); !warn || !strings.Contains(txt, "не установлена") {
+	if txt, warn := ServiceResultText(missing.Name(), true, missing.Start()); !warn || !strings.Contains(txt, "не установлена") {
 		t.Errorf("missing start %q", txt)
 	}
 	if app.service().Name() == "" || SCMService(model.ServiceName).Name() != "ExchangeChecker" {

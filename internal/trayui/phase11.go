@@ -6,9 +6,9 @@ import "github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 const CmdSummary = 1040
 
 // Phase11Items: Summary… when the service has capability summary.
-func Phase11Items(lang string, hasSummary bool) []Item {
+func Phase11Items(hasSummary bool) []Item {
 	if !hasSummary {
 		return nil
 	}
-	return []Item{{ID: CmdSummary, Text: i18n.T(i18n.KeyMenuSummary, lang)}}
+	return []Item{{ID: CmdSummary, Text: i18n.T(i18n.KeyMenuSummary)}}
 }

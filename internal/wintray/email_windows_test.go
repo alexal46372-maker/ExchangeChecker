@@ -117,7 +117,7 @@ func TestCHK_TRAY_64_EmailHidden(t *testing.T) {
 	// with capability: Simple hides the tab
 	svc := newEmailCfg()
 	app2 := startCfgApp(t, svc.cfgService, true, nil)
-	w2, err := newSettingsWindow(settingsConfig{lang: i18n.RU, mode: traysettings.Admin, session: app2.session, hidden: true,
+	w2, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app2.session, hidden: true,
 		uiMode: traysettings.UISimple})
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestCHK_TRAY_64_EmailPage(t *testing.T) {
 		t.Fatal("clear on email:", why)
 	}
 	if w.text(idEmRecipients) != "ops ops@example.com Дежурный" || w.text(idEmHost) != "smtp.example.com" ||
-		w.text(idEmPassword) != "" || w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordSaved, i18n.RU) {
+		w.text(idEmPassword) != "" || w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordSaved) {
 		t.Fatalf("filled: %q %q %q", w.text(idEmRecipients), w.text(idEmHost), w.text(idEmPasswordState))
 	}
 	// starttls: password enabled
@@ -171,7 +171,7 @@ func TestCHK_TRAY_64_EmailPage(t *testing.T) {
 	if winapi.IsWindowEnabled(w.ctl[idEmPassword]) {
 		t.Error("password must be disabled for tlsMode=none")
 	}
-	if !strings.Contains(w.text(idEmPasswordState), "none") && w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordNoneTLS, i18n.RU) {
+	if !strings.Contains(w.text(idEmPasswordState), "none") && w.text(idEmPasswordState) != i18n.T(i18n.KeyEmPasswordNoneTLS) {
 		t.Errorf("none state %q", w.text(idEmPasswordState))
 	}
 	// back to starttls, save with new password
@@ -234,7 +234,7 @@ func TestCHK_TRAY_87_TestSavesFirst(t *testing.T) {
 	if n, m := svc.counts(); n != 0 || m != 0 {
 		t.Fatalf("after failed save: saves %d tests %d", n, m)
 	}
-	if !strings.Contains(w.text(idEmResult), model.MonitorMessage(model.MsgMonitorConfigSaveFailed, model.LangRU)) {
+	if !strings.Contains(w.text(idEmResult), model.MonitorMessage(model.MsgMonitorConfigSaveFailed)) {
 		t.Errorf("save error not shown: %q", w.text(idEmResult))
 	}
 

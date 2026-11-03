@@ -19,7 +19,7 @@ func emailEditor(t *testing.T, hasPassword bool, tlsMode string) *Editor {
 	s.Email.Port = 587
 	s.Email.From = "mon@example.com"
 	s.Email.Recipients = []model.EmailRecipient{{ID: "ops", Addr: "ops@example.com", Name: "Дежурный"}}
-	e := NewEditor(i18n.RU, Admin)
+	e := NewEditor(Admin)
 	e.LoadConfig(model.ConfigView{Settings: s}, "r1")
 	if !e.CanEditEmail() || e.EmailUnsaved() {
 		t.Fatal("email page not loaded")
@@ -69,7 +69,7 @@ func TestCHK_TRAY_64_EmailForm(t *testing.T) {
 		t.Error("clearSmtpPassword")
 	}
 	e.EmailDone(model.IPCMessage{Type: model.MsgOK}, req)
-	if e.Settings.Email.HasPassword || e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNone, i18n.RU) {
+	if e.Settings.Email.HasPassword || e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNone) {
 		t.Error("password cleared")
 	}
 
@@ -81,7 +81,7 @@ func TestCHK_TRAY_64_EmailForm(t *testing.T) {
 	if pr != nil || req.SmtpPassword != "" || req.ClearSmtpPassword {
 		t.Fatalf("none mode must ignore password: %+v %v", req, pr)
 	}
-	if e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNoneTLS, i18n.RU) {
+	if e.PasswordStateText() != i18n.T(i18n.KeyEmPasswordNoneTLS) {
 		t.Errorf("none state %q", e.PasswordStateText())
 	}
 
@@ -124,9 +124,9 @@ func TestCHK_TRAY_64_EmailForm(t *testing.T) {
 	for _, k := range []string{model.MsgEmailNoPassword, model.MsgEmailNoRecipients, model.MsgEmailNoHost, model.MsgEmailNoFrom,
 		model.MsgEmailAuthFailed, model.MsgEmailInvalidAddr, model.MsgEmailNetwork, model.MsgEmailTLS, model.MsgEmailFailed,
 		model.MsgEmailInvalid, model.MsgEmailRateLimited} {
-		ru, en := i18n.Message(k, i18n.RU), i18n.Message(k, i18n.EN)
-		if ru == "" || en == "" || ru == en || strings.Contains(ru, k) {
-			t.Errorf("%s: %q / %q", k, ru, en)
+		ru := i18n.Message(k)
+		if ru == "" || strings.Contains(ru, k) {
+			t.Errorf("%s: %q", k, ru)
 		}
 	}
 }
@@ -156,8 +156,8 @@ func TestCHK_TRAY_64_EmailTest(t *testing.T) {
 	txt := e.EmailTestText(&model.EmailTestResult{OK: false, Results: []model.EmailTestItem{
 		{ID: "ops", Addr: "ops@example.com", OK: true},
 		{ID: "zz", Addr: "zz@x.com", ErrorKey: model.MsgEmailInvalidAddr}}})
-	if !strings.Contains(txt, "Дежурный (ops)") || !strings.Contains(txt, i18n.Message(model.MsgEmailInvalidAddr, i18n.RU)) ||
-		!strings.HasPrefix(txt, i18n.T(i18n.KeyEmTestFailed, i18n.RU)) {
+	if !strings.Contains(txt, "Дежурный (ops)") || !strings.Contains(txt, i18n.Message(model.MsgEmailInvalidAddr)) ||
+		!strings.HasPrefix(txt, i18n.T(i18n.KeyEmTestFailed)) {
 		t.Errorf("result text %q", txt)
 	}
 	if e.EmailTestText(nil) == "" {
@@ -168,7 +168,7 @@ func TestCHK_TRAY_64_EmailTest(t *testing.T) {
 		m.EmailTest == nil || !m.EmailTest.OK || len(m.EmailTest.Results) != 1 {
 		t.Errorf("emailTest JSON %+v %v", m, err)
 	}
-	if EmailStatusText(&model.EmailSettings{Status: &model.ViberStatus{Sent: 3, Queued: 1}}, i18n.EN) != "Sent: 3, queued: 1, dropped: 0" {
+	if EmailStatusText(&model.EmailSettings{Status: &model.ViberStatus{Sent: 3, Queued: 1}}) != "Отправлено: 3, в очереди: 1, отброшено: 0" {
 		t.Error("status text")
 	}
 }
@@ -195,7 +195,7 @@ func TestCHK_TRAY_64_EmailExportFlags(t *testing.T) {
 	if !strings.Contains(string(b), `"includeEmailRecipients":true`) || er.Cmd != model.CmdExportConfig {
 		t.Errorf("export request %s", b)
 	}
-	f, err := ParseImport(raw, i18n.RU)
+	f, err := ParseImport(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestCHK_TRAY_87_ParseRecipients(t *testing.T) {
 		if _, fe := ParseEmailRecipients(bad); fe == nil || !strings.HasPrefix(fe.Field, "email.recipients[") {
 			t.Errorf("%q accepted: %+v", bad, fe)
 		}
-		ed := NewEditor(i18n.RU, Admin)
+		ed := NewEditor(Admin)
 		s := model.DefaultSettings()
 		ed.LoadConfig(model.ConfigView{Settings: s}, "rev1")
 		ed.Email.Recipients = bad

@@ -141,7 +141,7 @@ func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 		t.Fatal("viber page")
 	}
 	if w.text(idVbRecipients) != "abc= Дежурный" || w.text(idVbFrom) != "08:30" || !w.check(idVbDay1) || w.check(idVbDay1+6) ||
-		w.text(idVbReminder) != "60" || w.text(idVbToken) != "" || w.text(idVbTokenState) != i18n.T(i18n.KeyVbTokenSaved, i18n.RU) ||
+		w.text(idVbReminder) != "60" || w.text(idVbToken) != "" || w.text(idVbTokenState) != i18n.T(i18n.KeyVbTokenSaved) ||
 		!strings.Contains(w.text(idVbStatus), "4") {
 		t.Fatalf("filled: %q %q %q %q", w.text(idVbRecipients), w.text(idVbFrom), w.text(idVbTokenState), w.text(idVbStatus))
 	}
@@ -155,7 +155,7 @@ func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 	if sv.token != "new-token" || sv.clear || !sv.v.Enabled || len(sv.v.Recipients) != 2 || sv.v.Recipients[1].Name != "Иван" {
 		t.Errorf("save %+v", sv)
 	}
-	if w.text(idVbToken) != "" || w.text(idVbTokenState) != i18n.T(i18n.KeyVbTokenSaved, i18n.RU) || w.ed.ViberUnsaved() {
+	if w.text(idVbToken) != "" || w.text(idVbTokenState) != i18n.T(i18n.KeyVbTokenSaved) || w.ed.ViberUnsaved() {
 		t.Errorf("after save: token box %q state %q", w.text(idVbToken), w.text(idVbTokenState))
 	}
 	// test to one recipient
@@ -167,7 +167,7 @@ func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 	}
 	w.click(t, idVbTest)
 	pumpUntil(t, "rate limited", func() bool {
-		return w.vbTesting == nil && strings.Contains(w.text(idVbResult), i18n.Message(model.MsgViberRateLimited, i18n.RU))
+		return w.vbTesting == nil && strings.Contains(w.text(idVbResult), i18n.Message(model.MsgViberRateLimited))
 	})
 	// a field error of the service focuses the field
 	svc.vmu.Lock()
@@ -203,9 +203,9 @@ func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 
 	defer func() { testDPI = 0 }()
 	for _, dpi := range []int32{96, 120, 144} {
-		for _, lang := range []string{i18n.RU, i18n.EN} {
+		{
 			testDPI = dpi
-			vw, err := newSettingsWindow(settingsConfig{lang: lang, mode: traysettings.Admin, session: app.session, hidden: true,
+			vw, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session, hidden: true,
 				uiMode: traysettings.UIExpert})
 			if err != nil {
 				t.Fatal(err)
@@ -213,7 +213,7 @@ func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 			vw.Reload()
 			pumpUntil(t, "loaded", func() bool { return !vw.busy && vw.ed.HasViber })
 			vw.setPage(pageViber)
-			checkLayout(t, "viber "+lang+" "+string(rune('0'+dpi/100))+string(rune('0'+dpi/10%10))+string(rune('0'+dpi%10))+" dpi", vw.hwnd)
+			checkLayout(t, "viber "+i18n.RU+" "+string(rune('0'+dpi/100))+string(rune('0'+dpi/10%10))+string(rune('0'+dpi%10))+" dpi", vw.hwnd)
 			vw.close()
 		}
 	}

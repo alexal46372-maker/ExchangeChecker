@@ -197,6 +197,17 @@ var monitorMessages = map[string]string{ // key -> text (RU)
 	MsgEmailTimeout:            "Время отправки email истекло.",
 	MsgEmailInvalid:            "Неверные настройки email.",
 	MsgEmailRateLimited:        "Слишком частый тест email; повторите позже.",
+	MsgTelegramNoToken:         "Не задан токен бота Telegram.",
+	MsgTelegramNoChat:          "Не задан ID чата Telegram.",
+	MsgTelegramAuthFailed:      "Telegram отклонил токен бота.",
+	MsgTelegramChatInvalid:     "Чат Telegram не найден или бот не добавлен в чат.",
+	MsgTelegramRateLimited:     "Слишком много запросов к Telegram; повторите позже.",
+	MsgTelegramNetwork:         "Нет связи с сервером Telegram (сеть, прокси).",
+	MsgTelegramTLS:             "Не удалось установить защищённое соединение с Telegram (TLS 1.2, корневые сертификаты).",
+	MsgTelegramFailed:          "Telegram не принял сообщение.",
+	MsgTelegramTimeout:         "Время отправки в Telegram истекло.",
+	MsgTelegramCanceled:        "Отправка в Telegram отменена.",
+	MsgTelegramInvalid:         "Неверные настройки Telegram.",
 	MsgImportTrayTooLarge:      "Блок настроек трея в файле конфигурации слишком большой.",
 	MsgImportRollbackFailed:    "Импорт не удался, и прежнюю конфигурацию восстановить не удалось: состояние не восстановлено, проверьте настройки.",
 	MsgMonitorConfigChanged:    "Конфигурация изменена.",
@@ -254,5 +265,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramTLS, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid}
 }

@@ -64,6 +64,9 @@ type Editor struct {
 	// settings.email is loaded.
 	Email    EmailForm
 	HasEmail bool
+	// Telegram page (phase 13, CHK-TRAY-94).
+	Telegram    TelegramForm
+	HasTelegram bool
 	// MapEdit / MapsEdit: mapping chosen in the Discovery dialog (6d,
 	// CHK-TRAY-07), not saved yet; nil = the profile's own mapping.
 	// MapsEdit (the merged additional mappings, MergeMappings) replaces
@@ -333,6 +336,9 @@ func (e *Editor) fieldLabel(path string) string {
 		return l
 	}
 	if l, ok := viberFieldLabel(path); ok {
+		return l
+	}
+	if l, ok := telegramFieldLabel(path); ok {
 		return l
 	}
 	if l, ok := discoveryFieldLabel(path); ok {
@@ -728,6 +734,9 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 			if f, ok := viberKeyFocus[m.ErrorKey]; ok {
 				return &Problem{Text: base, Field: f}
 			}
+			if f, ok := telegramKeyFocus[m.ErrorKey]; ok {
+				return &Problem{Text: base, Field: f}
+			}
 			return &Problem{Text: base}
 		}
 		path := m.ErrorArgs[0]
@@ -760,6 +769,9 @@ func (e *Editor) Reply(m model.IPCMessage) *Problem {
 		return &Problem{Text: base, Field: f}
 	}
 	if f, ok := viberKeyFocus[m.ErrorKey]; ok {
+		return &Problem{Text: base, Field: f}
+	}
+	if f, ok := telegramKeyFocus[m.ErrorKey]; ok {
 		return &Problem{Text: base, Field: f}
 	}
 	return &Problem{Text: base}

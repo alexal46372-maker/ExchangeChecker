@@ -246,6 +246,9 @@ func (w *settingsWindow) rebuildTabs() {
 	if w.uiMode != traysettings.UISimple && w.emailAvailable() {
 		add(i18n.KeySetNavEmail, pageEmail)
 	}
+	if w.uiMode != traysettings.UISimple && w.telegramAvailable() {
+		add(i18n.KeySetNavTelegram, pageTelegram) // CHK-TRAY-94
+	}
 	// if current page vanished (Simple hid Viber), fall back to General
 	ok := false
 	for _, p := range w.tabPages {

@@ -774,6 +774,26 @@ const (
 	KeyVbLastOK           = "set.vb_last_ok"
 	KeyVbLastError        = "set.vb_last_error"
 	KeyVbSaved            = "set.vb_saved"
+	// Telegram page (phase 13, CHK-TRAY-94).
+	KeyTgGroup           = "set.tg_group"
+	KeyTgEnabled         = "set.tg_enabled"
+	KeyTgToken           = "set.tg_token"
+	KeyTgClearToken      = "set.tg_clear_token"
+	KeyTgChat            = "set.tg_chat"
+	KeyTgChatHint        = "set.tg_chat_hint"
+	KeyTgTest            = "set.tg_test"
+	KeyTgTesting         = "set.tg_testing"
+	KeyTgTestOK          = "set.tg_test_ok"
+	KeyTgTestFailed      = "set.tg_test_failed"
+	KeyTgTestRateLimited = "set.tg_test_rate_limited"
+	KeyTgSaved           = "set.tg_saved"
+	KeySetNavTelegram    = "set.nav_telegram"
+	KeyTipTgPage         = "tip.tg_page"
+	KeyTipTgEnabled      = "tip.tg_enabled"
+	KeyTipTgToken        = "tip.tg_token"
+	KeyTipTgClearToken   = "tip.tg_clear_token"
+	KeyTipTgChat         = "tip.tg_chat"
+	KeyTipTgTest         = "tip.tg_test"
 	KeyTipVbPage          = "tip.vb_page"
 	KeyTipVbEnabled       = "tip.vb_enabled"
 	KeyTipVbToken         = "tip.vb_token"
@@ -1589,6 +1609,25 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyVbLastOK:           "Последняя доставка: %s",
 	KeyVbLastError:        "Последняя ошибка: %s — %s",
 	KeyVbSaved:            "Настройки Viber сохранены.",
+	KeyTgGroup:           "Уведомления Telegram",
+	KeyTgEnabled:         "Отправлять уведомления в Telegram",
+	KeyTgToken:           "Токен бота:",
+	KeyTgClearToken:      "Удалить сохранённый токен",
+	KeyTgChat:            "ID чата:",
+	KeyTgChatHint:        "Число (например, -1001234567890) или @имя_канала; бот должен быть добавлен в чат.",
+	KeyTgTest:            "Тест",
+	KeyTgTesting:         "Отправка тестового сообщения в Telegram…",
+	KeyTgTestOK:          "Тест Telegram: доставлено.",
+	KeyTgTestFailed:      "Тест Telegram: не доставлено.",
+	KeyTgTestRateLimited: "Тест Telegram — не чаще раза в 10 с; повторите через %d с.",
+	KeyTgSaved:           "Настройки Telegram сохранены.",
+	KeySetNavTelegram:    "Telegram",
+	KeyTipTgPage:         "Уведомления о тревогах в Telegram: токен бота, чат, расписание, события",
+	KeyTipTgEnabled:      "Служба отправляет сообщения только в окне расписания",
+	KeyTipTgToken:        "Токен бота Telegram (от @BotFather). Только запись: сохранённый токен не показывается; пусто — не менять",
+	KeyTipTgClearToken:   "Удалить сохранённый токен при сохранении",
+	KeyTipTgChat:         "Куда отправлять: числовой ID чата или @имя_канала",
+	KeyTipTgTest:         "Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с",
 	KeyTipVbPage:          "Уведомления о тревогах в Viber: токен бота, получатели, расписание, события",
 	KeyTipVbEnabled:       "Служба отправляет сообщения только в окне расписания",
 	KeyTipVbToken:         "Токен бота Viber. Только запись: сохранённый токен не показывается; пусто — не менять",

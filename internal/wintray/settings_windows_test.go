@@ -336,6 +336,9 @@ func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ..
 	if et, ok := h.(ipc.EmailTester); ok {
 		srv.Email = et // capability email (CHK-TRAY-64)
 	}
+	if tt, ok := h.(ipc.TelegramTester); ok {
+		srv.Telegram = tt // capability telegram (CHK-TRAY-94)
+	}
 	if at, ok := h.(ipc.AlarmTester); ok {
 		srv.AlarmTest = at // capability alarm_test (CHK-TRAY-67)
 	}

@@ -199,6 +199,8 @@ type settingsWindow struct {
 	// emTestIDs / emTesting: email_test (CHK-TRAY-64)
 	emTestIDs []string
 	emTesting *model.IPCRequest
+	// tgTesting: the running telegram_test (CHK-TRAY-94).
+	tgTesting *model.IPCRequest
 	// phase 10 E: the scrolled page host, the px rectangles of its
 	// controls (unscrolled), the view / content sizes, the bar buttons
 	host                           uintptr
@@ -247,17 +249,17 @@ type settingsWindow struct {
 	// done after save_settings (test hook)
 	statusRefreshes, statusRefreshed int
 	page                             int          // 0 = databases, 1 = general, 2 = Viber, 3 = e-mail
-	pageCtl                          [4][]uintptr // profiles, «Общие», «Viber», «e-mail»
-	pagePanel                        [4]uintptr   // one child HWND per tab (SW_HIDE hides tree)
+	pageCtl                          [5][]uintptr // profiles, «Общие», «Viber», «e-mail», «Telegram»
+	pagePanel                        [5]uintptr   // one child HWND per tab (SW_HIDE hides tree)
 	pageParent                       uintptr      // CreateWindow parent while building a page
 	pageSlot                         winapi.RECT  // shared Gap:-1 slot (host coords) for panels
-	pages                            [4]ui.Node   // page roots for SetHidden on switch (no overlay)
+	pages                            [5]ui.Node   // page roots for SetHidden on switch (no overlay)
 	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs (frame child; fixed)
 	tabPages                         []int        // tab index → page index
 	tabSync                          bool         // ignore TCN_SELCHANGE while syncing
 	tabChromeH                       int32        // fixed tab strip height (px); not scrolled
 	footerTop                        int32        // y of footer bar in client (paint)
-	scrollPos                        [4]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
+	scrollPos                        [5]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
 	pageActions                      []uintptr    // Test/Cancel/Alarm/Poll — footer, not pageCtl
 	pinnedHost                       map[uintptr]bool // CHK-TRAY-78: DB list chrome (no vertical scroll)
 	cur                              *[]uintptr   // page of the controls being created
@@ -728,9 +730,11 @@ func (w *settingsWindow) build() {
 	viberPage := w.buildViber()
 	w.pageParent = w.pagePanel[pageEmail]
 	emailPage := w.buildEmail()
+	w.pageParent = w.pagePanel[pageTelegram]
+	telegramPage := w.buildTelegram()
 	w.pageParent = 0
 	// page roots: setPage hides inactive ones via ui.SetHidden (wizard pattern)
-	w.pages = [4]ui.Node{profilePage, generalPage, viberPage, emailPage}
+	w.pages = [5]ui.Node{profilePage, generalPage, viberPage, emailPage, telegramPage}
 	// CHK-TRAY-75: tab order is General→Databases; open on Databases (page 0)
 	// so profile Save/list tests and primary workflow stay on the working tab.
 	w.page = 0
@@ -740,7 +744,7 @@ func (w *settingsWindow) build() {
 	w.applyFieldCues()
 	w.fillEmailTLSCombo()
 	w.rebuildTabs()
-	w.layoutPages(m, []ui.Node{profilePage, generalPage, viberPage, emailPage})
+	w.layoutPages(m, []ui.Node{profilePage, generalPage, viberPage, emailPage, telegramPage})
 	for _, k := range []string{i18n.KeySetAuthSQL, i18n.KeySetAuthWindows} {
 		winapi.SendMessageString(w.ctl[idSetAuth], winapi.CB_ADDSTRING, 0, w.t(k))
 	}
@@ -836,6 +840,9 @@ func (w *settingsWindow) command(id int32, code uint32) {
 		return
 	}
 	if w.emailCommand(id, code) {
+		return
+	}
+	if w.telegramCommand(id, code) {
 		return
 	}
 	if w.soundCommand(id) {
@@ -1057,6 +1064,7 @@ func (w *settingsWindow) fill() {
 	w.loadSoundSection()
 	w.fillViber()
 	w.fillEmail()
+	w.fillTelegram()
 	w.update()
 }
 
@@ -1147,6 +1155,9 @@ func (w *settingsWindow) update() {
 		if w.page == pageEmail {
 			canSave = ed.CanEditEmail()
 		}
+		if w.page == pageTelegram {
+			canSave = ed.CanEditTelegram()
+		}
 		winapi.EnableWindow(w.ctl[idSetSave], canSave && !w.busy)
 		winapi.EnableWindow(w.ctl[idSetDelete], saved && !w.busy)
 		if h := w.ctl[idSetClone]; h != 0 {
@@ -1170,6 +1181,7 @@ func (w *settingsWindow) update() {
 	}
 	w.updateViber()
 	w.updateEmail()
+	w.updateTelegram()
 	w.updateRequired()
 	w.showPageActions(w.page)
 }
@@ -1244,6 +1256,9 @@ func (w *settingsWindow) focus(f traysettings.Field) {
 	if traysettings.IsEmail(f) {
 		page = pageEmail
 	}
+	if traysettings.IsTelegram(f) {
+		page = pageTelegram
+	}
 	if page != w.page {
 		w.setPage(page)
 	}
@@ -1303,7 +1318,7 @@ func (w *settingsWindow) profileDiscardOK() bool {
 // Inactive tabs are SW_HIDE'd via their pagePanel HWND (entire child tree
 // disappears) — hide-by-HWND-list was not enough on live Win7 (ghosts).
 func (w *settingsWindow) setPage(p int) {
-	if p < 0 || p > pageEmail {
+	if p < 0 || p > pageTelegram {
 		return
 	}
 	// remember scroll of the page we leave
@@ -1590,6 +1605,10 @@ func (w *settingsWindow) save() {
 	}
 	if w.page == pageEmail {
 		w.saveEmail()
+		return
+	}
+	if w.page == pageTelegram {
+		w.saveTelegram()
 		return
 	}
 	if w.busy {

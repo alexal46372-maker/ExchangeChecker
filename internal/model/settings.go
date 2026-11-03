@@ -110,6 +110,9 @@ type Settings struct {
 	// stored value; always set in views; export only with
 	// includeEmailRecipients (never the SMTP password).
 	Email *EmailSettings `json:"email,omitempty"`
+	// Telegram (phase 13, CHK-CFG-10): nil in save_settings = keep the
+	// stored value; always set in views; never in export_config.
+	Telegram *TelegramSettings `json:"telegram,omitempty"`
 	// StalledMinutes (phase 11, CHK-MON-18): stalled-exchange threshold;
 	// absent = DefaultStalledMinutes (120), 0 = off, else 10..1440. A
 	// save_settings without it keeps the stored value.
@@ -135,6 +138,7 @@ func DefaultSettings() Settings {
 		TrayAutostart: true,
 		Viber:         defaultViberPtr(),
 		Email:         defaultEmailPtr(),
+		Telegram:      defaultTelegramPtr(),
 	}
 }
 
@@ -172,6 +176,14 @@ func (s Settings) Normalized() Settings {
 		e.Schedule.Days = append([]int{}, e.Schedule.Days...)
 		s.Email = &e
 	}
+	if s.Telegram == nil {
+		s.Telegram = defaultTelegramPtr()
+	} else {
+		t := *s.Telegram
+		t.Events = append([]string{}, t.Events...)
+		t.Schedule.Days = append([]int{}, t.Schedule.Days...)
+		s.Telegram = &t
+	}
 	return s
 }
 
@@ -185,15 +197,22 @@ func defaultEmailPtr() *EmailSettings {
 	return &e
 }
 
+func defaultTelegramPtr() *TelegramSettings {
+	t := DefaultTelegramSettings()
+	return &t
+}
+
 // Equal compares settings field by field (Settings holds slices since
 // phase 10): Normalized forms, the read-only viber fields ignored.
 func (s Settings) Equal(o Settings) bool {
 	a, b := s.Normalized(), o.Normalized()
 	va, vb := a.Viber.Stored(), b.Viber.Stored()
 	ea, eb := a.Email.Stored(), b.Email.Stored()
+	ta, tb := a.Telegram.Stored(), b.Telegram.Stored()
 	a.Viber, b.Viber = nil, nil
 	a.Email, b.Email = nil, nil
-	return reflect.DeepEqual(a, b) && reflect.DeepEqual(va, vb) && reflect.DeepEqual(ea, eb)
+	a.Telegram, b.Telegram = nil, nil
+	return reflect.DeepEqual(a, b) && reflect.DeepEqual(va, vb) && reflect.DeepEqual(ea, eb) && reflect.DeepEqual(ta, tb)
 }
 
 // Stored returns the form written to settings.json (viber without the
@@ -204,6 +223,8 @@ func (s Settings) Stored() Settings {
 	s.Viber = &v
 	e := s.Email.Stored()
 	s.Email = &e
+	t := s.Telegram.Stored()
+	s.Telegram = &t
 	return s
 }
 
@@ -248,6 +269,11 @@ func (s Settings) Validate() error {
 	}
 	if s.Email != nil {
 		if err := s.Email.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if s.Telegram != nil {
+		if err := s.Telegram.Validate(); err != nil {
 			errs = append(errs, err)
 		}
 	}

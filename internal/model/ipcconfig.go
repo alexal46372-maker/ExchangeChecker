@@ -94,7 +94,7 @@ func AdminCommand(cmd string) bool {
 	switch cmd {
 	case CmdSetEnabled, CmdGetConfig, CmdSaveProfile, CmdDeleteProfile, CmdCloneProfile, CmdSaveSettings,
 		CmdDiscover, CmdDiscoverByValue, CmdListNodePoints, CmdCheckMapping,
-		CmdExportConfig, CmdImportConfig, CmdViberTest, CmdEmailTest:
+		CmdExportConfig, CmdImportConfig, CmdViberTest, CmdEmailTest, CmdTelegramTest:
 		return true
 	}
 	return false

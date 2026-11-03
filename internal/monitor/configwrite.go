@@ -585,8 +585,10 @@ func (m *Monitor) telegramView(st *model.Settings) {
 	t.Events = append([]string{}, t.Events...)
 	t.Schedule.Days = append([]int{}, t.Schedule.Days...)
 	st.Telegram = &t
-	if ts, ok := m.configWriter().(telegramTokenStore); ok && m.configWriter() != nil {
-		st.Telegram.HasToken = ts.HasTelegramToken()
+	if w := m.configWriter(); w != nil {
+		if ts, ok := w.(telegramTokenStore); ok {
+			st.Telegram.HasToken = ts.HasTelegramToken()
+		}
 	}
 	if m.opt.TelegramStatus != nil {
 		st.Telegram.Status = m.opt.TelegramStatus()

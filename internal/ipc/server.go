@@ -61,14 +61,14 @@ type Muter interface {
 	UnmuteProfile(profileID string) error
 }
 
-// EventAcker runs ack_alert {eventId} (phase 11, CHK-MON-18, capability
-// ack_event): only that alert.
 // FlashDismisser runs dismiss_flash (phase 13, CHK-IPC-19; any client,
 // like ack_alert).
 type FlashDismisser interface {
 	DismissFlash(eventID uint64) error
 }
 
+// EventAcker runs ack_alert {eventId} (phase 11, CHK-MON-18, capability
+// ack_event): only that alert.
 type EventAcker interface {
 	AckEvent(eventID uint64) (int, error)
 }
@@ -108,13 +108,13 @@ type ConfigManager interface {
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
 }
 
-// ProfileCloner runs clone_profile (phase 12, CHK-CFG-08, admin only).
-// Optional beside ConfigManager; Monitor implements both.
 // ProfileEnabler runs set_enabled (phase 13, CHK-IPC-18; admin only).
 type ProfileEnabler interface {
 	SetEnabled(profileID string, enabled bool, expectedRevision, account string) (string, error)
 }
 
+// ProfileCloner runs clone_profile (phase 12, CHK-CFG-08, admin only).
+// Optional beside ConfigManager; Monitor implements both.
 type ProfileCloner interface {
 	CloneProfile(profileID, newID, newName, expectedRevision, account string) (model.SavedProfile, bool, error)
 }

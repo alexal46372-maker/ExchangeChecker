@@ -1,15 +1,14 @@
-// Command mkzip packages a release (phase 7e / 10, CHK-DELIV-01). Std-only.
+// Command mkzip packages a release (phase 7e / 10 / 13, CHK-DELIV-01). Std-only.
 //
-//	mkzip gz  -o <dir> <file>...           deterministic <dir>/<name>.gz (gzip -9,
-//	                                        no name, no mtime) for the setup payload
-//	mkzip zip -o <out.zip> <Setup.exe>      deterministic zip with exactly one entry:
-//	                                        basename(out.zip) with .exe instead of .zip
-//	                                        (e.g. ExchangeChecker-<V>.exe)
-//	mkzip version                           prints X.Y.Z for a vX.Y.Z tag build,
-//	                                        0.0.0-rel.<N> for workflow_dispatch,
-//	                                        else 0.0.0-ci.<GITHUB_RUN_NUMBER>
+//	mkzip gz  -o <dir> <file>...                 deterministic <dir>/<name>.gz
+//	mkzip zip -o <out.zip> [-entry <name.exe>] <Setup.exe>
+//	        deterministic zip with exactly one entry. Default entry is derived
+//	        from out.zip: ExchangeChecker-<V>.zip → "Exchange Checker <V>.exe"
+//	        (zip name stays technical; entry has spaces — phase 13).
+//	        -entry overrides when zip and entry names must differ explicitly.
+//	mkzip version                               prints X.Y.Z / 0.0.0-rel.N / 0.0.0-ci.N
 //
-// Nothing is uploaded (CHK-CI-01): CI builds and checks the zip in the job.
+// Nothing is uploaded from ci.yml (CHK-CI-01); release.yml uploads the zip.
 package main
 
 import (
@@ -25,6 +24,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 )
 
 // zipTime: fixed entry time, so equal inputs give equal zips.
@@ -32,15 +33,35 @@ var zipTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 var tagRe = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
-// ZipEntryName is the single delivery-zip entry for outZipPath: the zip
-// basename with .exe instead of .zip (phase 10, CHK-DELIV-01). The input
-// setup exe may have any name; only the zip path decides the entry.
+// ZipEntryName derives the delivery installer entry from the technical zip
+// path: ExchangeChecker-<V>.zip → "Exchange Checker <V>.exe" (CHK-DELIV-01,
+// phase 13). The input setup exe may have any name.
 func ZipEntryName(outZipPath string) (string, error) {
 	base := filepath.Base(outZipPath)
 	if !strings.HasSuffix(strings.ToLower(base), ".zip") || len(base) < 5 {
 		return "", fmt.Errorf("zip output %q must end in .zip", outZipPath)
 	}
-	return base[:len(base)-len(filepath.Ext(base))] + ".exe", nil
+	stem := base[:len(base)-len(filepath.Ext(base))]
+	const prefix = "ExchangeChecker-"
+	if !strings.HasPrefix(stem, prefix) {
+		return "", fmt.Errorf("zip output %q must be named ExchangeChecker-<V>.zip", outZipPath)
+	}
+	ver := stem[len(prefix):]
+	if ver == "" {
+		return "", fmt.Errorf("zip output %q missing version", outZipPath)
+	}
+	return config.DeliveryInstallerName(ver), nil
+}
+
+// validateEntry checks an explicit -entry value (basename .exe, no path).
+func validateEntry(entry string) error {
+	if entry == "" || strings.ContainsAny(entry, `/\`) || entry != filepath.Base(entry) {
+		return fmt.Errorf("bad zip entry %q", entry)
+	}
+	if !strings.HasSuffix(strings.ToLower(entry), ".exe") {
+		return fmt.Errorf("zip entry %q must end in .exe", entry)
+	}
+	return nil
 }
 
 // Version resolves the build version from the CI environment.
@@ -57,8 +78,6 @@ func Version(getenv func(string) string) (string, error) {
 		return "", errors.New("GITHUB_RUN_NUMBER not set")
 	}
 	if getenv("GITHUB_EVENT_NAME") == "workflow_dispatch" {
-		// manual release build (release.yml): own series, never clashes
-		// with the 0.0.0-ci.N numbers of ci.yml
 		return "0.0.0-rel." + n, nil
 	}
 	return "0.0.0-ci." + n, nil
@@ -83,8 +102,8 @@ func Gzip(data []byte) ([]byte, error) {
 
 // Zip builds the delivery zip: one entry named entry, fixed time, deflate.
 func Zip(setup []byte, entry string) ([]byte, error) {
-	if entry == "" || strings.ContainsAny(entry, `/\`) {
-		return nil, fmt.Errorf("bad zip entry %q", entry)
+	if err := validateEntry(entry); err != nil {
+		return nil, err
 	}
 	var b bytes.Buffer
 	zw := zip.NewWriter(&b)
@@ -119,15 +138,35 @@ func run(args []string) error {
 		return err
 	case "gz", "zip":
 		if len(args) < 4 || args[1] != "-o" {
-			return fmt.Errorf("usage: mkzip %s -o <out> <file>...", args[0])
+			return fmt.Errorf("usage: mkzip %s -o <out> [-entry <name.exe>] <file>...", args[0])
 		}
-		out, files := args[2], args[3:]
+		out := args[2]
+		rest := args[3:]
+		entryFlag := ""
+		var files []string
+		for i := 0; i < len(rest); i++ {
+			if rest[i] == "-entry" {
+				if i+1 >= len(rest) {
+					return errors.New("zip: -entry needs a value")
+				}
+				entryFlag = rest[i+1]
+				i++
+				continue
+			}
+			files = append(files, rest[i])
+		}
 		if args[0] == "zip" {
 			if len(files) != 1 {
 				return errors.New("zip takes exactly one setup exe (any file name)")
 			}
-			entry, err := ZipEntryName(out)
-			if err != nil {
+			entry := entryFlag
+			if entry == "" {
+				var err error
+				entry, err = ZipEntryName(out)
+				if err != nil {
+					return err
+				}
+			} else if err := validateEntry(entry); err != nil {
 				return err
 			}
 			data, err := os.ReadFile(files[0])
@@ -139,6 +178,9 @@ func run(args []string) error {
 				return err
 			}
 			return os.WriteFile(out, z, 0o644)
+		}
+		if entryFlag != "" {
+			return errors.New("-entry is only valid for zip")
 		}
 		if err := os.MkdirAll(out, 0o755); err != nil {
 			return err

@@ -23,3 +23,12 @@ func TestCHK_SETUP_11_ExeNames(t *testing.T) {
 		}
 	}
 }
+
+func TestDeliveryNames(t *testing.T) {
+	if got := DeliveryZipName("0.13.0"); got != "ExchangeChecker-0.13.0.zip" {
+		t.Fatalf("DeliveryZipName=%q", got)
+	}
+	if got := DeliveryInstallerName("0.13.0"); got != "Exchange Checker 0.13.0.exe" {
+		t.Fatalf("DeliveryInstallerName=%q", got)
+	}
+}

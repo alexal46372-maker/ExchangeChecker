@@ -3,8 +3,10 @@
 package wintray
 
 import (
+	"context"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
@@ -191,5 +193,106 @@ func TestCHK_TRAY_91_NotElevatedNoToggle(t *testing.T) {
 	pumpFor(100e6)
 	if en.nCalls() != 0 || !en.enabled("p1") {
 		t.Fatal("non-elevated toggle sent set_enabled")
+	}
+}
+
+// TestCHK_TRAY_91_ToggleAfterListChange — the database list changes while
+// the left menu is shown (a profile is inserted in front: every index
+// moves); a click on the check mark of the shown item «B» sends set_enabled
+// for B (its ProfileID kept in the menu item) with the inverse of the shown
+// state, not for whatever profile now has that index. Real path: the shown
+// menu (#32768), the WH_MSGFILTER hook, ShowLeftMenu → MenuCommand.
+func TestCHK_TRAY_91_ToggleAfterListChange(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := newCfgService()
+	p2 := model.NewProfile("p2")
+	p2.Name, p2.Server, p2.Database = "Филиал", `srv\SQL2`, "db2"
+	svc.profiles = append(svc.profiles, p2)
+	en := &enablerService{cfgService: svc}
+	svc.handler = en
+	app := startCfgApp(t, svc, true, nil)
+	items := app.LeftMenu()
+	bi := -1
+	for i, it := range items {
+		if it.Check && it.ProfileID == "p2" {
+			bi = i
+		}
+	}
+	if bi < 0 || !items[bi].Checked || items[bi].ID == 0 {
+		t.Fatalf("menu %+v", items)
+	}
+	shownCmd := items[bi].ID
+	errc := make(chan string, 1)
+	go func() {
+		var mw uintptr
+		for i := 0; i < 100 && mw == 0; i++ {
+			time.Sleep(50 * time.Millisecond)
+			if w := winapi.FindWindow("#32768"); w != 0 && winapi.IsWindowVisible(w) {
+				mw = w
+			}
+		}
+		if mw == 0 {
+			errc <- "menu not shown"
+			return
+		}
+		// the list changes while the menu is open: p0 in front
+		p0 := model.NewProfile("p0")
+		p0.Name, p0.Server, p0.Database = "Новая", `srv\SQL0`, "db0"
+		svc.mu.Lock()
+		svc.profiles = append([]model.Profile{p0}, svc.profiles...)
+		svc.rev++
+		svc.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = app.session.Refresh(ctx)
+		cancel()
+		for i := 0; i < 100; i++ {
+			if st := app.session.Status(); st.Snapshot != nil && len(st.Snapshot.Profiles) == 3 {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		time.Sleep(200 * time.Millisecond)         // the UI thread applies the status inside the menu loop
+		hm := winapi.SendMessage(mw, 0x01E1, 0, 0) // MN_GETHMENU
+		rc, ok := winapi.GetMenuItemRect(mw, hm, bi)
+		if !ok {
+			errc <- "GetMenuItemRect"
+			return
+		}
+		winapi.SetCursorPos((rc.Left+rc.Right)/2, (rc.Top+rc.Bottom)/2)
+		time.Sleep(80 * time.Millisecond)
+		winapi.PostMessage(mw, winapi.WM_LBUTTONDOWN, 0, 0)
+		time.Sleep(80 * time.Millisecond)
+		winapi.PostMessage(mw, winapi.WM_LBUTTONUP, 0, 0)
+		time.Sleep(300 * time.Millisecond)
+		if w := winapi.FindWindow("#32768"); w != 0 && winapi.IsWindowVisible(w) {
+			winapi.PostMessage(w, winapi.WM_KEYDOWN, winapi.VK_ESCAPE, 0)
+			time.Sleep(100 * time.Millisecond)
+			winapi.PostMessage(w, winapi.WM_KEYDOWN, winapi.VK_ESCAPE, 0)
+		}
+		errc <- ""
+	}()
+	app.ShowLeftMenu()
+	if e := <-errc; e != "" {
+		t.Fatal(e)
+	}
+	// the menu really changed under the shown items: the shown command now
+	// has another database at its index
+	if now, _ := trayui.ToggleItem(app.LeftMenu(), shownCmd); now.ProfileID == "p2" {
+		t.Fatalf("the list did not change while the menu was open: %+v", app.LeftMenu())
+	}
+	pumpUntil(t, "set_enabled", func() bool { return en.nCalls() == 1 && !en.enabled("p2") })
+	en.mu.Lock()
+	c := en.calls[0]
+	en.mu.Unlock()
+	if c.ProfileID != "p2" || c.Enabled == nil || *c.Enabled {
+		t.Fatalf("set_enabled %+v, want p2 off", c)
+	}
+	if !en.enabled("p1") || !en.enabled("p0") {
+		t.Error("another database was toggled")
+	}
+	pumpFor(100 * time.Millisecond)
+	if en.nCalls() != 1 {
+		t.Errorf("set_enabled calls %d", en.nCalls())
 	}
 }

@@ -45,16 +45,20 @@ type memFlashStore struct {
 func (s *memFlashStore) Load() (bool, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.on, nil }
 func (s *memFlashStore) Save(on bool) error  { s.mu.Lock(); defer s.mu.Unlock(); s.on = on; return nil }
 
-func startFlashApp(t *testing.T, svc *flashService, store ScreenFlashStore) (*App, *ipc.Server) {
+func startFlashApp(t *testing.T, svc *flashService, store ScreenFlashStore, mod ...func(*Options)) (*App, *ipc.Server) {
 	t.Helper()
 	l := ipc.NewMemListener()
 	srv := ipc.NewServer(svc, nil)
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
 	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
-	app, err := NewApp(Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true, HiddenFlash: true,
+	opt := Options{NoNotifyIcon: true, HiddenAlerts: true, HiddenPanel: true, NoBlink: true, HiddenFlash: true,
 		Beeper: &testBeeper{}, ScreenFlashStore: store,
-		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
+		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}}
+	for _, m := range mod {
+		m(&opt)
+	}
+	app, err := NewApp(opt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,13 +71,22 @@ func startFlashApp(t *testing.T, svc *flashService, store ScreenFlashStore) (*Ap
 // real ipc.Server pushes): a flash push starts the black overlay over the
 // virtual screen (all monitors), topmost, click-through, never activated
 // (no focus steal), blinking on its own WM_TIMER; repeated pushes of the
-// same alert keep one entry; ack_alert does not stop it; flash_stop of one
-// point keeps the others; «Закрыть» of the alert window sends
-// dismiss_flash {eventId} and stops it; «Мигание экрана» off = no overlay.
+// same alert keep one entry; warning pushes never flash (errors only) and
+// end the flash of an alert that went down to warning; «Подтвердить»
+// (app.ackAlerts, the button handler) stops the local flashing of the
+// acknowledged alerts at once, and the next flash push of the still failing
+// check turns it on again; flash_stop of one point keeps the others;
+// «Закрыть» of the alert window sends dismiss_flash {eventId} and stops it;
+// «Мигание экрана» off = no overlay.
 func TestCHK_TRAY_95_ScreenFlash(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	svc := &flashService{alertService: &alertService{}, known: map[uint64]bool{7: true, 8: true}}
+	// the alerts of the flashes (shown in the alert window, «Подтвердить»)
+	prof := model.AlertEvent{ID: 7, ProfileID: "p1", ProfileName: "DB-p1", To: model.LevelError, ErrorKey: model.MsgMonitorConnError}
+	pt := ptAlert("p1", "Склад", "pt", model.LevelError)
+	pt.ID = 8
+	svc.set(1, prof, pt)
 	store := &memFlashStore{on: true}
 	app, srv := startFlashApp(t, svc, store)
 	if !app.Status().Has(model.CapFlash) {
@@ -108,16 +121,44 @@ func TestCHK_TRAY_95_ScreenFlash(t *testing.T) {
 	}
 	// every check repeats the push: still one alert; a point alert adds one
 	srv.Flash(model.FlashEvent{ProfileID: "p1", EventID: 7, Level: model.LevelError})
-	srv.Flash(model.FlashEvent{ProfileID: "p1", PointKey: "pt", EventID: 8, Level: model.LevelWarning})
+	srv.Flash(model.FlashEvent{ProfileID: "p1", PointKey: "pt", EventID: 8, Level: model.LevelError})
 	pumpUntil(t, "two flashes", func() bool { return app.FlashActive() == 2 })
-	// «Подтвердить» = ack_alert: no stop
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_, _ = app.session.Do(ctx, model.IPCRequest{Cmd: model.CmdAckAlert, ProfileID: "p1"})
-	cancel()
-	pumpFor(50 * time.Millisecond)
-	if app.FlashActive() != 2 || !fw.timer {
-		t.Fatal("ack_alert stopped the flash")
+	// a warning never flashes the screen (decision: errors only)
+	srv.Flash(model.FlashEvent{ProfileID: "p3", PointKey: "w", EventID: 9, Level: model.LevelWarning})
+	srv.Flash(model.FlashEvent{ProfileID: "p4", PointKey: "x", EventID: 10, Level: model.LevelError})
+	pumpUntil(t, "error p4 flashes", func() bool { return app.FlashActive() == 3 })
+	if _, ok := app.flashes[flashKey{"p3", "w"}]; ok {
+		t.Fatal("a warning push started the flash")
 	}
+	// p4 went down to warning: its flash ends
+	srv.Flash(model.FlashEvent{ProfileID: "p4", PointKey: "x", EventID: 10, Level: model.LevelWarning})
+	pumpUntil(t, "warning ends the flash", func() bool { return app.FlashActive() == 2 && fw.timer })
+	// «Подтвердить»: the button handler app.ackAlerts (ack_alert of the
+	// shown alerts) stops the local flashing of these alerts at once
+	pumpUntil(t, "alerts shown", func() bool {
+		v := app.AlertView()
+		return v.Visible && v.CanAck && len(v.Alerts) == 2
+	})
+	app.ackAlerts()
+	if app.FlashActive() != 0 || fw.timer || fw.on || winapi.IsWindowVisible(fw.hwnd) {
+		t.Fatalf("«Подтвердить» did not stop the flashing: active %d timer %v on %v", app.FlashActive(), fw.timer, fw.on)
+	}
+	pumpUntil(t, "ack_alert sent", func() bool { return len(svc.ackCalls()) >= 1 && !app.AlertView().Visible })
+	ph := fw.phases
+	pumpFor(4 * FlashHalfMs * time.Millisecond)
+	if fw.timer || fw.on || fw.phases != ph {
+		t.Fatal("the flashing came back without a flash push")
+	}
+	// the next check still fails: the service pushes flash again → on
+	srv.Flash(model.FlashEvent{ProfileID: "p1", EventID: 7, Level: model.LevelError})
+	pumpUntil(t, "flash again after ack", func() bool { return app.FlashActive() == 1 && fw.timer })
+	n = fw.phases
+	pumpFor(4 * FlashHalfMs * time.Millisecond)
+	if fw.phases-n < 2 {
+		t.Errorf("blink after ack + push: phases %d", fw.phases-n)
+	}
+	srv.Flash(model.FlashEvent{ProfileID: "p1", PointKey: "pt", EventID: 8, Level: model.LevelError})
+	pumpUntil(t, "two flashes again", func() bool { return app.FlashActive() == 2 })
 	// recovery of the point
 	srv.Flash(model.FlashEvent{ProfileID: "p1", PointKey: "pt", Stop: true})
 	pumpUntil(t, "point stop", func() bool { return app.FlashActive() == 1 && fw.timer })
@@ -133,7 +174,7 @@ func TestCHK_TRAY_95_ScreenFlash(t *testing.T) {
 	}
 	svc.fmu.Unlock()
 	// unknown event: not_found / monitor.unknown_event; no eventId: invalid_request
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	m, err := app.session.Do(ctx, model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: 99})
 	cancel()
 	if err != nil || m.Type != model.MsgError || m.Code != model.ErrCodeNotFound || m.ErrorKey != model.MsgMonitorUnknownEvent {

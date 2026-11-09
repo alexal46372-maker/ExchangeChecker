@@ -166,6 +166,10 @@ type settingsConfig struct {
 	otherUser bool
 	// CHK-TRAY-62: alarm sound profiles in General (HKCU Sound).
 	onSoundSave func(trayalert.SoundPrefs) error
+	// onFlashSave applies «Мигание экрана» in this tray at once (nil: the
+	// elevated settings process broadcasts TrayReloadPrefs to the tray;
+	// CHK-TRAY-95)
+	onFlashSave func()
 	onSoundTest func(trayalert.SoundProfile, int)
 	onSoundStop func()            // CHK-TRAY-81: halt «Прослушать»
 	onSoundDone func(cb func())   // register one-shot preview-done callback
@@ -2093,8 +2097,8 @@ func (w *settingsWindow) fillScreenFlash() {
 	w.setCheck(idGenFlash, on)
 }
 
-// saveScreenFlash stores the switch at once; the tray reads it on the
-// next flash push.
+// saveScreenFlash stores the switch at once and applies it at once: off
+// stops a running flash, on resumes it while a flash is active.
 func (w *settingsWindow) saveScreenFlash() {
 	st := w.cfg.stores.Flash
 	if st == nil {
@@ -2103,5 +2107,11 @@ func (w *settingsWindow) saveScreenFlash() {
 	if err := st.Save(w.check(idGenFlash)); err != nil {
 		w.status = w.t(i18n.KeyGenScreenFlashFailed) + " " + err.Error()
 		w.update()
+		return
 	}
+	if w.cfg.onFlashSave != nil {
+		w.cfg.onFlashSave()
+		return
+	}
+	broadcastTrayReloadPrefs() // the tray of the elevated settings process
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
@@ -18,8 +19,14 @@ import (
 // (HKCU, default on), a black topmost layered window over all monitors
 // blinks; it is click-through and never activated (WS_EX_NOACTIVATE |
 // WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW), so it steals no focus.
-// «Подтвердить» (ack_alert) does not stop it; «Закрыть» of the alert
-// window sends dismiss_flash {eventId} for the active flashes.
+// Only errors flash: pushes with level warning are ignored (a warning push
+// for a flashing alert ends its flash). The overlay is kept below the
+// alert window and the panel by the clock (both stay readable).
+// «Подтвердить» (ack_alert) stops the local flashing of the acknowledged
+// alerts; the service keeps pushing flash on every failed check, and the
+// next push turns it on again. «Закрыть» of the alert window sends
+// dismiss_flash {eventId} for the active flashes (no repeat until
+// recovery). Turning «Мигание экрана» off stops it at once.
 
 // ScreenFlashValue is the HKCU REG_DWORD of «Мигание экрана» (1 = on,
 // missing = on).
@@ -130,6 +137,13 @@ func (a *App) onFlashEvents(q []trayipc.Event) {
 			if m.Level != nil {
 				lvl = *m.Level
 			}
+			if lvl != model.LevelError { // only errors flash the screen
+				if _, ok := a.flashes[k]; ok {
+					delete(a.flashes, k)
+					changed = true
+				}
+				continue
+			}
 			a.flashes[k] = flashState{eventID: m.EventID, level: lvl}
 			changed = true
 		case e.Kind == trayipc.EventState && e.Status.State != trayipc.StateConnected && len(a.flashes) > 0:
@@ -226,8 +240,56 @@ func (a *App) flashTick() {
 		return
 	}
 	r := winapi.VirtualScreen() // monitors may change while it blinks
-	winapi.SetWindowPos(fw.hwnd, winapi.HWND_TOPMOST, r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top,
+	winapi.SetWindowPos(fw.hwnd, a.flashInsertAfter(), r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top,
 		winapi.SWP_NOACTIVATE|winapi.SWP_SHOWWINDOW)
+}
+
+// flashInsertAfter is the z-order place of the overlay: right below the
+// lower of the shown alert window and panel (both topmost), so they stay
+// above it; HWND_TOPMOST when neither is shown.
+func (a *App) flashInsertAfter() uintptr {
+	after := winapi.HWND_TOPMOST
+	for _, h := range a.flashKeepAbove() {
+		if after == winapi.HWND_TOPMOST || winapi.IsAbove(after, h) {
+			after = h
+		}
+	}
+	return after
+}
+
+// flashKeepAbove: the shown windows the overlay must not cover.
+func (a *App) flashKeepAbove() []uintptr {
+	var out []uintptr
+	if a.awin != nil && winapi.IsWindow(a.awin.hwnd) && winapi.IsWindowVisible(a.awin.hwnd) {
+		out = append(out, a.awin.hwnd)
+	}
+	if a.panel != nil && winapi.IsWindow(a.panel.hwnd) && winapi.IsWindowVisible(a.panel.hwnd) {
+		out = append(out, a.panel.hwnd)
+	}
+	return out
+}
+
+// pauseFlashes: «Подтвердить» — the local flashing of the acknowledged
+// alerts stops (by eventId and by profile / point); the next flash push
+// of the service (the alert is still failing) turns it on again.
+func (a *App) pauseFlashes(reqs []trayalert.AckRequest) {
+	if len(a.flashes) == 0 {
+		return
+	}
+	n := len(a.flashes)
+	for _, r := range reqs {
+		for k, f := range a.flashes {
+			if r.Req.EventID != 0 && f.eventID == r.Req.EventID {
+				delete(a.flashes, k)
+			}
+		}
+		for _, id := range r.IDs {
+			delete(a.flashes, flashKey{id.ProfileID, id.Key})
+		}
+	}
+	if len(a.flashes) != n {
+		a.updateFlash()
+	}
 }
 
 // dismissFlashes: «Закрыть» of the alert window — dismiss_flash {eventId}

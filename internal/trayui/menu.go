@@ -33,11 +33,26 @@ const (
 	cmdProfileSlot = 1000
 )
 
-// ToggleCmd is the left-menu command of the check mark of snap.Profiles[i].
+// ToggleCmd is the left-menu command of the check mark of the i-th
+// database item.
 func ToggleCmd(i int) int { return CmdToggleBase + i }
 
+// ToggleItem is the database item of the shown menu items with toggle
+// command cmd (ok false: cmd is not a check mark of these items).
+func ToggleItem(items []Item, cmd int) (Item, bool) {
+	if _, ok := ToggleProfileIndex(cmd); !ok {
+		return Item{}, false
+	}
+	for _, it := range items {
+		if it.Check && it.ID == cmd && it.ProfileID != "" {
+			return it, true
+		}
+	}
+	return Item{}, false
+}
+
 // ToggleProfileIndex reports whether cmd is a database check mark and
-// which profile index it addresses.
+// which database item of the menu it is.
 func ToggleProfileIndex(cmd int) (i int, ok bool) {
 	if cmd >= CmdToggleBase && cmd < CmdToggleBase+cmdProfileSlot {
 		return cmd - CmdToggleBase, true
@@ -60,6 +75,10 @@ type Item struct {
 	// the item (it also opens the points submenu) sends ID = ToggleCmd(i)
 	// unless ID is 0 (no profile_enabled / not elevated).
 	Check bool
+	// ProfileID (Check items): the database the item was built for; the
+	// check mark command sends set_enabled for this profile with the
+	// inverse of Checked as shown (CHK-TRAY-91).
+	ProfileID string
 	// Volume (CHK-TRAY-96): the master volume slider (owner-draw item:
 	// speaker icon, track, «N %»); dragging on it changes the volume while
 	// the menu stays open.
@@ -161,7 +180,7 @@ func databaseItem(p model.ProfileSnapshot, fresh bool, canToggle bool, idx int) 
 	if name == "" {
 		name = p.ProfileID
 	}
-	it := Item{Text: name + " — " + status, Color: CheckColor(p, fresh), Check: true, Checked: p.Enabled}
+	it := Item{Text: name + " — " + status, Color: CheckColor(p, fresh), Check: true, Checked: p.Enabled, ProfileID: p.ProfileID}
 	if canToggle {
 		it.ID = ToggleCmd(idx)
 	}

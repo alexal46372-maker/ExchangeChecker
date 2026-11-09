@@ -327,6 +327,7 @@ func (a *App) ackAlerts() {
 	if reqs == nil {
 		return
 	}
+	a.pauseFlashes(reqs) // CHK-TRAY-95: the next flash push restarts it
 	a.applyAlert(a.alerts.View())
 	s := a.session
 	go func() {
@@ -572,7 +573,30 @@ func (a *App) RightMenu() []trayui.Item {
 }
 
 // ShowLeftMenu shows the databases menu at the cursor.
-func (a *App) ShowLeftMenu() { a.Command(trackMenu(a.hwnd, a.LeftMenu(), &a.squares)) }
+// The check mark command acts on the items that were shown (CHK-TRAY-91).
+func (a *App) ShowLeftMenu() {
+	items := a.LeftMenu()
+	a.MenuCommand(items, trackMenu(a.hwnd, items, &a.squares))
+}
+
+// MenuCommand executes cmd chosen in the shown menu items: a database
+// check mark toggles the profile of that item (its ProfileID and shown
+// state), whatever the current snapshot order is.
+func (a *App) MenuCommand(items []trayui.Item, cmd int) {
+	if _, ok := trayui.ToggleProfileIndex(cmd); ok {
+		if it, ok := trayui.ToggleItem(items, cmd); ok && !a.isClosing() {
+			a.toggleProfile(it)
+		}
+		return
+	}
+	a.Command(cmd)
+}
+
+func (a *App) isClosing() bool {
+	a.qmu.Lock()
+	defer a.qmu.Unlock()
+	return a.closing
+}
 
 // ShowRightMenu shows Settings / About / Exit at the cursor.
 func (a *App) ShowRightMenu() {
@@ -614,25 +638,23 @@ func (a *App) Command(cmd int) {
 	case trayui.CmdPinHelp:
 		a.ShowPinHelp()
 	default:
-		if i, ok := trayui.ToggleProfileIndex(cmd); ok {
-			a.toggleProfile(i)
+		if _, ok := trayui.ToggleProfileIndex(cmd); ok {
+			// a command without its menu: the current left menu model
+			a.MenuCommand(a.LeftMenu(), cmd)
 		}
 	}
 }
 
-// toggleProfile sends set_enabled with the inverted polling flag of
-// status.Snapshot.Profiles[i] (the database check mark, CHK-TRAY-91). The
-// profile_enabled push updates the menu and the settings window list.
-func (a *App) toggleProfile(i int) {
-	if a.session == nil || !trayui.CanToggle(a.session.Status()) {
+// toggleProfile sends set_enabled for the database of the shown check
+// mark item: it.ProfileID, the inverse of the shown state it.Checked (the
+// database check mark, CHK-TRAY-91). The profile_enabled push updates the
+// menu and the settings window list.
+func (a *App) toggleProfile(it trayui.Item) {
+	if a.session == nil || !trayui.CanToggle(a.session.Status()) || it.ProfileID == "" {
 		return
 	}
-	st := a.session.Status()
-	if st.Snapshot == nil || i < 0 || i >= len(st.Snapshot.Profiles) {
-		return
-	}
-	p := st.Snapshot.Profiles[i]
-	on := !p.Enabled
+	p := model.ProfileSnapshot{ProfileID: it.ProfileID, Name: profileNameOf(it, a.session.Status())}
+	on := !it.Checked
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
 		defer cancel()
@@ -643,6 +665,18 @@ func (a *App) toggleProfile(i int) {
 		}
 		_ = a.session.Refresh(ctx)
 	}()
+}
+
+// profileNameOf is the database name for the failure balloon.
+func profileNameOf(it trayui.Item, st trayipc.Status) string {
+	if st.Snapshot != nil {
+		for _, p := range st.Snapshot.Profiles {
+			if p.ProfileID == it.ProfileID && p.Name != "" {
+				return p.Name
+			}
+		}
+	}
+	return it.ProfileID
 }
 
 // toggleFailed reports a failed set_enabled of the database check mark.
@@ -660,6 +694,7 @@ func (a *App) reloadTrayPrefs() {
 	a.loadBalloonPref()
 	a.loadSoundPrefs()
 	_ = loadUIMode(a.opt.UIModeStore) // next settings open reads the store
+	a.updateFlash()                   // «Мигание экрана» off stops it at once (CHK-TRAY-95)
 }
 
 // OpenSettings opens (or focuses) the settings window and returns its
@@ -695,6 +730,7 @@ func (a *App) OpenSettings() uintptr {
 		stores:  trayStores{Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore, Flash: a.opt.ScreenFlashStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,
 		onSoundSave: a.SaveSoundPrefs, onSoundTest: a.testSound,
+		onFlashSave: a.updateFlash,
 		onSoundStop: a.stopTestSound,
 		onSoundDone: func(cb func()) {
 			if a.tester == nil {

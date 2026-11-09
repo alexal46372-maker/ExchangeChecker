@@ -53,14 +53,6 @@ func TestCHK_TRAY_96_OwnerDrawSlider(t *testing.T) {
 		}
 		return buf
 	}
-	// the «N %» text is drawn with the menu font (lfMenuFont), not the
-	// font the DC happens to have
-	if f := winapi.MenuFont(); f == 0 || app.volumeFont != f {
-		t.Errorf("slider text font %#x, menu font %#x", app.volumeFont, f)
-	}
-	if lf, ok := winapi.MenuLogFont(); !ok || lf.FaceName[0] == 0 {
-		t.Errorf("lfMenuFont %+v %v", lf, ok)
-	}
 	region := func(b []byte, x0, x1 int32) string {
 		var s []byte
 		for y := int32(0); y < h; y++ {
@@ -71,6 +63,14 @@ func TestCHK_TRAY_96_OwnerDrawSlider(t *testing.T) {
 	icon := px(8 + volumeIconW)
 	l, r := volumeTrack(winapi.RECT{Right: w, Bottom: h})
 	p0, p20, p30, p50, p100 := paint(0), paint(20), paint(30), paint(50), paint(100)
+	// the «N %» text is drawn with the menu font (lfMenuFont), not the
+	// font the DC happens to have
+	if f := winapi.MenuFont(); f == 0 || app.volumeFont != f {
+		t.Errorf("slider text font %#x, menu font %#x", app.volumeFont, f)
+	}
+	if lf, ok := winapi.MenuLogFont(); !ok || lf.FaceName[0] == 0 {
+		t.Errorf("lfMenuFont %+v %v", lf, ok)
+	}
 	if region(p20, 0, icon) != region(p30, 0, icon) {
 		t.Error("same level, different speaker")
 	}

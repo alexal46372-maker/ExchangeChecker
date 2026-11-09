@@ -215,3 +215,54 @@ func TestCHK_SETUP_17_DirIgnoredRussian(t *testing.T) {
 		t.Fatalf("expected Russian /DIR ignored warning: %q", joined)
 	}
 }
+
+func TestCHK_SETUP_17_MigrateMidFailRollback(t *testing.T) {
+	f := newFake()
+	legacy := `C:\Program Files\ExchangeChecker`
+	neu := `C:\Program Files\Exchange Checker`
+	f.Installed = Installed{Present: true, Version: "1.0.0", Dir: legacy}
+	f.Service = ServiceInfo{
+		Exists: true, Running: true,
+		ImagePath: `"C:\Program Files\ExchangeChecker\ExchangeCheckerSvc.exe"`,
+		AutoStart: true, DisplayName: "Exchange Checker", DescriptionOK: true,
+		Description: "old",
+	}
+	f.Files[joinDir(legacy, config.ServiceExeName)] = []byte("old-svc")
+	f.Files[joinDir(legacy, config.TrayExeName)] = []byte("old-tray")
+	f.Files[joinDir(legacy, config.UninstallExeName)] = []byte("old-un")
+	f.Files[joinDir(legacy, "keep-me.txt")] = []byte("userdata")
+	f.Files[joinDir(legacy, `extra\note.txt`)] = []byte("nested")
+	f.TrayRunCmd = `"C:\Program Files\ExchangeChecker\ExchangeCheckerTray.exe"`
+	f.Uninst = UninstallValues(legacy, joinDir(legacy, config.UninstallExeName), joinDir(legacy, config.TrayExeName), "1.0.0", 1, time.Now(), true)
+	f.FailMigrateAfter = 1
+
+	res := Install(f, InstallConfig{
+		Opts: Options{Silent: true}, DefaultDir: neu, DataDir: `C:\ProgramData\ExchangeChecker`,
+		Files: sampleFiles(), Version: "1.1.0", Now: time.Now(),
+	}, &memLog{})
+	if res.Code == ExitOK {
+		t.Fatal("expected mid-migrate failure")
+	}
+	steps := strings.Join(f.Steps, "\n")
+	if !strings.Contains(steps, "MigrateInstallDir|") {
+		t.Fatal("expected MigrateInstallDir")
+	}
+	// Partial copies must be undone; new folder removed when we created it.
+	for path := range f.Files {
+		if strings.HasPrefix(strings.ToLower(path), strings.ToLower(neu)+`\`) || strings.EqualFold(path, neu) {
+			t.Fatalf("new-tree leftover after mid-migrate rollback: %s", path)
+		}
+	}
+	if f.Dirs[neu] {
+		t.Fatal("new install dir must be removed after mid-migrate rollback")
+	}
+	if !strings.Contains(steps, "RemoveDirIfEmpty|"+neu) && !strings.Contains(steps, "RemoveFile|") {
+		t.Fatalf("expected undo of migrated paths: %s", steps)
+	}
+	if _, ok := f.Files[joinDir(legacy, "keep-me.txt")]; !ok {
+		t.Fatal("legacy keep-me must remain")
+	}
+	if !f.Service.Running {
+		t.Fatal("service must be restarted on rollback")
+	}
+}

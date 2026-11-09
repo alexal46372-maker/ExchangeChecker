@@ -211,15 +211,22 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	// 3c. CHK-SETUP-17: copy the whole legacy tree (no reparse follow) into
 	// the new folder before writing payload exes. Rollback deletes only
-	// paths we created. Payload files are overwritten by step 4.
+	// paths we created (files first, then dirs — MigrateInstallDir lists
+	// parents before children; undo runs in reverse). Journal copied paths
+	// even when migrate fails mid-copy, otherwise RemoveDirIfEmpty(root)
+	// finds leftovers and leaves the new folder in place.
+	// Payload files are overwritten by step 4.
 	if legacyDir != "" {
-		copied, err := sys.MigrateInstallDir(legacyDir, dir)
-		if err != nil {
-			return failRollback(errf("migrate "+legacyDir+" -> "+dir, err))
-		}
+		copied, migrateErr := sys.MigrateInstallDir(legacyDir, dir)
 		for _, cp := range copied {
 			path := cp
-			undo.push(func() error { _, err := sys.RemoveFile(path); return err })
+			undo.push(func() error {
+				_, err := sys.RemoveFile(path)
+				return err
+			})
+		}
+		if migrateErr != nil {
+			return failRollback(errf("migrate "+legacyDir+" -> "+dir, migrateErr))
 		}
 		log.Printf("migrated %d file(s) from %s", len(copied), legacyDir)
 	}

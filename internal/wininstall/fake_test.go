@@ -29,6 +29,7 @@ type recordingSystem struct {
 	FixedOK        bool
 	FailAt         string // step prefix that returns error
 	FailOnce       bool   // clear FailAt after the first injected error
+	FailMigrateAfter int    // copy N files then error (CHK-SETUP-17 mid-migrate)
 	RebootRm       bool
 	WriteReboot    bool   // WriteFile returns reboot=true
 	FailAlso       string // second prefix that always fails (e.g. a rollback step)
@@ -525,6 +526,9 @@ func (f *recordingSystem) MigrateInstallDir(oldDir, newDir string) ([]string, er
 		}
 		f.Files[dst] = append([]byte(nil), data...)
 		copied = append(copied, dst)
+		if f.FailMigrateAfter > 0 && len(copied) >= f.FailMigrateAfter {
+			return copied, fmt.Errorf("injected migrate fail after %d", len(copied))
+		}
 	}
 	return copied, nil
 }

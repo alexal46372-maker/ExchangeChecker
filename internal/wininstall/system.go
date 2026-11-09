@@ -122,9 +122,11 @@ type System interface {
 	// legacy install folder into newDir (CHK-SETUP-17). Payload names are
 	// copied too when missing at the destination (WriteFile overwrites
 	// them next). Returns the list of paths newly created in newDir for
-	// rollback. Missing oldDir is success. A Stat error on a destination
-	// other than ErrNotExist fails the migration. Reparse points/junctions
-	// are not followed.
+	// rollback (files and directories; parents before children). On a
+	// mid-copy failure the partial list is still returned so the caller
+	// can journal undo before aborting. Missing oldDir is success. A Stat
+	// error on a destination other than ErrNotExist fails the migration.
+	// Reparse points/junctions are not followed.
 	MigrateInstallDir(oldDir, newDir string) (copied []string, err error)
 	// RemoveLegacyInstallDir recursively deletes a validated legacy
 	// install folder without following reparse points (CHK-SETUP-17).

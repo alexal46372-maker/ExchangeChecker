@@ -152,6 +152,13 @@ func (winSystem) RemoveFile(path string) (bool, error) {
 	if err == nil || os.IsNotExist(err) {
 		return false, nil
 	}
+	// Non-empty directory: not "in use". Callers that meant to clear a
+	// tree must remove children first (undo order) or use RemoveDirIfEmpty /
+	// RemoveLegacyInstallDir. Do not schedule reboot deletion of a folder
+	// that may still hold foreign files.
+	if isDirNotEmpty(err) {
+		return false, fmt.Errorf("remove %s: %w", path, err)
+	}
 	// in use: schedule deletion at reboot
 	if err2 := winapi.MoveFileEx(path, "", winapi.MoveFileDelayUntilReboot); err2 != nil {
 		return false, fmt.Errorf("remove %s: %v; delay-until-reboot: %w", path, err, err2)

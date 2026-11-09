@@ -563,6 +563,9 @@ func (winSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
 			// Track new dirs so migrate rollback can RemoveFile them after files
 			// (reverse undo leaves the new tree empty for RemoveDirIfEmpty).
 			copied = append(copied, dst)
+			if failAfter := migrateTestFailAfter(); failAfter > 0 && len(copied) >= failAfter {
+				return fmt.Errorf("migrate test fail after %d path(s)", failAfter)
+			}
 			return nil
 		}
 		if _, err := os.Lstat(dst); err == nil {
@@ -575,7 +578,7 @@ func (winSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
 		}
 		copied = append(copied, dst)
 		if failAfter := migrateTestFailAfter(); failAfter > 0 && len(copied) >= failAfter {
-			return fmt.Errorf("migrate test fail after %d file(s)", failAfter)
+			return fmt.Errorf("migrate test fail after %d path(s)", failAfter)
 		}
 		return nil
 	})

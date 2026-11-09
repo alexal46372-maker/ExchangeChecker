@@ -35,6 +35,10 @@ import (
 // p.144, CHK-TRAY-49), embedded by internal/wintray.
 const IconDir = "internal/wintray/icons"
 
+// ExeIcon is the icon of the tray and setup exe (RT_GROUP_ICON 1), also
+// the icon the installer shows; generated from trayui.ExeICO.
+const ExeIcon = "cmd/exchtray/exchtray.ico"
+
 // icons returns the generated .ico files by path relative to the root.
 func icons() (map[string][]byte, error) {
 	out := map[string][]byte{}
@@ -45,6 +49,8 @@ func icons() (map[string][]byte, error) {
 		}
 		out[IconDir+"/"+n+".ico"] = b
 	}
+	// the exe / installer icon (phase 13, CHK-TRAY-89): generated too
+	out[ExeIcon] = trayui.ExeICO()
 	return out, nil
 }
 
@@ -102,6 +108,9 @@ func build(root string, t target, ver string) ([]byte, error) {
 	res := []winres.Resource{{Type: winres.TypeManifest, ID: 1, Lang: winres.LangEnUS, Data: man}}
 	if t.Icon != "" {
 		ico, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(t.Icon)))
+		if t.Icon == ExeIcon { // generated (CHK-TRAY-89): never a stale file
+			ico, err = trayui.ExeICO(), nil
+		}
 		if err != nil {
 			return nil, err
 		}

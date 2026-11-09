@@ -266,3 +266,26 @@ func TestCHK_SETUP_17_MigrateMidFailRollback(t *testing.T) {
 		t.Fatal("service must be restarted on rollback")
 	}
 }
+
+func TestCHK_SETUP_17_MigrateFailAfterCountsDirs(t *testing.T) {
+	f := newFake()
+	legacy := `C:\Program Files\ExchangeChecker`
+	neu := `C:\Program Files\Exchange Checker`
+	// Only a nested file under legacy: the first created path must be the
+	// parent directory, and FailMigrateAfter=1 must abort there (dirs count).
+	f.Files[joinDir(legacy, `extra\note.txt`)] = []byte("nested")
+	f.FailMigrateAfter = 1
+	copied, err := f.MigrateInstallDir(legacy, neu)
+	if err == nil {
+		t.Fatal("expected fail after first path")
+	}
+	if len(copied) != 1 {
+		t.Fatalf("copied=%v want exactly the parent dir", copied)
+	}
+	if !strings.EqualFold(copied[0], joinDir(neu, "extra")) {
+		t.Fatalf("first path=%q want parent dir", copied[0])
+	}
+	if _, ok := f.Files[joinDir(neu, `extra\note.txt`)]; ok {
+		t.Fatal("nested note must not be copied when failAfter stops on parent dir")
+	}
+}

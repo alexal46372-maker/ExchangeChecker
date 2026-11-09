@@ -99,6 +99,9 @@ func iconImage(name string, size int) ([]uint32, error) {
 	case IcoStateBlank:
 		return IconPixels(IconBlank, size), nil
 	}
+	if name == IcoApp { // the main icon, green arrows (CHK-TRAY-89)
+		return AppIconPixels(ArrowGreen, size), nil
+	}
 	shapes, ok := glyphs[name]
 	if !ok {
 		return nil, errors.New("trayui: unknown icon " + name)
@@ -188,13 +191,6 @@ var glyphs = map[string][]shape{
 		{slate, rect(4, 29, 44, 37)},
 		{blue, circle(16, 15, 9)},
 		{blue, circle(32, 33, 9)},
-	},
-	IcoApp: { // the cylinder with a green state dot
-		{blue, rect(7, 9, 35, 35)},
-		{blue, ellipse(21, 35, 14, 6)},
-		{light, ellipse(21, 9, 14, 6)},
-		{[3]uint8{0x2E, 0xA0, 0x43}, circle(35, 35, 11)},
-		{white, ring(35, 35, 11, 13)},
 	},
 }
 

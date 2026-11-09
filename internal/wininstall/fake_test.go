@@ -514,20 +514,41 @@ func (f *recordingSystem) MigrateInstallDir(oldDir, newDir string) ([]string, er
 	oldDir, newDir = CleanDir(oldDir), CleanDir(newDir)
 	prefix := strings.ToLower(oldDir) + `\`
 	var copied []string
+	seenDir := map[string]bool{}
+	fail := func() error {
+		if f.FailMigrateAfter > 0 && len(copied) >= f.FailMigrateAfter {
+			return fmt.Errorf("injected migrate fail after %d", len(copied))
+		}
+		return nil
+	}
 	for path, data := range f.Files {
 		lp := strings.ToLower(CleanDir(path))
 		if lp == strings.ToLower(oldDir) || !strings.HasPrefix(lp, prefix) {
 			continue
 		}
 		rel := path[len(oldDir)+1:]
+		// Parent dirs under newDir (CHK-SETUP-17: failAfter counts dirs too).
+		parts := strings.Split(rel, `\`)
+		acc := newDir
+		for i := 0; i < len(parts)-1; i++ {
+			acc = joinDir(acc, parts[i])
+			if !seenDir[acc] && !f.Dirs[acc] {
+				f.Dirs[acc] = true
+				seenDir[acc] = true
+				copied = append(copied, acc)
+				if err := fail(); err != nil {
+					return copied, err
+				}
+			}
+		}
 		dst := joinDir(newDir, rel)
 		if _, ok := f.Files[dst]; ok {
 			continue
 		}
 		f.Files[dst] = append([]byte(nil), data...)
 		copied = append(copied, dst)
-		if f.FailMigrateAfter > 0 && len(copied) >= f.FailMigrateAfter {
-			return copied, fmt.Errorf("injected migrate fail after %d", len(copied))
+		if err := fail(); err != nil {
+			return copied, err
 		}
 	}
 	return copied, nil

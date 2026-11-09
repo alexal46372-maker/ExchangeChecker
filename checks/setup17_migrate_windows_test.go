@@ -229,6 +229,9 @@ func TestCHK_SETUP_17_MigrateE2E(t *testing.T) {
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("legacy keep-me missing after StartService rollback: %v", err)
 	}
+	if _, err := os.Stat(neuPath); !os.IsNotExist(err) {
+		t.Fatalf("new install folder must be removed after StartService rollback: %v", err)
+	}
 
 	// --- successful migrate ---
 	logU := filepath.Join(os.TempDir(), "ec-setup17-upgrade.log")

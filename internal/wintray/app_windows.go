@@ -158,6 +158,7 @@ type App struct {
 	// window and master volume of the last slider paint (CHK-TRAY-96)
 	volumeDrawnOn    uintptr
 	volumeDrawnValue int
+	volumeFont       uintptr // font of the last slider text (CHK-TRAY-96 test hook)
 	soundStored bool
 	soundWin    *soundWindow
 	volWin      *volumeWindow

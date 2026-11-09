@@ -1,6 +1,7 @@
 package trayui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
@@ -45,5 +46,24 @@ func TestCHK_TRAY_91_ToggleItemByProfileID(t *testing.T) {
 	}
 	if _, ok := ToggleItem(shown, CmdSettings); ok {
 		t.Error("not a check mark command")
+	}
+}
+
+// TestCHK_TRAY_91_MutedMark — a database muted until recovery by the
+// service (snapshot muted) says «заглушено» in its menu item; the others
+// do not (the mute command itself is gone from the tray menu).
+func TestCHK_TRAY_91_MutedMark(t *testing.T) {
+	snap := model.StatusSnapshot{Profiles: []model.ProfileSnapshot{
+		{ProfileID: "m", Name: "M", Enabled: true, Polled: true, Level: model.LevelError, Muted: true},
+		{ProfileID: "o", Name: "O", Enabled: true, Polled: true, Level: model.LevelOK},
+	}}
+	items := databases(BuildLeftMenu(connected(&snap)))
+	if len(items) != 2 || !strings.Contains(items[0].Text, "заглушено") || strings.Contains(items[1].Text, "заглушено") {
+		t.Fatalf("items %q / %q", items[0].Text, items[1].Text)
+	}
+	for _, s := range items[0].Sub {
+		if strings.Contains(s.Text, "Приглушить") || s.Text == "Снять" {
+			t.Errorf("mute command back in the menu: %q", s.Text)
+		}
 	}
 }

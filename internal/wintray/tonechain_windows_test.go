@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
@@ -82,6 +83,27 @@ func TestCHK_TRAY_97_ToneFallbackChain(t *testing.T) {
 	}
 	if len(logs) != 2 || !strings.Contains(logs[0], "PlaySound") || !strings.Contains(logs[1], "Beep") {
 		t.Errorf("fallback logs %q", logs)
+	}
+	// 3b: MessageBeep returns at once, the tone still lasts its duration
+	// (the cadence tone / gap stays); a stop ends the wait early
+	r = &toneRec{failWAV: true, failBep: true}
+	long := tone
+	long.Profile.DurMs = 250
+	start := time.Now()
+	if err := newS(r).Play(long, nil); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d < 240*time.Millisecond {
+		t.Errorf("MessageBeep fallback lasted %v, want the tone duration 250 ms", d)
+	}
+	stop := make(chan struct{})
+	close(stop)
+	start = time.Now()
+	if err := newS(&toneRec{failWAV: true, failBep: true}).Play(long, stop); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Errorf("stop did not end the MessageBeep wait: %v", d)
 	}
 	// 4: the last fallback's error is returned
 	r = &toneRec{failWAV: true, failBep: true, errMB: errors.New("mb")}

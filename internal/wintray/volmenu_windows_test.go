@@ -19,7 +19,8 @@ import (
 func TestCHK_TRAY_96_OwnerDrawSlider(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	app, _, _ := startP10App(t, &alertService{}, &testBeeper{}, &memSoundStore{})
+	sstore := &memSoundStore{}
+	app, _, _ := startP10App(t, &alertService{}, &testBeeper{}, sstore)
 	items := app.RightMenu()
 	vi := volumeIndex(items)
 	if vi < 0 || items[vi].ID != trayui.CmdVolume {
@@ -52,6 +53,14 @@ func TestCHK_TRAY_96_OwnerDrawSlider(t *testing.T) {
 		}
 		return buf
 	}
+	// the «N %» text is drawn with the menu font (lfMenuFont), not the
+	// font the DC happens to have
+	if f := winapi.MenuFont(); f == 0 || app.volumeFont != f {
+		t.Errorf("slider text font %#x, menu font %#x", app.volumeFont, f)
+	}
+	if lf, ok := winapi.MenuLogFont(); !ok || lf.FaceName[0] == 0 {
+		t.Errorf("lfMenuFont %+v %v", lf, ok)
+	}
 	region := func(b []byte, x0, x1 int32) string {
 		var s []byte
 		for y := int32(0); y < h; y++ {
@@ -81,8 +90,9 @@ func TestCHK_TRAY_96_OwnerDrawSlider(t *testing.T) {
 	if hlAt(p50, mid) || !hlAt(p100, mid) {
 		t.Error("filled part of the track")
 	}
-	// the value at x
+	// the value at x: live in memory, HKCU only on the release
 	app.SetMasterVolume(10)
+	saved := sstore.saves
 	rc := winapi.RECT{Left: 100, Right: 100 + w, Top: 0, Bottom: h}
 	tl, tr := volumeTrack(rc)
 	if !app.volumeAtX(tr+20, rc) || app.SoundPrefs().Master != 100 || app.volumeAtX(tr, rc) {
@@ -90,6 +100,31 @@ func TestCHK_TRAY_96_OwnerDrawSlider(t *testing.T) {
 	}
 	if !app.volumeAtX(tl-5, rc) || app.SoundPrefs().Master != 0 {
 		t.Errorf("left end %d", app.SoundPrefs().Master)
+	}
+	if sstore.saves != saved || !menuVolume.dirty {
+		t.Errorf("dragging wrote HKCU: saves %d→%d dirty %v", saved, sstore.saves, menuVolume.dirty)
+	}
+	app.storeMenuVolume()
+	if sstore.saves != saved+1 || menuVolume.dirty {
+		t.Errorf("release: saves %d→%d dirty %v", saved, sstore.saves, menuVolume.dirty)
+	}
+	app.storeMenuVolume()
+	if sstore.saves != saved+1 {
+		t.Error("a second write without a change")
+	}
+	// the speaker icon follows the DPI (cached per size)
+	keep := testDPI
+	testDPI = 96
+	n96 := app.squares.speakerIcon(trayui.SpeakerLevel(1))
+	testDPI = 144
+	n144 := app.squares.speakerIcon(trayui.SpeakerLevel(1))
+	testDPI = keep
+	if n96 == 0 || n144 == 0 || n96 == n144 {
+		t.Errorf("speaker icon per DPI: %#x %#x", n96, n144)
+	}
+	f96, f144 := alertTitleFontFor(96), alertTitleFontFor(144)
+	if f96 == 0 || f144 == 0 || f96 == f144 || alertTitleFontFor(96) != f96 || alertTitleFontFor(144) != f144 {
+		t.Errorf("alert title font per DPI: %#x %#x", f96, f144)
 	}
 }
 
@@ -111,8 +146,8 @@ func TestCHK_TRAY_96_DragInShownMenu(t *testing.T) {
 	// paint is one look at the last slider paint: count, window, value,
 	// and the master volume at that moment
 	type paint struct {
-		n, value, master int
-		on               uintptr
+		n, value, master, saves int
+		on                      uintptr
 	}
 	type result struct {
 		err                    string
@@ -150,7 +185,7 @@ func TestCHK_TRAY_96_DragInShownMenu(t *testing.T) {
 			time.Sleep(150 * time.Millisecond)
 		}
 		look := func() paint {
-			return paint{n: app.volumeDraws, value: app.volumeDrawnValue, master: app.soundPrefs.Master, on: app.volumeDrawnOn}
+			return paint{n: app.volumeDraws, value: app.volumeDrawnValue, master: app.soundPrefs.Master, on: app.volumeDrawnOn, saves: store.saves}
 		}
 		res.mw = mw
 		res.before = look()
@@ -170,8 +205,12 @@ func TestCHK_TRAY_96_DragInShownMenu(t *testing.T) {
 	if res.err != "" {
 		t.Fatal(res.err)
 	}
-	if v := app.SoundPrefs().Master; v < 45 || v > 55 || store.saves < saves+2 {
-		t.Errorf("master %d saves %d (want ~50, ≥2 saves)", v, store.saves-saves)
+	if v := app.SoundPrefs().Master; v < 45 || v > 55 || store.saves != saves+1 {
+		t.Errorf("master %d saves %d (want ~50, one write on the release)", v, store.saves-saves)
+	}
+	// HKCU is written on the release only, not on every move
+	if res.down.saves != saves || res.move.saves != saves || res.up.saves != saves+1 {
+		t.Errorf("writes: press %d move %d release %d (from %d)", res.down.saves, res.move.saves, res.up.saves, saves)
 	}
 	if !res.openAfterUp {
 		t.Error("the release closed the menu")

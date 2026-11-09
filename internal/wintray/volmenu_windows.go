@@ -26,6 +26,9 @@ var menuVolume struct {
 	app   *App
 	index int // top-level index of the Volume item, -1 = none
 	drag  bool
+	// dirty: the master volume changed in memory since the last write to
+	// HKCU (written on the release, or when the menu closes mid-drag)
+	dirty bool
 }
 
 // volumeItemSize of the owner-draw item (96 dpi units, scaled by px).
@@ -40,20 +43,29 @@ func volumeTrack(r winapi.RECT) (int32, int32) {
 	return r.Left + px(8+volumeIconW+10), r.Right - px(52)
 }
 
-// speakerIcon returns the cached speaker icon of level l.
+// speakerKey: a speaker icon is cached per level and pixel size (the
+// size follows the DPI).
+type speakerKey struct {
+	l trayui.SpeakerLevel
+	n int
+}
+
+// speakerIcon returns the cached speaker icon of level l at the current
+// DPI.
 func (b *bitmaps) speakerIcon(l trayui.SpeakerLevel) uintptr {
 	if b.speakers == nil {
-		b.speakers = map[trayui.SpeakerLevel]uintptr{}
-	}
-	if h, ok := b.speakers[l]; ok {
-		return h
+		b.speakers = map[speakerKey]uintptr{}
 	}
 	n := int(px(volumeIconW))
+	k := speakerKey{l, n}
+	if h, ok := b.speakers[k]; ok {
+		return h
+	}
 	h, err := winapi.CreateIconFromPixels(n, n, trayui.SpeakerPixels(l, n))
 	if err != nil {
 		return 0
 	}
-	b.speakers[l] = h
+	b.speakers[k] = h
 	return h
 }
 
@@ -95,6 +107,14 @@ func (a *App) drawVolumeItem(dc uintptr, r winapi.RECT, v int, selected bool) {
 	winapi.DeleteObject(thumb)
 	winapi.SetBkMode(dc, winapi.TRANSPARENT)
 	winapi.SetTextColor(dc, winapi.GetSysColor(winapi.COLOR_MENUTEXT))
+	// the menu font (lfMenuFont): a DC of the menu window has the system
+	// font selected, the text would not match the other items
+	font := winapi.MenuFont()
+	a.volumeFont = font
+	if font != 0 {
+		old := winapi.SelectObject(dc, font)
+		defer winapi.SelectObject(dc, old)
+	}
 	winapi.DrawText(dc, volumeText(v), winapi.RECT{Left: rt + px(4), Top: r.Top, Right: r.Right - px(6), Bottom: r.Bottom}, winapi.DT_RIGHT|winapi.DT_VCENTER|winapi.DT_SINGLELINE)
 }
 
@@ -160,17 +180,29 @@ func volumeIndex(items []trayui.Item) int {
 }
 
 // volumeAtX sets the master volume from the screen x on the item
-// rectangle r; true when it changed.
+// rectangle r — live (the alarm follows at once), written to HKCU only on
+// the release (storeMenuVolume); true when it changed.
 func (a *App) volumeAtX(x int32, r winapi.RECT) bool {
 	l, rt := volumeTrack(r)
 	v := trayui.VolumeFromX(int(x), int(l), int(rt))
 	if v == a.soundPrefs.Master {
 		return false
 	}
-	if err := a.SetMasterVolume(v); err != nil {
+	a.setMasterVolumeLive(v)
+	menuVolume.dirty = true
+	return true
+}
+
+// storeMenuVolume writes the volume set with the slider to HKCU once (the
+// release, or the menu closed during a drag).
+func (a *App) storeMenuVolume() {
+	if !menuVolume.dirty {
+		return
+	}
+	menuVolume.dirty = false
+	if err := a.SaveSoundPrefs(a.soundPrefs); err != nil {
 		a.logf("tray: sound: save master volume: %v", err)
 	}
-	return true
 }
 
 // volumeHook handles a mouse message of the menu loop on the slider;
@@ -201,6 +233,7 @@ func volumeHook(m winapi.MSG) bool {
 	}
 	if m.Message == winapi.WM_LBUTTONUP {
 		menuVolume.drag = false
+		a.storeMenuVolume()
 		a.volumePreviewCue()
 	}
 	return true

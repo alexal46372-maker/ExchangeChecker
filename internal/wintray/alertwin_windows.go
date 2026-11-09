@@ -65,7 +65,19 @@ const (
 )
 
 var alertTitleBrushes [2]uintptr
-var alertTitleFont uintptr
+
+// alertTitleFonts: the bold title font per DPI (created once per DPI).
+var alertTitleFonts = map[int32]uintptr{}
+
+// alertTitleFontFor is the title font for dpi (the current uiDPI).
+func alertTitleFontFor(dpi int32) uintptr {
+	if f, ok := alertTitleFonts[dpi]; ok && f != 0 {
+		return f
+	}
+	f := winapi.CreateFontWeight(uiFontFace, -int32((18*int64(dpi)+48)/96), winapi.FW_BOLD)
+	alertTitleFonts[dpi] = f
+	return f
+}
 
 // titleBrush is the brush of the current phase (red / black).
 func (aw *alertWindow) titleBrush() uintptr {
@@ -203,10 +215,7 @@ func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) 
 	aw.hwnd = hwnd
 	// phase 11 (CHK-TRAY-45): laid out by the ui framework
 	aw.title = child(hwnd, "STATIC", "", winapi.SS_CENTER|winapi.SS_CENTERIMAGE, idAlertTitle, 0, 0, 0, 0)
-	if alertTitleFont == 0 {
-		alertTitleFont = winapi.CreateFontWeight(uiFontFace, -px(18), winapi.FW_BOLD)
-	}
-	winapi.SendMessage(aw.title, winapi.WM_SETFONT, alertTitleFont, 1)
+	winapi.SendMessage(aw.title, winapi.WM_SETFONT, alertTitleFontFor(uiDPI()), 1)
 	aw.icon = child(hwnd, "STATIC", "", winapi.SS_ICON, idAlertIcon, 0, 0, 0, 0)
 	aw.text = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertText, 0, 0, 0, 0)
 	aw.status = child(hwnd, "STATIC", "", winapi.SS_LEFT, idAlertStatus, 0, 0, 0, 0)

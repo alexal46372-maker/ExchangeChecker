@@ -18,7 +18,7 @@ const squareSize = 16
 type bitmaps struct {
 	m        map[trayui.Color]uintptr
 	checks   map[checkKey]uintptr
-	speakers map[trayui.SpeakerLevel]uintptr // icons of the volume slider (CHK-TRAY-96)
+	speakers map[speakerKey]uintptr // icons of the volume slider by level and size (CHK-TRAY-96)
 }
 
 func (b *bitmaps) get(c trayui.Color) uintptr {
@@ -122,7 +122,7 @@ func trackMenu(owner uintptr, items []trayui.Item, bm *bitmaps) int {
 	// user clicks elsewhere (KB135788)
 	winapi.SetForegroundWindow(owner)
 	menuToggle.menu, menuToggle.items, menuToggle.cmd = hm, items, 0
-	menuVolume.index, menuVolume.drag = volumeIndex(items), false
+	menuVolume.index, menuVolume.drag, menuVolume.dirty = volumeIndex(items), false, false
 	hook, _ := winapi.SetMsgFilterHook(msgFilterCallback)
 	cmd := int(winapi.TrackPopupMenuEx(hm, winapi.TPM_RETURNCMD|winapi.TPM_RIGHTBUTTON|winapi.TPM_NONOTIFY, pt.X, pt.Y, owner))
 	if hook != 0 {
@@ -131,8 +131,11 @@ func trackMenu(owner uintptr, items []trayui.Item, bm *bitmaps) int {
 	if cmd == 0 {
 		cmd = menuToggle.cmd
 	}
+	if a := menuVolume.app; a != nil {
+		a.storeMenuVolume() // closed during a drag: keep the volume
+	}
 	menuToggle.menu, menuToggle.items, menuToggle.cmd = 0, nil, 0
-	menuVolume.index, menuVolume.drag = -1, false
+	menuVolume.index, menuVolume.drag, menuVolume.dirty = -1, false, false
 	winapi.PostMessage(owner, winapi.WM_NULL, 0, 0)
 	return cmd
 }
@@ -180,7 +183,7 @@ func msgFilterProc(code int32, wParam, lParam uintptr) uintptr {
 			return 1 // the slider drags, the menu stays open (CHK-TRAY-96)
 		}
 		if m.Message == winapi.WM_LBUTTONUP || m.Message == winapi.WM_LBUTTONDOWN {
-			if cmd := toggleAt(winapi.MenuItemFromPoint(0, menuToggle.menu, winapi.GetCursorPos())); cmd != 0 {
+			if cmd := toggleAtPoint(winapi.GetCursorPos()); cmd != 0 {
 				if m.Message == winapi.WM_LBUTTONUP {
 					menuToggle.cmd = cmd
 					winapi.EndMenu()
@@ -190,6 +193,18 @@ func msgFilterProc(code int32, wParam, lParam uintptr) uintptr {
 		}
 	}
 	return winapi.CallNextHookEx(code, wParam, lParam)
+}
+
+// toggleAtPoint is the toggle command of the top-level item under screen
+// point pt, only when the window there is the top-level menu itself: an
+// open points submenu over the item (near a screen edge it opens over its
+// parent) gets its own clicks (0 = none).
+func toggleAtPoint(pt winapi.POINT) int {
+	w := winapi.WindowFromPoint(pt)
+	if w == 0 || winapi.GetClassName(w) != "#32768" || winapi.SendMessage(w, winapi.MN_GETHMENU, 0, 0) != menuToggle.menu {
+		return 0
+	}
+	return toggleAt(winapi.MenuItemFromPoint(0, menuToggle.menu, pt))
 }
 
 // toggleAt is the toggle command of top-level item i (0 = none).

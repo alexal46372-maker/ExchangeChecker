@@ -20,6 +20,9 @@ const (
 	KeyDBDisabled = "db.disabled"
 	KeyDBPending  = "db.pending"
 	KeyDBStale    = "db.stale"
+	// KeyDBMuted: the database is muted until recovery by the service
+	// (mute_until_recovered; shown in the left menu, CHK-TRAY-91).
+	KeyDBMuted = "db.muted"
 	KeyDBNone     = "db.none"
 	KeyDBNoPoints = "db.no_points"
 	// KeyDBToggleFailed: balloon after a failed set_enabled from the
@@ -972,6 +975,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyDBDisabled: "выключена",
 	KeyDBPending:  "ожидание опроса",
 	KeyDBStale:    "последние известные данные",
+	KeyDBMuted:    "заглушено",
 	KeyDBNone:     "Нет настроенных баз",
 	KeyDBNoPoints: "Нет точек обмена",
 	KeyDBToggleFailed: "Не удалось переключить опрос базы",

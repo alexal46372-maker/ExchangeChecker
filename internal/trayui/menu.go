@@ -173,6 +173,9 @@ func databaseItem(p model.ProfileSnapshot, fresh bool, canToggle bool, idx int) 
 	case !p.Polled:
 		status = i18n.T(i18n.KeyDBPending)
 	}
+	if p.Muted && p.Enabled { // muted until recovery (the service)
+		status += "; " + i18n.T(i18n.KeyDBMuted)
+	}
 	if !fresh {
 		status += "; " + i18n.T(i18n.KeyDBStale)
 	}

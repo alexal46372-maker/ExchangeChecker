@@ -128,13 +128,15 @@ var winAPIMinVersion = map[string]float64{
 	"SetWindowsHookExW": 5.0, "UnhookWindowsHookEx": 5.0, "CallNextHookEx": 5.0, "MenuItemFromPoint": 5.0, "EndMenu": 5.0, "GetCurrentThreadId": 5.0,
 	// CHK-TRAY-96: volume slider in the menu (Windows 2000+)
 	"GetMenuItemRect": 5.0, "GetSysColor": 5.0, "SetCursorPos": 5.0, "WindowFromDC": 5.0,
+	// phase 13 #21 review: the menu font of the slider text (CHK-TRAY-96)
+	"CreateFontIndirectW": 5.0,
 	// CHK-TRAY-95: full-screen flash overlay (Windows 2000+)
 	"SetLayeredWindowAttributes": 5.0, "TranslateMessage": 5.0,
 	"UnregisterClassW": 5.0,
 	// phase 6b alert window and sound (CHK-TRAY-03)
 	// CHK-TRAY-97: last fallback of «Тон» (Windows 2000+)
 	"MessageBeep": 5.0,
-	"Beep": 5.0, "SetWindowTextW": 5.0, "EnableWindow": 5.0, "IsWindowEnabled": 5.0, "IsWindowVisible": 5.0,
+	"Beep":        5.0, "SetWindowTextW": 5.0, "EnableWindow": 5.0, "IsWindowEnabled": 5.0, "IsWindowVisible": 5.0,
 	"LoadIconW": 5.0, "SetWindowPos": 5.0, "FlashWindowEx": 5.0, "GetForegroundWindow": 5.0,
 	// phase 6c settings window (CHK-TRAY-04/05/06)
 	"SetFocus": 5.0, "GetFocus": 5.0, "MessageBoxW": 5.0, "GetModuleFileNameW": 5.0,

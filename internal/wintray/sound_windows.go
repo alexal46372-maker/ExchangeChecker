@@ -160,7 +160,11 @@ func (w *winSounder) playTone(freq, dur, vol int, stop <-chan struct{}) error {
 		w.fallback("PlaySound", err)
 		if err := o.beep(uint32(freq), uint32(dur)); err != nil {
 			w.fallback("Beep", err)
-			return o.messageBeep()
+			// MessageBeep returns at once: wait the tone duration, so the
+			// cadence (tone, gap, tone) stays the same
+			err := o.messageBeep()
+			waitOrStop(time.Duration(dur)*time.Millisecond, stop)
+			return err
 		}
 		return nil
 	}
@@ -267,6 +271,15 @@ func (a *App) SaveSoundPrefs(p trayalert.SoundPrefs) error {
 		return a.opt.SoundStore.Save(p.String())
 	}
 	return nil
+}
+
+// setMasterVolumeLive changes the master volume in memory (the alarm
+// follows at once) without writing HKCU (the menu slider while dragging).
+func (a *App) setMasterVolumeLive(v int) {
+	p := a.soundPrefs
+	p.Master = v
+	a.soundPrefs = p.Normalized(trayalert.DefaultSoundPrefs(a.serviceSettings()))
+	a.applySound()
 }
 
 // SetMasterVolume changes and stores the master volume (0..100).

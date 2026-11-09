@@ -154,7 +154,10 @@ type App struct {
 	// phase 10: sound profiles (CHK-TRAY-33..35), problem list, blinking
 	// icon and panel (CHK-TRAY-38/39)
 	soundPrefs  trayalert.SoundPrefs
-	volumeDraws int // WM_DRAWITEM of the menu volume slider (CHK-TRAY-96)
+	volumeDraws int // paints of the menu volume slider (CHK-TRAY-96)
+	// window and master volume of the last slider paint (CHK-TRAY-96)
+	volumeDrawnOn    uintptr
+	volumeDrawnValue int
 	soundStored bool
 	soundWin    *soundWindow
 	volWin      *volumeWindow

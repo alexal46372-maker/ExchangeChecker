@@ -156,7 +156,10 @@ func (a *App) startFlash() {
 	if a.flashWin == nil || !winapi.IsWindow(a.flashWin.hwnd) {
 		fw := &flashWindow{}
 		r := winapi.VirtualScreen()
-		h, err := createWindow(flashClass, "", FlashExStyle, winapi.WS_POPUP, r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top, 0,
+		// pixel rectangle of all monitors as is: createWindow would treat
+		// it as a 96-dpi client size, scale it and clamp it to the work
+		// area with scroll bars (the overlay missed the taskbar strip)
+		h, err := createWindowPx(flashClass, "", FlashExStyle, winapi.WS_POPUP, r.Left, r.Top, r.Right-r.Left, r.Bottom-r.Top, 0,
 			func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 				switch msg {
 				case winapi.WM_ERASEBKGND:

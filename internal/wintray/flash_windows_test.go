@@ -92,6 +92,12 @@ func TestCHK_TRAY_95_ScreenFlash(t *testing.T) {
 	if r, v := winapi.GetWindowRect(fw.hwnd), winapi.VirtualScreen(); r != v {
 		t.Errorf("overlay %+v, virtual screen %+v", r, v)
 	}
+	if st := winapi.WindowStyle(fw.hwnd); st&(winapi.WS_VSCROLL|winapi.WS_HSCROLL) != 0 || st&winapi.WS_POPUP == 0 {
+		t.Errorf("overlay style %x: a plain popup without scroll bars", st)
+	}
+	if c := winapi.GetClientRect(fw.hwnd); c.Right-c.Left != winapi.GetSystemMetrics(winapi.SM_CXVIRTUALSCREEN) || c.Bottom-c.Top != winapi.GetSystemMetrics(winapi.SM_CYVIRTUALSCREEN) {
+		t.Errorf("overlay client %+v is not the whole virtual screen", c)
+	}
 	if winapi.GetForegroundWindow() == fw.hwnd || (fg != 0 && winapi.GetForegroundWindow() != fg) {
 		t.Error("overlay took the focus")
 	}

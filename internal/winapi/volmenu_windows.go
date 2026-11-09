@@ -12,6 +12,7 @@ var (
 	procGetMenuItemRect = moduser32.NewProc("GetMenuItemRect")
 	procGetSysColor     = moduser32.NewProc("GetSysColor")
 	procSetCursorPos    = moduser32.NewProc("SetCursorPos")
+	procWindowFromDC    = moduser32.NewProc("WindowFromDC")
 )
 
 const (
@@ -20,6 +21,8 @@ const (
 	WM_MOUSEMOVE   = 0x0200
 	ODT_MENU       = 1
 	ODS_SELECTED   = 0x0001
+	ODA_DRAWENTIRE = 0x0001
+	MN_GETHMENU    = 0x01E1
 	DT_RIGHT       = 0x0002
 
 	WM_KEYDOWN = 0x0100
@@ -76,6 +79,12 @@ func GetMenuItemRect(hwnd, menu uintptr, i int) (RECT, bool) {
 	var r RECT
 	ok, _, _ := callProc(procGetMenuItemRect, hwnd, menu, uintptr(i), uintptr(unsafe.Pointer(&r)))
 	return r, ok != 0
+}
+
+// WindowFromDC is the window of a display DC (0 for a memory DC).
+func WindowFromDC(dc uintptr) uintptr {
+	r, _, _ := callProc(procWindowFromDC, dc)
+	return r
 }
 
 // GetSysColor is a system color (COLORREF).

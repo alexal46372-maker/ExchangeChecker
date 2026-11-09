@@ -95,8 +95,10 @@ func TestCHK_TRAY_96_OwnerDrawSlider(t *testing.T) {
 
 // TestCHK_TRAY_96_DragInShownMenu — the real right menu is shown
 // (TrackPopupMenuEx + WH_MSGFILTER hook); press, move, release on the
-// slider change the master volume, repaint the item, play the preview cue
-// and keep the menu open; Escape closes it without a command.
+// slider change the master volume, play the preview cue and keep the menu
+// open; Escape closes it without a command. Live: the press and every move
+// (before the release) repaint the item in the shown menu window itself
+// with the new value — not only some time later or on the release.
 func TestCHK_TRAY_96_DragInShownMenu(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -106,10 +108,17 @@ func TestCHK_TRAY_96_DragInShownMenu(t *testing.T) {
 	app.SetMasterVolume(100)
 	saves := store.saves
 	vi := volumeIndex(app.RightMenu())
+	// paint is one look at the last slider paint: count, window, value,
+	// and the master volume at that moment
+	type paint struct {
+		n, value, master int
+		on               uintptr
+	}
 	type result struct {
-		err             string
-		openAfterUp     bool
-		draws, drawsMid int
+		err                    string
+		mw                     uintptr
+		openAfterUp            bool
+		before, down, move, up paint
 	}
 	done := make(chan result, 1)
 	go func() {
@@ -140,11 +149,17 @@ func TestCHK_TRAY_96_DragInShownMenu(t *testing.T) {
 			winapi.PostMessage(mw, msg, 0, 0)
 			time.Sleep(150 * time.Millisecond)
 		}
+		look := func() paint {
+			return paint{n: app.volumeDraws, value: app.volumeDrawnValue, master: app.soundPrefs.Master, on: app.volumeDrawnOn}
+		}
+		res.mw = mw
+		res.before = look()
 		step(l+(r-l)/5, winapi.WM_LBUTTONDOWN)
-		res.drawsMid = app.volumeDraws
+		res.down = look()
 		step(l+(r-l)/2, winapi.WM_MOUSEMOVE)
+		res.move = look()
 		step(l+(r-l)/2, winapi.WM_LBUTTONUP)
-		res.draws = app.volumeDraws
+		res.up = look()
 		res.openAfterUp = winapi.IsWindowVisible(mw)
 		winapi.PostMessage(mw, winapi.WM_KEYDOWN, winapi.VK_ESCAPE, 0)
 		time.Sleep(100 * time.Millisecond)
@@ -158,8 +173,30 @@ func TestCHK_TRAY_96_DragInShownMenu(t *testing.T) {
 	if v := app.SoundPrefs().Master; v < 45 || v > 55 || store.saves < saves+2 {
 		t.Errorf("master %d saves %d (want ~50, ≥2 saves)", v, store.saves-saves)
 	}
-	if !res.openAfterUp || res.draws <= res.drawsMid {
-		t.Errorf("menu open after release %v, draws %d→%d", res.openAfterUp, res.drawsMid, res.draws)
+	if !res.openAfterUp {
+		t.Error("the release closed the menu")
+	}
+	// the press and the move (before the release) each repainted the item
+	// in the shown menu window with the value just set
+	prev := res.before
+	for _, st := range []struct {
+		name string
+		p    paint
+		lo   int
+		hi   int
+	}{{"press", res.down, 15, 25}, {"move", res.move, 45, 55}} {
+		p := st.p
+		if p.master < st.lo || p.master > st.hi {
+			t.Errorf("%s: master %d, want %d..%d", st.name, p.master, st.lo, st.hi)
+		}
+		if p.n <= prev.n || p.on != res.mw || p.value != p.master {
+			t.Errorf("%s: not repainted live: paints %d→%d, on %#x (menu %#x), painted %d, master %d",
+				st.name, prev.n, p.n, p.on, res.mw, p.value, p.master)
+		}
+		prev = p
+	}
+	if res.up.value != res.up.master {
+		t.Errorf("after release the item shows %d, master %d", res.up.value, res.up.master)
 	}
 	pumpUntil(t, "volume preview", func() bool { return b.has(volumePreviewFreqHz) })
 	if menuVolume.app != nil || menuVolume.index != -1 || menuVolume.drag {

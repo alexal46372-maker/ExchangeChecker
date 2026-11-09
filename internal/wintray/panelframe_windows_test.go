@@ -6,7 +6,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -17,11 +18,20 @@ import (
 func TestCHK_TRAY_92_PanelRedFrame(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	app, _, _ := startP10App(t, &alertService{}, &testBeeper{}, &memSoundStore{})
-	app.problems = []trayalert.Problem{{Kind: trayalert.ProblemError, Text: "Склад / Exchange — ЦБ: 45 мин без обмена"}}
-	app.updatePanel()
+	// the real path: the service reports an exchange error, the tray
+	// shows the panel. (Setting app.problems by hand raced with the first
+	// status push of the session, which recomputed the list, found no
+	// problem and hid the panel while it was being captured: black
+	// PrintWindow, desktop pixels in the screen copy.)
+	svc := &alertService{}
+	svc.set(1, ptAlert("a", "Склад", "k1", model.LevelError))
+	app, _, _ := startP10App(t, svc, &testBeeper{}, &memSoundStore{})
+	pumpUntil(t, "panel", func() bool {
+		p := app.Panel()
+		return app.Status().State == trayipc.StateConnected && p != nil && p.shown && len(p.lines) == 1
+	})
 	p := app.Panel()
-	if p == nil || !winapi.IsWindow(p.hwnd) {
+	if !winapi.IsWindow(p.hwnd) {
 		t.Fatal("panel not created")
 	}
 	if st := winapi.WindowStyle(p.hwnd); st&winapi.WS_BORDER != 0 {
@@ -78,6 +88,9 @@ func TestCHK_TRAY_92_PanelRedFrame(t *testing.T) {
 	}
 	if c := at(b+2, b+2); c == PanelFrameRGB {
 		t.Errorf("inside the frame is red too")
+	}
+	if !p.shown || !winapi.IsWindowVisible(p.hwnd) {
+		t.Error("the panel was hidden during the capture")
 	}
 	tr := winapi.GetWindowRect(p.text)
 	wr := winapi.GetWindowRect(p.hwnd)

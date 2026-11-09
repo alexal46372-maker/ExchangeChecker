@@ -13,8 +13,13 @@ import (
 // the item is owner-draw (speaker icon, track with thumb, «N %»), the
 // WH_MSGFILTER hook of trackMenu drags it — the master volume changes and
 // the speaker follows at once while the menu stays open, the release plays
-// the short preview cue. Enter on the item (keyboard) still opens the
-// trackbar window by the clock (CHK-TRAY-35).
+// the short preview cue. Every change repaints the item at once straight
+// into the shown menu window (paintVolumeNow): RedrawWindow of the #32768
+// window from inside the menu loop does not make the menu send
+// WM_DRAWITEM again, so the speaker and the track used to stay stale
+// until the menu repainted by itself (CI run 41587440218). Enter on the
+// item (keyboard) still opens the trackbar window by the clock
+// (CHK-TRAY-35).
 
 // menuVolume is the state of the slider while trackMenu runs (UI thread).
 var menuVolume struct {
@@ -102,8 +107,45 @@ func (a *App) onDrawItem(lp uintptr) bool {
 	if d.CtlType != winapi.ODT_MENU || d.ItemID != uint32(trayui.CmdVolume) {
 		return false
 	}
+	a.drawVolume(d)
+	return true
+}
+
+// drawVolume paints the slider for d at the current master volume and
+// records where and what was painted (CHK-TRAY-96 tests).
+func (a *App) drawVolume(d winapi.DRAWITEMSTRUCT) {
 	a.volumeDraws++
+	a.volumeDrawnOn = winapi.WindowFromDC(d.HDC)
+	a.volumeDrawnValue = a.soundPrefs.Master
 	a.drawVolumeItem(d.HDC, d.RcItem, a.soundPrefs.Master, d.ItemState&winapi.ODS_SELECTED != 0)
+}
+
+// volumeMenuWindow is the shown #32768 window of the tracked menu: the
+// window of the hook message, else the one under the cursor (0 = none).
+func volumeMenuWindow(hw uintptr) uintptr {
+	for _, w := range []uintptr{hw, winapi.WindowFromPoint(winapi.GetCursorPos())} {
+		if w != 0 && winapi.GetClassName(w) == "#32768" && winapi.SendMessage(w, winapi.MN_GETHMENU, 0, 0) == menuToggle.menu {
+			return w
+		}
+	}
+	return 0
+}
+
+// paintVolumeNow repaints the slider item (screen rectangle r) into the
+// shown menu window mw at once, the same drawing as WM_DRAWITEM; false
+// when there is no DC.
+func (a *App) paintVolumeNow(mw uintptr, r winapi.RECT) bool {
+	dc := winapi.GetDC(mw)
+	if dc == 0 {
+		return false
+	}
+	defer winapi.ReleaseDC(mw, dc)
+	ox, oy := winapi.ClientOrigin(mw)
+	a.drawVolume(winapi.DRAWITEMSTRUCT{
+		CtlType: winapi.ODT_MENU, ItemID: uint32(trayui.CmdVolume),
+		ItemAction: winapi.ODA_DRAWENTIRE, ItemState: winapi.ODS_SELECTED, HDC: dc,
+		RcItem: winapi.RECT{Left: r.Left - ox, Top: r.Top - oy, Right: r.Right - ox, Bottom: r.Bottom - oy},
+	})
 	return true
 }
 
@@ -151,8 +193,11 @@ func volumeHook(m winapi.MSG) bool {
 	default:
 		return false
 	}
-	if r, ok := winapi.GetMenuItemRect(0, menuToggle.menu, i); ok && a.volumeAtX(winapi.GetCursorPos().X, r) && m.Hwnd != 0 {
-		winapi.RedrawWindow(m.Hwnd, winapi.RDW_INVALIDATE|winapi.RDW_UPDATENOW)
+	if r, ok := winapi.GetMenuItemRect(0, menuToggle.menu, i); ok && a.volumeAtX(winapi.GetCursorPos().X, r) {
+		// live: the speaker and the track follow every move, not the release
+		if mw := volumeMenuWindow(m.Hwnd); mw == 0 || !a.paintVolumeNow(mw, r) {
+			a.logf("tray: volume slider: no menu window to repaint")
+		}
 	}
 	if m.Message == winapi.WM_LBUTTONUP {
 		menuVolume.drag = false

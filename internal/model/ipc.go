@@ -379,8 +379,6 @@ type IPCMessage struct {
 	ViberTest *ViberTestResult `json:"viberTest,omitempty"`
 	// EmailTest: email_test reply (phase 13b, CHK-IPC-16).
 	EmailTest *EmailTestResult `json:"emailTest,omitempty"`
-	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
-	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
 	// TelegramTest: telegram_test_result (phase 13, CHK-IPC-17).
 	TelegramTest *TelegramTestResult `json:"telegramTest,omitempty"`
 	// Enabled: set_enabled reply / profile_enabled push (CHK-IPC-18).
@@ -390,6 +388,8 @@ type IPCMessage struct {
 	PointKey string      `json:"pointKey,omitempty"`
 	EventID  uint64      `json:"eventId,omitempty"`
 	Level    *AlertLevel `json:"level,omitempty"`
+	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
+	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
 	// Summary: summary reply (phase 11, CHK-SVC-07).
 	Summary *Summary `json:"summary,omitempty"`
 	// Phase 11 (CHK-IPC-12/13): progress pushes (written flat, see

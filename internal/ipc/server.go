@@ -61,6 +61,12 @@ type Muter interface {
 	UnmuteProfile(profileID string) error
 }
 
+// FlashDismisser runs dismiss_flash (phase 13, CHK-IPC-19; any client,
+// like ack_alert).
+type FlashDismisser interface {
+	DismissFlash(eventID uint64) error
+}
+
 // EventAcker runs ack_alert {eventId} (phase 11, CHK-MON-18, capability
 // ack_event): only that alert.
 type EventAcker interface {
@@ -100,12 +106,6 @@ type ConfigManager interface {
 	SaveProfile(p model.Profile, password string, clearPassword bool, expectedRevision, account string) (model.SavedProfile, error)
 	DeleteProfile(profileID, expectedRevision, account string) (revision string, err error)
 	SaveSettings(st model.Settings, expectedRevision, account string) (revision string, err error)
-}
-
-// FlashDismisser runs dismiss_flash (phase 13, CHK-IPC-19; any client,
-// like ack_alert).
-type FlashDismisser interface {
-	DismissFlash(eventID uint64) error
 }
 
 // ProfileEnabler runs set_enabled (phase 13, CHK-IPC-18; admin only).
@@ -1336,19 +1336,6 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 			result = model.ResultImportChecked
 		}
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: result, Reloaded: !res.DryRun, Revision: res.Revision, Import: &res}
-	case model.CmdSetEnabled: // phase 13 (CHK-IPC-18)
-		if req.ProfileID == "" || req.Enabled == nil {
-			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
-				Message: "ipc: set_enabled needs profileId and enabled", Args: []string{"enabled", model.ValRequired}}, "")
-		}
-		rev, err := en.SetEnabled(req.ProfileID, *req.Enabled, req.ExpectedRevision, cl.Account)
-		if err != nil {
-			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
-		}
-		v := *req.Enabled
-		s.broadcast(model.IPCMessage{Type: model.MsgProfileEnabled, ProfileID: req.ProfileID, Enabled: &v, Revision: rev})
-		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSaved, ProfileID: req.ProfileID, Enabled: &v,
-			Reloaded: true, Revision: rev}
 	case model.CmdGetConfig:
 		cfg, rev, err := cm.GetConfig()
 		if err != nil {
@@ -1367,6 +1354,19 @@ func (s *Server) handleAdmin(c *conn, req model.IPCRequest) model.IPCMessage {
 		p := res.Profile
 		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSaved, ProfileID: p.ID, Profile: &p,
 			Reloaded: true, PollScheduled: res.PollScheduled, Revision: res.Revision}
+	case model.CmdSetEnabled: // phase 13 (CHK-IPC-18)
+		if req.ProfileID == "" || req.Enabled == nil {
+			return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+				Message: "ipc: set_enabled needs profileId and enabled", Args: []string{"enabled", model.ValRequired}}, "")
+		}
+		rev, err := en.SetEnabled(req.ProfileID, *req.Enabled, req.ExpectedRevision, cl.Account)
+		if err != nil {
+			return errorReply(req.ID, err, model.ErrCodeSaveFailed)
+		}
+		v := *req.Enabled
+		s.broadcast(model.IPCMessage{Type: model.MsgProfileEnabled, ProfileID: req.ProfileID, Enabled: &v, Revision: rev})
+		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSaved, ProfileID: req.ProfileID, Enabled: &v,
+			Reloaded: true, Revision: rev}
 	case model.CmdDeleteProfile:
 		rev, err := cm.DeleteProfile(req.ProfileID, req.ExpectedRevision, cl.Account)
 		if err != nil {

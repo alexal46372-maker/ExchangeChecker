@@ -172,6 +172,7 @@ func (s Settings) Normalized() Settings {
 	} else {
 		e := *s.Email
 		e.Recipients = append([]EmailRecipient{}, e.Recipients...)
+		e.FillRecipientIDs() // CHK-SVC-09
 		e.Events = append([]string{}, e.Events...)
 		e.Schedule.Days = append([]int{}, e.Schedule.Days...)
 		s.Email = &e
@@ -192,14 +193,14 @@ func defaultViberPtr() *ViberSettings {
 	return &v
 }
 
-func defaultEmailPtr() *EmailSettings {
-	e := DefaultEmailSettings()
-	return &e
-}
-
 func defaultTelegramPtr() *TelegramSettings {
 	t := DefaultTelegramSettings()
 	return &t
+}
+
+func defaultEmailPtr() *EmailSettings {
+	e := DefaultEmailSettings()
+	return &e
 }
 
 // Equal compares settings field by field (Settings holds slices since
@@ -208,8 +209,8 @@ func (s Settings) Equal(o Settings) bool {
 	a, b := s.Normalized(), o.Normalized()
 	va, vb := a.Viber.Stored(), b.Viber.Stored()
 	ea, eb := a.Email.Stored(), b.Email.Stored()
-	ta, tb := a.Telegram.Stored(), b.Telegram.Stored()
 	a.Viber, b.Viber = nil, nil
+	ta, tb := a.Telegram.Stored(), b.Telegram.Stored()
 	a.Email, b.Email = nil, nil
 	a.Telegram, b.Telegram = nil, nil
 	return reflect.DeepEqual(a, b) && reflect.DeepEqual(va, vb) && reflect.DeepEqual(ea, eb) && reflect.DeepEqual(ta, tb)

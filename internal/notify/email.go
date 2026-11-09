@@ -438,7 +438,7 @@ func (n *EmailNotifier) EmailTest(ctx context.Context, recipientID, addr, smtpPa
 			}
 		}
 		if !found {
-			return model.EmailTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailInvalidAddr,
+			return model.EmailTestResult{}, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgEmailRecipientNotFound,
 				Message: "email: recipientId not found", Args: []string{"recipientId", model.ValRequired}}
 		}
 	}

@@ -152,6 +152,11 @@ type Options struct {
 	// the IPC clients only (not the Event Log, log file, history or
 	// events_since).
 	OnAlertRepeat func(model.AlertEvent)
+	// OnFlash receives flash / flash_stop pushes (phase 13, CHK-MON-22).
+	OnFlash func(model.FlashEvent)
+	// BeforeFlashDelivery (tests only) runs after a publish computed its
+	// flash pushes and released m.mu, before they are delivered.
+	BeforeFlashDelivery func([]model.FlashEvent)
 	// ViberStatus is settings.viber.status of the views (phase 10,
 	// CHK-SVC-06; notify.Notifier.Status); nil = none.
 	ViberStatus func() *model.ViberStatus
@@ -164,6 +169,10 @@ type Options struct {
 	// OnEmailPassword is called after save_settings changed the SMTP
 	// password (so the email notifier reloads it).
 	OnEmailPassword func()
+	// TelegramStatus / OnTelegramToken: settings.telegram.status and the
+	// bot token reload hook (phase 13, CHK-CFG-10).
+	TelegramStatus  func() *model.ViberStatus
+	OnTelegramToken func()
 }
 
 // entry is the per-profile runtime state.
@@ -349,8 +358,14 @@ type Monitor struct {
 	acks    map[string]AckRecord
 	ackSave sync.Mutex
 	// mutes (CHK-MON-20), guarded by mu; muteSave serializes the writes
-	mutes    map[string]MuteRecord
-	muteSave sync.Mutex
+	mutes map[string]MuteRecord
+	// flash pushes (phase 13 item 7, CHK-MON-22): flashing alerts by
+	// key, suppressed (dismiss_flash) event ids
+	flashing       map[string]flashEntry
+	flashDismissed map[uint64]bool
+	// flashSendMu orders flash / flash_stop delivery (deliverFlashes)
+	flashSendMu sync.Mutex
+	muteSave    sync.Mutex
 
 	tester   *Tester
 	explorer *Explorer // interactive commands (G2/G3)
@@ -1341,6 +1356,8 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 		// current state is in status.problems
 		repEvents = append(repEvents, ev)
 	}
+	flashCands := append(append([]model.AlertEvent{}, events...), repeats...)
+	flashes := m.flashesLocked(flashCands, alerts)
 	m.seq++
 	snap := model.StatusSnapshot{
 		Seq: m.seq, Now: now, Level: model.WorstProfileLevel(profiles), Profiles: profiles,
@@ -1396,6 +1413,10 @@ func (m *Monitor) publish(update func(res map[string]model.ProfileSnapshot, cfg 
 	if m.opt.OnSnapshot != nil {
 		m.opt.OnSnapshot(snap)
 	}
+	if m.opt.BeforeFlashDelivery != nil { // tests: widen the race window
+		m.opt.BeforeFlashDelivery(flashes)
+	}
+	m.deliverFlashes(flashes)
 	if m.opt.OnAlertRepeat != nil {
 		for _, ev := range repEvents {
 			if m.mutedOutbound(ev.ProfileID) {

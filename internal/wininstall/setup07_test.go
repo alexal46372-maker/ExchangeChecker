@@ -10,7 +10,7 @@ import (
 
 // TestCHK_SETUP_07_UninstallKeyAndSelfDelete — values + self-delete → reboot code.
 func TestCHK_SETUP_07_UninstallKeyAndSelfDelete(t *testing.T) {
-	vals := UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.2.3", 100, time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC))
+	vals := UninstallValues(`C:\EC`, `C:\EC\`+config.UninstallExeName, `C:\EC\`+config.TrayExeName, "1.2.3", 100, time.Date(2026, 10, 13, 0, 0, 0, 0, time.UTC), true)
 	byName := map[string]RegValue{}
 	for _, v := range vals {
 		byName[v.Name] = v

@@ -20,11 +20,11 @@ import (
 )
 
 // TestCHK_DELIV_01_Zip — the delivery zip built in the CI job (tools/mkzip,
-// never uploaded, CHK-CI-01): exactly one entry named after the zip
-// (ExchangeChecker-<V>.exe), byte-identical to the built setup
-// and to a second independent mkzip run (deterministic), PE amd64 GUI with
-// VERSIONINFO = EC_BUILD_VERSION; the setup carries a gzip payload (smaller
-// than the three exe together).
+// never uploaded, CHK-CI-01): technical zip ExchangeChecker-<V>.zip with
+// exactly one entry "Exchange Checker <V>.exe" (phase 13; zip≠entry),
+// byte-identical to the built setup and to a second independent mkzip run
+// (deterministic), PE amd64 GUI with VERSIONINFO = EC_BUILD_VERSION; the
+// setup carries a gzip payload (smaller than the three exe together).
 func TestCHK_DELIV_01_Zip(t *testing.T) {
 	dir, ver := built(t)
 	zpath, zpath2 := os.Getenv("EC_BUILD_ZIP"), os.Getenv("EC_BUILD_ZIP2")
@@ -42,10 +42,10 @@ func TestCHK_DELIV_01_Zip(t *testing.T) {
 	if !bytes.Equal(z1, z2) {
 		t.Fatal("zip is not deterministic (two mkzip runs differ)")
 	}
-	if want := "ExchangeChecker-" + ver + ".zip"; filepath.Base(zpath) != want {
+	if want := config.DeliveryZipName(ver); filepath.Base(zpath) != want {
 		t.Errorf("zip name %s, want %s", filepath.Base(zpath), want)
 	}
-	wantEntry := "ExchangeChecker-" + ver + ".exe"
+	wantEntry := config.DeliveryInstallerName(ver)
 	zr, err := zip.NewReader(bytes.NewReader(z1), int64(len(z1)))
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +157,7 @@ func TestCHK_DELIV_01_InstallerAnyName(t *testing.T) {
 		"1.0.0",
 		1,
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		true,
 	)
 	var uninstallStr string
 	for _, v := range vals {

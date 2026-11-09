@@ -95,9 +95,9 @@ func run(args []string) int {
 		return res.Code
 	}
 
-	defaultDir := filepath.Join(os.Getenv("ProgramFiles"), "ExchangeChecker")
+	defaultDir := filepath.Join(os.Getenv("ProgramFiles"), config.InstallDirName)
 	if pf, err := winapi.SHGetFolderPath(winapi.CSIDL_PROGRAM_FILES); err == nil && pf != "" {
-		defaultDir = filepath.Join(pf, "ExchangeChecker")
+		defaultDir = filepath.Join(pf, config.InstallDirName)
 	}
 	install := func(o wininstall.Options, lg wininstall.Logger) wininstall.Result {
 		files, perr := payloadFiles()
@@ -112,7 +112,7 @@ func run(args []string) int {
 			DataDir:    config.DefaultDir(),
 			Files:      files,
 			Version:    version.Version,
-			Now:        time.Now(),
+					Now:        time.Now(),
 		}, lg)
 		if res.Err != nil {
 			logf("ERROR: %v", res.Err)
@@ -121,7 +121,11 @@ func run(args []string) int {
 		return res
 	}
 	if opts.Silent {
-		// silent: no window, no message box, no tray launch (§1.3, §D.8)
+		// silent: no window, no message box, no tray launch (§1.3, §D.8).
+		// Desktop shortcut preference: /NODESKTOPSHORTCUT or saved Uninstall DWORD.
+		if vals, err := sys.ReadUninstallKey(); err == nil {
+			opts = wininstall.ApplyDesktopShortcutPref(opts, vals)
+		}
 		return install(opts, printfLogger(logf)).Code
 	}
 	return runWizard(sys, opts, defaultDir, install, logf)
@@ -139,10 +143,22 @@ func runWizard(sys wininstall.System, opts wininstall.Options, defaultDir string
 	}
 	if inst.Present && inst.Dir != "" {
 		dir, locked = inst.Dir, true
+		// CHK-SETUP-17: show the post-migration two-word folder as the locked path.
+		if wininstall.IsLegacyInstallDir(dir) {
+			dir = wininstall.MigratedInstallDir(dir)
+		}
 	}
 	st := wininstall.NewWizardState(version.Version, mode, inst.Version, dir, locked, config.DefaultDir(), svc.Running)
 	st.CheckDrive = sys.CheckFixedDrive
 	st.AllowDowngrade = opts.AllowDowngrade
+	if vals, err := sys.ReadUninstallKey(); err == nil {
+		if want, ok := wininstall.DesktopShortcutPref(vals); ok {
+			st.DesktopShortcut = want
+		}
+	}
+	if opts.NoDesktopShortcut {
+		st.DesktopShortcut = false
+	}
 	out, err := wininstall.RunWizard(wininstall.WizardConfig{
 		State: st, Base: opts, LogPath: logPath,
 		Run: func(o wininstall.Options, progress func(string)) wininstall.Result {

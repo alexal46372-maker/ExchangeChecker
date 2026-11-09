@@ -21,7 +21,7 @@ var ErrNoPayload = errors.New("setup: this build carries no product files (built
 // InstallConfig is the input of Install.
 type InstallConfig struct {
 	Opts       Options
-	DefaultDir string // %ProgramFiles%\ExchangeChecker
+	DefaultDir string // %ProgramFiles%\Exchange Checker
 	DataDir    string // %ProgramData%\ExchangeChecker
 	Files      map[string][]byte
 	Version    string
@@ -111,11 +111,27 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	if dir != "" {
 		dir = CleanDir(sys.LongPath(dir)) // /DIR may be an 8.3 name
 	}
+	var legacyDir string
 	if inst.Present {
-		if dir != "" && !strings.EqualFold(dir, CleanDir(inst.Dir)) {
-			warn("already installed in %s: /DIR=%s ignored (uninstall first to move)", inst.Dir, dir)
+		old := CleanDir(inst.Dir)
+		if dir != "" && !strings.EqualFold(dir, old) {
+			if IsLegacyInstallDir(old) {
+				warn("/DIR=%s игнорирован: выполняется миграция из %s", dir, old)
+			} else {
+				warn("/DIR=%s игнорирован: уже установлено в %s (сначала удалите, чтобы перенести)", dir, inst.Dir)
+			}
 		}
-		dir = CleanDir(inst.Dir)
+		dir = old
+		// CHK-SETUP-17: one-word Program Files\ExchangeChecker → two-word
+		// sibling Exchange Checker (config/data under ProgramData stay put).
+		if IsLegacyInstallDir(dir) {
+			if err := ValidateLegacyMigrateDir(dir); err != nil {
+				return fail(err)
+			}
+			legacyDir = dir
+			dir = MigratedInstallDir(dir)
+			log.Printf("migrating install folder %s -> %s", legacyDir, dir)
+		}
 	} else if dir == "" {
 		dir = CleanDir(c.DefaultDir)
 	}
@@ -178,14 +194,41 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	// 3b. stop tray before replacing its image (upgrade / reinstall)
 	if !fresh {
-		log.Printf("stopping tray in %s", dir)
-		tw, err := sys.StopTray(dir)
-		for _, w := range tw {
-			warn("stop tray: %s", w)
+		stopDirs := []string{dir}
+		if legacyDir != "" {
+			stopDirs = append([]string{legacyDir}, stopDirs...)
 		}
-		if err != nil {
-			warn("stop tray: %v", err)
+		for _, d := range stopDirs {
+			log.Printf("stopping tray in %s", d)
+			tw, err := sys.StopTray(d)
+			for _, w := range tw {
+				warn("stop tray: %s", w)
+			}
+			if err != nil {
+				warn("stop tray: %v", err)
+			}
 		}
+	}
+	// 3c. CHK-SETUP-17: copy the whole legacy tree (no reparse follow) into
+	// the new folder before writing payload exes. Rollback deletes only
+	// paths we created (files first, then dirs — MigrateInstallDir lists
+	// parents before children; undo runs in reverse). Journal copied paths
+	// even when migrate fails mid-copy, otherwise RemoveDirIfEmpty(root)
+	// finds leftovers and leaves the new folder in place.
+	// Payload files are overwritten by step 4.
+	if legacyDir != "" {
+		copied, migrateErr := sys.MigrateInstallDir(legacyDir, dir)
+		for _, cp := range copied {
+			path := cp
+			undo.push(func() error {
+				_, err := sys.RemoveFile(path)
+				return err
+			})
+		}
+		if migrateErr != nil {
+			return failRollback(errf("migrate "+legacyDir+" -> "+dir, migrateErr))
+		}
+		log.Printf("migrated %d file(s) from %s", len(copied), legacyDir)
 	}
 	// 4. files (upgrade: *.bak then atomic replace; rollback restores bak
 	// or deletes a file that did not exist before)
@@ -265,24 +308,79 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		undo.push(func() error { return sys.SetEventSource(prevExe) })
 	}
 	// 7. HKLM Run of the tray — the service's own rule (CHK-CFG-04)
+	prevRun, prevRunOK, readRunErr := sys.ReadTrayRun()
+	if readRunErr != nil {
+		warn("tray autostart (ReadTrayRun): %v", readRunErr)
+	}
 	if act, err := sys.ApplyTrayRun(svcExe, c.DataDir); err != nil {
 		warn("tray autostart: %v", err)
 	} else {
 		log.Printf("tray autostart: %s", act)
-		if fresh {
-			undo.push(sys.DeleteTrayRun)
+		// Undo only when we know the previous value (ReadTrayRun OK).
+		if readRunErr == nil {
+			if fresh {
+				undo.push(sys.DeleteTrayRun)
+			} else {
+				had, cmd := prevRunOK, prevRun
+				undo.push(func() error {
+					if !had {
+						return sys.WriteTrayRun("")
+					}
+					return sys.WriteTrayRun(cmd)
+				})
+			}
 		}
 	}
 	// 7b. Start-menu shortcut (§6.3) — not fatal; kept on upgrade unless
 	// re-created; /NOSHORTCUT leaves an existing one alone
 	if !c.Opts.NoShortcut {
-		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, T("setup.shortcut.desc")); err != nil {
+		desc := T("setup.shortcut.desc")
+		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
 			warn("start menu shortcut: %v", err)
 		} else {
 			log.Printf("shortcut %s", lnk)
 			if fresh {
 				undo.push(sys.DeleteStartShortcut)
+			} else {
+				// Restore previous target (legacy folder on migrate; same dir otherwise).
+				restoreDir := dir
+				if legacyDir != "" {
+					restoreDir = legacyDir
+				}
+				rd, rdesc := restoreDir, desc
+				undo.push(func() error {
+					_, err := sys.CreateStartShortcut(joinDir(rd, config.TrayExeName), rd, rdesc)
+					return err
+				})
 			}
+		}
+	}
+	// 7b2. Public Desktop shortcut (CHK-SETUP-16). Preference persisted in
+	// Uninstall\DesktopShortcut; /NODESKTOPSHORTCUT or saved 0 skips create
+	// and removes an existing desktop .lnk on upgrade.
+	if !c.Opts.NoDesktopShortcut {
+		desc := T("setup.shortcut.desc")
+		if lnk, err := sys.CreateDesktopShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
+			warn("desktop shortcut: %v", err)
+		} else {
+			log.Printf("desktop shortcut %s", lnk)
+			if fresh {
+				undo.push(sys.DeleteDesktopShortcut)
+			} else {
+				restoreDir := dir
+				if legacyDir != "" {
+					restoreDir = legacyDir
+				}
+				rd, rdesc := restoreDir, desc
+				undo.push(func() error {
+					_, err := sys.CreateDesktopShortcut(joinDir(rd, config.TrayExeName), rd, rdesc)
+					return err
+				})
+			}
+		}
+	} else if !fresh {
+		if err := sys.DeleteDesktopShortcut(); err != nil {
+			warn("delete desktop shortcut: %v", err)
 		}
 	}
 	// 7c. Windows Firewall inbound UDP for SQL Browser (SSRP) replies
@@ -313,7 +411,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			undo.push(func() error { return sys.WriteUninstallKey(pv) })
 		}
 	}
-	vals := UninstallValues(dir, joinDir(dir, config.UninstallExeName), joinDir(dir, config.TrayExeName), c.Version, sizeKB(total), c.Now)
+	vals := UninstallValues(dir, joinDir(dir, config.UninstallExeName), joinDir(dir, config.TrayExeName), c.Version, sizeKB(total), c.Now, !c.Opts.NoDesktopShortcut)
 	if err := sys.WriteUninstallKey(vals); err != nil {
 		return failRollback(errf("Uninstall key", err))
 	}
@@ -324,7 +422,13 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	if start {
 		log.Printf("starting service %s", model.ServiceName)
-		if err := sys.StartService(model.ServiceName, StartTimeout); err != nil {
+		var err error
+		if setupTestFailStartService() {
+			err = fmt.Errorf("setup test fail at StartService")
+		} else {
+			err = sys.StartService(model.ServiceName, StartTimeout)
+		}
+		if err != nil {
 			res.Err = errf("start service (see "+joinDir(c.DataDir, `logs\exchsvc.log`)+")", err)
 			log.Printf("ERROR: %v", res.Err)
 			if !fresh {
@@ -358,6 +462,19 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			if err := sys.RemoveBackup(p); err != nil {
 				warn("remove backup %s: %v", p, err)
 			}
+		}
+	}
+	// CHK-SETUP-17 commit: only after StartService (or no-start path) succeeded
+	// so rollback is no longer needed — drop legacy shortcuts and the entire
+	// old folder (including non-package files). ProgramData untouched.
+	if legacyDir != "" {
+		if err := sys.DeleteLegacyShortcuts(); err != nil {
+			warn("delete legacy shortcuts: %v", err)
+		}
+		if err := sys.RemoveLegacyInstallDir(legacyDir); err != nil {
+			warn("remove legacy folder %s: %v", legacyDir, err)
+		} else {
+			log.Printf("legacy install folder removed: %s", legacyDir)
 		}
 	}
 	res.Code = ExitOK
@@ -440,6 +557,8 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	step("delete HKLM Run "+config.TrayRunValue, sys.DeleteTrayRun())
 	step("delete event log source", sys.DeleteEventSource())
 	step("delete start menu shortcut", sys.DeleteStartShortcut())
+	step("delete desktop shortcut", sys.DeleteDesktopShortcut())
+	step("delete legacy shortcuts", sys.DeleteLegacyShortcuts())
 	// Firewall rule: WARNING only — a stopped MpsSvc / COM failure must
 	// not block uninstall (CHK-SETUP-13).
 	if err := sys.RemoveSQLBrowserFirewallRule(); err != nil {

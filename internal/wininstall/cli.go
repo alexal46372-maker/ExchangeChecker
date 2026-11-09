@@ -17,19 +17,20 @@ const (
 
 // Options is the parsed command line.
 //
-// Install: [/S] [/DIR=<folder>] [/NOSTART] [/NOSHORTCUT] [/LOG=<file>]
-// [/ALLOWDOWNGRADE]. Uninstall: /uninstall [/S] [/PURGEDATA]
-// [/LOG=<file>]. /LANG=xx of old scripts is ignored (Russian only).
+// Install: [/S] [/DIR=<folder>] [/NOSTART] [/NOSHORTCUT] [/NODESKTOPSHORTCUT]
+// [/LOG=<file>] [/ALLOWDOWNGRADE]. Uninstall: /uninstall [/S] [/PURGEDATA]
+// [/LOG=<file>]. /LANG=xx of old scripts is ignored (Russian only, CHK-TRAY-86).
 // Switches are case-insensitive; "-" works like "/".
 type Options struct {
-	Silent         bool
-	Uninstall      bool
-	Dir            string
-	NoStart        bool // the checkbox "start the service and start it automatically" off
-	NoShortcut     bool
-	Log            string
-	AllowDowngrade bool
-	PurgeData      bool
+	Silent            bool
+	Uninstall         bool
+	Dir               string
+	NoStart           bool // the checkbox "start the service and start it automatically" off
+	NoShortcut        bool
+	NoDesktopShortcut bool // /NODESKTOPSHORTCUT (CHK-SETUP-16)
+	Log               string
+	AllowDowngrade    bool
+	PurgeData         bool
 }
 
 // ErrUsage: an unknown or malformed switch.
@@ -70,6 +71,8 @@ func ParseArgs(args []string) (Options, error) {
 			err, o.NoStart = noVal(), true
 		case "NOSHORTCUT":
 			err, o.NoShortcut = noVal(), true
+		case "NODESKTOPSHORTCUT":
+			err, o.NoDesktopShortcut = noVal(), true
 		case "ALLOWDOWNGRADE":
 			err, o.AllowDowngrade = noVal(), true
 		case "PURGEDATA":
@@ -79,8 +82,7 @@ func ParseArgs(args []string) (Options, error) {
 		case "LOG":
 			o.Log, err = needVal()
 		case "LANG":
-			// phase 13 (CHK-TRAY-86): the setup is Russian only; /LANG=xx of
-			// old scripts is accepted and ignored.
+			// phase 13 (CHK-TRAY-86): Russian only; /LANG=xx accepted and ignored.
 			_, err = needVal()
 		default:
 			err = fmt.Errorf("%w: unknown switch /%s", ErrUsage, name)
@@ -89,7 +91,7 @@ func ParseArgs(args []string) (Options, error) {
 			return o, err
 		}
 	}
-	if o.Uninstall && (o.Dir != "" || o.NoStart || o.NoShortcut || o.AllowDowngrade) {
+	if o.Uninstall && (o.Dir != "" || o.NoStart || o.NoShortcut || o.NoDesktopShortcut || o.AllowDowngrade) {
 		return o, fmt.Errorf("%w: с /uninstall допустимы только /S, /PURGEDATA и /LOG (/LANG игнорируется)", ErrUsage)
 	}
 	if !o.Uninstall && o.PurgeData {

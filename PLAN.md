@@ -26,7 +26,7 @@
 | Трей | `cmd/exchtray` | `ExchangeCheckerTray.exe` | NotifyIcon, меню, окна настроек/«О программе», статус, алерт-UI + Beep |
 | Инсталлятор | `cmd/exchsetup` | `ExchangeCheckerSetup.exe` | Wizard: папка, ярлыки, Uninstall, галочка автозапуска службы |
 
-Поставка заказчику (после явной просьбы собрать): zip по `DELIVERY.md` с одной записью `ExchangeChecker-<V>.exe` (имя = basename zip с `.exe`; промежуточная сборка по-прежнему `ExchangeCheckerSetup.exe`).
+Поставка заказчику (после явной просьбы собрать): zip по `DELIVERY.md` — архив `ExchangeChecker-<V>.zip`, внутри одна запись `Exchange Checker <V>.exe` (пробелы; zip≠entry; промежуточная сборка по-прежнему `ExchangeCheckerSetup.exe`).
 
 Toolchain (жёстко): **Go 1.20.14**, `GOOS=windows` `GOARCH=amd64` `CGO_ENABLED=0`, цель **NT 6.1+**.
 
@@ -382,7 +382,7 @@ type PlanPointLister interface { NodePoints(ctx) ([]model.NodePoint, error) }   
 1. **Профили** — список, добавить/изменить/удалить; поля host, port, database, user, password; кнопка **Тест**.
 2. **Мониторинг** — PollInterval, WarningAfterMin, ErrorAfterMin.
 3. **Звук** — частоты/длительности warning и error, gap.
- 4. ~~**Язык** — Русский / English (полный UI).~~ Отменено фазой 13 (§12 п. 206): только русский.
+ 4. **Язык** — Русский / English (полный UI).
 
 Сохранение → файлы + `ReloadConfig` службе.
 
@@ -657,9 +657,9 @@ Wizard Win32 (страницы):
 3. **Время в БД — UTC+3, точно.**
 4. **SQL Authentication и Windows Authentication** — оба в v1.
 5. **Автозапуск трея** вместе с входом пользователя — да.
-6. ~~**UI:** русский и английский, полностью.~~ Фаза 13 (п. 206): только русский.
+6. **UI:** русский и английский, полностью.
 7. **ЛКМ-список:** только базы; цвет базы жёлтый (warning) / красный (error) по худшему уровню точек; точки обмена — во **выпадающем меню при наведении** на базу.
-8. ~~**Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).~~ Фаза 13 (п. 206): только русский, язык ОС не определяется.
+8. **Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).
 
 9. **DPAPI LocalMachine (фаза 1):** `CryptProtectData` с флагами `CRYPTPROTECT_LOCAL_MACHINE` (0x4) и `CRYPTPROTECT_UI_FORBIDDEN` (0x1), опциональный entropy `ExchangeChecker/secrets.dpapi/v1`. Трей (пользователь) шифрует, служба под LocalSystem расшифровывает. Граница доступа — ACL каталога `%ProgramData%\ExchangeChecker\` (инсталлятор, фаза 7: ~~Administrators+SYSTEM+Users-read~~ — **изменено п. 90:** только SYSTEM+Administrators, без Users, логи тоже). (**Изменено решением Вики от 03.10, п. 58:** `secrets.dpapi` — DACL только SY+BA; трей больше не шифрует сам — пишет только служба по IPC.) Tradeoff v1: любой локальный процесс на машине может расшифровать blob — принято как допустимое для v1.
 
@@ -818,7 +818,7 @@ Wizard Win32 (страницы):
 132. **Будущая задача (не v1): системный прокси WinHTTP для Viber.** Сейчас прокси службы — только переменные окружения (`HTTPS_PROXY` / `NO_PROXY`, значение `Environment` службы, DELIVERY.md). Позже: при пустом окружении брать прокси WinHTTP (`netsh winhttp set proxy` / `WinHttpGetDefaultProxyConfiguration`, при необходимости WPAD через `WinHttpGetProxyForUrl`) через `internal/winapi` callProc внутри `internal/hcwinnet` (allowlist CHK-TRAY-10 дополнить), с тестом на фейковом прокси.
 133. **Будущая задача (не v1): блок трея через обычный трей.** При повышении от имени другого пользователя звук и вид трея сейчас не переносятся (п.124). Позже: окно администратора передаёт блок `tray` работающему трею пользователя (и получает его оттуда при экспорте), чтобы он записал его в свой HKCU и сразу применил; для этого нужен канал между процессами трея (сейчас есть только `TrayExitMessage`).
 
-134. **Имя exe в zip поставки (фаза 10, `CHK-DELIV-01`):** внутри `ExchangeChecker-<V>.zip` ровно одна запись `ExchangeChecker-<V>.exe` (basename zip с `.exe` вместо `.zip`; суффикса `-windows-amd64` нет). Инсталлятор не зависит от имени своего файла (`os.Args` только для ключей; путь к себе — `os.Executable`). Установленный деинсталлятор сохраняет каноническое имя `ExchangeCheckerUninstall.exe` (UninstallString). Пункты 114–124 — трей, 125+ — служба (зарезервированы отдельно).
+134. **Имя exe в zip поставки (фаза 10 + 13, `CHK-DELIV-01`):** внутри `ExchangeChecker-<V>.zip` (техническое имя архива/artifact) ровно одна запись `Exchange Checker <V>.exe` (видимое имя с пробелами; суффикса `-windows-amd64` нет). `tools/mkzip zip -o … -entry "…"`. Инсталлятор не зависит от имени своего файла (`os.Args` только для ключей; путь к себе — `os.Executable`). Установленный деинсталлятор сохраняет каноническое имя `ExchangeCheckerUninstall.exe` (UninstallString). Пункты 114–124 — трей, 125+ — служба (зарезервированы отдельно).
 
 140. **Каркас раскладки окон трея (фаза 11, `CHK-TRAY-45`):** чистый Go-пакет `internal/wintray/ui` (Row / Col / Grid / Pad / GroupBox, отступы 4/8/12/16, стандартные высоты, выравнивание по базовой линии); размеры текстов меряются шрифтом окна (`GetTextMetricsW` / `GetTextExtentPoint32W`), окно подгоняется под содержимое (`fitToContent`, полосы прокрутки, если не помещается на рабочую область). Окна переводятся по одному, каждое отдельным коммитом с зелёным CI. Переведены все окна: «О программе», тревога, громкость, панель проблем, звук, история, статус, импорт, Discovery, мастер, настройки (три страницы в общей области прокручиваемого хоста; кнопки нижней панели по ширине текста, с переносом на следующий ряд). Окно тревоги при смене языка меняет размер, но не положение.
 
@@ -970,6 +970,13 @@ Wizard Win32 (страницы):
 210. **Email: «не заданы получатели» при настроенном получателе (фаза 13, `CHK-SVC-09`).** Причина: трей разбирает поле получателей как «ID адрес имя» по строке; одиночный адрес (`alex@mail.ru`) → ошибка поля, save_settings не уходит; `a@b.ru;c@d.ru` → ошибка; `a@b.ru, c@d.ru` → тихо `id="a@b.ru,"`, `addr=c@d.ru`. Тест (email_test) шлёт только recipientId/addr и проверяет **сохранённые** получатели службы → `notify.email_no_recipients`. Служба: получатель без `id` получает стабильный id из адреса; addr со списком через `,` `;` пробел разбивается на отдельных получателей; `enabled` без получателей — ошибка `notify.email_no_recipients` («Нет сохранённых получателей e-mail…»); неизвестный `recipientId` в email_test — `notify.email_recipient_not_found`. Тесты: `TestCHK_SVC_09_*` (cmd/exchsvc: payload редактора трея → save_settings → settings.json → перезапуск → email_test и алерт через SMTP-хук).
 211. **Telegram-уведомления (фаза 13, `CHK-CFG-10`, `CHK-IPC-17`, `CHK-SVC-10`).** По образцу Viber: capability `telegram`; `settings.telegram {enabled, chatId, events, schedule, hasToken (только в ответах), status}`; токен бота — write-only `save_settings.botToken` / `clearBotToken`, хранится в `telegram.dpapi` (DPAPI LocalMachine, как viber.dpapi), не попадает в settings.json, ответы, журнал и `export_config` (telegram в экспорт/импорт не входит). Отправка: Bot API `sendMessage` через `internal/hcwinnet` — тот же HTTPS-транспорт, что у Viber (Go crypto/tls, TLS ≥ 1.2 независимо от Schannel, корни из хранилища Windows; таймаут 20 с, очередь с повторами как у Viber/e-mail), токен вырезается из текстов ошибок. Алерты — общий диспетчер с Viber/e-mail, фильтр событий и расписания. `telegram_test {botToken?, chatId?}` (только админ, асинхронно, 1 раз в 10 с, enabled/расписание игнорируются) → `telegram_test_result {ok, errorKey?}`. Тесты: `TestCHK_CFG_10_*`, `TestCHK_IPC_17_*`, `TestCHK_SVC_10_*` (httptest Bot API: IPC save → telegram.dpapi → перезапуск → алерт; telegram_test; маскирование токена; расписание; экспорт без токена).
 
+
+## 14. Что не делаем в v1
+
+- Веб-морда, Electron, WPF, tray на сторонних UI-kit
+- Уведомления по почте/Telegram
+- Кластер из нескольких машин-агентов
+- Сборка `.exe`/zip без явной просьбы заказчика
 
 206. **Только русский язык (фаза 13, `CHK-TRAY-86`; отменяет п. 6, 8, 76–78 и §7 «Язык»):** многоязычность удалена во всём проекте (трей, служба `cmd/exchsvc`, инсталлятор `cmd/exchsetup`): каталог `internal/i18n` — один русский текст на ключ (`map[string]string`), тексты службы `model.MonitorMessage` / `model.SQLMessage` — только русские; удалены английские тексты, переключение языка, настройка «Язык» (окно настроек и меню трея «Язык»), определение языка ОС (`internal/winapi/lang*.go`, `internal/config/lang.go`) и тесты RU≠EN. Журнал службы и инсталлятор — по-русски. Старое поле `language`/`lang` в `settings.json` и в блоке `tray` файла экспорта молча игнорируется (при сохранении не пишется); ключ инсталлятора `/LANG=` принимается и игнорируется. Скриншоты ui-screens — только RU. Тесты: `TestCHK_TRAY_86_*`.
 

@@ -83,6 +83,11 @@ type System interface {
 	CreateStartShortcut(trayExe, workDir, description string) (lnk string, err error)
 	// DeleteStartShortcut removes the .lnk and its folder (missing = ok).
 	DeleteStartShortcut() error
+	// CreateDesktopShortcut writes Exchange Checker.lnk on the Public Desktop
+	// (CSIDL_COMMON_DESKTOPDIRECTORY) — per-machine install (CHK-SETUP-16).
+	CreateDesktopShortcut(trayExe, workDir, description string) (lnk string, err error)
+	// DeleteDesktopShortcut removes the Public Desktop .lnk (missing = ok).
+	DeleteDesktopShortcut() error
 	// AddSQLBrowserFirewallRule adds (or replaces) the inbound UDP rule for
 	// SSRP replies to the service exe (CHK-SETUP-13). Missing firewall
 	// service / COM failure is returned to the caller (plan logs WARNING).
@@ -113,6 +118,28 @@ type System interface {
 	DeleteUninstallKey() error
 	ReadInstalled() (Installed, error)
 	DeleteUserKey() error
+	// MigrateInstallDir copies every non-reparse entry from a validated
+	// legacy install folder into newDir (CHK-SETUP-17). Payload names are
+	// copied too when missing at the destination (WriteFile overwrites
+	// them next). Returns the list of paths newly created in newDir for
+	// rollback (files and directories; parents before children). On a
+	// mid-copy failure the partial list is still returned so the caller
+	// can journal undo before aborting. Missing oldDir is success. A Stat
+	// error on a destination other than ErrNotExist fails the migration.
+	// Reparse points/junctions are not followed.
+	MigrateInstallDir(oldDir, newDir string) (copied []string, err error)
+	// RemoveLegacyInstallDir recursively deletes a validated legacy
+	// install folder without following reparse points (CHK-SETUP-17).
+	RemoveLegacyInstallDir(dir string) error
+	// DeleteLegacyShortcuts removes pre-phase-13 one-word .lnk names
+	// (ExchangeChecker.lnk) from Public Desktop and the legacy Start
+	// Menu folder ExchangeChecker\ (CHK-SETUP-17).
+	DeleteLegacyShortcuts() error
+	// ReadTrayRun returns the current HKLM Run value for the tray
+	// (present=false when missing). Used to undo ApplyTrayRun on upgrade.
+	ReadTrayRun() (cmd string, present bool, err error)
+	// WriteTrayRun sets or deletes the tray Run value (empty cmd deletes).
+	WriteTrayRun(cmd string) error
 }
 
 // Logger receives the setup log lines.

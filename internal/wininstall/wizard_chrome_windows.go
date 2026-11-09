@@ -19,6 +19,7 @@ type setupChrome struct {
 	fontBrand    uintptr
 	fontStep     uintptr
 	fontStepOn   uintptr
+	fontHint     uintptr
 	icon         uintptr
 }
 
@@ -37,6 +38,7 @@ func newSetupChrome() *setupChrome {
 	c.fontBrand = fontOr("Segoe UI", "Tahoma", -16, winapi.FW_BOLD)
 	c.fontStep = fontOr("Segoe UI", "Tahoma", -12, winapi.FW_NORMAL)
 	c.fontStepOn = fontOr("Segoe UI", "Tahoma", -12, winapi.FW_SEMIBOLD)
+	c.fontHint = fontOr("Segoe UI", "Tahoma", -hintFontPx(), winapi.FW_NORMAL)
 	return c
 }
 
@@ -52,7 +54,7 @@ func (c *setupChrome) destroy() {
 		return
 	}
 	for _, h := range []uintptr{c.brandBrush, c.contentBrush, c.barBrush, c.lineBrush,
-		c.fontTitle, c.fontBody, c.fontBrand, c.fontStep, c.fontStepOn} {
+		c.fontTitle, c.fontBody, c.fontBrand, c.fontStep, c.fontStepOn, c.fontHint} {
 		if h != 0 {
 			winapi.DeleteObject(h)
 		}
@@ -68,6 +70,24 @@ func (c *setupChrome) applyFont(hwnd uintptr, title bool) {
 	if f != 0 {
 		winapi.SendMessage(hwnd, winapi.WM_SETFONT, f, 1)
 	}
+}
+
+func (c *setupChrome) applyHintFont(hwnd uintptr) {
+	f := c.fontHint
+	if f == 0 {
+		f = c.fontBody
+	}
+	if f != 0 {
+		winapi.SendMessage(hwnd, winapi.WM_SETFONT, f, 1)
+	}
+}
+
+// HintFont returns the small hint HFONT (tests: TextSize / DT_CALCRECT).
+func (c *setupChrome) HintFont() uintptr {
+	if c.fontHint != 0 {
+		return c.fontHint
+	}
+	return c.fontBody
 }
 
 // paintWizard draws the brand panel, content background and button bar.

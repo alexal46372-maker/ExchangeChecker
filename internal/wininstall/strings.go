@@ -7,6 +7,7 @@ import "fmt"
 // catalog internal/i18n is EC Tray's and is not used here.
 
 var catalog = map[string]string{
+
 	"setup.title":             "Установка Exchange Checker %s",
 	"setup.uninstall.title":   "Удаление Exchange Checker",
 	"setup.btn.back":          "< Назад",
@@ -27,10 +28,11 @@ var catalog = map[string]string{
 	"setup.welcome.reinstall": "Версия %s уже установлена и будет переустановлена. Настройки сохранятся.\r\n\r\nНажмите «Далее», чтобы продолжить.",
 	"setup.welcome.downgrade": "Установлена более новая версия %s. Установка версии %s отменена: понижение версии запрещено (только с ключом /ALLOWDOWNGRADE).\r\n\r\nНажмите «Отмена», чтобы выйти.",
 	"setup.folder.browsefail": "Не удалось получить путь выбранной папки: %s",
-	"setup.folder.label":      "Папка установки:",
-	"setup.folder.upgrade":    "При обновлении папка не меняется.",
+	"setup.folder.label":      "Выбор папки установки",
+	"setup.folder.upgrade":    "При обновлении папка установки не меняется: программа обновится в уже выбранном каталоге.",
 	"setup.folder.browse":     "Выберите папку установки Exchange Checker",
 	"setup.options.shortcut":  "Ярлык в меню «Пуск»",
+	"setup.options.desktop":   "Создать ярлык на рабочем столе",
 	"setup.options.service":   "Запустить службу и запускать автоматически",
 	"setup.progress.label":    "Установка…",
 	"setup.finish.ok":         "Exchange Checker %s установлен.",

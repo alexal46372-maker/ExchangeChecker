@@ -19,3 +19,23 @@ const (
 	// canonical name of the installed copy (phase 10).
 	UninstallExeName = "ExchangeCheckerUninstall.exe"
 )
+
+// Install folder names under Program Files (CHK-SETUP-17). Visible product
+// name is two words ("Exchange Checker"); ProgramData keeps AppDirName
+// "ExchangeChecker" so existing configs/secrets paths stay valid.
+const (
+	InstallDirName       = "Exchange Checker"
+	LegacyInstallDirName = "ExchangeChecker"
+)
+
+// DeliveryZipName is the technical delivery archive basename (download-stable;
+// artifact name matches without .zip). CHK-DELIV-01 / phase 13.
+func DeliveryZipName(ver string) string {
+	return "ExchangeChecker-" + ver + ".zip"
+}
+
+// DeliveryInstallerName is the single zip entry: visible product name +
+// version + .exe (spaces allowed), e.g. "Exchange Checker 0.13.0.exe".
+func DeliveryInstallerName(ver string) string {
+	return "Exchange Checker " + ver + ".exe"
+}

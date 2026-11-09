@@ -37,7 +37,11 @@ func (stubSystem) ForceStopService(string, string) ([]string, error) { return ni
 func (stubSystem) CreateStartShortcut(string, string, string) (string, error) {
 	return "", ErrNotWindows
 }
-func (stubSystem) DeleteStartShortcut() error                  { return ErrNotWindows }
+func (stubSystem) DeleteStartShortcut() error { return ErrNotWindows }
+func (stubSystem) CreateDesktopShortcut(string, string, string) (string, error) {
+	return "", ErrNotWindows
+}
+func (stubSystem) DeleteDesktopShortcut() error                { return ErrNotWindows }
 func (stubSystem) AddSQLBrowserFirewallRule(string) error      { return ErrNotWindows }
 func (stubSystem) RemoveSQLBrowserFirewallRule() error         { return ErrNotWindows }
 func (stubSystem) FirewallCurrentProfiles() (int32, error)     { return 0, ErrNotWindows }
@@ -47,9 +51,15 @@ func (stubSystem) SetEventSource(string) error                 { return ErrNotWi
 func (stubSystem) DeleteEventSource() error                    { return ErrNotWindows }
 func (stubSystem) ApplyTrayRun(string, string) (string, error) { return "", ErrNotWindows }
 func (stubSystem) DeleteTrayRun() error                        { return ErrNotWindows }
+func (stubSystem) ReadTrayRun() (string, bool, error)          { return "", false, ErrNotWindows }
+func (stubSystem) WriteTrayRun(string) error                   { return ErrNotWindows }
 func (stubSystem) StopTray(string) ([]string, error)           { return nil, ErrNotWindows }
 func (stubSystem) WriteUninstallKey([]RegValue) error          { return ErrNotWindows }
 func (stubSystem) ReadUninstallKey() ([]RegValue, error)       { return nil, ErrNotWindows }
 func (stubSystem) DeleteUninstallKey() error                   { return ErrNotWindows }
 func (stubSystem) ReadInstalled() (Installed, error)           { return Installed{}, ErrNotWindows }
 func (stubSystem) DeleteUserKey() error                        { return ErrNotWindows }
+
+func (stubSystem) MigrateInstallDir(string, string) ([]string, error) { return nil, ErrNotWindows }
+func (stubSystem) RemoveLegacyInstallDir(string) error                { return ErrNotWindows }
+func (stubSystem) DeleteLegacyShortcuts() error                       { return ErrNotWindows }

@@ -15,28 +15,32 @@ type recordingSystem struct {
 	// Log of "verb|arg" steps
 	Steps []string
 
-	Installed   Installed
-	Service     ServiceInfo
-	Dirs        map[string]bool
-	Files       map[string][]byte
-	DACLs       map[string]string
-	Owners      map[string]bool // path -> takeOwnership called
-	EventSrc    string
-	TrayRun     string
-	Uninst      []RegValue
-	UserKey     bool
-	FixedOK     bool
-	FailAt      string // step prefix that returns error
-	FailOnce    bool   // clear FailAt after the first injected error
-	RebootRm    bool
-	WriteReboot bool   // WriteFile returns reboot=true
-	FailAlso    string // second prefix that always fails (e.g. a rollback step)
-	Specs       []ServiceSpec
-	Long        map[string]string
-	TrayWarn    []string
-	Shortcut    string // target of the start-menu shortcut ("" = none)
-	Firewall    string // service exe of the SQL Browser firewall rule ("" = none)
-	FwProfiles  int32  // active firewall profiles (FirewallCurrentProfiles)
+	Installed      Installed
+	Service        ServiceInfo
+	Dirs           map[string]bool
+	Files          map[string][]byte
+	DACLs          map[string]string
+	Owners         map[string]bool // path -> takeOwnership called
+	EventSrc       string
+	TrayRun        string
+	TrayRunCmd     string // full Run command for Read/WriteTrayRun
+	Uninst         []RegValue
+	UserKey        bool
+	FixedOK        bool
+	FailAt         string // step prefix that returns error
+	FailOnce       bool   // clear FailAt after the first injected error
+	FailMigrateAfter int    // copy N files then error (CHK-SETUP-17 mid-migrate)
+	RebootRm       bool
+	WriteReboot    bool   // WriteFile returns reboot=true
+	FailAlso       string // second prefix that always fails (e.g. a rollback step)
+	Specs          []ServiceSpec
+	Long           map[string]string
+	TrayWarn       []string
+	Shortcut       string // target of the start-menu shortcut ("" = none)
+	DesktopLnk     string // target of the Public Desktop shortcut ("" = none)
+	LegacyShortcut bool   // pre-phase-13 ExchangeChecker.lnk still present
+	Firewall       string // service exe of the SQL Browser firewall rule ("" = none)
+	FwProfiles     int32  // active firewall profiles (FirewallCurrentProfiles)
 }
 
 func newFake() *recordingSystem {
@@ -291,6 +295,26 @@ func (f *recordingSystem) DeleteStartShortcut() error {
 	return nil
 }
 
+func (f *recordingSystem) CreateDesktopShortcut(trayExe, workDir, description string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("CreateDesktopShortcut|%s", trayExe); err != nil {
+		return "", err
+	}
+	f.DesktopLnk = trayExe
+	return `C:\Users\Public\Desktop\Exchange Checker.lnk`, nil
+}
+
+func (f *recordingSystem) DeleteDesktopShortcut() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("DeleteDesktopShortcut"); err != nil {
+		return err
+	}
+	f.DesktopLnk = ""
+	return nil
+}
+
 func (f *recordingSystem) AddSQLBrowserFirewallRule(serviceExe string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -364,6 +388,7 @@ func (f *recordingSystem) ApplyTrayRun(serviceExe, dataDir string) (string, erro
 		return "", err
 	}
 	f.TrayRun = serviceExe
+	f.TrayRunCmd = serviceExe
 	return "written", nil
 }
 
@@ -380,6 +405,33 @@ func (f *recordingSystem) DeleteTrayRun() error {
 		return err
 	}
 	f.TrayRun = ""
+	f.TrayRunCmd = ""
+	return nil
+}
+
+func (f *recordingSystem) ReadTrayRun() (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_ = f.step("ReadTrayRun")
+	if f.TrayRunCmd != "" {
+		return f.TrayRunCmd, true, nil
+	}
+	if f.TrayRun == "" {
+		return "", false, nil
+	}
+	return f.TrayRun, true, nil
+}
+
+func (f *recordingSystem) WriteTrayRun(cmd string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("WriteTrayRun|%s", cmd); err != nil {
+		return err
+	}
+	f.TrayRunCmd = cmd
+	if cmd == "" {
+		f.TrayRun = ""
+	}
 	return nil
 }
 
@@ -448,4 +500,87 @@ type memLog struct{ lines []string }
 
 func (m *memLog) Printf(format string, args ...interface{}) {
 	m.lines = append(m.lines, fmt.Sprintf(format, args...))
+}
+
+func (f *recordingSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("MigrateInstallDir|%s|%s", oldDir, newDir); err != nil {
+		return nil, err
+	}
+	if err := ValidateLegacyMigrateDir(oldDir); err != nil {
+		return nil, err
+	}
+	oldDir, newDir = CleanDir(oldDir), CleanDir(newDir)
+	prefix := strings.ToLower(oldDir) + `\`
+	var copied []string
+	seenDir := map[string]bool{}
+	fail := func() error {
+		if f.FailMigrateAfter > 0 && len(copied) >= f.FailMigrateAfter {
+			return fmt.Errorf("injected migrate fail after %d", len(copied))
+		}
+		return nil
+	}
+	for path, data := range f.Files {
+		lp := strings.ToLower(CleanDir(path))
+		if lp == strings.ToLower(oldDir) || !strings.HasPrefix(lp, prefix) {
+			continue
+		}
+		rel := path[len(oldDir)+1:]
+		// Parent dirs under newDir (CHK-SETUP-17: failAfter counts dirs too).
+		parts := strings.Split(rel, `\`)
+		acc := newDir
+		for i := 0; i < len(parts)-1; i++ {
+			acc = joinDir(acc, parts[i])
+			if !seenDir[acc] && !f.Dirs[acc] {
+				f.Dirs[acc] = true
+				seenDir[acc] = true
+				copied = append(copied, acc)
+				if err := fail(); err != nil {
+					return copied, err
+				}
+			}
+		}
+		dst := joinDir(newDir, rel)
+		if _, ok := f.Files[dst]; ok {
+			continue
+		}
+		f.Files[dst] = append([]byte(nil), data...)
+		copied = append(copied, dst)
+		if err := fail(); err != nil {
+			return copied, err
+		}
+	}
+	return copied, nil
+}
+
+func (f *recordingSystem) RemoveLegacyInstallDir(dir string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("RemoveLegacyInstallDir|%s", dir); err != nil {
+		return err
+	}
+	if err := ValidateLegacyMigrateDir(dir); err != nil {
+		return err
+	}
+	dir = CleanDir(dir)
+	prefix := strings.ToLower(dir) + `\`
+	for path := range f.Files {
+		lp := strings.ToLower(CleanDir(path))
+		if lp == strings.ToLower(dir) || strings.HasPrefix(lp, prefix) {
+			delete(f.Files, path)
+		}
+	}
+	delete(f.Dirs, dir)
+	return nil
+}
+
+func (f *recordingSystem) DeleteLegacyShortcuts() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("DeleteLegacyShortcuts"); err != nil {
+		return err
+	}
+	f.LegacyShortcut = false
+	return nil
 }

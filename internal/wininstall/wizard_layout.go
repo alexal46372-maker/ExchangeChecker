@@ -41,6 +41,35 @@ func ButtonBarTop() int32 { return WizardClientH - WizardBtnBarH }
 // ContentBottom is the last y reserved for page body (above the button bar).
 func ContentBottom() int32 { return ButtonBarTop() - WizardPad }
 
+// Folder page vertical rhythm (CHK-SETUP-15): title → edit row → hint → error.
+const (
+	FolderEditOffset = 36
+	FolderHintMinH   = 40 // multiline STATIC under the path field
+	FolderHintGap    = 8
+	FolderErrorGap   = 8
+	FolderHintFontPx = 11 // small body (negative CreateFont height)
+)
+
+// testHintFontPx overrides FolderHintFontPx in newSetupChrome when non-zero
+// (CHK-SETUP-15 windows tests: simulate 144 dpi font cell).
+var testHintFontPx int32
+
+func hintFontPx() int32 {
+	if testHintFontPx != 0 {
+		return testHintFontPx
+	}
+	return FolderHintFontPx
+}
+
+
+// FolderHintTop is y of the hint STATIC (below the path EDIT).
+func FolderHintTop() int32 { return ContentTop() + FolderEditOffset + WizardEditH + FolderHintGap }
+
+// FolderHintRect is the reserved client rect for the folder hint (content column).
+func FolderHintRect() (x, y, w, h int32) {
+	return ContentLeft(), FolderHintTop(), ContentWidth(), FolderHintMinH
+}
+
 // COLORREF (0x00BBGGRR) for the modern setup chrome.
 const (
 	ColorBrandDark   uint32 = 0x0044270F // #0F2744
@@ -74,7 +103,7 @@ func StepIndex(p Page) int {
 	}
 }
 
-// StepKeys are catalog keys for the brand-panel step list.
+// StepKeys are catalog keys for the brand-panel step list (RU/EN).
 var StepKeys = []string{
 	"setup.step.welcome",
 	"setup.step.folder",
@@ -86,18 +115,20 @@ var StepKeys = []string{
 // Control IDs (tests / E2E drive them with SendMessage). Shared with the
 // Windows window; do not renumber — CHK-SETUP-10/12/14 contract.
 const (
-	IDBack      = 101
-	IDNext      = 102
-	IDCancel    = 103
-	IDBrowse    = 104
-	IDDir       = 105
-	IDShortcut  = 106
-	IDService   = 107
-	IDTray      = 108
-	IDText      = 109
-	IDProgress  = 110
-	IDStatus    = 111
-	IDError     = 112
-	IDPurge     = 113
-	IDUninstall = 114
+	IDBack            = 101
+	IDNext            = 102
+	IDCancel          = 103
+	IDBrowse          = 104
+	IDDir             = 105
+	IDShortcut        = 106
+	IDService         = 107
+	IDTray            = 108
+	IDText            = 109
+	IDProgress        = 110
+	IDStatus          = 111
+	IDError           = 112
+	IDPurge           = 113
+	IDUninstall       = 114
+	IDFolderHint      = 115 // multiline hint under folder field (CHK-SETUP-15)
+	IDDesktopShortcut = 116 // Options: Public Desktop .lnk (CHK-SETUP-16)
 )

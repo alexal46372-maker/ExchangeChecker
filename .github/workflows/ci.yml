@@ -166,12 +166,13 @@ jobs:
           GOOS=windows GOARCH=amd64 go vet -tags payload ./cmd/exchsetup
           GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
           mkdir -p "$RUNNER_TEMP/zip1" "$RUNNER_TEMP/zip2"
-          # Zip keeps ExchangeChecker-<V>.zip; entry inside is the
-          # same basename with .exe (tools/mkzip ZipEntryName). Build dir still
-          # uses ExchangeCheckerSetup.exe (OriginalFilename / intermediate).
+          # Zip stays technical ExchangeChecker-<V>.zip (stable download URL /
+          # artifact). Entry is "Exchange Checker <V>.exe" (spaces; CHK-DELIV-01
+          # phase 13). Build dir still uses ExchangeCheckerSetup.exe intermediate.
           Z="ExchangeChecker-$V.zip"
-          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" "$out/ExchangeCheckerSetup.exe"
-          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" "$out/ExchangeCheckerSetup.exe"
+          ENTRY="Exchange Checker $V.exe"
+          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" -entry "$ENTRY" "$out/ExchangeCheckerSetup.exe"
+          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" -entry "$ENTRY" "$out/ExchangeCheckerSetup.exe"
           ls -la "$out" "$pay" "$RUNNER_TEMP/zip1"
           # cross-OS reproducibility report (release zip is taken from the windows job)
           go env CGO_ENABLED GOFLAGS
@@ -187,7 +188,7 @@ jobs:
         run: |
           export EC_SVC_EXE="$RUNNER_TEMP/release/ExchangeCheckerSvc.exe"
           go test ./checks -run TestCHK_SVC_01_RealSCM -count=1 -v
-      - name: setup silent E2E (CHK-SETUP-12 + upgrade + CHK-SETUP-03/04/05 windows)
+      - name: setup silent E2E (CHK-SETUP-12 + CHK-SETUP-17 migrate + upgrade + CHK-SETUP-03/04/05 windows)
         env:
           EC_SETUP_E2E: "1"
         run: |
@@ -202,7 +203,8 @@ jobs:
             GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-H windowsgui $X" -o "$pay/ExchangeCheckerUninstall.exe" ./cmd/exchsetup
             rm -rf cmd/exchsetup/payload
             go run ./tools/mkzip gz -o cmd/exchsetup/payload "$pay/ExchangeCheckerSvc.exe" "$pay/ExchangeCheckerTray.exe" "$pay/ExchangeCheckerUninstall.exe"
-            GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
+            # e2efault: EC_MIGRATE_FAIL_AFTER / EC_SETUP_FAIL_AT for CHK-SETUP-17 E2E only
+            GOOS=windows GOARCH=amd64 go build -tags "payload,e2efault" -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
           }
           build_setup "1.0.0" "$RUNNER_TEMP/e2e-v1"
           build_setup "1.1.0" "$RUNNER_TEMP/e2e-v2"
@@ -212,7 +214,7 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -tags e2efault -trimpath -o "$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe" ./cmd/exchsvc
           export EC_SVC_FAULT_EXE="$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe"
           go test ./internal/wininstall -run 'TestCHK_SETUP_03_RealSCM|TestCHK_SETUP_04_EventSourceWindows|TestCHK_SETUP_05_ACLWindows|TestCHK_SETUP_13_FirewallRoundTrip' -count=1 -v
-          go test ./checks -run TestCHK_SETUP_12_E2E -count=1 -timeout 20m -v
+          go test ./checks -run 'TestCHK_SETUP_12_E2E|TestCHK_SETUP_17_MigrateE2E' -count=1 -timeout 25m -v
 
   linux:
     name: linux / go1.20.14 vet + pure-Go tests + SQL Server integration
@@ -288,12 +290,13 @@ jobs:
           GOOS=windows GOARCH=amd64 go vet -tags payload ./cmd/exchsetup
           GOOS=windows GOARCH=amd64 go build -tags payload -trimpath -ldflags="-H windowsgui $X" -o "$out/ExchangeCheckerSetup.exe" ./cmd/exchsetup
           mkdir -p "$RUNNER_TEMP/zip1" "$RUNNER_TEMP/zip2"
-          # Zip keeps ExchangeChecker-<V>.zip; entry inside is the
-          # same basename with .exe (tools/mkzip ZipEntryName). Build dir still
-          # uses ExchangeCheckerSetup.exe (OriginalFilename / intermediate).
+          # Zip stays technical ExchangeChecker-<V>.zip (stable download URL /
+          # artifact). Entry is "Exchange Checker <V>.exe" (spaces; CHK-DELIV-01
+          # phase 13). Build dir still uses ExchangeCheckerSetup.exe intermediate.
           Z="ExchangeChecker-$V.zip"
-          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" "$out/ExchangeCheckerSetup.exe"
-          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" "$out/ExchangeCheckerSetup.exe"
+          ENTRY="Exchange Checker $V.exe"
+          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip1/$Z" -entry "$ENTRY" "$out/ExchangeCheckerSetup.exe"
+          go run ./tools/mkzip zip -o "$RUNNER_TEMP/zip2/$Z" -entry "$ENTRY" "$out/ExchangeCheckerSetup.exe"
           ls -la "$out" "$pay" "$RUNNER_TEMP/zip1"
           # cross-OS reproducibility report (release zip is taken from the windows job)
           go env CGO_ENABLED GOFLAGS

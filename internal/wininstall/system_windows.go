@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,6 +151,13 @@ func (winSystem) RemoveFile(path string) (bool, error) {
 	err := os.Remove(path)
 	if err == nil || os.IsNotExist(err) {
 		return false, nil
+	}
+	// Non-empty directory: not "in use". Callers that meant to clear a
+	// tree must remove children first (undo order) or use RemoveDirIfEmpty /
+	// RemoveLegacyInstallDir. Do not schedule reboot deletion of a folder
+	// that may still hold foreign files.
+	if isDirNotEmpty(err) {
+		return false, fmt.Errorf("remove %s: %w", path, err)
 	}
 	// in use: schedule deletion at reboot
 	if err2 := winapi.MoveFileEx(path, "", winapi.MoveFileDelayUntilReboot); err2 != nil {
@@ -434,11 +442,7 @@ func (winSystem) StopService(name string, timeout time.Duration) error {
 	return nil
 }
 
-// StartMenuFolder / ShortcutFile: §6.3.
-const (
-	StartMenuFolder = "Exchange Checker"
-	ShortcutFile    = "Exchange Checker.lnk"
-)
+// StartMenuFolder / ShortcutFile: see shortcuts.go (§6.3, CHK-SETUP-17).
 
 func startMenuDir() (string, error) {
 	progs, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_PROGRAMS)
@@ -485,6 +489,240 @@ func (winSystem) DeleteStartShortcut() error {
 	}
 	winapi.SHChangeNotifyDir(filepath.Dir(dir))
 	return nil
+}
+
+// Desktop shortcut (CHK-SETUP-16): Public Desktop because setup is
+// per-machine (requireAdministrator, Program Files, HKLM Uninstall).
+// CSIDL_COMMON_DESKTOPDIRECTORY == FOLDERID_PublicDesktop on Win7+.
+func publicDesktopLnk() (string, error) {
+	desk, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_DESKTOPDIRECTORY)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(desk, ShortcutFile), nil
+}
+
+func (winSystem) CreateDesktopShortcut(trayExe, workDir, desc string) (string, error) {
+	lnk, err := publicDesktopLnk()
+	if err != nil {
+		return "", err
+	}
+	err = winapi.WithCOM(func() error {
+		return winapi.CreateShortcut(lnk, winapi.ShortcutSpec{
+			Target: trayExe, WorkDir: workDir, Description: desc, Icon: trayExe, IconIndex: 0,
+		})
+	})
+	if err != nil {
+		return "", err
+	}
+	winapi.SHChangeNotifyDir(filepath.Dir(lnk))
+	return lnk, nil
+}
+
+func (winSystem) DeleteDesktopShortcut() error {
+	lnk, err := publicDesktopLnk()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(lnk); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	winapi.SHChangeNotifyDir(filepath.Dir(lnk))
+	return nil
+}
+
+func (winSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
+	oldDir, newDir = filepath.Clean(oldDir), filepath.Clean(newDir)
+	if err := ValidateLegacyMigrateDir(oldDir); err != nil {
+		return nil, err
+	}
+	if newDir == "" || strings.EqualFold(oldDir, newDir) {
+		return nil, fmt.Errorf("setup: bad migrate target %q", newDir)
+	}
+	if _, err := os.Lstat(oldDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if err := os.MkdirAll(newDir, 0o755); err != nil {
+		return nil, err
+	}
+	var copied []string
+	err := walkNoReparse(oldDir, "", func(rel, src string, dir bool) error {
+		dst := filepath.Join(newDir, filepath.FromSlash(rel))
+		if dir {
+			if _, err := os.Lstat(dst); err == nil {
+				return nil // already present
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("stat %s: %w", dst, err)
+			}
+			if err := os.MkdirAll(dst, 0o755); err != nil {
+				return err
+			}
+			// Track new dirs so migrate rollback can RemoveFile them after files
+			// (reverse undo leaves the new tree empty for RemoveDirIfEmpty).
+			copied = append(copied, dst)
+			if failAfter := migrateTestFailAfter(); failAfter > 0 && len(copied) >= failAfter {
+				return fmt.Errorf("migrate test fail after %d path(s)", failAfter)
+			}
+			return nil
+		}
+		if _, err := os.Lstat(dst); err == nil {
+			return nil // keep existing target (WriteFile may replace payload next)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("stat %s: %w", dst, err)
+		}
+		if err := copyFile(src, dst); err != nil {
+			return err
+		}
+		copied = append(copied, dst)
+		if failAfter := migrateTestFailAfter(); failAfter > 0 && len(copied) >= failAfter {
+			return fmt.Errorf("migrate test fail after %d path(s)", failAfter)
+		}
+		return nil
+	})
+	return copied, err
+}
+
+
+// walkNoReparse walks root without descending into reparse points/junctions
+// (os.Lstat + ModeSymlink). rel is slash-separated relative to root.
+func walkNoReparse(root, rel string, fn func(rel, full string, dir bool) error) error {
+	full := root
+	if rel != "" {
+		full = filepath.Join(root, filepath.FromSlash(rel))
+	}
+	st, err := os.Lstat(full)
+	if err != nil {
+		return err
+	}
+	if st.Mode()&os.ModeSymlink != 0 {
+		// reparse point: treat as a leaf file for delete/copy skip of children
+		if rel == "" {
+			return fmt.Errorf("setup: legacy folder is a reparse point")
+		}
+		return fn(rel, full, false)
+	}
+	if !st.IsDir() {
+		return fn(rel, full, false)
+	}
+	if rel != "" {
+		if err := fn(rel, full, true); err != nil {
+			return err
+		}
+	}
+	ents, err := os.ReadDir(full)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		childRel := e.Name()
+		if rel != "" {
+			childRel = rel + "/" + e.Name()
+		}
+		childFull := filepath.Join(full, e.Name())
+		cst, err := os.Lstat(childFull)
+		if err != nil {
+			return err
+		}
+		if cst.Mode()&os.ModeSymlink != 0 {
+			// do not follow; copy/delete the link node itself as a file
+			if err := fn(childRel, childFull, false); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := walkNoReparse(root, childRel, fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (winSystem) RemoveLegacyInstallDir(dir string) error {
+	dir = filepath.Clean(dir)
+	if err := ValidateLegacyMigrateDir(dir); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var files []string
+	var dirs []string
+	err := walkNoReparse(dir, "", func(rel, full string, isDir bool) error {
+		if rel == "" {
+			return nil
+		}
+		if isDir {
+			dirs = append(dirs, full)
+		} else {
+			files = append(files, full)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	for i := len(dirs) - 1; i >= 0; i-- {
+		if err := os.Remove(dirs[i]); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if err := os.Remove(dir); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func (winSystem) DeleteLegacyShortcuts() error {
+	var first error
+	note := func(err error) {
+		if err != nil && !os.IsNotExist(err) && first == nil {
+			first = err
+		}
+	}
+	if desk, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_DESKTOPDIRECTORY); err == nil {
+		note(os.Remove(filepath.Join(desk, LegacyShortcutFile)))
+		winapi.SHChangeNotifyDir(desk)
+	}
+	if progs, err := winapi.SHGetFolderPath(winapi.CSIDL_COMMON_PROGRAMS); err == nil {
+		legacyDir := filepath.Join(progs, LegacyStartMenuFolder)
+		note(os.Remove(filepath.Join(legacyDir, LegacyShortcutFile)))
+		note(os.Remove(filepath.Join(legacyDir, ShortcutFile)))
+		_ = os.Remove(legacyDir) // non-empty left alone
+		winapi.SHChangeNotifyDir(progs)
+	}
+	return first
 }
 
 func (winSystem) AddSQLBrowserFirewallRule(serviceExe string) error {
@@ -639,6 +877,18 @@ func (winSystem) DeleteTrayRun() error {
 	return winapi.RegDeleteValueView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, winapi.KEY_WOW64_64KEY)
 }
 
+func (winSystem) ReadTrayRun() (string, bool, error) {
+	return winapi.RegGetStringView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, winapi.KEY_WOW64_64KEY)
+}
+
+func (winSystem) WriteTrayRun(cmd string) error {
+	view := uint32(winapi.KEY_WOW64_64KEY)
+	if cmd == "" {
+		return winapi.RegDeleteValueView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, view)
+	}
+	return winapi.RegSetStringView(winapi.HKEY_LOCAL_MACHINE, config.RunKeyPath, config.TrayRunValue, cmd, view)
+}
+
 func (winSystem) ReadUninstallKey() ([]RegValue, error) {
 	view := uint32(winapi.KEY_WOW64_64KEY)
 	ok, err := winapi.RegKeyExistsView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, view)
@@ -658,7 +908,7 @@ func (winSystem) ReadUninstallKey() ([]RegValue, error) {
 			out = append(out, RegValue{Name: name, Str: s})
 		}
 	}
-	for _, name := range []string{"EstimatedSize", "NoModify", "NoRepair"} {
+	for _, name := range []string{"EstimatedSize", "NoModify", "NoRepair", "DesktopShortcut"} {
 		n, present, err := winapi.RegGetDWORDView(winapi.HKEY_LOCAL_MACHINE, UninstallKeyPath, name, view)
 		if err != nil {
 			return nil, err

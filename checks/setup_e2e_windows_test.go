@@ -183,7 +183,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 
 	log1 := filepath.Join(os.TempDir(), "ec-setup-e2e-install.log")
-	code := run(setup, "/S", "/DIR="+dirArg, "/LOG="+log1, "/LANG=en")
+	code := run(setup, "/S", "/DIR="+dirArg, "/LOG="+log1)
 	if code != 0 {
 		t.Fatalf("install exit %d; log %s", code, log1)
 	}
@@ -478,7 +478,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 	}
 
 	logU := filepath.Join(os.TempDir(), "ec-setup-e2e-upgrade.log")
-	code = run(setupV2, "/S", "/DIR="+dirArg, "/LOG="+logU, "/LANG=en")
+	code = run(setupV2, "/S", "/DIR="+dirArg, "/LOG="+logU)
 	if code != 0 {
 		dumpLog(t, logU)
 		t.Fatalf("upgrade exit %d; log %s", code, logU)

@@ -3,6 +3,7 @@ package wininstall
 import (
 	"errors"
 	"fmt"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 	"strings"
 )
 
@@ -65,3 +66,34 @@ func ValidateDir(dir, dataDir string) error {
 }
 
 func isLetter(c byte) bool { return (c|0x20) >= 'a' && (c|0x20) <= 'z' }
+
+// IsLegacyInstallDir reports a pre-phase-13 install folder whose last
+// component is LegacyInstallDirName (one word, no space).
+func IsLegacyInstallDir(dir string) bool {
+	d := CleanDir(dir)
+	base := d
+	if i := strings.LastIndex(d, `\`); i >= 0 {
+		base = d[i+1:]
+	}
+	return strings.EqualFold(base, config.LegacyInstallDirName)
+}
+
+// MigratedInstallDir returns the sibling folder with InstallDirName
+// (two words) under the same parent as the legacy path.
+func MigratedInstallDir(legacyDir string) string {
+	return joinDir(ParentDir(legacyDir), config.InstallDirName)
+}
+
+// ValidateLegacyMigrateDir ensures dir is a safe legacy install folder to
+// migrate/delete: last component LegacyInstallDirName, absolute, not a
+// drive root.
+func ValidateLegacyMigrateDir(dir string) error {
+	d := CleanDir(dir)
+	if !IsLegacyInstallDir(d) {
+		return fmt.Errorf("setup: not a legacy install folder %q", dir)
+	}
+	if len(d) <= 3 {
+		return fmt.Errorf("setup: legacy folder must not be a drive root: %q", dir)
+	}
+	return nil
+}

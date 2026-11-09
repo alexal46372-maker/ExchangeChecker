@@ -233,6 +233,11 @@ func TestCHK_TRAY_87_ParseRecipients(t *testing.T) {
 		{"info@a.ru, info@b.ru", []r{{ID: "info", Addr: "info@a.ru"}, {ID: "info-2", Addr: "info@b.ru"}}},
 		{"info@a.ru\ninfo x@y.ru", []r{{ID: "info-2", Addr: "info@a.ru"}, {ID: "info", Addr: "x@y.ru"}}},
 		{"Ivan.Petrov+mon@Mail.ru", []r{{ID: "ivan.petrov-mon", Addr: "Ivan.Petrov+mon@Mail.ru"}}},
+		// the same address twice is one recipient (not alex + alex-2)
+		{"alex@mail.ru, alex@mail.ru", []r{{ID: "alex", Addr: "alex@mail.ru"}}},
+		{"alex@mail.ru\nAlex@Mail.RU; alex@mail.ru", []r{{ID: "alex", Addr: "alex@mail.ru"}}},
+		{"ops ops@x.ru Дежурный\nops@x.ru, alex@mail.ru", []r{{ID: "ops", Addr: "ops@x.ru", Name: "Дежурный"}, {ID: "alex", Addr: "alex@mail.ru"}}},
+		{"alex@mail.ru\nboss alex@mail.ru", []r{{ID: "alex", Addr: "alex@mail.ru"}}},
 		{"", []r{}},
 	}
 	for _, c := range cases {
@@ -261,6 +266,13 @@ func TestCHK_TRAY_87_ParseRecipients(t *testing.T) {
 	}
 	if s := FromEmail(model.EmailSettings{Recipients: []model.EmailRecipient{{ID: "alex", Addr: "alex@mail.ru"}}}).Recipients; s != "alex@mail.ru" {
 		t.Errorf("bare render %q", s)
+	}
+	// ids are at most model.EmailMaxIDLen bytes, also with a suffix
+	long := strings.Repeat("a", 100)
+	got, fe := ParseEmailRecipients(long + "@x.ru, " + long + "@y.ru")
+	if fe != nil || len(got) != 2 || len(got[0].ID) != model.EmailMaxIDLen || len(got[1].ID) != model.EmailMaxIDLen ||
+		got[0].ID == got[1].ID || !strings.HasSuffix(got[1].ID, "-2") || !model.ValidEmailID(got[1].ID) {
+		t.Errorf("long ids %+v %v", got, fe)
 	}
 	// ids from non-ASCII / empty local parts
 	for addr, want := range map[string]string{"иван@почта.рф": "mail", "a,b@c.ru": "a-b", "x;y@c.ru": "x-y"} {

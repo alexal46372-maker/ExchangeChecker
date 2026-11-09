@@ -81,7 +81,9 @@ func FromEmail(e model.EmailSettings) EmailForm {
 // ParseEmailRecipients reads the recipients box (phase 13, CHK-TRAY-87):
 // a plain list of addresses separated by commas, semicolons, spaces or
 // new lines ("a@b.ru, c@d.ru"); every address gets an id derived from
-// its local part (EmailIDFromAddr, deduplicated, never with a separator).
+// its local part (EmailIDFromAddr, unique, never with a separator, at
+// most model.EmailMaxIDLen bytes); the same address given twice (any
+// case) is one recipient — the first entry wins.
 // A line "id addr name" (the old format: the first word is not an
 // address, the second is) keeps its id and name. An invalid address is
 // an error of email.recipients[i].addr with the address as Args[0]
@@ -115,10 +117,18 @@ func ParseEmailRecipients(text string) ([]model.EmailRecipient, *model.FieldErro
 			entries = append(entries, entry{addr: a})
 		}
 	}
+	seen := map[string]bool{} // addresses already in out (case-insensitive)
 	for i, en := range entries {
 		path := "email.recipients[" + strconv.Itoa(i) + "]"
 		if !model.ValidEmailAddr(en.addr) || !looksLikeAddr(en.addr) {
 			return out, fieldErr(path+".addr", model.ValRequired, en.addr)
+		}
+		// one address = one recipient = one letter: a repeat (any case,
+		// any format) is dropped, the first entry keeps its id and name
+		if k := strings.ToLower(en.addr); seen[k] {
+			continue
+		} else {
+			seen[k] = true
 		}
 		if en.id == "" {
 			base := EmailIDFromAddr(en.addr)
@@ -126,8 +136,8 @@ func ParseEmailRecipients(text string) ([]model.EmailRecipient, *model.FieldErro
 			for n := 2; used[id]; n++ {
 				suf := "-" + strconv.Itoa(n)
 				b := base
-				if len(b)+len(suf) > model.ViberMaxIDLen {
-					b = b[:model.ViberMaxIDLen-len(suf)]
+				if len(b)+len(suf) > model.EmailMaxIDLen {
+					b = b[:model.EmailMaxIDLen-len(suf)]
 				}
 				id = b + suf
 			}
@@ -148,7 +158,7 @@ func looksLikeAddr(s string) bool {
 
 // EmailIDFromAddr is the recipient id derived from an address: the local
 // part lower-cased, only [a-z0-9._-] (other characters become "-"),
-// at most model.ViberMaxIDLen bytes; "mail" when nothing is left. It
+// at most model.EmailMaxIDLen bytes; "mail" when nothing is left. It
 // always passes model.ValidEmailID and never contains ',' or ';'.
 func EmailIDFromAddr(addr string) string {
 	local := addr
@@ -165,8 +175,8 @@ func EmailIDFromAddr(addr string) string {
 		}
 	}
 	id := strings.Trim(b.String(), "-.")
-	if len(id) > model.ViberMaxIDLen {
-		id = id[:model.ViberMaxIDLen]
+	if len(id) > model.EmailMaxIDLen {
+		id = id[:model.EmailMaxIDLen]
 	}
 	if id == "" {
 		id = "mail"

@@ -31,11 +31,11 @@ func TestCHK_SETUP_01_ParseArgs(t *testing.T) {
 	if err != nil || !o.Uninstall || !o.PurgeData || !o.Silent {
 		t.Fatalf("%+v %v", o, err)
 	}
-	if _, err := ParseArgs([]string{"/uninstall", "/DIR=C:\\x"}); !errors.Is(err, ErrUsage) {
-		t.Fatalf("want ErrUsage, got %v", err)
+	if _, err := ParseArgs([]string{"/uninstall", "/DIR=C:\\x"}); !errors.Is(err, ErrUsage) || !strings.Contains(err.Error(), "с /uninstall допустимы только /S, /PURGEDATA и /LOG") {
+		t.Fatalf("want ErrUsage in Russian, got %v", err)
 	}
-	if _, err := ParseArgs([]string{"/PURGEDATA"}); !errors.Is(err, ErrUsage) {
-		t.Fatalf("want ErrUsage, got %v", err)
+	if _, err := ParseArgs([]string{"/PURGEDATA"}); !errors.Is(err, ErrUsage) || !strings.Contains(err.Error(), "/PURGEDATA допустим только вместе с /uninstall") {
+		t.Fatalf("want ErrUsage in Russian, got %v", err)
 	}
 	// phase 13 (CHK-TRAY-86): /LANG= is accepted and ignored (Russian only)
 	if _, err := ParseArgs([]string{"/LANG=de"}); err != nil {

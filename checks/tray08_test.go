@@ -13,7 +13,8 @@ import (
 
 // TestCHK_TRAY_08_NoCyrillicLiterals — i18n audit (phase 6e): the tray UI
 // packages carry no Russian text in string literals of non-test code; every
-// RU/EN text comes from internal/i18n/catalog.go.
+// UI text comes from internal/i18n/catalog.go (Russian only: the RU/EN
+// pair is cancelled in phase 13, CHK-TRAY-86).
 func TestCHK_TRAY_08_NoCyrillicLiterals(t *testing.T) {
 	root := ".."
 	dirs := []string{"internal/wintray", "internal/trayui", "internal/trayalert", "internal/traysettings", "internal/trayipc", "cmd/exchtray"}

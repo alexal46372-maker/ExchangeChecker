@@ -90,10 +90,10 @@ func ParseArgs(args []string) (Options, error) {
 		}
 	}
 	if o.Uninstall && (o.Dir != "" || o.NoStart || o.NoShortcut || o.AllowDowngrade) {
-		return o, fmt.Errorf("%w: /uninstall takes only /S, /PURGEDATA, /LOG, /LANG", ErrUsage)
+		return o, fmt.Errorf("%w: с /uninstall допустимы только /S, /PURGEDATA и /LOG (/LANG игнорируется)", ErrUsage)
 	}
 	if !o.Uninstall && o.PurgeData {
-		return o, fmt.Errorf("%w: /PURGEDATA needs /uninstall", ErrUsage)
+		return o, fmt.Errorf("%w: /PURGEDATA допустим только вместе с /uninstall", ErrUsage)
 	}
 	return o, nil
 }

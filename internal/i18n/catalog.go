@@ -1057,7 +1057,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySetEncDisable:          "Без шифрования",
 	KeySetEncOptional:         "Только вход, если сервер умеет TLS",
 	KeySetEncOn:               "Весь сеанс (TLS)",
-	KeySetEncStrict:           "Strict (TDS 8.0, SQL Server 2022+)",
+	KeySetEncStrict:           "Строгое (TDS 8.0, SQL Server 2022+)",
 	KeySetTLS10:               "Разрешить TLS 1.0 (SQL Server 2008)",
 	KeySetTrust:               "Доверять сертификату сервера без проверки",
 	KeySetEnabled:             "Опрашивать эту базу",

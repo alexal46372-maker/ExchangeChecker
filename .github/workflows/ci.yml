@@ -107,7 +107,7 @@ jobs:
             echo "GUI tests internal/wintray: attempt $i failed" >> "$GITHUB_STEP_SUMMARY"
           done
           exit 1
-      - name: tray screenshots (CHK-TRAY-46; off-screen windows, RU/EN, 96/144 dpi)
+      - name: tray screenshots (CHK-TRAY-46; off-screen windows, 96/144 dpi)
         env:
           EC_UI_SCREENS: ${{ runner.temp }}/ui-screens
         run: |

@@ -1,9 +1,14 @@
 package trayui
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"sort"
+	"sync"
 )
 
 // ICO icons of the tray (phase 11, PLAN §12 p.144, CHK-TRAY-49). They are
@@ -14,8 +19,13 @@ import (
 // settings navigation and the database cards.
 
 // IconSizes are the images of every .ico: 16/32 at 96 dpi, 20/40 at
-// 120 dpi, 24/48 at 144 dpi.
-var IconSizes = []int{16, 20, 24, 32, 40, 48}
+// 120 dpi, 24/48 at 144 dpi, and 256 (a PNG image, phase 15) for large
+// views and high DPI.
+var IconSizes = []int{16, 20, 24, 32, 40, 48, 256}
+
+// PNGIconSize: images of this size and larger are stored as PNG inside
+// the .ico (Windows Vista+ / 7 read them; BMP for the smaller ones).
+const PNGIconSize = 256
 
 // Icon file names (without .ico).
 const (
@@ -112,7 +122,30 @@ func iconImage(name string, size int) ([]uint32, error) {
 	if !ok {
 		return nil, errors.New("trayui: unknown icon " + name)
 	}
-	return render(shapes, size), nil
+	k := glyphKey{name, size}
+	glyphCache.Lock()
+	p, ok := glyphCache.m[k]
+	glyphCache.Unlock()
+	if !ok { // deterministic: cached (the 256 image is large), callers get a copy
+		p = render(shapes, size)
+		glyphCache.Lock()
+		if glyphCache.m == nil {
+			glyphCache.m = map[glyphKey][]uint32{}
+		}
+		glyphCache.m[k] = p
+		glyphCache.Unlock()
+	}
+	return append([]uint32(nil), p...), nil
+}
+
+type glyphKey struct {
+	name string
+	size int
+}
+
+var glyphCache struct {
+	sync.Mutex
+	m map[glyphKey][]uint32
 }
 
 // shape on a 48×48 design grid; inside reports whether the point
@@ -232,7 +265,9 @@ func render(shapes []shape, size int) []uint32 {
 }
 
 // EncodeICO writes 32-bit images (top-down premultiplied BGRA, as
-// IconPixels) as an .ico file: BMP images, straight alpha, empty AND mask.
+// IconPixels) as an .ico file: BMP images, straight alpha, empty AND
+// mask; images of PNGIconSize and larger are PNG (straight alpha RGBA,
+// directory width/height 0 = 256).
 func EncodeICO(sizes []int, imgs [][]uint32) []byte {
 	le := binary.LittleEndian
 	n := len(sizes)
@@ -242,30 +277,14 @@ func EncodeICO(sizes []int, imgs [][]uint32) []byte {
 	var body []byte
 	off := len(head)
 	for i, s := range sizes {
-		maskRow := (s + 31) / 32 * 4
-		img := make([]byte, 40+s*s*4+maskRow*s)
-		le.PutUint32(img[0:], 40)
-		le.PutUint32(img[4:], uint32(s))
-		le.PutUint32(img[8:], uint32(2*s))
-		le.PutUint16(img[12:], 1)
-		le.PutUint16(img[14:], 32)
-		le.PutUint32(img[20:], uint32(s*s*4+maskRow*s))
-		for y := 0; y < s; y++ {
-			row := imgs[i][(s-1-y)*s:] // bottom-up
-			for x := 0; x < s; x++ {
-				p := row[x]
-				a := uint8(p >> 24)
-				pr, pg, pb := uint8(p>>16), uint8(p>>8), uint8(p)
-				var r, g, b uint8
-				if a != 0 {
-					r, g, b = unpremul(pr, a), unpremul(pg, a), unpremul(pb, a)
-				}
-				o := 40 + (y*s+x)*4
-				img[o], img[o+1], img[o+2], img[o+3] = b, g, r, a
-			}
+		var img []byte
+		if s >= PNGIconSize {
+			img = encodePNG(s, imgs[i])
+		} else {
+			img = encodeBMP(s, imgs[i])
 		}
 		e := head[6+16*i:]
-		e[0], e[1] = byte(s), byte(s)
+		e[0], e[1] = byte(s), byte(s) // 256 → 0
 		le.PutUint16(e[4:], 1)
 		le.PutUint16(e[6:], 32)
 		le.PutUint32(e[8:], uint32(len(img)))
@@ -274,6 +293,52 @@ func EncodeICO(sizes []int, imgs [][]uint32) []byte {
 		body = append(body, img...)
 	}
 	return append(head, body...)
+}
+
+// straight: the straight-alpha R, G, B, A of a premultiplied pixel.
+func straight(p uint32) (r, g, b, a uint8) {
+	a = uint8(p >> 24)
+	if a != 0 {
+		r, g, b = unpremul(uint8(p>>16), a), unpremul(uint8(p>>8), a), unpremul(uint8(p), a)
+	}
+	return
+}
+
+func encodeBMP(s int, px []uint32) []byte {
+	le := binary.LittleEndian
+	maskRow := (s + 31) / 32 * 4
+	img := make([]byte, 40+s*s*4+maskRow*s)
+	le.PutUint32(img[0:], 40)
+	le.PutUint32(img[4:], uint32(s))
+	le.PutUint32(img[8:], uint32(2*s))
+	le.PutUint16(img[12:], 1)
+	le.PutUint16(img[14:], 32)
+	le.PutUint32(img[20:], uint32(s*s*4+maskRow*s))
+	for y := 0; y < s; y++ {
+		row := px[(s-1-y)*s:] // bottom-up
+		for x := 0; x < s; x++ {
+			r, g, b, a := straight(row[x])
+			o := 40 + (y*s+x)*4
+			img[o], img[o+1], img[o+2], img[o+3] = b, g, r, a
+		}
+	}
+	return img
+}
+
+// encodePNG: image/png of the standard library, best compression; the
+// bytes depend only on the pixels (and the toolchain, Go 1.20.14).
+func encodePNG(s int, px []uint32) []byte {
+	m := image.NewNRGBA(image.Rect(0, 0, s, s))
+	for i, p := range px {
+		r, g, b, a := straight(p)
+		copy(m.Pix[i*4:], []byte{r, g, b, a})
+	}
+	var buf bytes.Buffer
+	enc := png.Encoder{CompressionLevel: png.BestCompression}
+	if err := enc.Encode(&buf, m); err != nil {
+		panic(err) // a bytes.Buffer never fails
+	}
+	return buf.Bytes()
 }
 
 func unpremul(c, a uint8) uint8 {
@@ -322,7 +387,13 @@ func DecodeICO(ico []byte, size int) ([]uint32, error) {
 	}
 	e := ico[6+16*best:]
 	sz, off := int(le.Uint32(e[8:])), int(le.Uint32(e[12:]))
-	if off+sz > len(ico) || sz < 40+bestS*bestS*4 || le.Uint16(ico[off+14:]) != 32 {
+	if off < 0 || sz < 8 || off+sz > len(ico) {
+		return nil, errors.New("trayui: .ico image out of bounds")
+	}
+	if bytes.HasPrefix(ico[off:off+sz], pngMagic) {
+		return decodePNG(ico[off:off+sz], bestS, size)
+	}
+	if sz < 40+bestS*bestS*4 || le.Uint16(ico[off+14:]) != 32 {
 		return nil, errors.New("trayui: .ico image not 32-bit")
 	}
 	src := ico[off+40:]
@@ -334,6 +405,36 @@ func DecodeICO(ico []byte, size int) ([]uint32, error) {
 			o := ((bestS-1-sy)*bestS + sx) * 4
 			b, g, r, a := src[o], src[o+1], src[o+2], src[o+3]
 			out[y*size+x] = argb(a, r, g, b)
+		}
+	}
+	return out, nil
+}
+
+var pngMagic = []byte("\x89PNG\r\n\x1a\n")
+
+// decodePNG: a PNG image of an .ico (s×s) as size×size premultiplied BGRA
+// (nearest neighbour, as the BMP images).
+func decodePNG(b []byte, s, size int) ([]uint32, error) {
+	m, err := png.Decode(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	r := m.Bounds()
+	if r.Dx() != s || r.Dy() != s {
+		return nil, errors.New("trayui: .ico PNG image size differs from its directory entry")
+	}
+	out := make([]uint32, size*size)
+	for y := 0; y < size; y++ {
+		sy := y * s / size
+		for x := 0; x < size; x++ {
+			sx := x * s / size
+			if nm, ok := m.(*image.NRGBA); ok { // what encodePNG writes
+				o := nm.PixOffset(r.Min.X+sx, r.Min.Y+sy)
+				out[y*size+x] = argb(nm.Pix[o+3], nm.Pix[o], nm.Pix[o+1], nm.Pix[o+2])
+				continue
+			}
+			c := color.NRGBAModel.Convert(m.At(r.Min.X+sx, r.Min.Y+sy)).(color.NRGBA)
+			out[y*size+x] = argb(c.A, c.R, c.G, c.B)
 		}
 	}
 	return out, nil

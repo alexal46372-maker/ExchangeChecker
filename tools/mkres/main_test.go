@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/alert"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winres"
 )
 
@@ -159,7 +160,7 @@ func TestCHK_RES_01_TrayTarget(t *testing.T) {
 			}
 		}
 	}
-	if n != len(want) || len(want) != 4 {
+	if n != len(want) || len(want) != len(trayui.ExeIconSizes)+1 { // RT_ICON 16/32/48/256 + RT_GROUP_ICON
 		t.Errorf("tray icon resources: %d of %d", n, len(want))
 	}
 	v, ok := winres.Find(res, winres.TypeVersion)

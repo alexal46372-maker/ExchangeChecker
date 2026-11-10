@@ -107,10 +107,10 @@ func TestCHK_RES_01_Icon(t *testing.T) {
 		t.Fatalf("group %+v", g)
 	}
 	ids, _ := GroupIconIDs(g.Data)
-	if !reflect.DeepEqual(ids, []uint16{10, 11, 12}) {
+	if !reflect.DeepEqual(ids, []uint16{10, 11, 12, 13}) { // 16/32/48 BMP + 256 PNG (phase 15)
 		t.Fatalf("ids %v", ids)
 	}
-	for i, r := range res[:3] {
+	for i, r := range res[:4] {
 		if r.Type != TypeIcon || r.ID != ids[i] || !bytes.Contains(ico, r.Data) {
 			t.Errorf("icon %d %+v", i, r.ID)
 		}

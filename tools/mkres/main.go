@@ -35,8 +35,9 @@ import (
 // p.144, CHK-TRAY-49), embedded by internal/wintray.
 const IconDir = "internal/wintray/icons"
 
-// ExeIcon is the icon of the tray and setup exe (RT_GROUP_ICON 1), also
-// the icon the installer shows; generated from trayui.ExeICO.
+// ExeIcon is the icon of the tray and setup exe (RT_GROUP_ICON 1, RT_ICON
+// 1–4: 16/32/48 BMP and 256 PNG since phase 15), also the icon the
+// installer shows; generated from trayui.ExeICO («metal and chrome»).
 const ExeIcon = "cmd/exchtray/exchtray.ico"
 
 // icons returns the generated .ico files by path relative to the root.

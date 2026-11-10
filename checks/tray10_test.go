@@ -2,14 +2,21 @@ package checks_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/xml"
 	"go/build"
+	"image"
+	"image/color"
+	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winres"
 )
 
 func modulePath(t *testing.T, root string) string {
@@ -362,11 +369,272 @@ func TestCHK_TRAY_10_Manifest(t *testing.T) {
 		t.Error("rsrc_windows_amd64.syso is stale: run go run ./tools/mkres (cmd/exchtray/RESOURCES.md)")
 	}
 	ico, err := os.ReadFile(filepath.Join(dir, "exchtray.ico"))
-	if err != nil || len(ico) < 6 || ico[2] != 1 || ico[4] < 3 {
-		t.Fatalf("exchtray.ico must be an icon with 16/32/48 images (%v)", err)
+	if err != nil || len(ico) < 6 || ico[2] != 1 || ico[4] != 4 {
+		t.Fatalf("exchtray.ico must be an icon with 16/32/48/256 images (%v)", err)
 	}
-	// the icon images are embedded too (the 48x48 image bytes)
+	// the icon images are embedded too (the 256 PNG is the last image)
 	if !bytes.Contains(syso, ico[len(ico)-512:]) {
 		t.Error("rsrc_windows_amd64.syso does not contain exchtray.ico")
+	}
+}
+
+// Phase 15 («metal and chrome», CHK-TRAY-89/90): the icons as Windows
+// gets them — RT_GROUP_ICON / RT_ICON of the committed .syso of the tray
+// and the installer, and the .ico files the tray embeds — decoded here
+// independently of internal/trayui (BMP DIB and image/png).
+
+// iconImg: straight-alpha RGBA, row-major top-down.
+type iconImg struct {
+	size int
+	pix  []color.NRGBA
+}
+
+func decodeIconImage(t *testing.T, data []byte, size int) iconImg {
+	t.Helper()
+	if bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")) {
+		m, err := png.Decode(bytes.NewReader(data))
+		if err != nil || m.Bounds() != image.Rect(0, 0, size, size) {
+			t.Fatalf("PNG %d: %v", size, err)
+		}
+		im := iconImg{size: size}
+		for y := 0; y < size; y++ {
+			for x := 0; x < size; x++ {
+				im.pix = append(im.pix, color.NRGBAModel.Convert(m.At(x, y)).(color.NRGBA))
+			}
+		}
+		return im
+	}
+	le := binary.LittleEndian
+	if len(data) < 40+size*size*4 || le.Uint32(data) != 40 || int(le.Uint32(data[4:])) != size ||
+		int(le.Uint32(data[8:])) != 2*size || le.Uint16(data[14:]) != 32 {
+		t.Fatalf("BMP %d: bad header", size)
+	}
+	im := iconImg{size: size, pix: make([]color.NRGBA, size*size)}
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			o := 40 + ((size-1-y)*size+x)*4
+			im.pix[y*size+x] = color.NRGBA{R: data[o+2], G: data[o+1], B: data[o], A: data[o+3]}
+		}
+	}
+	return im
+}
+
+func lin8(c uint8) float64 {
+	v := float64(c) / 255
+	if v <= 0.04045 {
+		return v / 12.92
+	}
+	return math.Pow((v+0.055)/1.055, 2.4)
+}
+
+// probe: mean WCAG luminance and mean sRGB over design rects (48×48 grid,
+// mapped as u·size/48); every pixel must be opaque.
+func (im iconImg) probe(t *testing.T, rs [][4]float64) (float64, [3]float64) {
+	t.Helper()
+	var l float64
+	var c [3]float64
+	n := 0
+	for _, r := range rs {
+		for y := 0; y < im.size; y++ {
+			for x := 0; x < im.size; x++ {
+				u, v := (float64(x)+0.5)*48/float64(im.size), (float64(y)+0.5)*48/float64(im.size)
+				if u < r[0] || u > r[2] || v < r[1] || v > r[3] {
+					continue
+				}
+				p := im.pix[y*im.size+x]
+				if p.A != 255 {
+					t.Fatalf("%d: probe pixel (%d,%d) not opaque", im.size, x, y)
+				}
+				l += 0.2126*lin8(p.R) + 0.7152*lin8(p.G) + 0.0722*lin8(p.B)
+				c[0], c[1], c[2] = c[0]+float64(p.R), c[1]+float64(p.G), c[2]+float64(p.B)
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatalf("%d: empty probe", im.size)
+	}
+	f := 1 / float64(n)
+	return l * f, [3]float64{c[0] * f, c[1] * f, c[2] * f}
+}
+
+func hue(c [3]float64) (h, s float64) {
+	mx := math.Max(c[0], math.Max(c[1], c[2]))
+	mn := math.Min(c[0], math.Min(c[1], c[2]))
+	if mx == 0 || mx == mn {
+		return 0, 0
+	}
+	d := mx - mn
+	switch mx {
+	case c[0]:
+		h = math.Mod((c[1]-c[2])/d, 6)
+	case c[1]:
+		h = (c[2]-c[0])/d + 2
+	default:
+		h = (c[0]-c[1])/d + 4
+	}
+	h *= 60
+	if h < 0 {
+		h += 360
+	}
+	return h, d / mx
+}
+
+type arrowWant struct {
+	hue      float64 // HSV hue of the palette colour; < 0: grey
+	contrast float64
+}
+
+// palette of phase 15: #3DFF7A, #FFC61A, #FF4F4F, #D2D8E2 on #071A55 → #030B2C
+var (
+	wantGreen  = arrowWant{138.9, 10}
+	wantYellow = arrowWant{45.1, 9}
+	wantRed    = arrowWant{0, 4.5}
+	wantGrey   = arrowWant{-1, 10}
+)
+
+func checkIconArrows(t *testing.T, what string, im iconImg, w arrowWant, problem bool) {
+	t.Helper()
+	arrow := [][4]float64{{12, 16, 24, 18}, {24, 30, 36, 32}}
+	bg := [][4]float64{{8, 7, 22, 11}, {26, 37, 40, 41}}
+	if problem { // the red dot covers the bottom right
+		arrow, bg = arrow[:1], bg[:1]
+	}
+	la, ca := im.probe(t, arrow)
+	lb, cb := im.probe(t, bg)
+	h, s := hue(ca)
+	if w.hue < 0 {
+		if s > 0.12 {
+			t.Errorf("%s %d: grey arrows saturation %.2f", what, im.size, s)
+		}
+	} else {
+		d := math.Abs(h - w.hue)
+		if d > 180 {
+			d = 360 - d
+		}
+		if d > 10 || s < 0.5 {
+			t.Errorf("%s %d: arrows hue %.1f° sat %.2f, want %.1f° ±10", what, im.size, h, s, w.hue)
+		}
+	}
+	if c := (la + 0.05) / (lb + 0.05); c < w.contrast {
+		t.Errorf("%s %d: WCAG arrows / background %.2f < %.1f", what, im.size, c, w.contrast)
+	}
+	if bh, bs := hue(cb); lb > 0.03 || bh < 200 || bh > 255 || bs < 0.5 {
+		t.Errorf("%s %d: background L %.4f hue %.0f is not the dark-blue tile", what, im.size, lb, bh)
+	}
+}
+
+// icoImages: the images of an .ico file by size.
+func icoImages(t *testing.T, ico []byte) map[int][]byte {
+	t.Helper()
+	le := binary.LittleEndian
+	out := map[int][]byte{}
+	n := int(le.Uint16(ico[4:]))
+	for i := 0; i < n; i++ {
+		e := ico[6+16*i:]
+		s := int(e[0])
+		if s == 0 {
+			s = 256
+		}
+		off, sz := le.Uint32(e[12:]), le.Uint32(e[8:])
+		out[s] = ico[off : off+sz]
+	}
+	return out
+}
+
+// TestCHK_TRAY_89_LinkedIconMetal — the exe icon linked into the tray and
+// the installer (RT_GROUP_ICON 1 of the committed .syso): images
+// 16/32/48/256 (256 as PNG), green arrows of the palette with WCAG ≥ 10 to
+// the dark-blue tile at 32 and 256 px.
+func TestCHK_TRAY_89_LinkedIconMetal(t *testing.T) {
+	root := findModuleRoot(t)
+	for _, dir := range []string{"cmd/exchtray", "cmd/exchsetup"} {
+		syso, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(dir), "rsrc_windows_amd64.syso"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := winres.ParseSyso(syso)
+		if err != nil {
+			t.Fatal(err)
+		}
+		group, ok := winres.Find(res, winres.TypeGroupIcon)
+		if !ok || group.ID != 1 {
+			t.Fatalf("%s: no RT_GROUP_ICON 1", dir)
+		}
+		le := binary.LittleEndian
+		n := int(le.Uint16(group.Data[4:]))
+		var sizes []int
+		for i := 0; i < n; i++ {
+			g := group.Data[6+14*i:]
+			s := int(g[0])
+			if s == 0 {
+				s = 256
+			}
+			sizes = append(sizes, s)
+			id := le.Uint16(g[12:])
+			var data []byte
+			for _, r := range res {
+				if r.Type == winres.TypeIcon && r.ID == id {
+					data = r.Data
+				}
+			}
+			if data == nil || int(le.Uint32(g[8:])) != len(data) {
+				t.Fatalf("%s: RT_ICON %d missing", dir, id)
+			}
+			if (s == 256) != bytes.HasPrefix(data, []byte("\x89PNG")) {
+				t.Errorf("%s: %d px image PNG mismatch", dir, s)
+			}
+			im := decodeIconImage(t, data, s)
+			if s == 32 || s == 256 {
+				checkIconArrows(t, dir, im, wantGreen, false)
+			}
+		}
+		if len(sizes) != 4 || sizes[0] != 16 || sizes[1] != 32 || sizes[2] != 48 || sizes[3] != 256 {
+			t.Errorf("%s: exe icon sizes %v, want 16/32/48/256", dir, sizes)
+		}
+	}
+}
+
+// TestCHK_TRAY_90_EmbeddedTrayIcons — the notification icons embedded in
+// the tray (internal/wintray/icons/tray_*.ico): all sizes
+// 16/20/24/32/40/48/256, state arrows (hue, WCAG at 32 and 256 px: green
+// ≥ 10, yellow ≥ 9, red ≥ 4.5, grey ≥ 10); tray_blank (blink «off» phase)
+// is byte-identical to tray_ok; state_blank is empty.
+func TestCHK_TRAY_90_EmbeddedTrayIcons(t *testing.T) {
+	root := findModuleRoot(t)
+	dir := filepath.Join(root, "internal", "wintray", "icons")
+	read := func(n string) []byte {
+		b, err := os.ReadFile(filepath.Join(dir, n+".ico"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	for name, w := range map[string]arrowWant{"tray_ok": wantGreen, "tray_warning": wantYellow,
+		"tray_error": wantRed, "tray_offline": wantGrey, "tray_problem": wantGrey} {
+		imgs := icoImages(t, read(name))
+		for _, s := range []int{16, 20, 24, 32, 40, 48, 256} {
+			data, ok := imgs[s]
+			if !ok {
+				t.Fatalf("%s: no %d px image", name, s)
+			}
+			im := decodeIconImage(t, data, s)
+			if s == 32 || s == 256 {
+				checkIconArrows(t, name, im, w, name == "tray_problem")
+			}
+		}
+		if len(imgs) != 7 {
+			t.Errorf("%s: %d images", name, len(imgs))
+		}
+	}
+	if !bytes.Equal(read("tray_blank"), read("tray_ok")) {
+		t.Error("tray_blank.ico must be the normal icon (tray_ok.ico)")
+	}
+	for s, data := range icoImages(t, read("state_blank")) {
+		for _, p := range decodeIconImage(t, data, s).pix {
+			if p.A == 255 {
+				t.Fatalf("state_blank %d: opaque pixel", s)
+			}
+		}
 	}
 }

@@ -65,13 +65,13 @@ type appConfig struct {
 	ViberURL    string
 	// EmailSendHook replaces the SMTP send of the email notifier (tests:
 	// fake SMTP); nil = net/smtp.
+	EmailSendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
 	// BeforeFlashDelivery: monitor test hook (CHK-MON-22 race test).
 	BeforeFlashDelivery func([]model.FlashEvent)
 	// Protector overrides DPAPI (tests on non-Windows hosts).
 	Protector config.Protector
 	// TelegramBaseURL overrides the Bot API base URL (tests: httptest).
 	TelegramBaseURL string
-	EmailSendHook   func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }

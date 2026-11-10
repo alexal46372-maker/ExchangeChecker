@@ -109,7 +109,10 @@ func TestCHK_TRAY_98_SpeakerClient(t *testing.T) {
 		return time.After(d)
 	}})
 	l := ipc.NewMemListener()
-	srv := ipc.NewServer(&fakeHandler{}, nil)
+	// an active warning alarm of the service: alarm mode (CHK-IPC-20,
+	// svc@41553818) — not clipped to 5 s, not rate limited
+	h := &fakeHandler{snap: model.StatusSnapshot{Alerts: []model.AlertEvent{{ProfileID: "a", Key: "k", To: model.LevelWarning}}}}
+	srv := ipc.NewServer(h, nil)
 	srv.Speaker = dev
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
@@ -180,6 +183,37 @@ func TestCHK_TRAY_98_SpeakerClient(t *testing.T) {
 	if _, offs, _, on := port.snap(); offs != 2 || on {
 		t.Fatalf("owner stop: offs %d on %v", offs, on)
 	}
+
+	// no alarm of the service → listen mode: durMs clipped to 5000; a
+	// second tone within 10 s on this connection → notify.speaker_denied,
+	// which does NOT mark the speaker unavailable; the stop of its own
+	// tone is always allowed
+	h.mu.Lock()
+	h.snap.Alerts = nil
+	h.mu.Unlock()
+	if err := sp.Tone(context.Background(), 700, 9000); err != nil {
+		t.Fatalf("listen tone: %v", err)
+	}
+	dmu.Lock()
+	if d := durs[len(durs)-1]; d != time.Duration(model.SpeakerListenMaxMs)*time.Millisecond {
+		t.Errorf("listen duration %v, want the 5 s cap", d)
+	}
+	dmu.Unlock()
+	if err := sp.Stop(context.Background()); err != nil {
+		t.Fatalf("own stop in listen mode: %v", err)
+	}
+	if err := sp.Tone(context.Background(), 700, 300); err == nil || err.Error() != model.MsgSpeakerDenied {
+		t.Fatalf("second listen tone within 10 s: %v", err)
+	}
+	if st, fresh := sp.Cached(); !fresh || !st.Available {
+		t.Fatalf("denied must not mark the speaker unavailable: %+v %v", st, fresh)
+	}
+	if err := sp.Stop(context.Background()); err != nil {
+		t.Fatalf("own stop after denied: %v", err)
+	}
+	h.mu.Lock()
+	h.snap.Alerts = []model.AlertEvent{{ProfileID: "a", Key: "k", To: model.LevelError}}
+	h.mu.Unlock()
 
 	// not available → reason from the service, cached
 	port.set(model.SpeakerStatus{Reason: model.SpeakerNotInstalled}, nil)

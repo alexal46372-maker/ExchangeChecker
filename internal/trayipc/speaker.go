@@ -32,18 +32,13 @@ const (
 	SpeakerTimeout   = "speaker.timeout"    // no reply in time
 )
 
-// SpeakerDenied is the error key of a speaker_tone the service refuses
-// (only during an active service alarm or for a preview, rate limited).
-// MERGE NOTE: EC Service adds model.MsgSpeakerDenied with this value;
-// switch to it after merging feat/svc-speaker.
-const SpeakerDenied = "notify.speaker_denied"
-
 // transientSpeaker: refusals that depend on the moment (another
-// connection plays; the service allows tones only during its alarm or a
-// preview, rate limited) — the tone goes through the speakers, but the
+// connection plays — notify.speaker_busy; the service allows a tone only
+// during its warning/error alarm or in listen mode, once per 10 s per
+// connection — notify.speaker_denied, CHK-IPC-20) — the tone goes through the speakers, but the
 // speaker is NOT marked unavailable, so the next tone asks again.
 func transientSpeaker(key string) bool {
-	return key == model.MsgSpeakerBusy || key == SpeakerDenied
+	return key == model.MsgSpeakerBusy || key == model.MsgSpeakerDenied
 }
 
 // DefaultSpeakerTTL: how long a speaker_status reply is trusted.

@@ -112,7 +112,7 @@ func (w *winSounder) Play(s trayalert.Sound, stop <-chan struct{}) error {
 		}
 		w.fallback(p.File, err)
 	}
-	return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), !s.NoSpeaker, stop)
+	return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), !s.NoSpeaker, s.Listen, stop)
 }
 
 func (w *winSounder) fallback(file string, err error) {
@@ -182,14 +182,14 @@ func (o toneOutputs) withDefaults() toneOutputs {
 // PlaySound(SND_MEMORY); refused (no audio device) → kernel32 Beep;
 // Beep failed too → MessageBeep(MB_ICONHAND), the system critical sound
 // (CHK-TRAY-97). Each fallback is logged once.
-func (w *winSounder) playTone(freq, dur, vol int, useSpeaker bool, stop <-chan struct{}) error {
+func (w *winSounder) playTone(freq, dur, vol int, useSpeaker, listen bool, stop <-chan struct{}) error {
 	d := time.Duration(dur) * time.Millisecond
 	if vol <= 0 {
 		waitOrStop(d, stop)
 		return nil
 	}
 	if w.speaker != nil && useSpeaker { // NoSpeaker: straight to the speakers, no log
-		reason, ok := w.playSpeaker(freq, dur, stop)
+		reason, ok := w.playSpeaker(freq, speakerDur(dur, listen), stop)
 		if ok {
 			return nil
 		}
@@ -213,6 +213,18 @@ func (w *winSounder) playTone(freq, dur, vol int, useSpeaker bool, stop <-chan s
 		o.stopWAV(w.alias)
 	}
 	return nil
+}
+
+// speakerDur: the duration the service really plays. Listen mode
+// (CHK-IPC-20): clipped to model.SpeakerListenMaxMs by the service, so the
+// tray sends and waits the clipped value — the player never waits longer
+// than the tone. A refused tone falls back to the speakers with the full
+// profile duration.
+func speakerDur(dur int, listen bool) int {
+	if listen && dur > model.SpeakerListenMaxMs {
+		return model.SpeakerListenMaxMs
+	}
+	return dur
 }
 
 // playSpeaker plays one tone through the service; ok = it sounded (or
@@ -390,7 +402,9 @@ func (a *App) alertSound(v trayalert.View) trayalert.Sound {
 		a.soundPrefs.Master = m
 	}
 	pr := a.soundPrefs.For(v.Level)
-	return trayalert.SoundFor(pr, a.soundPrefs.Master)
+	s := trayalert.SoundFor(pr, a.soundPrefs.Master)
+	s.Listen = trayalert.ListenView(v) // test alarm: listen mode of the service
+	return s
 }
 
 // applySound restarts the alarm sound with the current settings.
@@ -417,6 +431,7 @@ func (a *App) testSound(p trayalert.SoundProfile, master int) {
 	a.applySound() // pause the alarm (not when it is on the speaker)
 	snd := trayalert.SoundFor(p, master)
 	snd.NoSpeaker = local
+	snd.Listen = true // «Прослушать»: listen mode (≤ 5 s, once per 10 s, else denied → speakers)
 	a.tester.Set(true, snd)
 }
 

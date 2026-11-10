@@ -216,6 +216,28 @@ type Sound struct {
 	// only, no speaker_tone at all (neither tone nor stop) — «Прослушать»
 	// while the alarm sounds on the PC speaker of the same connection.
 	NoSpeaker bool
+	// Listen (phase 14, CHK-IPC-20/CHK-TRAY-98): the service takes the
+	// speaker_tone of this sound in listen mode (no warning/error alarm
+	// of the service: «Прослушать», a test alarm) — it clips durMs to
+	// model.SpeakerListenMaxMs and allows one tone per 10 s per
+	// connection. The tray sends the clipped duration and waits exactly
+	// that; a refusal (notify.speaker_denied) plays through the speakers.
+	Listen bool
+}
+
+// ListenView: the alarm view has only test alarms (alarm_test push) — the
+// service has no warning/error alarm of its own, so its speaker tones are
+// in listen mode (CHK-IPC-20).
+func ListenView(v View) bool {
+	if len(v.Alerts) == 0 {
+		return false
+	}
+	for _, a := range v.Alerts {
+		if !a.Test {
+			return false
+		}
+	}
+	return true
 }
 
 // SoundFor is the Sound of a profile at the master volume: Volume =

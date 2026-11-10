@@ -348,7 +348,9 @@ func (w *settingsWindow) previewSound(p trayalert.SoundProfile, c profileCtl) {
 		done()
 	}
 	w.sndPreview.Set(false, trayalert.Sound{})
-	w.sndPreview.Set(true, trayalert.SoundFor(p, w.sndMaster))
+	snd := trayalert.SoundFor(p, w.sndMaster)
+	snd.Listen = true // listen mode of the service (≤ 5 s, once per 10 s, else denied → speakers)
+	w.sndPreview.Set(true, snd)
 }
 
 func (w *settingsWindow) stopSoundPreview() {

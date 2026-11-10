@@ -220,21 +220,44 @@ func (d *Device) offLocked() error {
 	if !d.on {
 		return nil
 	}
-	d.on, d.owner = false, nil
 	if d.o.Port == nil {
+		d.on, d.owner = false, nil
 		return nil
 	}
+	err := d.writeOff()
+	hadErr := err != nil
+	if err != nil {
+		err = d.writeOff() // one retry so 0x61 can still be cleared
+	}
+	if err != nil {
+		// Leave on=true: the gate may still be set. Unload anyway so a
+		// failed driver is not left loaded.
+		d.unloadNow()
+		return err
+	}
+	d.on, d.owner = false, nil
+	if u, ok := d.o.Port.(unloader); ok {
+		if hadErr {
+			u.Unload() // an I/O error already happened: do not wait for idle
+		} else {
+			u.ScheduleUnload()
+		}
+	}
+	return nil
+}
+
+func (d *Device) writeOff() error {
 	cur, err := d.o.Port.Read(PortPPI)
 	if err != nil {
 		return err
 	}
-	err = d.o.Port.Write([]PortWrite{{PortPPI, cur &^ SpeakerBits}})
-	if err == nil {
-		if u, ok := d.o.Port.(unloader); ok {
-			u.ScheduleUnload()
-		}
+	return d.o.Port.Write([]PortWrite{{PortPPI, cur &^ SpeakerBits}})
+}
+
+func (d *Device) unloadNow() {
+	if u, ok := d.o.Port.(unloader); ok {
+		u.Unload()
 	}
-	return err
 }
 
 // Divisor is PITHz/freqHz (integer division), the 16-bit PIT latch.

@@ -307,6 +307,8 @@ type conn struct {
 	// last check_now accepted from it (read loop only)
 	histN     int
 	lastCheck time.Time
+	// lastListen: last successful listen-mode speaker_tone (CHK-IPC-20).
+	lastListen time.Time
 	// clientCaps: client_hello capabilities (phase 11, CHK-IPC-11; read
 	// loop writes, broadcasts read: capMu)
 	capMu      sync.Mutex

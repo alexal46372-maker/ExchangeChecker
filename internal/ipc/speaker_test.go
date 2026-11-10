@@ -241,3 +241,108 @@ func TestCHK_IPC_20_NotInstalledOnBareServer(t *testing.T) {
 		t.Fatalf("%+v %v", m, err)
 	}
 }
+
+type testClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+// TestCHK_IPC_20_SpeakerDeniedListenAndAlarm — speaker_tone starts only with
+// an active warning/error alert, or in listen mode (1 / 10s / connection,
+// duration clipped to 5s). Otherwise notify.speaker_denied. durMs=0 of the
+// owner's tone is always allowed. Time is an injected clock (no sleep).
+func TestCHK_IPC_20_SpeakerDeniedListenAndAlarm(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var gotDur time.Duration
+	p := newRec(0x00)
+	h := &fakeHandler{snap: testSnapshot()} // Level may be warning, but Alerts is empty
+	s := NewServer(h, &testLog{})
+	clk := &testClock{t: time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)}
+	s.now = clk.Now
+	dev := pcspeaker.New(pcspeaker.Options{
+		Port:          p,
+		DriverVersion: "test-0",
+		After:         func(d time.Duration) <-chan time.Time { gotDur = d; return make(chan time.Time) },
+	})
+	s.Speaker = dev
+	l := NewMemListener()
+	go s.Serve(l)
+	t.Cleanup(func() { s.Close() })
+	c1 := dial(t, l)
+	c2 := dial(t, l)
+
+	// listen: long request is clipped to 5s
+	ok, err := c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(30_000)})
+	if err != nil || ok.Type != model.MsgOK || ok.Result != model.ResultAccepted {
+		t.Fatalf("listen start %+v %v", ok, err)
+	}
+	if gotDur != time.Duration(model.SpeakerListenMaxMs)*time.Millisecond {
+		t.Fatalf("listen clipped dur %s, want %dms", gotDur, model.SpeakerListenMaxMs)
+	}
+	// second listen on the same connection within 10s is denied
+	denied, err := c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 880, DurMs: intptr(100)})
+	if err != nil || denied.ErrorKey != model.MsgSpeakerDenied || denied.Code != model.ErrCodeDenied {
+		t.Fatalf("listen reuse %+v %v", denied, err)
+	}
+	// stop of the owner's tone is always allowed
+	stop, err := c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
+	if err != nil || stop.Type != model.MsgOK || stop.Result != model.ResultToneStopped {
+		t.Fatalf("owner stop during deny window %+v %v", stop, err)
+	}
+	// still inside the 10s window: a new start is denied (stop does not reset it)
+	denied, err = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(100)})
+	if err != nil || denied.ErrorKey != model.MsgSpeakerDenied {
+		t.Fatalf("after stop still denied %+v %v", denied, err)
+	}
+	// another connection has its own listen slot
+	ok, err = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 1000, DurMs: intptr(100)})
+	if err != nil || ok.Type != model.MsgOK {
+		t.Fatalf("other conn listen %+v %v", ok, err)
+	}
+	_, _ = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
+
+	clk.Advance(time.Duration(model.SpeakerListenIntervalMs) * time.Millisecond)
+	ok, err = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(100)})
+	if err != nil || ok.Type != model.MsgOK {
+		t.Fatalf("listen after 10s %+v %v", ok, err)
+	}
+	_, _ = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
+
+	// alarm mode: warning/error in Snapshot.Alerts — no 10s/5s cap, repeats ok
+	h.snap.Alerts = []model.AlertEvent{{ID: 1, ProfileID: "db1", To: model.LevelError, At: clk.Now()}}
+	ok, err = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(30_000)})
+	if err != nil || ok.Type != model.MsgOK {
+		t.Fatalf("alarm start %+v %v", ok, err)
+	}
+	if gotDur != 30*time.Second {
+		t.Fatalf("alarm dur %s, want 30s (not clipped)", gotDur)
+	}
+	ok, err = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 880, DurMs: intptr(100)})
+	if err != nil || ok.Type != model.MsgOK {
+		t.Fatalf("alarm repeat within 10s %+v %v", ok, err)
+	}
+	_, _ = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
+
+	// alarm cleared: listen quota was not consumed by the alarm tones, but
+	// the earlier listen-after-10s was; still inside that window? we have
+	// not advanced the clock, so a start without alarm is denied.
+	h.snap.Alerts = nil
+	denied, err = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(100)})
+	if err != nil || denied.ErrorKey != model.MsgSpeakerDenied {
+		t.Fatalf("no alarm after listen %+v %v", denied, err)
+	}
+}

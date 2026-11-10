@@ -131,35 +131,40 @@ func (c *controller) control(code uint32) uint32 { return c.controlEx(code, 0) }
 // controlEx handles one SCM control with its eventType (POWEREVENT).
 func (c *controller) controlEx(code, eventType uint32) uint32 {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if ShouldSilence(code, eventType) {
-		fn := c.onSilence
-		if fn == nil {
-			fn = currentOnSilence()
-		}
-		if fn != nil {
-			fn()
-		}
+	silence := ShouldSilence(code, eventType)
+	fn := c.onSilence
+	if silence && fn == nil {
+		fn = currentOnSilence()
 	}
+	var cancel context.CancelFunc
+	var ret uint32
 	switch code {
 	case ControlStop, ControlShutdown, ControlPreshutdown:
 		if c.st.CurrentState == StateRunning || c.st.CurrentState == StateStartPending {
 			c.stopAt = c.now()
 			c.reportLocked(StateStopPending, 0, StopWaitHint)
 		}
-		if c.cancel != nil {
-			c.cancel()
-		}
-		return 0
+		cancel = c.cancel
+		ret = 0
 	case ControlPowerEvent:
-		return 0
+		ret = 0
 	case ControlInterrogate:
 		if c.set != nil {
 			_ = c.set(c.st)
 		}
-		return 0
+		ret = 0
+	default:
+		ret = errorCallNotImplemented
 	}
-	return errorCallNotImplemented
+	c.mu.Unlock()
+	// Silence (port I/O, driver unload) runs outside c.mu (CHK-SVC-11).
+	if silence && fn != nil {
+		fn()
+	}
+	if cancel != nil {
+		cancel()
+	}
+	return ret
 }
 
 // ShouldSilence: STOP / SHUTDOWN / PRESHUTDOWN, or POWEREVENT + PBT_APMSUSPEND.

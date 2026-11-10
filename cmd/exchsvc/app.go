@@ -205,7 +205,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	// (STOP / SHUTDOWN / PRESHUTDOWN / PBT_APMSUSPEND).
 	port := ac.SpeakerPort
 	if port == nil {
-		drv := pcspeaker.NewInpOut(pcspeaker.InpOutOptions{})
+		drv := pcspeaker.NewInpOut(pcspeaker.InpOutOptions{Log: log.Printf})
 		_ = drv.StopLeftover() // leftover from a previous crash, before any tone
 		port = drv
 	}
@@ -213,7 +213,16 @@ func runService(ctx context.Context, ac appConfig) error {
 	defer spk.Silence()
 	winsvc.SetOnSilence(spk.Silence)
 	defer winsvc.SetOnSilence(nil)
-	go func() { defer close(vdone); viber.Run(vctx) }()
+	go func() {
+		defer close(vdone)
+		defer func() {
+			if rec := recover(); rec != nil {
+				spk.Silence()
+				log.Printf("viber: panicked: %v", rec)
+			}
+		}()
+		viber.Run(vctx)
+	}()
 	defer func() { vcancel(); <-vdone }()
 
 	var srv *ipc.Server
@@ -313,6 +322,12 @@ func runService(ctx context.Context, ac appConfig) error {
 	if l != nil {
 		go func() {
 			defer close(served)
+			defer func() {
+				if rec := recover(); rec != nil {
+					spk.Silence()
+					log.Printf("ipc: serve panicked: %v", rec)
+				}
+			}()
 			if err := srv.Serve(l); err != nil {
 				log.Printf("ipc: serve: %v", err)
 			}

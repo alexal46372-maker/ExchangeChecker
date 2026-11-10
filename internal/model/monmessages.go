@@ -248,6 +248,7 @@ var monitorMessages = map[string]string{ // key -> text (RU)
 	MsgSpeakerNotOwner:         "Остановить тон может только подключение, которое его включило.",
 	MsgSpeakerInvalid:          "Неверная частота или длительность тона системного динамика.",
 	MsgSpeakerFailed:           "Не удалось обратиться к системному динамику.",
+	MsgSpeakerDenied:           "Тон системного динамика разрешён при активной тревоге warning/error либо в режиме прослушивания (не чаще одного раза в 10 с на подключение, до 5 с).",
 }
 
 // MonitorMessage returns the (Russian) text of a monitor.* key, or ""
@@ -272,5 +273,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailRecipientNotFound, MsgMonitorUnknownEvent, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramTLS, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited, MsgSpeakerNotInstalled, MsgSpeakerBusy, MsgSpeakerNotOwner, MsgSpeakerInvalid, MsgSpeakerFailed}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailRecipientNotFound, MsgMonitorUnknownEvent, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramTLS, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited, MsgSpeakerNotInstalled, MsgSpeakerBusy, MsgSpeakerNotOwner, MsgSpeakerInvalid, MsgSpeakerFailed, MsgSpeakerDenied}
 }

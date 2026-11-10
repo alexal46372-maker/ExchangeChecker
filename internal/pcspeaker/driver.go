@@ -37,6 +37,9 @@ type InpOutOptions struct {
 	// IdleDone is called after an idle-stop goroutine has decided whether
 	// to unload (tests). Production leaves it nil.
 	IdleDone func()
+	// Log records ControlService(STOP) failures (tests and the service
+	// log). Nil = no log.
+	Log func(format string, args ...interface{})
 }
 
 // Kernel is the injectable SCM + CreateFile/DeviceIoControl seam (CHK-SVC-12).
@@ -131,9 +134,6 @@ func (p *InpOut) probeLocked() model.SpeakerStatus {
 // so the caller can StartService (ensureLocked). Status passes keep=false.
 func (p *InpOut) checkLocked(keep bool) model.SpeakerStatus {
 	if p.o.Supported == nil || !p.o.Supported() {
-		if !keep {
-			// nothing opened
-		}
 		return model.SpeakerStatus{Reason: model.SpeakerUnsupportedOS}
 	}
 	if p.loaded {
@@ -229,6 +229,7 @@ func (p *InpOut) Read(port uint16) (b byte, err error) {
 	out := []byte{0}
 	if err = p.dev.DeviceIoControl(ioctlReadPortUchar, in, out); err != nil {
 		p.last = model.SpeakerStatus{Reason: model.SpeakerModuleFailed}
+		p.unloadLocked()
 		return 0, err
 	}
 	return out[0], nil
@@ -250,6 +251,7 @@ func (p *InpOut) Write(batch []PortWrite) (err error) {
 		buf := writeUcharBuf(w.Port, w.Val)
 		if err = p.dev.DeviceIoControl(ioctlWritePortUchar, buf, nil); err != nil {
 			p.last = model.SpeakerStatus{Reason: model.SpeakerModuleFailed}
+			p.unloadLocked()
 			return err
 		}
 	}
@@ -325,10 +327,37 @@ func (p *InpOut) unloadLocked() {
 		p.dev = nil
 	}
 	if p.o.Kernel != nil {
-		_ = p.o.Kernel.Stop()
+		p.stopKernelLocked()
 		p.o.Kernel.Close()
 	}
 	p.loaded = false
+}
+
+// stopKernelLocked calls ControlService(STOP), logs a failure, checks
+// Running() and retries a few times. If a foreign handle is still open
+// the service may stay STOP_PENDING (Running() is then false).
+func (p *InpOut) stopKernelLocked() {
+	for i := 0; i < 3; i++ {
+		err := p.o.Kernel.Stop()
+		if err != nil {
+			p.logf("pcspeaker: ControlService(STOP) %s: %v", p.o.ServiceName, err)
+		}
+		run, rerr := p.o.Kernel.Running()
+		if rerr != nil {
+			p.logf("pcspeaker: QueryServiceStatus %s: %v", p.o.ServiceName, rerr)
+			continue
+		}
+		if !run {
+			return
+		}
+	}
+	p.logf("pcspeaker: %s still running after stop retries (STOP_PENDING if a handle is still open)", p.o.ServiceName)
+}
+
+func (p *InpOut) logf(format string, args ...interface{}) {
+	if p.o.Log != nil {
+		p.o.Log(format, args...)
+	}
 }
 
 func statusErr(reason string) error {

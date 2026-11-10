@@ -569,9 +569,10 @@ func (g *countSpeaker) count() int                  { g.mu.Lock(); defer g.mu.Un
 func (p *ioPort) isOn() bool { p.mu.Lock(); defer p.mu.Unlock(); return p.on }
 
 // TestCHK_TRAY_98_SpeakerDenied — the service's own tone-access rule
-// (svc@41553818, CHK-IPC-20) on the real ipc.Server, no stub: without a
+// (svc@82303d22, CHK-IPC-20) on the real ipc.Server, no stub: without a
 // warning/error alarm of the service speaker_tone is listen mode — durMs
-// clipped to 5000, one tone per 10 s per connection, else
+// clipped to 5000, one tone per 10 s for the whole service (another
+// connection within the window is denied too), else
 // notify.speaker_denied. The tray marks listen tones (Sound.Listen:
 // «Прослушать», a test alarm), sends the clipped duration and waits
 // exactly that (not the profile's 6 s); a denied tone plays through the
@@ -583,7 +584,8 @@ func TestCHK_TRAY_98_SpeakerDenied(t *testing.T) {
 	durs := &durRec{}
 	gs := &countSpeaker{dev: newDevice(port, durs)}
 	svc := &alertService{} // no alarm: listen mode
-	sess := speakerSession(t, speakerServer(t, svc, gs))
+	speakerServerDial := speakerServer(t, svc, gs)
+	sess := speakerSession(t, speakerServerDial)
 	sp := &trayipc.Speaker{C: sess}
 	var mu sync.Mutex
 	var logs []string
@@ -630,6 +632,18 @@ func TestCHK_TRAY_98_SpeakerDenied(t *testing.T) {
 	// the stop of its own tone is always allowed (no listen slot needed)
 	if err := sp.Stop(context.Background()); err != nil {
 		t.Fatalf("own stop denied: %v", err)
+	}
+	// the listen window is one for the whole service (svc@82303d22): a
+	// second connection (another tray / settings window) within the 10 s
+	// is denied too → through the speakers, its speaker stays available
+	sp2 := &trayipc.Speaker{C: speakerSession(t, speakerServerDial)}
+	r2 := &toneRec{}
+	s2 := &winSounder{alias: aliasTest, log: func(string) {}, tone: r2.outputs(), speaker: speakerOf(sp2)}
+	if err := s2.Play(short, nil); err != nil || strings.Join(r2.calls, ",") != "PlaySound:"+aliasTest || gs.count() != n || len(port.starts()) != 1 {
+		t.Fatalf("other connection: %v local %v device requests %d→%d starts %v", err, r2.calls, n, gs.count(), port.starts())
+	}
+	if st, _ := sp2.Cached(); !st.Available {
+		t.Fatalf("denied marked the other connection's speaker unavailable: %+v", st)
 	}
 
 	// 3: the service gets a warning alarm → alarm mode: the next tone

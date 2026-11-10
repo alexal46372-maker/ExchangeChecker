@@ -211,6 +211,14 @@ func TestCHK_TRAY_98_SpeakerClient(t *testing.T) {
 	if err := sp.Stop(context.Background()); err != nil {
 		t.Fatalf("own stop after denied: %v", err)
 	}
+	// the listen window is one for the whole service (svc@82303d22):
+	// another connection within the 10 s is denied too
+	if err := sp2.Tone(context.Background(), 700, 300); err == nil || err.Error() != model.MsgSpeakerDenied {
+		t.Fatalf("listen tone of another connection within 10 s: %v", err)
+	}
+	if st := sp2.Status(context.Background()); !st.Available {
+		t.Fatalf("denied must not mark the speaker unavailable (other connection): %+v", st)
+	}
 	h.mu.Lock()
 	h.snap.Alerts = []model.AlertEvent{{ProfileID: "a", Key: "k", To: model.LevelError}}
 	h.mu.Unlock()

@@ -219,8 +219,8 @@ type Sound struct {
 	// Listen (phase 14, CHK-IPC-20/CHK-TRAY-98): the service takes the
 	// speaker_tone of this sound in listen mode (no warning/error alarm
 	// of the service: «Прослушать», a test alarm) — it clips durMs to
-	// model.SpeakerListenMaxMs and allows one tone per 10 s per
-	// connection. The tray sends the clipped duration and waits exactly
+	// model.SpeakerListenMaxMs and allows one tone per 10 s for the
+	// whole service (one window per server, not per connection). The tray sends the clipped duration and waits exactly
 	// that; a refusal (notify.speaker_denied) plays through the speakers.
 	Listen bool
 }

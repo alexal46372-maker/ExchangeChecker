@@ -34,9 +34,11 @@ const (
 
 // transientSpeaker: refusals that depend on the moment (another
 // connection plays — notify.speaker_busy; the service allows a tone only
-// during its warning/error alarm or in listen mode, once per 10 s per
-// connection — notify.speaker_denied, CHK-IPC-20) — the tone goes through the speakers, but the
-// speaker is NOT marked unavailable, so the next tone asks again.
+// during its warning/error alarm or in listen mode, one window per 10 s
+// for the whole service, not per connection: a reconnect or another
+// client gets no new window — notify.speaker_denied, CHK-IPC-20) — the
+// tone goes through the speakers, but the speaker is NOT marked
+// unavailable, so the next tone asks again.
 func transientSpeaker(key string) bool {
 	return key == model.MsgSpeakerBusy || key == model.MsgSpeakerDenied
 }

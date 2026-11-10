@@ -637,6 +637,7 @@ func TestCHK_TRAY_98_SpeakerDenied(t *testing.T) {
 	// second connection (another tray / settings window) within the 10 s
 	// is denied too → through the speakers, its speaker stays available
 	sp2 := &trayipc.Speaker{C: speakerSession(t, speakerServerDial)}
+	n = gs.count() // the own stop above reached the device
 	r2 := &toneRec{}
 	s2 := &winSounder{alias: aliasTest, log: func(string) {}, tone: r2.outputs(), speaker: speakerOf(sp2)}
 	if err := s2.Play(short, nil); err != nil || strings.Join(r2.calls, ",") != "PlaySound:"+aliasTest || gs.count() != n || len(port.starts()) != 1 {

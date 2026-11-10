@@ -280,8 +280,9 @@ type Server struct {
 	Summary SummarySource
 	// Speaker (phase 14, CHK-IPC-20): speaker_tone / speaker_status and
 	// caps speaker / speaker_status; nil = not offered.
-	Speaker     Speaker
-	alarmTestAt time.Time // last accepted alarm_test (s.mu)
+	Speaker         Speaker
+	alarmTestAt     time.Time // last accepted alarm_test (s.mu)
+	speakerListenAt time.Time // last granted listen-mode speaker_tone (s.mu)
 
 	histN int // running history requests (s.mu)
 }
@@ -307,8 +308,6 @@ type conn struct {
 	// last check_now accepted from it (read loop only)
 	histN     int
 	lastCheck time.Time
-	// lastListen: last successful listen-mode speaker_tone (CHK-IPC-20).
-	lastListen time.Time
 	// clientCaps: client_hello capabilities (phase 11, CHK-IPC-11; read
 	// loop writes, broadcasts read: capMu)
 	capMu      sync.Mutex

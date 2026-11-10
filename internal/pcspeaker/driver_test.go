@@ -360,6 +360,30 @@ func TestCHK_SVC_12_OffWriteRetryUnloadsAndClearsGate(t *testing.T) {
 	}
 }
 
+func TestCHK_SVC_12_OffBothWritesFailKeepsOn(t *testing.T) {
+	p, k, _, _ := newReady(t)
+	hold := make(chan time.Time)
+	d := New(Options{Port: p, After: func(time.Duration) <-chan time.Time { return hold }})
+	if err := d.Tone("a", 440, 1000); err != nil {
+		t.Fatal(err)
+	}
+	// both off writes fail (reads still work); gate may stay set
+	k.dev.ioctlErr = errors.New("off write failed")
+	k.dev.failWrites = 2
+	if err := d.Stop("a"); err == nil {
+		t.Fatal("expected stop error when both off writes fail")
+	}
+	if !d.on {
+		t.Fatal("on must stay true when 0x61 was not cleared")
+	}
+	if d.owner != "a" {
+		t.Fatalf("owner must stay set, got %#v", d.owner)
+	}
+	if k.running || k.stops < 1 {
+		t.Fatalf("failed off must still unload: running=%v stops=%d", k.running, k.stops)
+	}
+}
+
 func TestCHK_SVC_12_StopRetriesIfStillRunning(t *testing.T) {
 	p, k, _, _ := newReady(t)
 	var logs []string

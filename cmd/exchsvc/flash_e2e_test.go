@@ -65,13 +65,18 @@ func newFlashRig(t *testing.T, poll time.Duration, delayFlash time.Duration) *fl
 	return r
 }
 
-func (r *flashRig) client() (chan model.IPCMessage, *ipc.Client) {
+func (r *flashRig) client(onPush ...func(model.IPCMessage)) (chan model.IPCMessage, *ipc.Client) {
 	rw, err := r.lis.Dial()
 	if err != nil {
 		r.t.Fatal(err)
 	}
 	ch := make(chan model.IPCMessage, 4096)
 	c := ipc.NewClient(rw, func(m model.IPCMessage) {
+		for _, fn := range onPush {
+			if fn != nil {
+				fn(m)
+			}
+		}
 		select {
 		case ch <- m:
 		default:
@@ -279,24 +284,21 @@ func TestCHK_MON_22_FlashMuteRace(t *testing.T) {
 	defer cancel()
 	r.ctx = ctx
 	atomic.StoreInt64(&r.lag, 600)
-	ch, c2 := r.client()
+	// last is recorded in c2's Push callback (the client's read loop).
+	// A get_status round trip on c2 returns only after that loop has
+	// already run Push for every preceding flash / flash_stop (FIFO),
+	// so last is current when Do returns. A trailing consumer of ch
+	// would race with the inspect (a78e4f8).
 	var mu sync.Mutex
 	last := ""
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case m := <-ch:
-				if m.Type == model.MsgFlash || m.Type == model.MsgFlashStop {
-					mu.Lock()
-					last = m.Type
-					mu.Unlock()
-				}
-			case <-done:
-				return
-			}
+	_, c2 := r.client(func(m model.IPCMessage) {
+		if m.Type == model.MsgFlash || m.Type == model.MsgFlashStop {
+			mu.Lock()
+			last = m.Type
+			mu.Unlock()
 		}
-	}()
+	})
+	done := make(chan struct{})
 	defer close(done)
 	if _, ok := nextPush(r.s.pushes, model.MsgFlash, 8*time.Second); !ok {
 		t.Fatal("no flash")

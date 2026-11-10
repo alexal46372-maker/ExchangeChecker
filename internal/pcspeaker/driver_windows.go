@@ -66,6 +66,17 @@ func (k *winKernel) Start() error {
 	return err
 }
 
+func (k *winKernel) Running() (bool, error) {
+	if k.svc == 0 {
+		return false, nil
+	}
+	state, _, err := winapi.QueryServiceStatus(k.svc)
+	if err != nil {
+		return false, err
+	}
+	return state == winapi.ServiceRunning, nil
+}
+
 func (k *winKernel) Stop() error {
 	if k.svc == 0 {
 		return nil

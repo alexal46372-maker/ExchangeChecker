@@ -205,7 +205,9 @@ func runService(ctx context.Context, ac appConfig) error {
 	// (STOP / SHUTDOWN / PRESHUTDOWN / PBT_APMSUSPEND).
 	port := ac.SpeakerPort
 	if port == nil {
-		port = pcspeaker.NewInpOut(pcspeaker.InpOutOptions{})
+		drv := pcspeaker.NewInpOut(pcspeaker.InpOutOptions{})
+		_ = drv.StopLeftover() // leftover from a previous crash, before any tone
+		port = drv
 	}
 	spk := pcspeaker.New(pcspeaker.Options{Port: port})
 	defer spk.Silence()

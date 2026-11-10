@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
@@ -71,6 +72,7 @@ type fakeKernel struct {
 	path                                        string
 	opens, starts, stops, closes, devices       int
 	dev                                         *fakeDev
+	running                                     bool
 }
 
 func (k *fakeKernel) Open(name string) (bool, error) {
@@ -89,9 +91,22 @@ func (k *fakeKernel) ImagePath() (string, error) {
 	}
 	return k.path, nil
 }
-func (k *fakeKernel) Start() error { k.starts++; return k.startErr }
-func (k *fakeKernel) Stop() error  { k.stops++; return k.stopErr }
-func (k *fakeKernel) Close()       { k.closes++ }
+func (k *fakeKernel) Start() error {
+	k.starts++
+	if k.startErr == nil {
+		k.running = true
+	}
+	return k.startErr
+}
+func (k *fakeKernel) Stop() error {
+	k.stops++
+	if k.stopErr == nil {
+		k.running = false
+	}
+	return k.stopErr
+}
+func (k *fakeKernel) Running() (bool, error) { return k.running, nil }
+func (k *fakeKernel) Close()                 { k.closes++ }
 func (k *fakeKernel) OpenDevice(name string) (DeviceHandle, error) {
 	k.devices++
 	if k.devErr != nil {
@@ -185,15 +200,17 @@ func TestCHK_SVC_12_ExpandImagePath(t *testing.T) {
 }
 
 func TestCHK_SVC_12_OfficialHashConstant(t *testing.T) {
-	if len(inpOutSHA256) != 64 || inpOutSHA256 != "f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b" {
-		t.Fatalf("placeholder hash %q", inpOutSHA256)
+	if config.InpOutSHA256 != "f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b" {
+		t.Fatalf("config.InpOutSHA256 %q", config.InpOutSHA256)
 	}
-	if inpOutServiceName != "ExchangeCheckerInpOut" || inpOutDeviceName != `\\.\inpoutx64` {
-		t.Fatalf("placeholders %q %q", inpOutServiceName, inpOutDeviceName)
+	if config.InpOutServiceName != "ExchangeCheckerInpOut" || config.InpOutDevicePath != `\\.\inpoutx64` {
+		t.Fatalf("config constants %q %q", config.InpOutServiceName, config.InpOutDevicePath)
+	}
+	p := NewInpOut(InpOutOptions{Supported: func() bool { return false }})
+	if p.o.ServiceName != config.InpOutServiceName || p.o.DeviceName != config.InpOutDevicePath || p.o.SHA256 != config.InpOutSHA256 {
+		t.Fatalf("NewInpOut defaults %q %q %q", p.o.ServiceName, p.o.DeviceName, p.o.SHA256)
 	}
 }
-
-// --- status / load policy ------------------------------------------------------------
 
 func TestCHK_SVC_12_UnsupportedOS(t *testing.T) {
 	p := NewInpOut(InpOutOptions{Supported: func() bool { return false }, Kernel: &fakeKernel{}})
@@ -241,7 +258,7 @@ func TestCHK_SVC_12_UnreadableSysIsBlocked(t *testing.T) {
 	k := &fakeKernel{path: `\??\C:\missing\inpoutx64.sys`}
 	p := NewInpOut(InpOutOptions{
 		Kernel:    k,
-		SHA256:    inpOutSHA256,
+		SHA256:    config.InpOutSHA256,
 		Supported: func() bool { return true },
 		Getenv:    func(string) string { return `C:\Windows` },
 	})
@@ -416,6 +433,26 @@ func TestCHK_SVC_12_SystemRootImagePath(t *testing.T) {
 	st := p.Status()
 	if !st.Available {
 		t.Fatalf("status %+v", st)
+	}
+}
+
+func TestCHK_SVC_12_StopLeftoverDoesNotStart(t *testing.T) {
+	k := &fakeKernel{running: true, missing: false}
+	p := NewInpOut(InpOutOptions{Kernel: k, Supported: func() bool { return true }})
+	if err := p.StopLeftover(); err != nil {
+		t.Fatal(err)
+	}
+	if k.starts != 0 || k.stops != 1 || k.running {
+		t.Fatalf("leftover: starts=%d stops=%d running=%v", k.starts, k.stops, k.running)
+	}
+	// missing service: no-op
+	k2 := &fakeKernel{missing: true, running: true}
+	p2 := NewInpOut(InpOutOptions{Kernel: k2, Supported: func() bool { return true }})
+	if err := p2.StopLeftover(); err != nil {
+		t.Fatal(err)
+	}
+	if k2.stops != 0 {
+		t.Fatalf("stopped a missing service: %d", k2.stops)
 	}
 }
 

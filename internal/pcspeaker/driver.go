@@ -9,40 +9,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexal46372-maker/ExchangeChecker/internal/config"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// TODO(setup-speaker): switch these package-private placeholders to
-// config.InpOutServiceName, config.InpOutDeviceName and config.InpOutSHA256
-// after merging feat/setup-speaker. Those constants are owned by EC Setup
-// in internal/config/install.go — do not add them to internal/config here.
+// Defaults for the InpOutx64 Port come from config.InpOutServiceName,
+// config.InpOutDevicePath and config.InpOutSHA256 (owned by EC Setup in
+// internal/config/install.go). Official signed inpoutx64.sys is version
+// "1.2 x64" (Highresolution Enterprises); the sha256 is of the Highrez
+// 1.5.0.1 distribution (see third_party/inpout and docs/PHASE14.md).
 const (
-	inpOutServiceName = "ExchangeCheckerInpOut"
-	// Device name: DRIVERNAMEx64 "inpoutx64" and CreateFile("\\\\.\\%s")
-	// in inpout32drv.cpp lines 27 and 173–181
-	// (https://github.com/ellysh/InpOut32/blob/master/InpOut32_dll/inpout32drv.cpp).
-	inpOutDeviceName = `\\.\inpoutx64`
-
-	// Official signed inpoutx64.sys (version "1.2 x64", publisher
-	// Highresolution Enterprises [www.highrez.co.uk]). Extracted as
-	// resource type BIN / name 104 from x64/inpoutx64.dll in the official
-	// Highrez InpOut32 1.5.0.1 binaries package:
-	//
-	//	https://www.highrez.co.uk/scripts/download.asp?package=InpOutBinaries
-	//	→ https://dvps.highrez.co.uk/downloads/InpOut32/InpOutBinaries_1501.zip
-	//
-	// SHA-256 lowercase hex of that embedded inpoutx64.sys (Authenticode
-	// directory present). The same digest is LOLDrivers sample 3; HVCI on
-	// Windows 10+ blocks it, which does not apply to the Win7 target:
-	//	https://www.loldrivers.io/drivers/91ff1575-9ff2-46fd-8bfe-0bb3e3457b7f/
-	inpOutSHA256 = "f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b"
-
 	inpOutDriverVersion = "1.2 x64"
 
 	idleStopDelay = 2 * time.Second
 )
 
-// InpOutOptions configures the InpOutx64 Port (CHK-SVC-12). Zero = production.
 type InpOutOptions struct {
 	ServiceName string
 	DeviceName  string
@@ -67,6 +48,8 @@ type Kernel interface {
 	ImagePath() (string, error)
 	Start() error
 	Stop() error
+	// Running is true when the opened service is SERVICE_RUNNING.
+	Running() (bool, error)
 	Close()
 	OpenDevice(name string) (DeviceHandle, error)
 }
@@ -92,13 +75,13 @@ type InpOut struct {
 // NewInpOut returns the production (or test-injected) InpOutx64 Port.
 func NewInpOut(o InpOutOptions) *InpOut {
 	if o.ServiceName == "" {
-		o.ServiceName = inpOutServiceName
+		o.ServiceName = config.InpOutServiceName
 	}
 	if o.DeviceName == "" {
-		o.DeviceName = inpOutDeviceName
+		o.DeviceName = config.InpOutDevicePath
 	}
 	if o.SHA256 == "" {
-		o.SHA256 = inpOutSHA256
+		o.SHA256 = config.InpOutSHA256
 	}
 	if o.ReadFile == nil {
 		o.ReadFile = os.ReadFile
@@ -300,6 +283,39 @@ func (p *InpOut) Unload() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.unloadLocked()
+}
+
+// StopLeftover stops a leftover running kernel driver at Exchange Checker
+// service start. It does not start the driver or open the device, and it
+// does not fail the service if the driver is absent or already stopped.
+func (p *InpOut) StopLeftover() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.loaded {
+		p.unloadLocked()
+		return nil
+	}
+	if p.o.Supported != nil && !p.o.Supported() {
+		return nil
+	}
+	if p.o.Kernel == nil {
+		return nil
+	}
+	missing, err := p.o.Kernel.Open(p.o.ServiceName)
+	if err != nil {
+		p.o.Kernel.Close()
+		return err
+	}
+	if missing {
+		p.o.Kernel.Close()
+		return nil
+	}
+	defer p.o.Kernel.Close()
+	run, err := p.o.Kernel.Running()
+	if err != nil || !run {
+		return err
+	}
+	return p.o.Kernel.Stop()
 }
 
 func (p *InpOut) unloadLocked() {

@@ -26,6 +26,27 @@ type ServiceInfo struct {
 	Running       bool
 }
 
+// DriverSpec is the SCM registration of the InpOutx64 kernel driver
+// (phase 14, CHK-SETUP-20): always SERVICE_KERNEL_DRIVER +
+// SERVICE_DEMAND_START + SERVICE_ERROR_NORMAL; the installer never starts it
+// (EC Service starts it on demand).
+type DriverSpec struct {
+	Name, DisplayName string
+	// ImagePath is the NT path \??\<install folder>\driver\inpoutx64.sys
+	// (unquoted: a driver ImagePath is not a command line).
+	ImagePath string
+	SDDL      string
+}
+
+// DriverInfo is the current registration of the driver service.
+type DriverInfo struct {
+	Exists       bool
+	ImagePath    string
+	KernelDriver bool // SERVICE_KERNEL_DRIVER
+	DemandStart  bool // SERVICE_DEMAND_START
+	Running      bool // loaded (RUNNING / START_PENDING / STOP_PENDING)
+}
+
 // Installed describes an existing installation (Uninstall key).
 type Installed struct {
 	Present bool
@@ -101,6 +122,17 @@ type System interface {
 	// LongPath expands 8.3 components (identity on non-Windows / fakes).
 	LongPath(p string) string
 	DeleteService(name string) error
+
+	// InpOutx64 kernel driver service (phase 14, CHK-SETUP-20). Separate
+	// from the Win32 service calls so the plan and the fakes never mix the
+	// two services up. Stop / delete: a missing or stopped service is success.
+	QueryDriverService(name string) (DriverInfo, error)
+	CreateDriverService(s DriverSpec) error
+	// UpdateDriverService re-applies type / start / ImagePath / DACL to an
+	// existing service (idempotent upgrade).
+	UpdateDriverService(s DriverSpec) error
+	StopDriverService(name string) error
+	DeleteDriverService(name string) error
 
 	// registry (HKLM, 64-bit view)
 	SetEventSource(msgFile string) error

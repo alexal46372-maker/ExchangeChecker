@@ -63,3 +63,9 @@ func (stubSystem) DeleteUserKey() error                        { return ErrNotWi
 func (stubSystem) MigrateInstallDir(string, string) ([]string, error) { return nil, ErrNotWindows }
 func (stubSystem) RemoveLegacyInstallDir(string) error                { return ErrNotWindows }
 func (stubSystem) DeleteLegacyShortcuts() error                       { return ErrNotWindows }
+
+func (stubSystem) QueryDriverService(string) (DriverInfo, error) { return DriverInfo{}, ErrNotWindows }
+func (stubSystem) CreateDriverService(DriverSpec) error          { return ErrNotWindows }
+func (stubSystem) UpdateDriverService(DriverSpec) error          { return ErrNotWindows }
+func (stubSystem) StopDriverService(string) error                { return ErrNotWindows }
+func (stubSystem) DeleteDriverService(string) error              { return ErrNotWindows }

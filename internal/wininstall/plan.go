@@ -261,6 +261,18 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		}
 		log.Printf("file %s (%d bytes)", p, len(c.Files[n]))
 	}
+	// 4b. InpOutx64 kernel driver (phase 14, CHK-SETUP-20): never fatal;
+	// a completed step joins the journal so a later failure rolls the
+	// driver service and file back too.
+	drvRes, drvOK := installDriver(sys, dir, c.Files[DriverPayloadName], log, warn)
+	if drvOK {
+		undo = append(undo, drvRes.undo...)
+		total += drvRes.size
+		needReboot = needReboot || drvRes.reboot
+	}
+	if failAtHook("AfterInpOutDriver") {
+		return failRollback(errors.New("setup test fail at AfterInpOutDriver"))
+	}
 	svcExe := joinDir(dir, config.ServiceExeName)
 	// 5. service — journal previous ImagePath / description for upgrade rollback (§7.4)
 	spec := ServiceSpec{
@@ -457,7 +469,10 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	}
 	// Drop *.bak on upgrade: here the V2 service either started successfully
 	// or was not running before (nothing to wait for).
-	if !fresh {
+	if drvOK && drvRes.bak != "" {
+		bakPaths = append(bakPaths, drvRes.bak)
+	}
+	if len(bakPaths) > 0 {
 		for _, p := range bakPaths {
 			if err := sys.RemoveBackup(p); err != nil {
 				warn("remove backup %s: %v", p, err)
@@ -572,6 +587,9 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 			dir = ""
 		}
 	}
+	// phase 14: driver service, driver\inpoutx64.sys and driver\ (before
+	// the install folder itself; the service also without a known folder)
+	res.Reboot = uninstallDriver(sys, dir, log, step) || res.Reboot
 	if dir != "" {
 		for _, n := range []string{config.ServiceExeName, config.TrayExeName} {
 			reboot, err := sys.RemoveFile(joinDir(dir, n))

@@ -224,14 +224,25 @@ func TestCHK_TRAY_102_PNG256(t *testing.T) {
 			t.Errorf("%s: 48 must be its own BMP image", name)
 		}
 	}
-	a := metalPixels(ArrowRed, 24, true)
-	a[0] ^= 0xFFFFFFFF
-	if b := metalPixels(ArrowRed, 24, true); b[0] == a[0] || !equalPx(b, TrayIconPixels(IconProblem, 24)) == equalPx(b, b) && false {
-		t.Error("cache must hand out copies")
+	// the cache hands out copies: changing a returned buffer leaves the
+	// cached image (and later callers) intact
+	g24 := geomFor(24) // uncached reference, independent of the cache
+	want := g24.render(&metalStyle{arrow: lin(ArrowGrey), deep: lin(arrowShade[ArrowGrey][0]),
+		glow: lin(arrowShade[ArrowGrey][1]), problem: true})
+	a := metalPixels(ArrowGrey, 24, true)
+	if !equalPx(a, want) {
+		t.Fatal("metalPixels(grey, problem) is not the rendered problem icon")
 	}
+	for i := range a {
+		a[i] ^= 0xFFFFFFFF
+	}
+	if b := metalPixels(ArrowGrey, 24, true); !equalPx(b, want) || !equalPx(TrayIconPixels(IconProblem, 24), want) {
+		t.Error("cache must hand out copies: a mutated result changed the cache")
+	}
+	// the render itself (uncached) gives the app icon
 	g := geomFor(48)
 	st := metalStyle{arrow: lin(ArrowGreen), deep: lin(arrowShade[ArrowGreen][0]), glow: lin(arrowShade[ArrowGreen][1])}
-	if !equalPx(g.render(&st), g.render(&st)) || !equalPx(g.render(&st), AppIconPixels(ArrowGreen, 48)) {
-		t.Error("render not deterministic / not the app icon")
+	if !equalPx(g.render(&st), AppIconPixels(ArrowGreen, 48)) {
+		t.Error("render is not the app icon")
 	}
 }

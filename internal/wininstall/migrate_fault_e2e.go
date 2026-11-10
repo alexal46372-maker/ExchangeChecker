@@ -19,6 +19,11 @@ func migrateTestFailAfter() int {
 }
 
 // setupTestFailStartService is set by EC_SETUP_FAIL_AT=StartService (e2efault).
-func setupTestFailStartService() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("EC_SETUP_FAIL_AT")), "StartService")
+func setupTestFailStartService() bool { return setupTestFailAt("StartService") }
+
+// setupTestFailAt reports EC_SETUP_FAIL_AT=<step> (e2efault): StartService,
+// InpOutDriver (the driver step fails → WARNING, CHK-SETUP-20),
+// AfterInpOutDriver (fatal error right after the driver step → rollback).
+func setupTestFailAt(step string) bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("EC_SETUP_FAIL_AT")), step)
 }

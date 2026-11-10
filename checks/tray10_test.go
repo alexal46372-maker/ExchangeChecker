@@ -211,6 +211,12 @@ var winAPIMinVersion = map[string]float64{
 	"CreateActCtxW": 5.1, "ActivateActCtx": 5.1, "DeactivateActCtx": 5.1, "ReleaseActCtx": 5.1,
 	// phase 11: the generated icons on the database cards (CHK-TRAY-49)
 	"DrawIconEx": 5.0,
+	// phase 14 (CHK-SETUP-19): wintrust — Authenticode check of the
+	// InpOutx64 driver in checks/setup19_windows_test.go (test only; the
+	// driver service itself uses the SCM exports of phase 7b above:
+	// CreateServiceW, ChangeServiceConfigW, ControlService, DeleteService,
+	// QueryServiceConfigW, SetServiceObjectSecurity)
+	"WinVerifyTrust": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

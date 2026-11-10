@@ -21,6 +21,9 @@
 # in $RUNNER_TEMP and are not uploaded (CHK-CI-01). CHK-DELIV-01 (7e) — both jobs: payload
 # gzip'ed by tools/mkzip (stdlib), version from tag vX.Y.Z (else 0.0.0-ci.N), delivery zip
 # built twice and checked in the job (one entry, deterministic); never uploaded.
+# CHK-SETUP-19/20 (phase 14) — InpOutx64 driver: hash + Authenticode (pure Go, both jobs; WinVerifyTrust
+# in the windows go test), CHK_SETUP_19_Built in the release step, real SCM kernel-driver service
+# (never started) and the e2efault driver E2E (EC_SETUP_FAIL_AT=InpOutDriver|AfterInpOutDriver).
 # windows job: setup dependency graph
 # (no os/exec, SQL driver, x/sys); gated E2E CHK-SVC-01 / CHK-SETUP-12 after go test.
 name: ci
@@ -178,7 +181,7 @@ jobs:
           go env CGO_ENABLED GOFLAGS
           (cd "$out" && sha256sum *.exe) ; (cd "$pay" && sha256sum *.gz) ; sha256sum "$RUNNER_TEMP/zip1/$Z"
           EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" EC_BUILD_ZIP="$RUNNER_TEMP/zip1/$Z" EC_BUILD_ZIP2="$RUNNER_TEMP/zip2/$Z" \
-            go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built|CHK_DELIV_01_Zip' -count=1 -v
+            go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built|CHK_DELIV_01_Zip|CHK_SETUP_19_Built' -count=1 -v
           go run ./tools/mkres
           go run ./tools/mkres -check
 
@@ -213,8 +216,8 @@ jobs:
           # test-only fault build (hangs in START_PENDING); never released
           GOOS=windows GOARCH=amd64 go build -tags e2efault -trimpath -o "$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe" ./cmd/exchsvc
           export EC_SVC_FAULT_EXE="$RUNNER_TEMP/e2e-fault/ExchangeCheckerSvc.exe"
-          go test ./internal/wininstall -run 'TestCHK_SETUP_03_RealSCM|TestCHK_SETUP_04_EventSourceWindows|TestCHK_SETUP_05_ACLWindows|TestCHK_SETUP_13_FirewallRoundTrip' -count=1 -v
-          go test ./checks -run 'TestCHK_SETUP_12_E2E|TestCHK_SETUP_17_MigrateE2E' -count=1 -timeout 25m -v
+          go test ./internal/wininstall -run 'TestCHK_SETUP_03_RealSCM|TestCHK_SETUP_04_EventSourceWindows|TestCHK_SETUP_05_ACLWindows|TestCHK_SETUP_13_FirewallRoundTrip|TestCHK_SETUP_20_RealSCMDriver' -count=1 -v
+          go test ./checks -run 'TestCHK_SETUP_12_E2E|TestCHK_SETUP_17_MigrateE2E|TestCHK_SETUP_20_DriverE2E' -count=1 -timeout 25m -v
 
   linux:
     name: linux / go1.20.14 vet + pure-Go tests + SQL Server integration
@@ -302,6 +305,6 @@ jobs:
           go env CGO_ENABLED GOFLAGS
           (cd "$out" && sha256sum *.exe) ; (cd "$pay" && sha256sum *.gz) ; sha256sum "$RUNNER_TEMP/zip1/$Z"
           EC_BUILD_DIR="$out" EC_BUILD_VERSION="$V" EC_BUILD_ZIP="$RUNNER_TEMP/zip1/$Z" EC_BUILD_ZIP2="$RUNNER_TEMP/zip2/$Z" \
-            go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built|CHK_DELIV_01_Zip' -count=1 -v
+            go test ./checks -run 'CHK_RES_01_Built|CHK_VER_01_Built|CHK_DELIV_01_Zip|CHK_SETUP_19_Built' -count=1 -v
           go run ./tools/mkres
           go run ./tools/mkres -check

@@ -22,6 +22,10 @@ const (
 	// / ENUMERATE_DEPENDENTS / INTERROGATE / READ_CONTROL (the tray's G7
 	// check needs SERVICE_QUERY_STATUS); start/stop only SY and BA.
 	ServiceSDDL = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)(A;;CCLCSWLORC;;;AU)"
+	// DriverSDDL: the InpOutx64 driver service (phase 14, CHK-SETUP-20) —
+	// only SYSTEM (EC Service) and Administrators may start / stop / change
+	// it; Interactive and Service users may only query it.
+	DriverSDDL = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
 )
 
 // Registry locations (64-bit view).
@@ -42,6 +46,8 @@ var (
 	StartTimeout       = 60 * time.Second
 	ForceStopTimeout   = 15 * time.Second
 	StopTimeout        = 90 * time.Second
+	// DriverStopTimeout: unloading the InpOutx64 driver (phase 14).
+	DriverStopTimeout = 30 * time.Second
 )
 
 // SetupMutexName keeps one setup / uninstaller per machine.

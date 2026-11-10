@@ -41,6 +41,7 @@ type recordingSystem struct {
 	LegacyShortcut bool   // pre-phase-13 ExchangeChecker.lnk still present
 	Firewall       string // service exe of the SQL Browser firewall rule ("" = none)
 	FwProfiles     int32  // active firewall profiles (FirewallCurrentProfiles)
+	Driver         fakeDriver // InpOutx64 driver service (phase 14)
 }
 
 func newFake() *recordingSystem {
@@ -582,5 +583,71 @@ func (f *recordingSystem) DeleteLegacyShortcuts() error {
 		return err
 	}
 	f.LegacyShortcut = false
+	return nil
+}
+
+// --- phase 14: InpOutx64 driver service (CHK-SETUP-20) ---
+
+// fakeDriver is the driver service state of the fake (separate from
+// Service so the plan can never confuse the two).
+type fakeDriver struct {
+	DriverInfo
+	DisplayName, SDDL string
+}
+
+func (f *recordingSystem) QueryDriverService(name string) (DriverInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("QueryDriverService|%s", name); err != nil {
+		return DriverInfo{}, err
+	}
+	return f.Driver.DriverInfo, nil
+}
+
+func (f *recordingSystem) CreateDriverService(s DriverSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("CreateDriverService|%s|%s", s.Name, s.ImagePath); err != nil {
+		return err
+	}
+	if f.Driver.Exists {
+		return fmt.Errorf("CreateDriverService: exists")
+	}
+	f.Driver = fakeDriver{DriverInfo: DriverInfo{Exists: true, ImagePath: s.ImagePath, KernelDriver: true, DemandStart: true},
+		DisplayName: s.DisplayName, SDDL: s.SDDL}
+	return nil
+}
+
+func (f *recordingSystem) UpdateDriverService(s DriverSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("UpdateDriverService|%s|%s", s.Name, s.ImagePath); err != nil {
+		return err
+	}
+	if !f.Driver.Exists {
+		return fmt.Errorf("UpdateDriverService: missing")
+	}
+	f.Driver.ImagePath, f.Driver.KernelDriver, f.Driver.DemandStart = s.ImagePath, true, true
+	f.Driver.DisplayName, f.Driver.SDDL = s.DisplayName, s.SDDL
+	return nil
+}
+
+func (f *recordingSystem) StopDriverService(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("StopDriverService|%s", name); err != nil {
+		return err
+	}
+	f.Driver.Running = false
+	return nil
+}
+
+func (f *recordingSystem) DeleteDriverService(name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("DeleteDriverService|%s", name); err != nil {
+		return err
+	}
+	f.Driver = fakeDriver{}
 	return nil
 }

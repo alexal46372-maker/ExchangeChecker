@@ -908,6 +908,13 @@ Wizard Win32 (страницы):
 
 198. **Mute до восстановления в UI (фаза 12, `CHK-TRAY-59`):** в меню базы (левый клик по значку): «Приглушить до восстановления» / «Mute until recovered» и «Снять» / «Unmute» → IPC `mute_until_recovered` / `unmute_profile` (capability `mute_profile`, как `ack_alert`). Индикатор `muted` в строке меню, в «Состояние» и на карточке. Без capability пункты скрыты. RU+EN. Скриншоты ui-screens. Tests: `TestCHK_TRAY_59_*`.
 
+### Фаза 14 — установщик: драйвер InpOutx64 для «Тона» через PC speaker (ветка `feat/setup-speaker`; EC Setup)
+
+Решение Алекса 10.11.2026; подробности — `docs/PHASE14.md`, исключение — POLICY.md §8.
+
+- `third_party/inpout/`: оригинальный подписанный `inpoutx64.sys` (highrez, `InpOutInterfaceDriver_1501.zip`), MIT, README; общие константы в `internal/config/install.go` (`InpOutServiceName`, `InpOutDevicePath`, `InpOutRelPath`, `InpOutSHA256`) — их же использует EC Service (`feat/svc-speaker`). `CHK-SETUP-19`.
+- Установщик: шаг 4b — файл в `<папка>\driver\`, служба `KERNEL_DRIVER` / `DEMAND_START`, не запускается; сбой — WARNING; undo; апгрейд идемпотентен; удаление — stop/delete/файл/папка. `CHK-SETUP-20`.
+
 ### Ещё желательно (не блокер каркаса)
 
 - Доступ к одной тестовой MSSQL для калибровки Discovery.

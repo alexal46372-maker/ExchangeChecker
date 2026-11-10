@@ -16,9 +16,11 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/monitor"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/notify"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/pcspeaker"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/sqlcheck"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/version"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/winsvc"
 )
 
 // LogFile is the service log (rotated) under the config directory.
@@ -71,7 +73,10 @@ type appConfig struct {
 	Protector config.Protector
 	// TelegramBaseURL overrides the Bot API base URL (tests: httptest).
 	TelegramBaseURL string
-	EmailSendHook   func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
+	// SpeakerPort is the PC-speaker I/O backend (tests). nil = production
+	// InpOutx64 Port (CHK-SVC-12).
+	SpeakerPort   pcspeaker.Port
+	EmailSendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -194,6 +199,20 @@ func runService(ctx context.Context, ac appConfig) error {
 	defer email.Close()
 	telegram := notify.NewTelegram(notify.TelegramOptions{Store: store, BaseURL: ac.TelegramBaseURL, Log: log, Now: ac.Now})
 	defer telegram.Close()
+	// Phase 14 (CHK-SVC-12): production Port is InpOutx64 (hash + SCM
+	// start only for the tone; Silence unloads the driver). Tests may
+	// inject SpeakerPort. Silence on ctx cancel and on the SCM hook
+	// (STOP / SHUTDOWN / PRESHUTDOWN / PBT_APMSUSPEND).
+	port := ac.SpeakerPort
+	if port == nil {
+		drv := pcspeaker.NewInpOut(pcspeaker.InpOutOptions{})
+		_ = drv.StopLeftover() // leftover from a previous crash, before any tone
+		port = drv
+	}
+	spk := pcspeaker.New(pcspeaker.Options{Port: port})
+	defer spk.Silence()
+	winsvc.SetOnSilence(spk.Silence)
+	defer winsvc.SetOnSilence(nil)
 	go func() { defer close(vdone); viber.Run(vctx) }()
 	defer func() { vcancel(); <-vdone }()
 
@@ -268,6 +287,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	srv.Viber = viber
 	srv.Email = email
 	srv.Telegram = telegram
+	srv.Speaker = spk
 	srv.AlarmTest = alarmTester{viber: viber} // alarm_test (CHK-IPC-11)
 	if autostart != nil {
 		// get_status.trayAutostartError + capability tray_autostart_status

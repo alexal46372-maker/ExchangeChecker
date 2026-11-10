@@ -7,3 +7,6 @@ func migrateTestFailAfter() int { return 0 }
 
 // setupTestFailStartService is always false outside e2efault builds.
 func setupTestFailStartService() bool { return false }
+
+// setupTestFailAt is always false outside e2efault builds.
+func setupTestFailAt(string) bool { return false }

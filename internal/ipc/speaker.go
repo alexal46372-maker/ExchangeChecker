@@ -2,42 +2,48 @@ package ipc
 
 import (
 	"errors"
+
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// SpeakerPort is the PC speaker of the service (phase 14). MERGE NOTE:
-// the minimal server side of feat/tray-speaker so the tray can be tested
-// against a real Server with a fake port; EC Service feat/svc-speaker
-// owns the real one and its version wins on merge.
-type SpeakerPort interface {
-	// Tone starts freqHz for durMs; durMs 0 stops the current tone.
-	Tone(freqHz, durMs int) error
-	// Status is the current state of the speaker.
+// Speaker runs speaker_tone / speaker_status (phase 14, CHK-IPC-20).
+// Any connected client, like ack_alert. The owner of a tone is the
+// connection that started it.
+type Speaker interface {
+	Tone(owner any, freqHz, durMs int) error
 	Status() model.SpeakerStatus
+	Release(owner any)
+	Silence()
 }
 
-// speaker serves speaker_tone / speaker_status (any client, like
-// ack_alert).
-func (s *Server) speaker(req model.IPCRequest) model.IPCMessage {
-	if req.Cmd == model.CmdSpeakerStatus {
+func speakerCommand(cmd string) bool {
+	return cmd == model.CmdSpeakerTone || cmd == model.CmdSpeakerStatus
+}
+
+// startSpeaker handles speaker_tone / speaker_status synchronously
+// (they do not block). false: the client is too slow.
+func (s *Server) startSpeaker(c *conn, req model.IPCRequest) bool {
+	switch req.Cmd {
+	case model.CmdSpeakerStatus:
 		st := s.Speaker.Status()
-		return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.CmdSpeakerStatus, Speaker: &st}
-	}
-	dur := 0
-	if req.DurMs != nil {
-		dur = *req.DurMs
-	}
-	if req.DurMs == nil || dur < 0 || dur > model.MaxBeepDurMs ||
-		(dur > 0 && (req.FreqHz < model.MinBeepFreqHz || req.FreqHz > model.MaxBeepFreqHz)) {
-		return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
-			Message: "ipc: speaker_tone needs freqHz and durMs", Args: []string{"durMs", model.ValRequired}}, "")
-	}
-	if err := s.Speaker.Tone(req.FreqHz, dur); err != nil {
-		var ie *model.IPCError
-		if !errors.As(err, &ie) {
-			err = &model.IPCError{Code: model.ErrCodeInternal, Message: "ipc: speaker_tone: " + err.Error()}
+		return c.send(model.IPCMessage{ID: req.ID, Type: model.MsgSpeakerStatus, Speaker: &st})
+	case model.CmdSpeakerTone:
+		// nil durMs is invalid (omitted); 0 stops. Pointer so "durMs":0
+		// survives omitempty (same shape as the tray client).
+		if req.DurMs == nil || *req.DurMs < 0 {
+			return c.send(errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgSpeakerInvalid,
+				Message: "ipc: speaker_tone durMs must be >= 0", Args: []string{"durMs", model.ValRange}}, ""))
 		}
-		return errorReply(req.ID, err, "")
+		dur := *req.DurMs
+		err := s.Speaker.Tone(c, req.FreqHz, dur)
+		if err != nil {
+			return c.send(errorReply(req.ID, err, ""))
+		}
+		res := model.ResultAccepted
+		if dur == 0 {
+			res = model.ResultToneStopped
+		}
+		return c.send(model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: res})
 	}
-	return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultSpeakerTone}
+	return c.send(errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand))
 }

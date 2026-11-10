@@ -39,3 +39,24 @@ func DeliveryZipName(ver string) string {
 func DeliveryInstallerName(ver string) string {
 	return "Exchange Checker " + ver + ".exe"
 }
+
+// InpOutx64 kernel driver (phase 14, decision of 10.11.2026: the built-in
+// «Тон» signal through the PC speaker on Win7 x64). Owner of these names:
+// EC Service (feat/svc-speaker opens InpOutDevicePath and starts the
+// service on demand); the installer copies the file and registers the
+// service (CHK-SETUP-19/20). The file is third_party/inpout/inpoutx64.sys,
+// unmodified, from the official highrez distribution (README there).
+const (
+	// InpOutServiceName is the SERVICE_KERNEL_DRIVER / SERVICE_DEMAND_START
+	// service of the driver.
+	InpOutServiceName = "ExchangeCheckerInpOut"
+	// InpOutDevicePath is the Win32 name of the driver device
+	// (\DosDevices\inpoutx64 in hwinterfacedrv.c of the distribution).
+	InpOutDevicePath = `\\.\inpoutx64`
+	// InpOutRelPath is the driver file relative to the install folder
+	// (ImagePath = <install folder>\driver\inpoutx64.sys).
+	InpOutRelPath = `driver\inpoutx64.sys`
+	// InpOutSHA256 is the sha256 (lower-case hex) of inpoutx64.sys; the
+	// service checks the file against it before loading the driver.
+	InpOutSHA256 = "f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b"
+)

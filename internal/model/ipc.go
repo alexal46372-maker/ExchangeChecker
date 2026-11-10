@@ -127,6 +127,9 @@ const (
 	// limit (IPCCommandInterval); test_profile cannot be merged into an
 	// earlier call, so it is refused instead of coalesced.
 	ErrCodeRateLimited = "rate_limited"
+	// ErrCodeUnavailable: the feature is not usable on this machine
+	// (phase 14, CHK-IPC-20: speaker not installed / unsupported).
+	ErrCodeUnavailable = "unavailable"
 )
 
 // IPCError is an error with a protocol error code and a localizable
@@ -386,6 +389,8 @@ type IPCMessage struct {
 	EmailTest *EmailTestResult `json:"emailTest,omitempty"`
 	// TelegramTest: telegram_test_result (phase 13, CHK-IPC-17).
 	TelegramTest *TelegramTestResult `json:"telegramTest,omitempty"`
+	// Speaker: speaker_status (phase 14, CHK-IPC-20).
+	Speaker *SpeakerStatus `json:"speaker,omitempty"`
 	// Enabled: set_enabled reply / profile_enabled push (CHK-IPC-18).
 	Enabled *bool `json:"enabled,omitempty"`
 	// PointKey / EventID / Level: flash and flash_stop pushes (phase 13,
@@ -451,8 +456,4 @@ type IPCMessage struct {
 	SQLGrantScript *SQLGrantScript     `json:"sqlGrantScript,omitempty"`
 	AutoPick       *SQLAutoPick        `json:"autoPick,omitempty"`
 	ErrorInfo      *SQLErrorInfo       `json:"errorInfo,omitempty"`
-	// Phase 14 (feat/tray-speaker, client side of EC Service
-	// feat/svc-speaker; MERGE: take the service's definition): the
-	// speaker_status reply.
-	Speaker *SpeakerStatus `json:"speaker,omitempty"`
 }

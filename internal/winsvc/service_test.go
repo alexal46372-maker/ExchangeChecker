@@ -59,7 +59,7 @@ func TestCHK_MON_07_LifecycleStop(t *testing.T) {
 			}
 			time.Sleep(time.Millisecond)
 		}
-		if st := c.state(); st.ControlsAccepted != AcceptStop|AcceptShutdown || st.ServiceType != ServiceWin32OwnProcess {
+		if st := c.state(); st.ControlsAccepted != AcceptRunning || st.ServiceType != ServiceWin32OwnProcess {
 			t.Errorf("running status %+v", st)
 		}
 		if res := c.control(ControlInterrogate); res != 0 {
@@ -300,5 +300,54 @@ func TestCHK_MON_14_StopCheckpointCap(t *testing.T) {
 	}
 	if s := h.next(t); s.CurrentState != StateStopped {
 		t.Errorf("final %+v", s)
+	}
+}
+
+// TestCHK_SVC_11_SilenceOnControl — STOP / SHUTDOWN / PRESHUTDOWN and
+// POWEREVENT+PBT_APMSUSPEND invoke OnSilence; other power events and
+// INTERROGATE do not; POWEREVENT does not stop the service.
+func TestCHK_SVC_11_SilenceOnControl(t *testing.T) {
+	var n int
+	r := &recorder{}
+	c := newController(r.set)
+	c.onSilence = func() { n++ }
+	done := make(chan error, 1)
+	go func() { done <- c.serve(func(ctx context.Context) error { <-ctx.Done(); return nil }) }()
+	// wait until RUNNING
+	for i := 0; i < 50 && c.state().CurrentState != StateRunning; i++ {
+		// no sleep: the first report is START_PENDING then RUNNING
+		if c.state().CurrentState == StateStartPending || c.state().CurrentState == StateStopped {
+			continue
+		}
+	}
+	// poll state without sleep — serve reports RUNNING before waiting on fn
+	deadline := time.After(2 * time.Second)
+	for c.state().CurrentState != StateRunning {
+		select {
+		case <-deadline:
+			t.Fatal("not running")
+		default:
+		}
+	}
+	if c.controlEx(ControlPowerEvent, 0x00000007) != 0 || n != 0 { // PBT_APMRESUMESUSPEND
+		t.Fatalf("resume silenced or failed: n=%d", n)
+	}
+	if c.state().CurrentState != StateRunning {
+		t.Fatal("power event stopped the service")
+	}
+	if c.controlEx(ControlPowerEvent, PBTAPMSuspend) != 0 || n != 1 {
+		t.Fatalf("suspend n=%d", n)
+	}
+	if c.state().CurrentState != StateRunning {
+		t.Fatal("suspend stopped the service")
+	}
+	if c.control(ControlInterrogate) != 0 || n != 1 {
+		t.Fatalf("interrogate n=%d", n)
+	}
+	if c.control(ControlPreshutdown) != 0 || n != 2 {
+		t.Fatalf("preshutdown n=%d state=%d", n, c.state().CurrentState)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

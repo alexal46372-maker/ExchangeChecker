@@ -278,10 +278,9 @@ type Server struct {
 	// Summary (phase 11, CHK-SVC-07): summary and capability summary;
 	// nil = not offered.
 	Summary SummarySource
-	// Speaker (phase 14, feat/tray-speaker; MERGE: EC Service
-	// feat/svc-speaker owns this): speaker_tone / speaker_status and the
-	// capabilities speaker, speaker_status; nil = not offered.
-	Speaker     SpeakerPort
+	// Speaker (phase 14, CHK-IPC-20): speaker_tone / speaker_status and
+	// caps speaker / speaker_status; nil = not offered.
+	Speaker     Speaker
 	alarmTestAt time.Time // last accepted alarm_test (s.mu)
 
 	histN int // running history requests (s.mu)
@@ -421,6 +420,9 @@ func (s *Server) Capabilities() []string {
 	if _, ok := s.H.(ProfileEnabler); ok {
 		caps = append(caps, model.CapProfileEnabled) // phase 13 (CHK-IPC-18)
 	}
+	if s.Speaker != nil {
+		caps = append(caps, model.CapSpeaker, model.CapSpeakerStatus) // phase 14 (CHK-IPC-20)
+	}
 	if disc {
 		caps = append(caps, model.CapDiscover, model.CapDiscoverByValue, model.CapNodePoints, model.CapCheckMapping)
 	}
@@ -478,9 +480,6 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(EventAcker); ok {
 		caps = append(caps, model.CapAckEvent) // phase 11 (CHK-MON-18)
-	}
-	if s.Speaker != nil {
-		caps = append(caps, model.CapSpeaker, model.CapSpeakerStatus) // phase 14 (MERGE: feat/svc-speaker)
 	}
 	return caps
 }
@@ -690,6 +689,9 @@ func (s *Server) drop(c *conn) {
 	s.mu.Lock()
 	delete(s.conns, c)
 	s.mu.Unlock()
+	if s.Speaker != nil {
+		s.Speaker.Release(c)
+	}
 	if c.release != nil {
 		c.relOnce.Do(c.release)
 	}
@@ -864,6 +866,12 @@ func (s *Server) readLoop(c *conn) {
 			continue
 		case s.Telegram != nil && telegramCommand(req.Cmd):
 			if !s.startTelegram(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
+		case s.Speaker != nil && speakerCommand(req.Cmd):
+			if !s.startSpeaker(c, req) {
 				s.Log.Printf("ipc: client too slow, disconnected")
 				return
 			}
@@ -1479,10 +1487,6 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 				return errorReply(req.ID, err, "")
 			}
 			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultUnmuted}
-		}
-	case model.CmdSpeakerTone, model.CmdSpeakerStatus: // phase 14 (MERGE: feat/svc-speaker)
-		if s.Speaker != nil {
-			return s.speaker(req)
 		}
 	}
 	return errorReply(req.ID, errors.New("unknown command: "+req.Cmd), model.ErrCodeUnknownCommand)

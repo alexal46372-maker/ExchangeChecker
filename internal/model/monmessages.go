@@ -243,6 +243,11 @@ var monitorMessages = map[string]string{ // key -> text (RU)
 	MsgHistoryBusy:             "История уже запрашивается, повторите позже.",
 	MsgHistoryFailed:           "Не удалось прочитать историю.",
 	ValConflict:                "Поле «{0}»: нельзя одновременно задать пароль и удалить его.",
+	MsgSpeakerNotInstalled:     "Системный динамик недоступен: драйвер не установлен.",
+	MsgSpeakerBusy:             "Динамик занят другим подключением.",
+	MsgSpeakerNotOwner:         "Остановить тон может только подключение, которое его включило.",
+	MsgSpeakerInvalid:          "Неверная частота или длительность тона системного динамика.",
+	MsgSpeakerFailed:           "Не удалось обратиться к системному динамику.",
 }
 
 // MonitorMessage returns the (Russian) text of a monitor.* key, or ""
@@ -267,5 +272,5 @@ func MonitorMessageKeys() []string {
 		MsgHistoryRangeTooLong, MsgHistoryBadCursor, MsgHistoryBadFilter, MsgHistoryBusy, MsgHistoryFailed,
 		MsgImportFormat, MsgImportMode, MsgImportDuplicateID, MsgImportNoConfig, MsgImportTrayTooLarge, MsgImportRollbackFailed,
 		MsgViberNoToken, MsgViberNoRecipients, MsgViberAuthFailed, MsgViberReceiverInvalid, MsgViberRateLimited,
-		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailRecipientNotFound, MsgMonitorUnknownEvent, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramTLS, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited}
+		MsgViberNetwork, MsgViberTLS, MsgViberFailed, MsgViberInvalid, MsgViberNotChecked, MsgViberErrorUnknown, MsgAlarmTestLevel, MsgViberCanceled, MsgViberTimeout, MsgMonitorStalled, MsgTestStepsServerMismatch, MsgEmailNoPassword, MsgEmailNoRecipients, MsgEmailRecipientNotFound, MsgMonitorUnknownEvent, MsgTelegramNoToken, MsgTelegramNoChat, MsgTelegramAuthFailed, MsgTelegramChatInvalid, MsgTelegramRateLimited, MsgTelegramNetwork, MsgTelegramTLS, MsgTelegramFailed, MsgTelegramTimeout, MsgTelegramCanceled, MsgTelegramInvalid, MsgEmailNoHost, MsgEmailNoFrom, MsgEmailAuthFailed, MsgEmailInvalidAddr, MsgEmailNetwork, MsgEmailTLS, MsgEmailFailed, MsgEmailCanceled, MsgEmailTimeout, MsgEmailInvalid, MsgEmailRateLimited, MsgSpeakerNotInstalled, MsgSpeakerBusy, MsgSpeakerNotOwner, MsgSpeakerInvalid, MsgSpeakerFailed}
 }

@@ -11,6 +11,26 @@ import (
 // the service control manager (console / test start).
 var ErrNotService = errors.New("winsvc: not started by the service control manager")
 
+var (
+	silenceMu sync.Mutex
+	onSilence func()
+)
+
+// SetOnSilence registers a hook invoked from the control handler on
+// STOP, SHUTDOWN, PRESHUTDOWN and POWEREVENT+PBT_APMSUSPEND (PC speaker
+// silence, CHK-SVC-11). The hook must be short and must not block.
+func SetOnSilence(fn func()) {
+	silenceMu.Lock()
+	onSilence = fn
+	silenceMu.Unlock()
+}
+
+func currentOnSilence() func() {
+	silenceMu.Lock()
+	defer silenceMu.Unlock()
+	return onSilence
+}
+
 // SCM constants (winsvc.h).
 const (
 	ServiceWin32OwnProcess = 0x00000010
@@ -20,12 +40,19 @@ const (
 	StateStopPending  = 3
 	StateRunning      = 4
 
-	AcceptStop     = 0x00000001
-	AcceptShutdown = 0x00000004
+	AcceptStop        = 0x00000001
+	AcceptShutdown    = 0x00000004
+	AcceptPowerEvent  = 0x00000040 // SERVICE_ACCEPT_POWEREVENT
+	AcceptPreshutdown = 0x00000100 // SERVICE_ACCEPT_PRESHUTDOWN
+	AcceptRunning     = AcceptStop | AcceptShutdown | AcceptPreshutdown | AcceptPowerEvent
 
 	ControlStop        = 0x00000001
 	ControlInterrogate = 0x00000004
 	ControlShutdown    = 0x00000005
+	ControlPowerEvent  = 0x0000000D // SERVICE_CONTROL_POWEREVENT
+	ControlPreshutdown = 0x0000000F // SERVICE_CONTROL_PRESHUTDOWN
+	// PBTAPMSuspend is PBT_APMSUSPEND (winuser.h).
+	PBTAPMSuspend = 0x00000004
 
 	errorCallNotImplemented   = 120
 	errorServiceSpecificError = 1066
@@ -69,8 +96,9 @@ type controller struct {
 	stopAt  time.Time
 	// now / ticks: clock and progress ticker (tests inject both; nil =
 	// time.Now / a time.Ticker with period every).
-	now   func() time.Time
-	ticks <-chan time.Time
+	now       func() time.Time
+	ticks     <-chan time.Time
+	onSilence func() // STOP/SHUTDOWN/PRESHUTDOWN/PBT_APMSUSPEND (CHK-SVC-11)
 }
 
 func newController(set func(Status) error) *controller {
@@ -98,11 +126,23 @@ func (c *controller) reportLocked(state, accepts, waitHint uint32) {
 
 // control handles one SCM control code and returns the handler result
 // (NO_ERROR or ERROR_CALL_NOT_IMPLEMENTED).
-func (c *controller) control(code uint32) uint32 {
+func (c *controller) control(code uint32) uint32 { return c.controlEx(code, 0) }
+
+// controlEx handles one SCM control with its eventType (POWEREVENT).
+func (c *controller) controlEx(code, eventType uint32) uint32 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if ShouldSilence(code, eventType) {
+		fn := c.onSilence
+		if fn == nil {
+			fn = currentOnSilence()
+		}
+		if fn != nil {
+			fn()
+		}
+	}
 	switch code {
-	case ControlStop, ControlShutdown:
+	case ControlStop, ControlShutdown, ControlPreshutdown:
 		if c.st.CurrentState == StateRunning || c.st.CurrentState == StateStartPending {
 			c.stopAt = c.now()
 			c.reportLocked(StateStopPending, 0, StopWaitHint)
@@ -111,6 +151,8 @@ func (c *controller) control(code uint32) uint32 {
 			c.cancel()
 		}
 		return 0
+	case ControlPowerEvent:
+		return 0
 	case ControlInterrogate:
 		if c.set != nil {
 			_ = c.set(c.st)
@@ -118,6 +160,17 @@ func (c *controller) control(code uint32) uint32 {
 		return 0
 	}
 	return errorCallNotImplemented
+}
+
+// ShouldSilence: STOP / SHUTDOWN / PRESHUTDOWN, or POWEREVENT + PBT_APMSUSPEND.
+func ShouldSilence(code, eventType uint32) bool {
+	switch code {
+	case ControlStop, ControlShutdown, ControlPreshutdown:
+		return true
+	case ControlPowerEvent:
+		return eventType == PBTAPMSuspend
+	}
+	return false
 }
 
 // serve runs fn with the service lifecycle: START_PENDING -> RUNNING ->
@@ -138,7 +191,7 @@ func (c *controller) serve(fn func(ctx context.Context) error) error {
 		}()
 		errc <- fn(ctx)
 	}()
-	c.report(StateRunning, AcceptStop|AcceptShutdown, 0)
+	c.report(StateRunning, AcceptRunning, 0)
 	ticks := c.ticks
 	if ticks == nil {
 		tick := time.NewTicker(c.every)

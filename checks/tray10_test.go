@@ -97,7 +97,8 @@ var winAPIMinVersion = map[string]float64{
 	// kernel32
 	"ConnectNamedPipe": 5.0, "CreateEventW": 5.0, "CreateMutexW": 5.0, "CreateNamedPipeW": 5.0,
 	"DisconnectNamedPipe": 5.0, "GetModuleHandleW": 5.0, "GetNamedPipeServerProcessId": 6.0,
-	"GetOverlappedResult": 5.0, "GetSystemDirectoryW": 5.0, "GetUserDefaultUILanguage": 5.0,
+	"GetOverlappedResult": 5.0, "GetSystemDirectoryW": 5.0, "DeviceIoControl": 5.0, // InpOutx64 port IOCTL (CHK-SVC-12, Windows 2000+)
+	"GetUserDefaultUILanguage": 5.0,
 	"LocalFree": 5.0, "MoveFileExW": 5.0, "ResetEvent": 5.0, "SetEvent": 5.0,
 	"WaitForMultipleObjects": 5.0, "WaitNamedPipeW": 5.0,
 	"MultiByteToWideChar": 5.0, // internal/sqlcheck: SSRP ANSI names (CP_ACP), phase 9
@@ -211,6 +212,12 @@ var winAPIMinVersion = map[string]float64{
 	"CreateActCtxW": 5.1, "ActivateActCtx": 5.1, "DeactivateActCtx": 5.1, "ReleaseActCtx": 5.1,
 	// phase 11: the generated icons on the database cards (CHK-TRAY-49)
 	"DrawIconEx": 5.0,
+	// phase 14 (CHK-SETUP-19): wintrust — Authenticode check of the
+	// InpOutx64 driver in checks/setup19_windows_test.go (test only; the
+	// driver service itself uses the SCM exports of phase 7b above:
+	// CreateServiceW, ChangeServiceConfigW, ControlService, DeleteService,
+	// QueryServiceConfigW, SetServiceObjectSecurity)
+	"WinVerifyTrust": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {

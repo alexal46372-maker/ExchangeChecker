@@ -27,6 +27,7 @@ var (
 // Service type / start / error / access / config levels (winsvc.h).
 const (
 	ServiceWin32OwnProcess = 0x00000010
+	ServiceKernelDriver    = 0x00000001 // phase 14: InpOutx64 (CHK-SETUP-20)
 	ServiceAutoStart       = 0x00000002
 	ServiceDemandStart     = 0x00000003
 	ServiceErrorNormal     = 0x00000001

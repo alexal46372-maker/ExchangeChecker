@@ -145,3 +145,27 @@ echo %ERRORLEVEL%
 5. Event Log: «Просмотр событий» → «Приложение» → «Фильтр текущего журнала» → источник `ExchangeChecker` → «Сохранить отфильтрованные события как…» (`.evtx`).
 6. Снимки экрана окна с ошибкой и, при проблемах с треем, меню трея.
 7. **Не присылайте** `secrets.dpapi` и пароли; `profiles.json` можно (паролей в нём нет).
+
+## 13. Системный динамик (InpOutx64, фаза 14, CHK-SVC-12)
+
+Целевая машина — Windows 7 SP1 / Server 2008 R2 **64-бит**. На Windows 10 и 11 с включённым HVCI официальный `inpoutx64.sys` входит в blocklist уязвимых драйверов Microsoft (тот же файл есть на [LOLDrivers](https://www.loldrivers.io/drivers/91ff1575-9ff2-46fd-8bfe-0bb3e3457b7f/), sample 3, SHA-256 `f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b`). На Windows 7 HVCI нет; риск принят Алексом 10.11.2026.
+
+Автотест, который реально открывает драйвер, **не входит в обычный CI**. Его запускают только на машине, где служба драйвера уже установлена:
+
+```
+go test -tags inpout_e2e -count=1 ./internal/pcspeaker -run TestCHK_SVC_12_RealInpOut
+```
+
+Если драйвер не загружается, тест должен завершиться ошибкой (не Skip). Ниже — ручные шаги той же проверки.
+
+1. После установки Exchange Checker откройте `services.msc`. Должна быть служба **`ExchangeCheckerInpOut`**: тип «Драйвер ядра» (`SERVICE_KERNEL_DRIVER`), запуск «Вручную» (`DEMAND_START`), состояние **«Остановлена»** (инсталлятор службу не запускает).
+2. В свойствах службы посмотрите «Путь к исполняемому файлу» (ImagePath). Посчитайте SHA-256 этого файла (в PowerShell: `Get-FileHash -Algorithm SHA256 <путь>`). Должно получиться ровно `f8965fdce668692c3785afa3559159f9a18287bc0d53abb21902895a8ecf221b` (официальный подписанный `inpoutx64.sys` из InpOut32 1.5.0.1 Highrez: https://www.highrez.co.uk/Downloads/InpOut32/default.htm , пакет `InpOutBinaries`).
+3. Запустите службу `ExchangeChecker` (не InpOut). Подключите трей (или IPC-клиент) и отправьте `{cmd:"speaker_status"}`. Ожидается `available=true`, `driverVersion="1.2 x64"`. Пока тон не звучит, `ExchangeCheckerInpOut` по-прежнему **остановлена**.
+4. Отправьте `{cmd:"speaker_tone", freqHz:440, durMs:500}`. Должен прозвучать тон 440 Гц через системную пищалку. Пока тон идёт, служба `ExchangeCheckerInpOut` — «Работает».
+5. После окончания тона подождите около **2 секунд**. `ExchangeCheckerInpOut` должна снова стать «Остановлена».
+6. Включите длинный тон (например 10 с) и сразу остановите службу `ExchangeChecker` (или выключите / усыпите компьютер). Тон должен оборваться сразу; `ExchangeCheckerInpOut` не остаётся запущенной.
+7. Если подменить файл драйвера другим (другой SHA-256) и перезапустить службу Exchange Checker: `{cmd:"speaker_status"}` возвращает `available=false`, `reason="blocked"`; тон не включается; `ExchangeCheckerInpOut` **не запускается**.
+8. Если службу `ExchangeCheckerInpOut` удалить: `reason="not_installed"`, старт тона — ошибка «Системный динамик недоступен: драйвер не установлен.» Тон тогда должен прозвучать через колонки (запасной путь трея, CHK-TRAY-97).
+9. На не-amd64 или не-Windows (этого шага на Win7 x64 нет): `reason="unsupported_os"`.
+
+Запишите для каждого шага «ОК» или что пошло не так. **Не присылайте** сам файл `.sys` в отчёте — достаточно хеша и снимка свойств службы.

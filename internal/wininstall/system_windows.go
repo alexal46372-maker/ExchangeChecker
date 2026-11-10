@@ -1056,3 +1056,86 @@ func (winSystem) StopTray(installDir string) (warns []string, err error) {
 	}
 	return warns, first
 }
+
+// --- InpOutx64 kernel driver service (phase 14, CHK-SETUP-20) ---
+
+func (winSystem) QueryDriverService(name string) (DriverInfo, error) {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		return DriverInfo{}, err
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, name, winapi.ServiceQueryStatus|winapi.ServiceQueryConfig)
+	if err != nil {
+		if isErrno(err, winapi.ErrServiceDoesNotExist) || isErrno(err, winapi.ErrServiceMarkedForDelete) {
+			return DriverInfo{}, nil
+		}
+		return DriverInfo{}, err
+	}
+	defer svc.Close()
+	cfg, err := winapi.QueryServiceConfig(svc)
+	if err != nil {
+		return DriverInfo{}, err
+	}
+	state, _, err := winapi.QueryServiceStatus(svc)
+	if err != nil {
+		return DriverInfo{}, err
+	}
+	return DriverInfo{
+		Exists:       true,
+		ImagePath:    cfg.BinaryPath,
+		KernelDriver: cfg.ServiceType == winapi.ServiceKernelDriver,
+		DemandStart:  cfg.StartType == winapi.ServiceDemandStart,
+		Running:      state != winapi.ServiceStopped,
+	}, nil
+}
+
+func (winSystem) CreateDriverService(spec DriverSpec) error {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect | winapi.SCManagerCreateService)
+	if err != nil {
+		return err
+	}
+	defer scm.Close()
+	svc, err := winapi.CreateService(scm, spec.Name, spec.DisplayName, winapi.ServiceAccessForSetup,
+		winapi.ServiceKernelDriver, winapi.ServiceDemandStart, winapi.ServiceErrorNormal, spec.ImagePath)
+	if err != nil {
+		if isErrno(err, winapi.ErrServiceMarkedForDelete) || isErrno(err, winapi.ErrServiceExists) {
+			return fmt.Errorf("%w (%v)", errServiceBusyClear, err)
+		}
+		return err
+	}
+	defer svc.Close()
+	if spec.SDDL != "" {
+		return winapi.SetServiceDACL(svc, spec.SDDL)
+	}
+	return nil
+}
+
+func (winSystem) UpdateDriverService(spec DriverSpec) error {
+	scm, err := winapi.OpenSCManager(winapi.SCManagerConnect)
+	if err != nil {
+		return err
+	}
+	defer scm.Close()
+	svc, err := winapi.OpenService(scm, spec.Name, winapi.ServiceAccessForSetup)
+	if err != nil {
+		return err
+	}
+	defer svc.Close()
+	if err := winapi.ChangeServiceConfig(svc, winapi.ServiceKernelDriver, winapi.ServiceDemandStart,
+		winapi.ServiceErrorNormal, spec.ImagePath, spec.DisplayName); err != nil {
+		return err
+	}
+	if spec.SDDL != "" {
+		return winapi.SetServiceDACL(svc, spec.SDDL)
+	}
+	return nil
+}
+
+// StopDriverService: ControlService(STOP) and wait for STOPPED; a missing
+// or not running service is success (ERROR_SERVICE_NOT_ACTIVE ignored).
+func (s winSystem) StopDriverService(name string) error {
+	return s.StopService(name, DriverStopTimeout)
+}
+
+func (s winSystem) DeleteDriverService(name string) error { return s.DeleteService(name) }

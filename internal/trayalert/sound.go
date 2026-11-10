@@ -207,6 +207,17 @@ func SineWAV(freqHz, durMs, volumePct int) []byte {
 type Sound struct {
 	Profile SoundProfile
 	Volume  int
+	// ToneOn (phase 14, CHK-TRAY-99): «Тон» sounds — profile volume > 0
+	// and master volume > 0, without rounding their product (1 % × 50 %
+	// sounds although Volume rounds down to 0). Set by SoundFor; a Sound
+	// built by hand sounds when Volume > 0 (see ToneLevel).
+	ToneOn bool
+}
+
+// SoundFor is the Sound of a profile at the master volume: Volume =
+// EffectiveVolume (files, unchanged), ToneOn = profile > 0 and master > 0.
+func SoundFor(p SoundProfile, master int) Sound {
+	return Sound{Profile: p, Volume: EffectiveVolume(p.Volume, master), ToneOn: p.Volume > 0 && master > 0}
 }
 
 // Sounder plays one sound once and returns when it ended or stop was

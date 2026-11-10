@@ -107,7 +107,7 @@ func (w *winSounder) Play(s trayalert.Sound, stop <-chan struct{}) error {
 		}
 		w.fallback(p.File, err)
 	}
-	return w.playTone(p.FreqHz, p.DurMs, s.Volume, stop)
+	return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), stop)
 }
 
 func (w *winSounder) fallback(file string, err error) {
@@ -167,8 +167,9 @@ func (o toneOutputs) withDefaults() toneOutputs {
 	return o
 }
 
-// playTone (phase 14, CHK-TRAY-98/99): volume 0 % = silence, nothing is
-// called (no IPC either); otherwise full level (trayalert.ToneLevel):
+// playTone (phase 14, CHK-TRAY-98/99): level = trayalert.ToneLevel of
+// the Sound (0 = profile or master volume 0 %: silence, nothing is called,
+// no IPC either; else 100, full level):
 // first the PC speaker of the service (capabilities speaker +
 // speaker_status, status.available) with speaker_tone {freqHz, durMs} and
 // speaker_tone {durMs:0} at once on stop; not available / refused → one
@@ -178,7 +179,7 @@ func (o toneOutputs) withDefaults() toneOutputs {
 // (CHK-TRAY-97). Each fallback is logged once.
 func (w *winSounder) playTone(freq, dur, vol int, stop <-chan struct{}) error {
 	d := time.Duration(dur) * time.Millisecond
-	if trayalert.ToneLevel(vol) == 0 {
+	if vol <= 0 {
 		waitOrStop(d, stop)
 		return nil
 	}
@@ -190,7 +191,7 @@ func (w *winSounder) playTone(freq, dur, vol int, stop <-chan struct{}) error {
 		w.speakerFallback(reason)
 	}
 	o := w.tone.withDefaults()
-	if err := o.playWAV(w.alias, trayalert.SineWAV(freq, dur, trayalert.ToneLevel(vol))); err != nil {
+	if err := o.playWAV(w.alias, trayalert.SineWAV(freq, dur, vol)); err != nil {
 		w.fallback("PlaySound", err)
 		if err := o.beep(uint32(freq), uint32(dur)); err != nil {
 			w.fallback("Beep", err)
@@ -382,7 +383,7 @@ func (a *App) alertSound(v trayalert.View) trayalert.Sound {
 		a.soundPrefs.Master = m
 	}
 	pr := a.soundPrefs.For(v.Level)
-	return trayalert.Sound{Profile: pr, Volume: trayalert.EffectiveVolume(pr.Volume, a.soundPrefs.Master)}
+	return trayalert.SoundFor(pr, a.soundPrefs.Master)
 }
 
 // applySound restarts the alarm sound with the current settings.
@@ -402,7 +403,7 @@ func (a *App) testSound(p trayalert.SoundProfile, master int) {
 	a.tester.Set(false, trayalert.Sound{})
 	a.previewing = true
 	a.applySound() // pause the alarm
-	a.tester.Set(true, trayalert.Sound{Profile: p, Volume: trayalert.EffectiveVolume(p.Volume, master)})
+	a.tester.Set(true, trayalert.SoundFor(p, master))
 }
 
 // endPreview resumes the alarm after «Прослушать».

@@ -50,12 +50,25 @@ func TestCHK_TRAY_99_SpeakerLine(t *testing.T) {
 	if n := i18n.T(i18n.KeySoundToneVolume); n != "громкость не регулируется" {
 		t.Errorf("volume note %q", n)
 	}
-	// volume: profile × master = 0 % → silent; anything above → full
+	// volume (CHK-TRAY-99, Кончита 10.11.2026): silent only when the
+	// profile or the master volume is exactly 0 %; the product is not
+	// rounded (1 % × 50 % sounds at full level); files keep the rounded
+	// effective volume
 	for _, c := range []struct{ prof, master, want int }{
-		{0, 100, 0}, {80, 0, 0}, {0, 0, 0}, {1, 100, 100}, {50, 50, 100}, {100, 100, 100},
+		{0, 100, 0}, {80, 0, 0}, {0, 0, 0}, {1, 50, 100}, {1, 1, 100}, {1, 100, 100}, {50, 50, 100}, {100, 100, 100},
 	} {
-		if got := trayalert.ToneLevel(trayalert.EffectiveVolume(c.prof, c.master)); got != c.want {
+		snd := trayalert.SoundFor(trayalert.SoundProfile{Kind: trayalert.SoundBeep, Volume: c.prof}, c.master)
+		if got := trayalert.ToneLevel(snd); got != c.want {
 			t.Errorf("%d×%d: level %d, want %d", c.prof, c.master, got, c.want)
 		}
+		if snd.Volume != trayalert.EffectiveVolume(c.prof, c.master) {
+			t.Errorf("%d×%d: file volume %d changed", c.prof, c.master, snd.Volume)
+		}
+	}
+	if v := trayalert.SoundFor(trayalert.SoundProfile{Volume: 1}, 50).Volume; v != 0 {
+		t.Errorf("file volume of 1 %% × 50 %% = %d, want the rounded 0 as before", v)
+	}
+	if trayalert.ToneLevel(trayalert.Sound{Volume: 0}) != 0 || trayalert.ToneLevel(trayalert.Sound{Volume: 30}) != 100 {
+		t.Error("a hand-built Sound: Volume decides")
 	}
 }

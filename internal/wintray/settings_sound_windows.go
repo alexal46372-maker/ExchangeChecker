@@ -348,7 +348,7 @@ func (w *settingsWindow) previewSound(p trayalert.SoundProfile, c profileCtl) {
 		done()
 	}
 	w.sndPreview.Set(false, trayalert.Sound{})
-	w.sndPreview.Set(true, trayalert.Sound{Profile: p, Volume: trayalert.EffectiveVolume(p.Volume, w.sndMaster)})
+	w.sndPreview.Set(true, trayalert.SoundFor(p, w.sndMaster))
 }
 
 func (w *settingsWindow) stopSoundPreview() {

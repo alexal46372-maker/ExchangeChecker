@@ -3,6 +3,7 @@
 package wintray
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -195,7 +196,8 @@ func waitCond(t *testing.T, what string, cond func() bool) {
 // available / refused (notify.speaker_failed) / busy (another
 // connection owns the speaker) / no capability / no connection → the old
 // chain PlaySound → Beep → MessageBeep with ONE journal line per reason
-// in Russian (no spam); volume 0 % = no IPC at all.
+// in Russian (no spam); profile 0 % or master 0 % = no IPC at all, 1 % ×
+// 50 % sounds at full level (speaker and fallback).
 func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	tone := trayalert.Sound{Profile: trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 880, DurMs: 30}, Volume: 50}
 	port := &ioPort{st: model.SpeakerStatus{Available: true, DriverVersion: "1.5.0.1"}}
@@ -271,11 +273,25 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	if err := newS(r0).Play(mute, nil); err != nil || len(port.starts()) != 3 || port.asked() != asked || len(r0.calls) != 0 {
 		t.Fatalf("volume 0: %v %v asked %d→%d %v", err, port.starts(), asked, port.asked(), r0.calls)
 	}
-	// any volume above 0 → the speaker (no volume there)
-	low := tone
-	low.Volume = 1
-	if err := newS(&toneRec{}).Play(low, nil); err != nil || len(port.starts()) != 4 {
-		t.Fatalf("volume 1: %v", port.starts())
+	// profile 0 % × master 100 % and profile 80 % × master 0 % → silent,
+	// no IPC (trayalert.SoundFor, as the App builds the alarm / preview)
+	for _, v := range [][2]int{{0, 100}, {80, 0}} {
+		p := tone.Profile
+		p.Volume = v[0]
+		rz := &toneRec{}
+		if err := newS(rz).Play(trayalert.SoundFor(p, v[1]), nil); err != nil || len(port.starts()) != 3 || port.asked() != asked || len(rz.calls) != 0 {
+			t.Fatalf("%d%% × %d%%: %v %v asked %d→%d %v", v[0], v[1], err, port.starts(), asked, port.asked(), rz.calls)
+		}
+	}
+	// 1 % × 50 % (product rounds down to 0) → sounds on the speaker
+	p1 := tone.Profile
+	p1.Volume = 1
+	low := trayalert.SoundFor(p1, 50)
+	if low.Volume != 0 {
+		t.Fatalf("effective volume %d", low.Volume)
+	}
+	if err := newS(&toneRec{}).Play(low, nil); err != nil || len(port.starts()) != 4 || port.starts()[3] != pcspeaker.Divisor(880) {
+		t.Fatalf("1%% × 50%%: %v", port.starts())
 	}
 
 	// 4: speaker_status not available (not_installed) → the old chain,
@@ -300,6 +316,19 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	}
 	if len(spk) != 1 || !strings.Contains(spk[0], "(драйвер не установлен)") || !strings.Contains(spk[0], "через колонки") {
 		t.Fatalf("one journal line for the speaker: %q", logged())
+	}
+	// 1 % × 50 % through the fallback: the full-level sine, not silence
+	rl := &toneRec{}
+	if err := newS(rl).Play(low, nil); err != nil || strings.Join(rl.calls, ",") != "PlaySound:"+aliasAlarm || !bytes.Equal(rl.wav, trayalert.SineWAV(880, 30, 100)) {
+		t.Fatalf("1%% × 50%% fallback: %v %v", err, rl.calls)
+	}
+	// 0 % × 100 % with the speaker unavailable: silent, no output at all
+	p0 := tone.Profile
+	p0.Volume = 0
+	rz := &toneRec{}
+	asked = port.asked()
+	if err := newS(rz).Play(trayalert.SoundFor(p0, 100), nil); err != nil || len(rz.calls) != 0 || port.asked() != asked {
+		t.Fatalf("0%% fallback: %v %v", err, rz.calls)
 	}
 
 	// 5: available, but the port fails → notify.speaker_failed: fallback,
@@ -382,8 +411,8 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 // device: the alarm loop (player: repeat, gap) sounds on the speaker;
 // «Подтвердить» (app.ackAlerts, the button handler) turns it off at once
 // (speaker_tone {durMs:0}); «Прослушать» goes to the speaker and
-// «Остановить» turns it off the same way; «Прослушать» at volume 0 sends
-// nothing.
+// «Остановить» turns it off the same way; «Прослушать» at 1 % × master
+// 50 % sounds on the speaker, at profile 0 % or master 0 % sends nothing.
 func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -441,12 +470,20 @@ func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 	if at := port.offs()[1]; at.Sub(stopped) > time.Second {
 		t.Errorf("preview stop after %v", at.Sub(stopped))
 	}
-	// «Прослушать» at volume 0 → no speaker request at all
-	asked := port.asked()
-	app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 2222, DurMs: 100, Volume: 0}, 100)
-	pumpUntil(t, "silent preview ended", func() bool { return !app.Previewing() })
-	if len(port.starts()) != 2 || port.asked() != asked || len(r.calls) != 0 {
-		t.Errorf("volume 0 preview: %v asked %d→%d %v", port.starts(), asked, port.asked(), r.calls)
+	// «Прослушать» 1 % × master 50 % → the speaker, full level
+	app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 3333, DurMs: 60, Volume: 1}, 50)
+	pumpUntil(t, "1% × 50% preview on the speaker", func() bool {
+		st := port.starts()
+		return len(st) == 3 && st[2] == pcspeaker.Divisor(3333) && !app.Previewing()
+	})
+	// «Прослушать» at profile 0 % or master 0 % → no speaker request at all
+	for _, v := range [][2]int{{0, 100}, {70, 0}} {
+		asked := port.asked()
+		app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 2222, DurMs: 100, Volume: v[0]}, v[1])
+		pumpUntil(t, "silent preview ended", func() bool { return !app.Previewing() })
+		if len(port.starts()) != 3 || port.asked() != asked || len(r.calls) != 0 {
+			t.Errorf("%d%% × %d%% preview: %v asked %d→%d %v", v[0], v[1], port.starts(), asked, port.asked(), r.calls)
+		}
 	}
 	lmu.Lock()
 	defer lmu.Unlock()

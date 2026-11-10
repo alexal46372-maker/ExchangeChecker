@@ -33,6 +33,7 @@ func TestCHK_TRAY_99_SpeakerLine(t *testing.T) {
 		{model.SpeakerStatus{Reason: model.MsgSpeakerNotOwner}, "Системный динамик: недоступен (тон включило другое подключение) — тон звучит через колонки"},
 		{model.SpeakerStatus{Reason: model.MsgSpeakerInvalid}, "Системный динамик: недоступен (неверная частота или длительность тона) — тон звучит через колонки"},
 		{model.SpeakerStatus{Reason: model.MsgSpeakerFailed}, "Системный динамик: недоступен (ошибка обращения к динамику) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: trayipc.SpeakerDenied}, "Системный динамик: недоступен (служба отклонила запрос тона) — тон звучит через колонки"},
 		{model.SpeakerStatus{Reason: model.MsgMonitorInternal}, "Системный динамик: недоступен (" + model.MonitorMessage(model.MsgMonitorInternal) + ") — тон звучит через колонки"},
 	} {
 		if got := SpeakerLine(c.st); got != c.want {

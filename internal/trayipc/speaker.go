@@ -32,6 +32,20 @@ const (
 	SpeakerTimeout   = "speaker.timeout"    // no reply in time
 )
 
+// SpeakerDenied is the error key of a speaker_tone the service refuses
+// (only during an active service alarm or for a preview, rate limited).
+// MERGE NOTE: EC Service adds model.MsgSpeakerDenied with this value;
+// switch to it after merging feat/svc-speaker.
+const SpeakerDenied = "notify.speaker_denied"
+
+// transientSpeaker: refusals that depend on the moment (another
+// connection plays; the service allows tones only during its alarm or a
+// preview, rate limited) — the tone goes through the speakers, but the
+// speaker is NOT marked unavailable, so the next tone asks again.
+func transientSpeaker(key string) bool {
+	return key == model.MsgSpeakerBusy || key == SpeakerDenied
+}
+
 // DefaultSpeakerTTL: how long a speaker_status reply is trusted.
 const DefaultSpeakerTTL = 30 * time.Second
 
@@ -152,7 +166,7 @@ func (sp *Speaker) Invalidate() {
 }
 
 // Tone sends speaker_tone {freqHz, durMs} (durMs 0 = stop). A failure
-// (except notify.speaker_busy: another connection plays now) marks the
+// (except notify.speaker_busy / notify.speaker_denied: transient) marks the
 // speaker not available with the error until the cache expires or the
 // connection changes, so the next tones go straight to the fallback.
 func (sp *Speaker) Tone(ctx context.Context, freqHz, durMs int) error {
@@ -169,7 +183,7 @@ func (sp *Speaker) Tone(ctx context.Context, freqHz, durMs int) error {
 	}
 	if err != nil {
 		err = errors.New(reasonOf(err))
-		if durMs > 0 && err.Error() != model.MsgSpeakerBusy {
+		if durMs > 0 && !transientSpeaker(err.Error()) {
 			sp.store(model.SpeakerStatus{Reason: err.Error()}, sp.C.Status())
 		}
 	}

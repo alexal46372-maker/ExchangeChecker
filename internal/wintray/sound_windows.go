@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -77,6 +78,10 @@ type winSounder struct {
 	// speaker: the PC speaker of the service (phase 14, CHK-TRAY-98),
 	// tried first for «Тон»; nil = only the toneOutputs.
 	speaker speakerOut
+	// viaSpeaker: the last tone of this sounder went to the PC speaker
+	// (false after a fallback); the App keeps «Прослушать» off the speaker
+	// while the alarm sounds there (review of PR #23).
+	viaSpeaker atomic.Bool
 
 	mu     sync.Mutex
 	failed map[string]bool // files already logged as failing
@@ -107,7 +112,7 @@ func (w *winSounder) Play(s trayalert.Sound, stop <-chan struct{}) error {
 		}
 		w.fallback(p.File, err)
 	}
-	return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), stop)
+	return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), !s.NoSpeaker, stop)
 }
 
 func (w *winSounder) fallback(file string, err error) {
@@ -177,17 +182,18 @@ func (o toneOutputs) withDefaults() toneOutputs {
 // PlaySound(SND_MEMORY); refused (no audio device) → kernel32 Beep;
 // Beep failed too → MessageBeep(MB_ICONHAND), the system critical sound
 // (CHK-TRAY-97). Each fallback is logged once.
-func (w *winSounder) playTone(freq, dur, vol int, stop <-chan struct{}) error {
+func (w *winSounder) playTone(freq, dur, vol int, useSpeaker bool, stop <-chan struct{}) error {
 	d := time.Duration(dur) * time.Millisecond
 	if vol <= 0 {
 		waitOrStop(d, stop)
 		return nil
 	}
-	if w.speaker != nil {
+	if w.speaker != nil && useSpeaker { // NoSpeaker: straight to the speakers, no log
 		reason, ok := w.playSpeaker(freq, dur, stop)
 		if ok {
 			return nil
 		}
+		w.viaSpeaker.Store(false)
 		w.speakerFallback(reason)
 	}
 	o := w.tone.withDefaults()
@@ -221,6 +227,7 @@ func (w *winSounder) playSpeaker(freq, dur int, stop <-chan struct{}) (reason st
 	if err := w.speaker.Tone(ctx, freq, dur); err != nil {
 		return trayui.SpeakerReason(err.Error()), false
 	}
+	w.viaSpeaker.Store(true)
 	w.mu.Lock()
 	for k := range w.failed { // available again: a new loss is logged again
 		if strings.HasPrefix(k, speakerLogKey) {
@@ -373,7 +380,7 @@ func (a *App) SetMasterVolume(v int) error {
 }
 
 // alarmOn: the alarm sounds now (paused while «Прослушать» plays).
-func (a *App) alarmOn(v trayalert.View) bool { return v.Sound && !a.previewing }
+func (a *App) alarmOn(v trayalert.View) bool { return v.Sound && (!a.previewing || a.previewLocal) }
 
 // alertSound is the sound of the alert view v.
 func (a *App) alertSound(v trayalert.View) trayalert.Sound {
@@ -393,7 +400,11 @@ func (a *App) applySound() {
 
 // testSound plays a profile once («Прослушать») on its own player and
 // alias; there is one PlaySound per process, so the alarm pauses and
-// resumes when the preview ends.
+// resumes when the preview ends. Phase 14 (review of PR #23): while the
+// alarm sounds on the PC speaker the preview goes through the speakers
+// (Sound.NoSpeaker: no speaker_tone, neither tone nor stop — the speaker
+// belongs to the connection, a preview tone or its stop would cut the
+// alarm) and the alarm keeps playing.
 func (a *App) testSound(p trayalert.SoundProfile, master int) {
 	if a.tester == nil {
 		a.tester = trayalert.NewSoundPlayer(a.testSounder)
@@ -401,9 +412,18 @@ func (a *App) testSound(p trayalert.SoundProfile, master int) {
 	}
 	p.Loop = false
 	a.tester.Set(false, trayalert.Sound{})
-	a.previewing = true
-	a.applySound() // pause the alarm
-	a.tester.Set(true, trayalert.SoundFor(p, master))
+	local := a.player.Playing() && a.alarmViaSpeaker()
+	a.previewing, a.previewLocal = true, local
+	a.applySound() // pause the alarm (not when it is on the speaker)
+	snd := trayalert.SoundFor(p, master)
+	snd.NoSpeaker = local
+	a.tester.Set(true, snd)
+}
+
+// alarmViaSpeaker: the alarm sounder's last tone went to the PC speaker.
+func (a *App) alarmViaSpeaker() bool {
+	ws, ok := a.sounder.(*winSounder)
+	return ok && ws.speaker != nil && ws.viaSpeaker.Load()
 }
 
 // endPreview resumes the alarm after «Прослушать».
@@ -411,7 +431,7 @@ func (a *App) endPreview() {
 	if !a.previewing {
 		return
 	}
-	a.previewing = false
+	a.previewing, a.previewLocal = false, false
 	a.applySound()
 }
 

@@ -731,6 +731,7 @@ const (
 	KeySpeakerNotOwner      = "speaker.not_owner"
 	KeySpeakerInvalid       = "speaker.invalid"
 	KeySpeakerFailed        = "speaker.failed"
+	KeySpeakerDenied        = "speaker.denied"
 	KeySpeakerFallback    = "speaker.fallback"
 	KeyTipSoundKind     = "tip.sound_kind"
 	KeyTipSoundFreq     = "tip.sound_freq"
@@ -1594,6 +1595,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySpeakerNotOwner:      "тон включило другое подключение",
 	KeySpeakerInvalid:       "неверная частота или длительность тона",
 	KeySpeakerFailed:        "ошибка обращения к динамику",
+	KeySpeakerDenied:        "служба отклонила запрос тона",
 	KeySpeakerFallback:    "Системный динамик недоступен (%s), тон звучит через колонки",
 	KeyTipSoundKind:       "Тон — заданная частота через системный динамик компьютера (его включает служба); если он недоступен — синусоида через колонки или звуковую карту. Громкость тона не регулируется. Файл — WAV, MP3, WMA или MID",
 	KeyTipSoundFreq:       "Частота тона, 37–32767 Гц",

@@ -5,6 +5,7 @@ import (
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
 )
 
 // speakerReasons: the reasons of speaker_status and the notify.speaker_*
@@ -20,6 +21,7 @@ var speakerReasons = map[string]string{
 	model.MsgSpeakerNotOwner:     i18n.KeySpeakerNotOwner,
 	model.MsgSpeakerInvalid:      i18n.KeySpeakerInvalid,
 	model.MsgSpeakerFailed:       i18n.KeySpeakerFailed,
+	trayipc.SpeakerDenied:        i18n.KeySpeakerDenied, // MERGE: model.MsgSpeakerDenied
 }
 
 // SpeakerReason renders the reason of a speaker that is not available:

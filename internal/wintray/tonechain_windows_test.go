@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,20 +21,44 @@ type toneRec struct {
 	wav              []byte
 	failWAV, failBep bool
 	errMB            error
+	mu               sync.Mutex
+}
+
+// n / count: the recorded calls (the player goroutine appends them).
+func (r *toneRec) n() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.calls)
+}
+
+func (r *toneRec) count(call string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	k := 0
+	for _, c := range r.calls {
+		if c == call {
+			k++
+		}
+	}
+	return k
 }
 
 func (r *toneRec) outputs() toneOutputs {
 	return toneOutputs{
 		playWAV: func(alias string, wav []byte) error {
+			r.mu.Lock()
 			r.calls, r.wav = append(r.calls, "PlaySound:"+alias), wav
+			r.mu.Unlock()
 			if r.failWAV {
 				return errors.New("no audio device")
 			}
 			return nil
 		},
-		stopWAV: func(string) { r.calls = append(r.calls, "stop") },
+		stopWAV: func(string) { r.mu.Lock(); r.calls = append(r.calls, "stop"); r.mu.Unlock() },
 		beep: func(f, d uint32) error {
+			r.mu.Lock()
 			r.calls = append(r.calls, "Beep")
+			r.mu.Unlock()
 			if f != 880 || d != 30 {
 				return errors.New("bad args")
 			}
@@ -42,7 +67,7 @@ func (r *toneRec) outputs() toneOutputs {
 			}
 			return nil
 		},
-		messageBeep: func() error { r.calls = append(r.calls, "MessageBeep"); return r.errMB },
+		messageBeep: func() error { r.mu.Lock(); r.calls = append(r.calls, "MessageBeep"); r.mu.Unlock(); return r.errMB },
 	}
 }
 

@@ -212,6 +212,10 @@ type Sound struct {
 	// sounds although Volume rounds down to 0). Set by SoundFor; a Sound
 	// built by hand sounds when Volume > 0 (see ToneLevel).
 	ToneOn bool
+	// NoSpeaker (phase 14, review of PR #23): «Тон» through the speakers
+	// only, no speaker_tone at all (neither tone nor stop) — «Прослушать»
+	// while the alarm sounds on the PC speaker of the same connection.
+	NoSpeaker bool
 }
 
 // SoundFor is the Sound of a profile at the master volume: Volume =

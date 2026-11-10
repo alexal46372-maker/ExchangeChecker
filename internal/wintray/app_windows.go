@@ -152,6 +152,9 @@ type App struct {
 	// testSounder plays «Прослушать» (own MCI alias / PlaySound owner)
 	testSounder trayalert.Sounder
 	previewing  bool
+	// previewLocal: «Прослушать» goes through the speakers while the alarm
+	// keeps sounding on the PC speaker (phase 14, review of PR #23)
+	previewLocal bool
 	// phase 10: sound profiles (CHK-TRAY-33..35), problem list, blinking
 	// icon and panel (CHK-TRAY-38/39)
 	soundPrefs  trayalert.SoundPrefs

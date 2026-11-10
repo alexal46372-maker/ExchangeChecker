@@ -145,7 +145,7 @@ func newDevice(port *ioPort, durs *durRec) *pcspeaker.Device {
 
 // speakerServer is a real ipc.Server (MemListener) with the service's
 // speaker device (nil = a service without the speaker capabilities).
-func speakerServer(t *testing.T, svc ipc.Handler, dev *pcspeaker.Device) func(context.Context) (io.ReadWriteCloser, error) {
+func speakerServer(t *testing.T, svc ipc.Handler, dev ipc.Speaker) func(context.Context) (io.ReadWriteCloser, error) {
 	t.Helper()
 	l := ipc.NewMemListener()
 	srv := ipc.NewServer(svc, nil)
@@ -420,10 +420,11 @@ func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 	durs := &durRec{}
 	svc := &alertService{}
 	svc.set(1, ptAlert("a", "Склад", "k1", model.LevelError))
-	dial := speakerServer(t, svc, newDevice(port, durs))
+	gs := &gateSpeaker{dev: newDevice(port, durs)}
+	dial := speakerServer(t, svc, gs)
 	prefs := trayalert.DefaultSoundPrefs(nil)
 	prefs.Master = 100
-	prefs.Error = trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 1234, DurMs: 4000, Volume: 70, Loop: true, GapMs: 100}
+	prefs.Error = trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 1234, DurMs: 8000, Volume: 70, Loop: true, GapMs: 100}
 	prefs.Warning.Volume = 70
 	store := &memSoundStore{raw: prefs.String()}
 	r := &toneRec{}
@@ -444,9 +445,26 @@ func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 		st := port.starts()
 		return app.player.Playing() && len(st) == 1 && st[0] == pcspeaker.Divisor(1234)
 	})
-	if d := durs.got(); len(d) != 1 || d[0] != 4*time.Second {
+	if d := durs.got(); len(d) != 1 || d[0] != 8*time.Second {
 		t.Fatalf("durations %v", d)
 	}
+	// review of PR #23: «Прослушать» during the alarm on the speaker goes
+	// through the speakers, sends no speaker_tone (neither tone nor stop)
+	// and leaves the alarm tone sounding
+	pumpUntil(t, "alarm marked as on the speaker", app.alarmViaSpeaker)
+	tones := gs.count()
+	app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 2500, DurMs: 4000, Volume: 50}, 100)
+	pumpUntil(t, "preview through the speakers", func() bool { return r.count("PlaySound:"+aliasAlarm) == 1 })
+	if !app.player.Playing() {
+		t.Fatal("the preview paused the alarm on the speaker")
+	}
+	app.stopTestSound()
+	pumpUntil(t, "preview stopped locally", func() bool { return r.count("stop") == 1 && !app.Previewing() })
+	pumpFor(150 * time.Millisecond)
+	if gs.count() != tones || len(port.starts()) != 1 || len(port.offs()) != 0 || !port.isOn() || !app.player.Playing() {
+		t.Fatalf("preview during the alarm touched the speaker: tones %d→%d starts %v offs %v on %v", tones, gs.count(), port.starts(), port.offs(), port.isOn())
+	}
+	n0 := r.n()
 	pumpUntil(t, "alerts shown", func() bool { v := app.AlertView(); return v.Visible && v.CanAck })
 	acked := time.Now()
 	app.ackAlerts()
@@ -455,7 +473,7 @@ func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 		t.Errorf("speaker off %v after «Подтвердить»", at.Sub(acked))
 	}
 	pumpUntil(t, "player stopped", func() bool { return !app.player.Playing() })
-	if len(r.calls) != 0 {
+	if r.n() != n0 {
 		t.Errorf("local outputs with an available speaker: %v", r.calls)
 	}
 	// «Прослушать» → speaker; «Остановить» → off at once
@@ -481,7 +499,7 @@ func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 		asked := port.asked()
 		app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 2222, DurMs: 100, Volume: v[0]}, v[1])
 		pumpUntil(t, "silent preview ended", func() bool { return !app.Previewing() })
-		if len(port.starts()) != 3 || port.asked() != asked || len(r.calls) != 0 {
+		if len(port.starts()) != 3 || port.asked() != asked || r.n() != n0 {
 			t.Errorf("%d%% × %d%% preview: %v asked %d→%d %v", v[0], v[1], port.starts(), asked, port.asked(), r.calls)
 		}
 	}
@@ -489,6 +507,67 @@ func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 	defer lmu.Unlock()
 	if len(logs) != 0 {
 		t.Errorf("journal with an available speaker: %q", logs)
+	}
+}
+
+// gateSpeaker wraps the service's device as ipc.Speaker: counts the
+// speaker_tone requests and can refuse them like the service's
+// notify.speaker_denied.
+type gateSpeaker struct {
+	dev  *pcspeaker.Device
+	mu   sync.Mutex
+	deny bool
+	n    int
+}
+
+func (g *gateSpeaker) Tone(owner any, f, d int) error {
+	g.mu.Lock()
+	g.n++
+	deny := g.deny && d > 0
+	g.mu.Unlock()
+	if deny {
+		return &model.IPCError{Code: model.ErrCodeAccessDenied, Key: trayipc.SpeakerDenied, Message: "speaker: denied"}
+	}
+	return g.dev.Tone(owner, f, d)
+}
+func (g *gateSpeaker) Status() model.SpeakerStatus { return g.dev.Status() }
+func (g *gateSpeaker) Release(owner any)           { g.dev.Release(owner) }
+func (g *gateSpeaker) Silence()                    { g.dev.Silence() }
+func (g *gateSpeaker) count() int                  { g.mu.Lock(); defer g.mu.Unlock(); return g.n }
+func (g *gateSpeaker) setDeny(v bool)              { g.mu.Lock(); g.deny = v; g.mu.Unlock() }
+
+func (p *ioPort) isOn() bool { p.mu.Lock(); defer p.mu.Unlock(); return p.on }
+
+// TestCHK_TRAY_98_SpeakerDenied — notify.speaker_denied of the service
+// (tones only during its alarm or a preview, rate limited): the tone goes
+// through the speakers with one Russian journal line, the speaker is not
+// marked unavailable, and the next allowed tone goes to the speaker again.
+func TestCHK_TRAY_98_SpeakerDenied(t *testing.T) {
+	port := &ioPort{st: model.SpeakerStatus{Available: true}}
+	gs := &gateSpeaker{dev: newDevice(port, nil), deny: true}
+	sess := speakerSession(t, speakerServer(t, &alertService{}, gs))
+	sp := &trayipc.Speaker{C: sess}
+	var logs []string
+	r := &toneRec{}
+	s := &winSounder{alias: aliasAlarm, log: func(l string) { logs = append(logs, l) }, tone: r.outputs(), speaker: speakerOf(sp)}
+	tone := trayalert.Sound{Profile: trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 880, DurMs: 30}, Volume: 50}
+	for i := 0; i < 2; i++ {
+		if err := s.Play(tone, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Join(r.calls, ",") != "PlaySound:"+aliasAlarm+",PlaySound:"+aliasAlarm || gs.count() != 2 || len(port.starts()) != 0 {
+		t.Fatalf("denied: local %v requests %d starts %v", r.calls, gs.count(), port.starts())
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], "(служба отклонила запрос тона)") {
+		t.Fatalf("journal %q", logs)
+	}
+	if st, _ := sp.Cached(); !st.Available {
+		t.Fatalf("denied marked the speaker unavailable: %+v", st)
+	}
+	gs.setDeny(false)
+	if err := s.Play(tone, nil); err != nil || len(port.starts()) != 1 || len(r.calls) != 2 {
+		t.Fatalf("allowed again: %v %v %v", err, port.starts(), r.calls)
 	}
 }
 

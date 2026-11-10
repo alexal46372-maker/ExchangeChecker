@@ -3,6 +3,7 @@
 package wintray
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -71,9 +74,27 @@ type winSounder struct {
 	alias string
 	log   func(string)
 	tone  toneOutputs // zero = the real WinAPI (tests: fakes)
+	// speaker: the PC speaker of the service (phase 14, CHK-TRAY-98),
+	// tried first for «Тон»; nil = only the toneOutputs.
+	speaker speakerOut
 
 	mu     sync.Mutex
 	failed map[string]bool // files already logged as failing
+}
+
+// speakerOut is the PC speaker through the service (*trayipc.Speaker).
+type speakerOut interface {
+	Status(ctx context.Context) model.SpeakerStatus
+	Tone(ctx context.Context, freqHz, durMs int) error
+	Stop(ctx context.Context) error
+}
+
+// speakerOf: nil for a nil *trayipc.Speaker (no typed nil interface).
+func speakerOf(sp *trayipc.Speaker) speakerOut {
+	if sp == nil {
+		return nil
+	}
+	return sp
 }
 
 // Play implements trayalert.Sounder.
@@ -120,9 +141,9 @@ func waitOrStop(d time.Duration, stop <-chan struct{}) bool {
 	return true
 }
 
-// toneOutputs are the three outputs of «Тон», tried in order (phase 13
-// item 1, CHK-TRAY-97). All of them sound through the speakers / sound
-// card, none uses the system speaker and no driver is installed.
+// toneOutputs are the fallback outputs of «Тон», tried in order after the
+// PC speaker of the service (phase 13 item 1 CHK-TRAY-97, phase 14
+// CHK-TRAY-98). All of them sound through the speakers / sound card.
 type toneOutputs struct {
 	playWAV     func(alias string, wav []byte) error // winmm PlaySound(SND_MEMORY) of the sine WAV
 	stopWAV     func(alias string)
@@ -146,32 +167,93 @@ func (o toneOutputs) withDefaults() toneOutputs {
 	return o
 }
 
-// playTone: the sine WAV with the volume as amplitude (PLAN §12 p.115)
-// through PlaySound(SND_MEMORY); refused (no audio device) → kernel32
-// Beep without volume; Beep failed too → MessageBeep(MB_ICONHAND), the
-// system critical sound (CHK-TRAY-97). Each fallback is logged once.
+// playTone (phase 14, CHK-TRAY-98/99): volume 0 % = silence, nothing is
+// called (no IPC either); otherwise full level (trayalert.ToneLevel):
+// first the PC speaker of the service (capabilities speaker +
+// speaker_status, status.available) with speaker_tone {freqHz, durMs} and
+// speaker_tone {durMs:0} at once on stop; not available / refused → one
+// journal line per reason and the old chain: the sine WAV through
+// PlaySound(SND_MEMORY); refused (no audio device) → kernel32 Beep;
+// Beep failed too → MessageBeep(MB_ICONHAND), the system critical sound
+// (CHK-TRAY-97). Each fallback is logged once.
 func (w *winSounder) playTone(freq, dur, vol int, stop <-chan struct{}) error {
-	if vol <= 0 {
-		waitOrStop(time.Duration(dur)*time.Millisecond, stop)
+	d := time.Duration(dur) * time.Millisecond
+	if trayalert.ToneLevel(vol) == 0 {
+		waitOrStop(d, stop)
 		return nil
 	}
+	if w.speaker != nil {
+		reason, ok := w.playSpeaker(freq, dur, stop)
+		if ok {
+			return nil
+		}
+		w.speakerFallback(reason)
+	}
 	o := w.tone.withDefaults()
-	if err := o.playWAV(w.alias, trayalert.SineWAV(freq, dur, vol)); err != nil {
+	if err := o.playWAV(w.alias, trayalert.SineWAV(freq, dur, trayalert.ToneLevel(vol))); err != nil {
 		w.fallback("PlaySound", err)
 		if err := o.beep(uint32(freq), uint32(dur)); err != nil {
 			w.fallback("Beep", err)
 			// MessageBeep returns at once: wait the tone duration, so the
 			// cadence (tone, gap, tone) stays the same
 			err := o.messageBeep()
-			waitOrStop(time.Duration(dur)*time.Millisecond, stop)
+			waitOrStop(d, stop)
 			return err
 		}
 		return nil
 	}
-	if !waitOrStop(time.Duration(dur)*time.Millisecond+20*time.Millisecond, stop) {
+	if !waitOrStop(d+20*time.Millisecond, stop) {
 		o.stopWAV(w.alias)
 	}
 	return nil
+}
+
+// playSpeaker plays one tone through the service; ok = it sounded (or
+// was stopped), else the reason for the fallback.
+func (w *winSounder) playSpeaker(freq, dur int, stop <-chan struct{}) (reason string, ok bool) {
+	ctx := context.Background()
+	st := w.speaker.Status(ctx)
+	if !st.Available {
+		return trayui.SpeakerReason(st.Reason), false
+	}
+	start := time.Now()
+	if err := w.speaker.Tone(ctx, freq, dur); err != nil {
+		return trayui.SpeakerReason(err.Error()), false
+	}
+	w.mu.Lock()
+	for k := range w.failed { // available again: a new loss is logged again
+		if strings.HasPrefix(k, speakerLogKey) {
+			delete(w.failed, k)
+		}
+	}
+	w.mu.Unlock()
+	// the service may answer at once or after the tone: wait the rest
+	rest := time.Duration(dur)*time.Millisecond - time.Since(start)
+	if rest < 0 {
+		rest = 0
+	}
+	if !waitOrStop(rest+20*time.Millisecond, stop) {
+		_ = w.speaker.Stop(ctx) // «Подтвердить» / player stop / «Остановить»: speaker_tone {durMs:0} at once
+	}
+	return "", true
+}
+
+// speakerLogKey prefixes the failed-map keys of the speaker reasons.
+const speakerLogKey = "\x00speaker:"
+
+// speakerFallback logs «Системный динамик недоступен (…)» once per reason.
+func (w *winSounder) speakerFallback(reason string) {
+	w.mu.Lock()
+	if w.failed == nil {
+		w.failed = map[string]bool{}
+	}
+	k := speakerLogKey + reason
+	first := !w.failed[k]
+	w.failed[k] = true
+	w.mu.Unlock()
+	if first && w.log != nil {
+		w.log("tray: sound: " + fmt.Sprintf(i18n.T(i18n.KeySpeakerFallback), reason))
+	}
 }
 
 // errBadPath: control characters (CR, LF, NUL…) or quotes would end or

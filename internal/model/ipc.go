@@ -272,6 +272,11 @@ type IPCRequest struct {
 	Auth      string   `json:"auth,omitempty"`
 	Database  string   `json:"database,omitempty"`
 	Tables    []string `json:"tables,omitempty"`
+	// Phase 14 speaker_tone (feat/tray-speaker; MERGE: take the
+	// service's definition): FreqHz and DurMs of the tone; DurMs 0 stops
+	// it. DurMs is a pointer so the stop request carries "durMs":0.
+	FreqHz int  `json:"freqHz,omitempty"`
+	DurMs  *int `json:"durMs,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).
@@ -446,4 +451,8 @@ type IPCMessage struct {
 	SQLGrantScript *SQLGrantScript     `json:"sqlGrantScript,omitempty"`
 	AutoPick       *SQLAutoPick        `json:"autoPick,omitempty"`
 	ErrorInfo      *SQLErrorInfo       `json:"errorInfo,omitempty"`
+	// Phase 14 (feat/tray-speaker, client side of EC Service
+	// feat/svc-speaker; MERGE: take the service's definition): the
+	// speaker_status reply.
+	Speaker *SpeakerStatus `json:"speaker,omitempty"`
 }

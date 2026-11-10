@@ -23,6 +23,9 @@ const (
 	idSndSave   = 500
 	idSndCancel = winapi.IDCANCEL
 	idSndInfo   = 501
+	// phase 14 (CHK-TRAY-99): the «Системный динамик: …» line of the
+	// settings «Звук» group
+	idSndSpeaker = 504
 	// per profile: base + offset (warning 510, error 530)
 	idSndBeep   = 0
 	idSndFile   = 1
@@ -47,6 +50,9 @@ type profileCtl struct {
 	base                                int32
 	beep, file, freq, dur, path, browse uintptr
 	vol, loop, gap, test, head          uintptr
+	// volNote: «громкость не регулируется» while «Тон» is selected
+	// (phase 14, CHK-TRAY-99; settings window only)
+	volNote uintptr
 }
 
 // soundWindow edits the two profiles; «Сохранить» stores them in HKCU.

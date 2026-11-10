@@ -142,6 +142,9 @@ type settingsSession interface {
 type settingsConfig struct {
 	mode     traysettings.Mode
 	session  settingsSession
+	// speaker: the PC speaker of the service shared with the App's
+	// sounders (phase 14); nil = one of this window's session.
+	speaker *trayipc.Speaker
 	elevator Elevator
 	// confirm asks Yes/No (delete, discard changes); nil = MessageBoxW
 	// with «Нет» as the default button.
@@ -292,6 +295,11 @@ type settingsWindow struct {
 	sndPreview      *trayalert.SoundPlayer
 	sndPreviewer    trayalert.Sounder
 	sndPreviewing   int32 // profile base currently previewing (0 = none); CHK-TRAY-81
+	// phase 14 (CHK-TRAY-99): the speaker status line, the speaker
+	// (cfg.speaker or one of this window's session) and a running query
+	sndSpeaker     uintptr
+	sndSpk         *trayipc.Speaker
+	sndSpkQuerying bool
 }
 
 func (w *settingsWindow) setCue(id int32, text string) {
@@ -351,7 +359,7 @@ var settingsTips = map[int32]string{
 }
 
 // settingsOutputs are the static texts of the window (no tooltip).
-var settingsOutputs = map[int32]bool{idSetPwHint: true, idSetHints: true, idSetInfo: true, idGenNote: true, idGenAutostartErr: true, idSndInfo: true}
+var settingsOutputs = map[int32]bool{idSetPwHint: true, idSetHints: true, idSetInfo: true, idGenNote: true, idGenAutostartErr: true, idSndInfo: true, idSndSpeaker: true}
 
 // profNumbers are the phase 8 number boxes of the profile form.
 var profNumbers = []int32{idSetWarn, idSetError, idSetConnTO, idSetQueryTO, idSetStalled}
@@ -1842,6 +1850,8 @@ func (w *settingsWindow) onSessionState(st trayipc.Status) {
 	up := st.State == trayipc.StateConnected
 	was := w.connected
 	w.connected = up
+	w.speaker().Invalidate() // phase 14: a new connection asks again
+	w.refreshSpeakerLine()
 	if !up {
 		if !w.busy {
 			w.setStatus(w.t(i18n.KeySetNotConnected))
@@ -1871,6 +1881,7 @@ func (w *settingsWindow) unsavedNow() bool {
 func (w *settingsWindow) onSessionStatus() {
 	if winapi.IsWindow(w.hwnd) {
 		w.update()
+		w.refreshSpeakerLine()
 	}
 }
 

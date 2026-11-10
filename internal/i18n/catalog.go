@@ -711,6 +711,16 @@ const (
 	KeySoundBadValue    = "sound.bad_value"
 	KeySoundSaved       = "sound.saved"
 	KeySoundFallback    = "sound.fallback"
+	// phase 14 (feat/tray-speaker, CHK-TRAY-98/99): «Тон» through the
+	// PC speaker of the service
+	KeySoundToneVolume    = "sound.tone_volume"
+	KeySpeakerAvailable   = "speaker.available"
+	KeySpeakerUnavailable = "speaker.unavailable"
+	KeySpeakerNoService   = "speaker.no_service"
+	KeySpeakerNoCap       = "speaker.no_cap"
+	KeySpeakerNoReason    = "speaker.no_reason"
+	KeySpeakerTimeout     = "speaker.timeout"
+	KeySpeakerFallback    = "speaker.fallback"
 	KeyTipSoundKind     = "tip.sound_kind"
 	KeyTipSoundFreq     = "tip.sound_freq"
 	KeyTipSoundDur      = "tip.sound_dur"
@@ -1539,7 +1549,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySoundTitle:         "Звук тревог",
 	KeySoundWarning:       "Предупреждение",
 	KeySoundError:         "Ошибка",
-	KeySoundBeep:          "Тон (через колонки)",
+	KeySoundBeep:          "Тон (системный динамик)",
 	KeySoundFile:          "Файл",
 	KeySoundFreq:          "Частота, Гц:",
 	KeySoundDur:           "Длительность, мс:",
@@ -1557,7 +1567,15 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySoundBadValue:      "Проверьте значение: %s",
 	KeySoundSaved:         "Сохранено",
 	KeySoundFallback:      "Не удалось воспроизвести «%s» (%s), звучит тон",
-	KeyTipSoundKind:       "Тон — синусоида с заданной частотой, звучит через колонки или звуковую карту, не через системный динамик; Файл — WAV, MP3, WMA или MID",
+	KeySoundToneVolume:    "громкость не регулируется",
+	KeySpeakerAvailable:   "Системный динамик: доступен",
+	KeySpeakerUnavailable: "Системный динамик: недоступен (%s) — тон звучит через колонки",
+	KeySpeakerNoService:   "нет связи со службой",
+	KeySpeakerNoCap:       "служба не поддерживает системный динамик",
+	KeySpeakerNoReason:    "причина не указана",
+	KeySpeakerTimeout:     "служба не ответила вовремя",
+	KeySpeakerFallback:    "Системный динамик недоступен (%s), тон звучит через колонки",
+	KeyTipSoundKind:       "Тон — заданная частота через системный динамик компьютера (его включает служба); если он недоступен — синусоида через колонки или звуковую карту. Громкость тона не регулируется. Файл — WAV, MP3, WMA или MID",
 	KeyTipSoundFreq:       "Частота тона, 37–32767 Гц",
 	KeyTipSoundDur:        "Длительность одного сигнала, мс",
 	KeyTipSoundFile:       "Путь к звуковому файлу. Если файл не воспроизводится, звучит тон",

@@ -3,12 +3,16 @@
 package wintray
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/trayui"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/wintray/ui"
 )
@@ -30,6 +34,10 @@ func (w *settingsWindow) buildSoundSection(
 	var warnN, errN ui.Node
 	w.sndWarn, warnN = w.buildEmbeddedProfile(add, label, idSndWarn, i18n.T(i18n.KeySoundWarning))
 	w.sndErr, errN = w.buildEmbeddedProfile(add, label, idSndErr, i18n.T(i18n.KeySoundError))
+	// phase 14 (CHK-TRAY-99): «Системный динамик: доступен / недоступен (…)»
+	spk := add("STATIC", "", 0, winapi.SS_LEFT, idSndSpeaker, ui.Box, 540, 20)
+	spk.Grow = true
+	w.sndSpeaker = spk.H
 	info := add("STATIC", "", 0, winapi.SS_LEFT, idSndInfo, ui.Box, 540, 36)
 	info.Grow = true
 	w.sndInfo = info.H
@@ -38,7 +46,7 @@ func (w *settingsWindow) buildSoundSection(
 	gBox := add("BUTTON", i18n.T(i18n.KeySetGroupSound), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
 	w.groups[i18n.KeySetGroupSound] = gBox.H
 	return &ui.GroupBox{Box: gBox, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
-		beepEn, warnN, errN, info,
+		beepEn, spk, warnN, errN, info,
 	}}}
 }
 
@@ -74,6 +82,8 @@ func (w *settingsWindow) buildEmbeddedProfile(
 	volL := label(i18n.T(i18n.KeySoundVolume), 0)
 	vol := edit(base+idSndVol, 50, true)
 	c.vol = vol.H
+	volNote := label(i18n.T(i18n.KeySoundToneVolume), 0) // phase 14 (CHK-TRAY-99)
+	c.volNote = volNote.H
 	loop := add("BUTTON", i18n.T(i18n.KeySoundLoop), 0, winapi.BS_AUTOCHECKBOX|winapi.WS_TABSTOP, base+idSndLoop, ui.Check, 0, 0)
 	c.loop = loop.H
 	gapL := label(i18n.T(i18n.KeySoundGap), 0)
@@ -87,7 +97,7 @@ func (w *settingsWindow) buildEmbeddedProfile(
 			&ui.Row{Gap: ui.P16, Items: []ui.Node{beep, file}},
 			&ui.Grid{Rows: []ui.GridRow{
 				{Label: freqL, Field: &ui.Row{Items: []ui.Node{freq, &ui.Space{W: ui.P8}, durL, dur}}},
-				{Label: volL, Field: &ui.Row{Items: []ui.Node{vol, &ui.Space{W: ui.P8}, loop}}},
+				{Label: volL, Field: &ui.Row{Items: []ui.Node{vol, &ui.Space{W: ui.P8}, volNote, &ui.Space{W: ui.P8}, loop}}},
 				{Label: gapL, Field: gap},
 			}},
 			&ui.Row{Grow: true, Items: []ui.Node{path, browse}},
@@ -123,6 +133,7 @@ func (w *settingsWindow) loadSoundSection() {
 	if w.sndInfo != 0 {
 		winapi.SetWindowText(w.sndInfo, "")
 	}
+	w.refreshSpeakerLine()
 }
 
 func (w *settingsWindow) fillSoundProfiles(p trayalert.SoundPrefs) {
@@ -141,6 +152,70 @@ func (w *settingsWindow) fillSoundProfiles(p trayalert.SoundPrefs) {
 		winapi.SetWindowText(x.c.vol, strconv.Itoa(x.pr.Volume))
 		setCheck(x.c.loop, x.pr.Loop)
 		winapi.SetWindowText(x.c.gap, strconv.Itoa(x.pr.GapMs))
+		syncToneNote(x.c)
+	}
+}
+
+// syncToneNote shows «громкость не регулируется» next to the volume while
+// «Тон» is selected (phase 14, CHK-TRAY-99): the PC speaker has no volume
+// and the tone sounds at full level whenever profile × master > 0 %.
+func syncToneNote(c profileCtl) {
+	if c.volNote == 0 {
+		return
+	}
+	t := ""
+	if !isChecked(c.file) {
+		t = i18n.T(i18n.KeySoundToneVolume)
+	}
+	if winapi.GetWindowText(c.volNote) != t {
+		winapi.SetWindowText(c.volNote, t)
+	}
+}
+
+// speaker is the PC speaker of the service for the status line and the
+// standalone preview (cfg.speaker, else one of this window's session).
+func (w *settingsWindow) speaker() *trayipc.Speaker {
+	if w.cfg.speaker != nil {
+		return w.cfg.speaker
+	}
+	if w.sndSpk == nil && w.cfg.session != nil {
+		w.sndSpk = &trayipc.Speaker{C: w.cfg.session}
+	}
+	return w.sndSpk
+}
+
+// refreshSpeakerLine (UI thread) shows the speaker state; an unknown or
+// stale state is asked in the background (speaker_status) and shown when
+// the reply comes.
+func (w *settingsWindow) refreshSpeakerLine() {
+	if w.sndSpeaker == 0 || w.closed {
+		return
+	}
+	sp := w.speaker()
+	st, fresh := sp.Cached()
+	if fresh {
+		w.setSpeakerLine(st)
+		return
+	}
+	if w.sndSpkQuerying {
+		return
+	}
+	w.sndSpkQuerying = true
+	go func() {
+		st := sp.Status(context.Background())
+		w.post(func() {
+			w.sndSpkQuerying = false
+			w.setSpeakerLine(st)
+		})
+	}()
+}
+
+func (w *settingsWindow) setSpeakerLine(st model.SpeakerStatus) {
+	if w.sndSpeaker == 0 || w.closed {
+		return
+	}
+	if t := trayui.SpeakerLine(st); winapi.GetWindowText(w.sndSpeaker) != t {
+		winapi.SetWindowText(w.sndSpeaker, t)
 	}
 }
 
@@ -211,6 +286,7 @@ func (w *settingsWindow) soundCommand(id int32) bool {
 				winapi.SetWindowText(c.path, f)
 				setCheck(c.beep, false)
 				setCheck(c.file, true)
+				syncToneNote(c)
 			}
 			return true
 		case idSndTest:
@@ -225,8 +301,11 @@ func (w *settingsWindow) soundCommand(id int32) bool {
 				w.previewSound(pr, c)
 			}
 			return true
-		case idSndBeep, idSndFile, idSndLoop:
-			return true // radio/check handled by Windows
+		case idSndBeep, idSndFile:
+			syncToneNote(c) // radio handled by Windows; the note follows it
+			return true
+		case idSndLoop:
+			return true // check handled by Windows
 		}
 	}
 	return false
@@ -255,7 +334,7 @@ func (w *settingsWindow) previewSound(p trayalert.SoundProfile, c profileCtl) {
 		w.cfg.onSoundDone(done)
 	}
 	if w.sndPreviewer == nil {
-		w.sndPreviewer = &winSounder{alias: aliasTest}
+		w.sndPreviewer = &winSounder{alias: aliasTest, speaker: speakerOf(w.speaker())}
 	}
 	if w.sndPreview == nil {
 		w.sndPreview = trayalert.NewSoundPlayer(w.sndPreviewer)

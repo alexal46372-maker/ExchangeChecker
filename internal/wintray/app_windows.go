@@ -136,6 +136,7 @@ type App struct {
 	opt     Options
 	hwnd    uintptr
 	session *trayipc.Session
+	speaker *trayipc.Speaker // phase 14: PC speaker of the service (CHK-TRAY-98)
 	cancel  context.CancelFunc
 	done    chan struct{}
 
@@ -242,6 +243,13 @@ func NewApp(opt Options) (*App, error) {
 	so := opt.Session
 	so.OnEvent = a.onEvent
 	a.session = trayipc.New(so)
+	// phase 14 (CHK-TRAY-98): «Тон» first through the PC speaker of the service
+	a.speaker = &trayipc.Speaker{C: a.session}
+	for _, snd := range []trayalert.Sounder{a.sounder, a.testSounder} {
+		if ws, ok := snd.(*winSounder); ok {
+			ws.speaker = speakerOf(a.speaker)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
 	go func() {
@@ -503,6 +511,11 @@ func (a *App) drain() {
 	// events are followed by a status push; the active alerts of the
 	// snapshot drive the alert window (trayalert).
 	a.status = q[len(q)-1].Status
+	for _, e := range q { // phase 14: a new connection asks speaker_status again
+		if e.Kind == trayipc.EventState {
+			a.speaker.Invalidate()
+		}
+	}
 	if w := a.settings; w != nil {
 		for _, e := range q { // every transition, not only the last state
 			switch e.Kind {
@@ -726,7 +739,7 @@ func (a *App) OpenSettings() uintptr {
 		mode = traysettings.Admin
 	}
 	var w *settingsWindow
-	w, err := newSettingsWindow(settingsConfig{mode: mode, session: a.session, elevator: a.opt.Elevator,
+	w, err := newSettingsWindow(settingsConfig{mode: mode, session: a.session, speaker: a.speaker, elevator: a.opt.Elevator,
 		uiMode: loadUIMode(a.opt.UIModeStore), uiStore: a.opt.UIModeStore,
 		stores:  trayStores{Balloon: a.opt.BalloonStore, Sound: a.opt.SoundStore, Flash: a.opt.ScreenFlashStore},
 		confirm: a.opt.Confirm, hidden: a.opt.HiddenSettings,

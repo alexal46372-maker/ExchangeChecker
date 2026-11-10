@@ -46,10 +46,12 @@ func (r *toneRec) outputs() toneOutputs {
 	}
 }
 
-// TestCHK_TRAY_97_ToneFallbackChain — «Тон» goes PlaySound(SND_MEMORY,
-// sine WAV at the volume) → Beep → MessageBeep(MB_ICONHAND), each step
-// only when the one before failed; each fallback is logged once; volume 0
-// plays nothing. Runs through winSounder.Play (the real dispatch).
+// TestCHK_TRAY_97_ToneFallbackChain — without the PC speaker of the
+// service (phase 14: no speaker here; with one see CHK-TRAY-98) «Тон»
+// goes PlaySound(SND_MEMORY, sine WAV at full level — the tone volume is
+// not adjustable, CHK-TRAY-99) → Beep → MessageBeep(MB_ICONHAND), each
+// step only when the one before failed; each fallback is logged once;
+// volume 0 plays nothing. Runs through winSounder.Play (the real dispatch).
 func TestCHK_TRAY_97_ToneFallbackChain(t *testing.T) {
 	tone := trayalert.Sound{Profile: trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 880, DurMs: 30}, Volume: 50}
 	var logs []string
@@ -61,8 +63,12 @@ func TestCHK_TRAY_97_ToneFallbackChain(t *testing.T) {
 	if err := newS(r).Play(tone, nil); err != nil || strings.Join(r.calls, ",") != "PlaySound:"+aliasTest || len(logs) != 0 {
 		t.Fatalf("PlaySound ok: %v %v %v", err, r.calls, logs)
 	}
-	if want := trayalert.SineWAV(880, 30, 50); !bytes.Equal(r.wav, want) || !bytes.HasPrefix(r.wav, []byte("RIFF")) {
-		t.Error("PlaySound got another WAV than the sine of the profile")
+	// phase 14: volume 50 % > 0 → the sine at full level (100), not 50
+	if want := trayalert.SineWAV(880, 30, 100); !bytes.Equal(r.wav, want) || !bytes.HasPrefix(r.wav, []byte("RIFF")) {
+		t.Error("PlaySound got another WAV than the full-level sine of the profile")
+	}
+	if bytes.Equal(r.wav, trayalert.SineWAV(880, 30, 50)) {
+		t.Error("the tone still follows the volume")
 	}
 	// 2: PlaySound refused → Beep
 	r = &toneRec{failWAV: true}
@@ -126,13 +132,17 @@ func TestCHK_TRAY_97_ToneFallbackChain(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_97_ToneLabel — the UI says the tone sounds through the
-// speakers / sound card, not the system speaker.
+// TestCHK_TRAY_97_ToneLabel — phase 14 (Алекс, 10.11.2026): the label is
+// «Тон (системный динамик)»; the tip says the PC speaker comes first, the
+// speakers / sound card are the fallback and the volume is not adjustable.
 func TestCHK_TRAY_97_ToneLabel(t *testing.T) {
-	if l := i18n.T(i18n.KeySoundBeep); !strings.Contains(l, "колонки") {
+	if l := i18n.T(i18n.KeySoundBeep); l != "Тон (системный динамик)" {
 		t.Errorf("label %q", l)
 	}
-	if tip := i18n.T(i18n.KeyTipSoundKind); !strings.Contains(tip, "через колонки или звуковую карту, не через системный динамик") {
-		t.Errorf("tip %q", tip)
+	tip := i18n.T(i18n.KeyTipSoundKind)
+	for _, want := range []string{"системный динамик", "через колонки или звуковую карту", "не регулируется"} {
+		if !strings.Contains(tip, want) {
+			t.Errorf("tip %q lacks %q", tip, want)
+		}
 	}
 }

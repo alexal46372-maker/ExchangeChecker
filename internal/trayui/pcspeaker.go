@@ -1,0 +1,34 @@
+package trayui
+
+import (
+	"fmt"
+
+	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
+)
+
+// SpeakerReason renders the reason of a speaker that is not available:
+// a tray catalog key (trayipc.SpeakerNoService / SpeakerNoCap), a service
+// message key, else the text as sent ("" = «причина не указана»).
+func SpeakerReason(r string) string {
+	switch {
+	case r == "":
+		return i18n.T(i18n.KeySpeakerNoReason)
+	case i18n.Has(r):
+		return i18n.T(r)
+	}
+	if s := model.MonitorMessage(r); s != "" {
+		return s
+	}
+	return r
+}
+
+// SpeakerLine is the status line of the «Звук» section (phase 14,
+// CHK-TRAY-99): «Системный динамик: доступен» or «Системный динамик:
+// недоступен (причина) — тон звучит через колонки».
+func SpeakerLine(st model.SpeakerStatus) string {
+	if st.Available {
+		return i18n.T(i18n.KeySpeakerAvailable)
+	}
+	return fmt.Sprintf(i18n.T(i18n.KeySpeakerUnavailable), SpeakerReason(st.Reason))
+}

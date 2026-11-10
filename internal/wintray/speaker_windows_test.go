@@ -326,6 +326,7 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	sp.Invalidate()
 	n := len(port.starts())
 	r = &toneRec{}
+	s = newS(r)
 	if err := s.Play(tone, nil); err != nil || len(port.starts()) != n+1 || len(r.calls) != 0 {
 		t.Fatalf("available again: %v %v", port.starts(), r.calls)
 	}
@@ -339,6 +340,7 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	}
 	clear()
 	r = &toneRec{}
+	s = newS(r)
 	if err := s.Play(tone, nil); err != nil || len(r.calls) != 1 || len(logged()) != 1 || !strings.Contains(logged()[0], "(динамик занят другим подключением)") {
 		t.Fatalf("busy: %v %q", r.calls, logged())
 	}

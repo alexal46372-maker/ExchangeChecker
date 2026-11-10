@@ -9,7 +9,7 @@ import (
 
 // Phase 14 (CHK-SVC-11): PC-speaker tone, driver-independent. A Port
 // writes I/O ports 0x42/0x43/0x61 in batches; no driver is shipped in
-// this change (the service wires a nil Port → Status reason not_installed).
+// this package; the InpOutx64 Port is wired by the service (CHK-SVC-12).
 //
 // PIT channel 2, mode 3, square wave: 0x43←0xB6, 0x42←lo, 0x42←hi of
 // divisor 1193182/F (integer division); enable 0x61 |= 0x03; off
@@ -87,9 +87,20 @@ func New(o Options) *Device {
 	return &Device{o: o}
 }
 
+// statusPort is a Port that reports speaker_status itself (InpOutx64).
+type statusPort interface {
+	Status() model.SpeakerStatus
+}
+
 // Status is the speaker_status payload.
 func (d *Device) Status() model.SpeakerStatus {
-	if d == nil || d.o.Port == nil {
+	if d == nil {
+		return model.SpeakerStatus{Available: false, Reason: model.SpeakerNotInstalled}
+	}
+	if sp, ok := d.o.Port.(statusPort); ok {
+		return sp.Status()
+	}
+	if d.o.Port == nil {
 		return model.SpeakerStatus{Available: false, Reason: model.SpeakerNotInstalled}
 	}
 	st := model.SpeakerStatus{Available: true, DriverVersion: d.o.DriverVersion}
@@ -101,7 +112,7 @@ func (d *Device) Status() model.SpeakerStatus {
 }
 
 func (d *Device) available() bool {
-	return d != nil && d.o.Port != nil && d.o.Reason == ""
+	return d != nil && d.Status().Available
 }
 
 // Tone starts a tone of freqHz for durMs milliseconds owned by owner
@@ -113,7 +124,7 @@ func (d *Device) Tone(owner any, freqHz, durMs int) error {
 		return d.Stop(owner)
 	}
 	if !d.available() {
-		return unavailable()
+		return unavailableReason(d.Status().Reason)
 	}
 	if freqHz < MinFreqHz || freqHz > MaxFreqHz {
 		return invalid()
@@ -160,15 +171,25 @@ func (d *Device) Release(owner any) {
 	}
 }
 
+// unloader is a Port that can stop the kernel driver after silence.
+type unloader interface {
+	ScheduleUnload()
+	Unload()
+}
+
 // Silence turns the speaker off regardless of owner (stop / shutdown /
-// preshutdown / suspend). Safe on a nil Device.
+// preshutdown / suspend) and unloads the kernel driver immediately.
+// Safe on a nil Device.
 func (d *Device) Silence() {
 	if d == nil {
 		return
 	}
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	_ = d.offLocked()
+	d.mu.Unlock()
+	if u, ok := d.o.Port.(unloader); ok {
+		u.Unload()
+	}
 }
 
 func (d *Device) autoOff(gen uint64, ch <-chan time.Time) {
@@ -196,7 +217,7 @@ func (d *Device) programLocked(freqHz int) error {
 
 func (d *Device) offLocked() error {
 	d.gen++ // invalidate an in-flight auto-off
-	if !d.on && d.o.Port == nil {
+	if !d.on {
 		return nil
 	}
 	d.on, d.owner = false, nil
@@ -207,7 +228,13 @@ func (d *Device) offLocked() error {
 	if err != nil {
 		return err
 	}
-	return d.o.Port.Write([]PortWrite{{PortPPI, cur &^ SpeakerBits}})
+	err = d.o.Port.Write([]PortWrite{{PortPPI, cur &^ SpeakerBits}})
+	if err == nil {
+		if u, ok := d.o.Port.(unloader); ok {
+			u.ScheduleUnload()
+		}
+	}
+	return err
 }
 
 // Divisor is PITHz/freqHz (integer division), the 16-bit PIT latch.
@@ -224,6 +251,13 @@ func Divisor(freqHz int) uint16 {
 
 func unavailable() error {
 	return &model.IPCError{Code: model.ErrCodeUnavailable, Key: model.MsgSpeakerNotInstalled, Message: "speaker: not installed"}
+}
+
+func unavailableReason(reason string) error {
+	if reason == model.SpeakerNotInstalled || reason == "" {
+		return unavailable()
+	}
+	return &model.IPCError{Code: model.ErrCodeUnavailable, Key: model.MsgSpeakerFailed, Message: "speaker: " + reason}
 }
 func busy() error {
 	return &model.IPCError{Code: model.ErrCodeBusy, Key: model.MsgSpeakerBusy, Message: "speaker: busy"}

@@ -3,6 +3,7 @@ package ipc
 import (
 	"context"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 type recPort struct {
 	pcspeaker.Port
+	mu     sync.Mutex
 	writes [][]pcspeaker.PortWrite
 	r61    byte
 }
@@ -19,12 +21,16 @@ type recPort struct {
 func newRec(r61 byte) *recPort { return &recPort{r61: r61} }
 
 func (p *recPort) Read(port uint16) (byte, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if port == pcspeaker.PortPPI {
 		return p.r61, nil
 	}
 	return 0, nil
 }
 func (p *recPort) Write(batch []pcspeaker.PortWrite) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	cp := append([]pcspeaker.PortWrite(nil), batch...)
 	p.writes = append(p.writes, cp)
 	for _, w := range batch {
@@ -33,6 +39,18 @@ func (p *recPort) Write(batch []pcspeaker.PortWrite) error {
 		}
 	}
 	return nil
+}
+
+// seq is a snapshot of recorded writes (tests; recPort is also written
+// from Server.drop / Release).
+func (p *recPort) seq() [][]pcspeaker.PortWrite {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([][]pcspeaker.PortWrite, len(p.writes))
+	for i, w := range p.writes {
+		out[i] = append([]pcspeaker.PortWrite(nil), w...)
+	}
+	return out
 }
 
 func speakerSrv(t *testing.T, port pcspeaker.Port) (*Server, *MemListener, *pcspeaker.Device) {
@@ -139,8 +157,8 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 			t.Fatalf("validation %+v → %+v %v", req, m, err)
 		}
 	}
-	if len(p.writes) != 0 {
-		t.Fatalf("invalid tone wrote %+v", p.writes)
+	if len(p.seq()) != 0 {
+		t.Fatalf("invalid tone wrote %+v", p.seq())
 	}
 	ok, err := c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: 5000})
 	if err != nil || ok.Type != model.MsgOK || ok.Result != model.ResultAccepted {
@@ -153,8 +171,8 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 		{Port: pcspeaker.PortTimerData, Val: byte(div >> 8)},
 		{Port: pcspeaker.PortPPI, Val: pcspeaker.SpeakerBits},
 	}
-	if !reflect.DeepEqual(p.writes, [][]pcspeaker.PortWrite{wantOn}) {
-		t.Fatalf("writes %+v", p.writes)
+	if !reflect.DeepEqual(p.seq(), [][]pcspeaker.PortWrite{wantOn}) {
+		t.Fatalf("writes %+v", p.seq())
 	}
 	busy, err := c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 880, DurMs: 100})
 	if err != nil || busy.ErrorKey != model.MsgSpeakerBusy || busy.Code != model.ErrCodeBusy {
@@ -164,8 +182,8 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 	if err != nil || denied.ErrorKey != model.MsgSpeakerNotOwner {
 		t.Fatalf("foreign stop %+v %v", denied, err)
 	}
-	if len(p.writes) != 1 {
-		t.Fatalf("foreign cmds wrote %+v", p.writes)
+	if len(p.seq()) != 1 {
+		t.Fatalf("foreign cmds wrote %+v", p.seq())
 	}
 	// connection close of the owner silences
 	c1.Close()
@@ -175,17 +193,17 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 	// starting a tone from c2 — but that could race. Use a deadline loop
 	// on p.writes without Sleep: Tone/Status from c2 after Close.)
 	deadline := time.After(3 * time.Second)
-	for len(p.writes) < 2 {
+	for len(p.seq()) < 2 {
 		select {
 		case <-deadline:
-			t.Fatalf("close did not silence: %+v", p.writes)
+			t.Fatalf("close did not silence: %+v", p.seq())
 		default:
 			_, _ = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerStatus})
 		}
 	}
 	wantOff := []pcspeaker.PortWrite{{Port: pcspeaker.PortPPI, Val: 0}}
-	if !reflect.DeepEqual(p.writes[1], wantOff) {
-		t.Fatalf("close off %+v", p.writes)
+	if !reflect.DeepEqual(p.seq()[1], wantOff) {
+		t.Fatalf("close off %+v", p.seq())
 	}
 	// the speaker is free: c2 can start a tone
 	ok, err = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 1000, DurMs: 100})

@@ -73,7 +73,8 @@ type appConfig struct {
 	Protector config.Protector
 	// TelegramBaseURL overrides the Bot API base URL (tests: httptest).
 	TelegramBaseURL string
-	// SpeakerPort is the PC-speaker I/O backend (tests). nil = not installed.
+	// SpeakerPort is the PC-speaker I/O backend (tests). nil = production
+	// InpOutx64 Port (CHK-SVC-12).
 	SpeakerPort   pcspeaker.Port
 	EmailSendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
 	// Ready is called once the monitor and IPC server are running (tests).
@@ -198,10 +199,15 @@ func runService(ctx context.Context, ac appConfig) error {
 	defer email.Close()
 	telegram := notify.NewTelegram(notify.TelegramOptions{Store: store, BaseURL: ac.TelegramBaseURL, Log: log, Now: ac.Now})
 	defer telegram.Close()
-	// Phase 14 (CHK-SVC-11): no kernel driver is wired; Status is
-	// not_installed. Silence on ctx cancel (console) and on the SCM hook
+	// Phase 14 (CHK-SVC-12): production Port is InpOutx64 (hash + SCM
+	// start only for the tone; Silence unloads the driver). Tests may
+	// inject SpeakerPort. Silence on ctx cancel and on the SCM hook
 	// (STOP / SHUTDOWN / PRESHUTDOWN / PBT_APMSUSPEND).
-	spk := pcspeaker.New(pcspeaker.Options{Port: ac.SpeakerPort})
+	port := ac.SpeakerPort
+	if port == nil {
+		port = pcspeaker.NewInpOut(pcspeaker.InpOutOptions{})
+	}
+	spk := pcspeaker.New(pcspeaker.Options{Port: port})
 	defer spk.Silence()
 	winsvc.SetOnSilence(spk.Silence)
 	defer winsvc.SetOnSilence(nil)

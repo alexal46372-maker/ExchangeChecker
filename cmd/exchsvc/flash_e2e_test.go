@@ -65,7 +65,7 @@ func newFlashRig(t *testing.T, poll time.Duration, delayFlash time.Duration) *fl
 	return r
 }
 
-func (r *flashRig) client() chan model.IPCMessage {
+func (r *flashRig) client() (chan model.IPCMessage, *ipc.Client) {
 	rw, err := r.lis.Dial()
 	if err != nil {
 		r.t.Fatal(err)
@@ -78,7 +78,7 @@ func (r *flashRig) client() chan model.IPCMessage {
 		}
 	})
 	r.t.Cleanup(func() { c.Close() })
-	return ch
+	return ch, c
 }
 
 func nextPush(ch chan model.IPCMessage, typ string, d time.Duration) (model.IPCMessage, bool) {
@@ -162,7 +162,7 @@ func TestCHK_MON_22_FlashE2E(t *testing.T) {
 	if !has {
 		t.Fatalf("caps %v", hello.Capabilities)
 	}
-	p2 := r.client()
+	p2, _ := r.client()
 	pushes := r.s.pushes
 
 	// warning (lag 45 min: between 30 and 60) → flash level warning
@@ -279,7 +279,7 @@ func TestCHK_MON_22_FlashMuteRace(t *testing.T) {
 	defer cancel()
 	r.ctx = ctx
 	atomic.StoreInt64(&r.lag, 600)
-	ch := r.client()
+	ch, c2 := r.client()
 	var mu sync.Mutex
 	last := ""
 	done := make(chan struct{})
@@ -320,9 +320,11 @@ func TestCHK_MON_22_FlashMuteRace(t *testing.T) {
 		}()
 		_, _ = r.s.c.Do(ctx, model.IPCRequest{Cmd: model.CmdGetStatus})
 		wg.Wait()
-		// let in-flight polls / pushes settle (pushes are FIFO per client:
-		// a get_status round trip on the second client flushes its queue)
-		time.Sleep(120 * time.Millisecond)
+		// pushes are FIFO per client: a get_status round trip on the
+		// second client flushes its queue before we inspect last
+		if _, err := c2.Do(ctx, model.IPCRequest{Cmd: model.CmdGetStatus}); err != nil {
+			t.Fatalf("round %d get_status: %v", i, err)
+		}
 		mu.Lock()
 		got := last
 		mu.Unlock()

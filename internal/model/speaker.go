@@ -36,7 +36,7 @@ const (
 
 	// SpeakerListenIntervalMs / SpeakerListenMaxMs: when there is no
 	// active warning/error alarm, speaker_tone is listen mode — at most
-	// once per interval per connection, duration clipped to MaxMs.
+	// once per interval for the whole service, duration clipped to MaxMs.
 	SpeakerListenIntervalMs = 10_000
 	SpeakerListenMaxMs      = 5_000
 )

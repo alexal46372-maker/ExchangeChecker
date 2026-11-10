@@ -248,7 +248,7 @@ var monitorMessages = map[string]string{ // key -> text (RU)
 	MsgSpeakerNotOwner:         "Остановить тон может только подключение, которое его включило.",
 	MsgSpeakerInvalid:          "Неверная частота или длительность тона системного динамика.",
 	MsgSpeakerFailed:           "Не удалось обратиться к системному динамику.",
-	MsgSpeakerDenied:           "Тон системного динамика разрешён при активной тревоге warning/error либо в режиме прослушивания (не чаще одного раза в 10 с на подключение, до 5 с).",
+	MsgSpeakerDenied:           "Тон системного динамика разрешён при активной тревоге warning/error либо в режиме прослушивания (не чаще одного раза в 10 с на всю службу, до 5 с).",
 }
 
 // MonitorMessage returns the (Russian) text of a monitor.* key, or ""

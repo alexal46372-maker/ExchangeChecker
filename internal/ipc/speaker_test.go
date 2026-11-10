@@ -59,7 +59,11 @@ func (p *recPort) seq() [][]pcspeaker.PortWrite {
 
 func speakerSrv(t *testing.T, port pcspeaker.Port) (*Server, *MemListener, *pcspeaker.Device) {
 	t.Helper()
-	h := &fakeHandler{snap: testSnapshot()}
+	snap := testSnapshot()
+	// An active warning so caps / busy / owner tests are not clipped by
+	// the process-wide listen window (CHK-IPC-20).
+	snap.Alerts = []model.AlertEvent{{ID: 1, ProfileID: "db1", To: model.LevelWarning, At: snap.Now}}
+	h := &fakeHandler{snap: snap}
 	s := NewServer(h, &testLog{})
 	dev := pcspeaker.New(pcspeaker.Options{Port: port, DriverVersion: "test-0"})
 	s.Speaker = dev
@@ -260,9 +264,9 @@ func (c *testClock) Advance(d time.Duration) {
 }
 
 // TestCHK_IPC_20_SpeakerDeniedListenAndAlarm — speaker_tone starts only with
-// an active warning/error alert, or in listen mode (1 / 10s / connection,
-// duration clipped to 5s). Otherwise notify.speaker_denied. durMs=0 of the
-// owner's tone is always allowed. Time is an injected clock (no sleep).
+// an active warning/error alert, or in listen mode (1 / 10s for the whole
+// service, duration clipped to 5s). Otherwise notify.speaker_denied. durMs=0
+// of the owner's tone is always allowed. Time is an injected clock (no sleep).
 func TestCHK_IPC_20_SpeakerDeniedListenAndAlarm(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -308,12 +312,11 @@ func TestCHK_IPC_20_SpeakerDeniedListenAndAlarm(t *testing.T) {
 	if err != nil || denied.ErrorKey != model.MsgSpeakerDenied {
 		t.Fatalf("after stop still denied %+v %v", denied, err)
 	}
-	// another connection has its own listen slot
-	ok, err = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 1000, DurMs: intptr(100)})
-	if err != nil || ok.Type != model.MsgOK {
-		t.Fatalf("other conn listen %+v %v", ok, err)
+	// the listen window is process-wide: another connection is denied too
+	denied, err = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 1000, DurMs: intptr(100)})
+	if err != nil || denied.ErrorKey != model.MsgSpeakerDenied || denied.Code != model.ErrCodeDenied {
+		t.Fatalf("other conn within 10s %+v %v", denied, err)
 	}
-	_, _ = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
 
 	clk.Advance(time.Duration(model.SpeakerListenIntervalMs) * time.Millisecond)
 	ok, err = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(100)})
@@ -345,4 +348,15 @@ func TestCHK_IPC_20_SpeakerDeniedListenAndAlarm(t *testing.T) {
 	if err != nil || denied.ErrorKey != model.MsgSpeakerDenied {
 		t.Fatalf("no alarm after listen %+v %v", denied, err)
 	}
+	// acknowledged warning/error alerts stay in Snapshot.Alerts and still
+	// open alarm mode (no 5s clip)
+	h.snap.Alerts = []model.AlertEvent{{ID: 2, ProfileID: "db1", To: model.LevelWarning, At: clk.Now(), Acknowledged: true}}
+	ok, err = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(30_000)})
+	if err != nil || ok.Type != model.MsgOK {
+		t.Fatalf("acked alarm start %+v %v", ok, err)
+	}
+	if gotDur != 30*time.Second {
+		t.Fatalf("acked alarm dur %s, want 30s", gotDur)
+	}
+	_, _ = c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
 }

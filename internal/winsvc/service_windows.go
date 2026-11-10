@@ -49,7 +49,7 @@ func ctlHandler(code, eventType, eventData, ctx uintptr) uintptr {
 	if c == nil {
 		return errorCallNotImplemented
 	}
-	return uintptr(c.control(uint32(code)))
+	return uintptr(c.controlEx(uint32(code), uint32(eventType)))
 }
 
 func serviceMain(argc uint32, argv uintptr) uintptr {

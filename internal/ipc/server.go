@@ -277,7 +277,10 @@ type Server struct {
 	AlarmTest AlarmTester
 	// Summary (phase 11, CHK-SVC-07): summary and capability summary;
 	// nil = not offered.
-	Summary     SummarySource
+	Summary SummarySource
+	// Speaker (phase 14, CHK-IPC-20): speaker_tone / speaker_status and
+	// caps speaker / speaker_status; nil = not offered.
+	Speaker     Speaker
 	alarmTestAt time.Time // last accepted alarm_test (s.mu)
 
 	histN int // running history requests (s.mu)
@@ -416,6 +419,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(ProfileEnabler); ok {
 		caps = append(caps, model.CapProfileEnabled) // phase 13 (CHK-IPC-18)
+	}
+	if s.Speaker != nil {
+		caps = append(caps, model.CapSpeaker, model.CapSpeakerStatus) // phase 14 (CHK-IPC-20)
 	}
 	if disc {
 		caps = append(caps, model.CapDiscover, model.CapDiscoverByValue, model.CapNodePoints, model.CapCheckMapping)
@@ -683,6 +689,9 @@ func (s *Server) drop(c *conn) {
 	s.mu.Lock()
 	delete(s.conns, c)
 	s.mu.Unlock()
+	if s.Speaker != nil {
+		s.Speaker.Release(c)
+	}
 	if c.release != nil {
 		c.relOnce.Do(c.release)
 	}
@@ -857,6 +866,12 @@ func (s *Server) readLoop(c *conn) {
 			continue
 		case s.Telegram != nil && telegramCommand(req.Cmd):
 			if !s.startTelegram(c, req) {
+				s.Log.Printf("ipc: client too slow, disconnected")
+				return
+			}
+			continue
+		case s.Speaker != nil && speakerCommand(req.Cmd):
+			if !s.startSpeaker(c, req) {
 				s.Log.Printf("ipc: client too slow, disconnected")
 				return
 			}

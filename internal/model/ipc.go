@@ -127,6 +127,9 @@ const (
 	// limit (IPCCommandInterval); test_profile cannot be merged into an
 	// earlier call, so it is refused instead of coalesced.
 	ErrCodeRateLimited = "rate_limited"
+	// ErrCodeUnavailable: the feature is not usable on this machine
+	// (phase 14, CHK-IPC-20: speaker not installed / unsupported).
+	ErrCodeUnavailable = "unavailable"
 )
 
 // IPCError is an error with a protocol error code and a localizable
@@ -221,6 +224,9 @@ type IPCRequest struct {
 	ClearBotToken bool   `json:"clearBotToken,omitempty"`
 	// Enabled: set_enabled (phase 13, CHK-IPC-18); required there.
 	Enabled *bool `json:"enabled,omitempty"`
+	// FreqHz / DurMs: speaker_tone (phase 14, CHK-IPC-20). durMs=0 stops.
+	FreqHz int `json:"freqHz,omitempty"`
+	DurMs  int `json:"durMs,omitempty"`
 	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
 	Level string `json:"level,omitempty"`
 	Viber bool   `json:"viber,omitempty"`
@@ -381,6 +387,8 @@ type IPCMessage struct {
 	EmailTest *EmailTestResult `json:"emailTest,omitempty"`
 	// TelegramTest: telegram_test_result (phase 13, CHK-IPC-17).
 	TelegramTest *TelegramTestResult `json:"telegramTest,omitempty"`
+	// Speaker: speaker_status (phase 14, CHK-IPC-20).
+	Speaker *SpeakerStatus `json:"speaker,omitempty"`
 	// Enabled: set_enabled reply / profile_enabled push (CHK-IPC-18).
 	Enabled *bool `json:"enabled,omitempty"`
 	// PointKey / EventID / Level: flash and flash_stop pushes (phase 13,

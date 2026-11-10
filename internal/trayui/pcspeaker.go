@@ -7,10 +7,30 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
+// speakerReasons: the reasons of speaker_status and the notify.speaker_*
+// error keys of the service → short Russian texts (CHK-TRAY-99).
+var speakerReasons = map[string]string{
+	model.SpeakerUnsupportedOS:   i18n.KeySpeakerUnsupportedOS,
+	model.SpeakerNotInstalled:    i18n.KeySpeakerNotInstalled,
+	model.SpeakerBlocked:         i18n.KeySpeakerBlocked,
+	model.SpeakerOpenFailed:      i18n.KeySpeakerOpenFailed,
+	model.SpeakerModuleFailed:    i18n.KeySpeakerModuleFailed,
+	model.MsgSpeakerNotInstalled: i18n.KeySpeakerNotInstalled,
+	model.MsgSpeakerBusy:         i18n.KeySpeakerBusy,
+	model.MsgSpeakerNotOwner:     i18n.KeySpeakerNotOwner,
+	model.MsgSpeakerInvalid:      i18n.KeySpeakerInvalid,
+	model.MsgSpeakerFailed:       i18n.KeySpeakerFailed,
+}
+
 // SpeakerReason renders the reason of a speaker that is not available:
-// a tray catalog key (trayipc.SpeakerNoService / SpeakerNoCap), a service
-// message key, else the text as sent ("" = «причина не указана»).
+// a reason / error key of the service (short Russian text), a tray
+// catalog key (trayipc.SpeakerNoService / SpeakerNoCap / SpeakerTimeout),
+// another service message key, else the text as sent ("" = «причина не
+// указана»).
 func SpeakerReason(r string) string {
+	if k, ok := speakerReasons[r]; ok {
+		return i18n.T(k)
+	}
 	switch {
 	case r == "":
 		return i18n.T(i18n.KeySpeakerNoReason)

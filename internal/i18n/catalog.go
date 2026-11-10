@@ -720,6 +720,17 @@ const (
 	KeySpeakerNoCap       = "speaker.no_cap"
 	KeySpeakerNoReason    = "speaker.no_reason"
 	KeySpeakerTimeout     = "speaker.timeout"
+	// short reasons of the service (speaker_status.reason, notify.speaker_*)
+	// for the status line and the journal (CHK-TRAY-99)
+	KeySpeakerUnsupportedOS = "speaker.unsupported_os"
+	KeySpeakerNotInstalled  = "speaker.not_installed"
+	KeySpeakerBlocked       = "speaker.blocked"
+	KeySpeakerOpenFailed    = "speaker.open_failed"
+	KeySpeakerModuleFailed  = "speaker.module_failed"
+	KeySpeakerBusy          = "speaker.busy"
+	KeySpeakerNotOwner      = "speaker.not_owner"
+	KeySpeakerInvalid       = "speaker.invalid"
+	KeySpeakerFailed        = "speaker.failed"
 	KeySpeakerFallback    = "speaker.fallback"
 	KeyTipSoundKind     = "tip.sound_kind"
 	KeyTipSoundFreq     = "tip.sound_freq"
@@ -1574,6 +1585,15 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySpeakerNoCap:       "служба не поддерживает системный динамик",
 	KeySpeakerNoReason:    "причина не указана",
 	KeySpeakerTimeout:     "служба не ответила вовремя",
+	KeySpeakerUnsupportedOS: "не поддерживается этой версией Windows",
+	KeySpeakerNotInstalled:  "драйвер не установлен",
+	KeySpeakerBlocked:       "драйвер заблокирован",
+	KeySpeakerOpenFailed:    "не удалось открыть драйвер",
+	KeySpeakerModuleFailed:  "не удалось загрузить драйвер",
+	KeySpeakerBusy:          "динамик занят другим подключением",
+	KeySpeakerNotOwner:      "тон включило другое подключение",
+	KeySpeakerInvalid:       "неверная частота или длительность тона",
+	KeySpeakerFailed:        "ошибка обращения к динамику",
 	KeySpeakerFallback:    "Системный динамик недоступен (%s), тон звучит через колонки",
 	KeyTipSoundKind:       "Тон — заданная частота через системный динамик компьютера (его включает служба); если он недоступен — синусоида через колонки или звуковую карту. Громкость тона не регулируется. Файл — WAV, MP3, WMA или MID",
 	KeyTipSoundFreq:       "Частота тона, 37–32767 Гц",

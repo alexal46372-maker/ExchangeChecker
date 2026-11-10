@@ -10,10 +10,14 @@ import (
 )
 
 // Phase 14 (feat/tray-speaker, CHK-TRAY-98): the client side of the PC
-// speaker of the service (capabilities speaker / speaker_status, EC
-// Service feat/svc-speaker). MERGE NOTE: only this file and the two
-// commandCapability entries below are added to trayipc; the session
-// itself is unchanged.
+// speaker of the service (CHK-IPC-20: capabilities speaker /
+// speaker_status; speaker_status → {type:"speaker_status", speaker:{…}};
+// speaker_tone → ok, result accepted / stopped; errors
+// notify.speaker_*). The owner of a tone is the connection: the alarm and
+// «Прослушать» of one tray share it; another connection gets
+// notify.speaker_busy. The service clips durMs to 60 s, the tray sends
+// the profile duration as is. Only this file and the two
+// commandCapability entries below are added to trayipc.
 
 func init() {
 	commandCapability[model.CmdSpeakerTone] = model.CapSpeaker
@@ -148,16 +152,16 @@ func (sp *Speaker) Invalidate() {
 }
 
 // Tone sends speaker_tone {freqHz, durMs} (durMs 0 = stop). A failure
-// marks the speaker not available (with the error) until the cache
-// expires or the connection changes, so the next tones go straight to
-// the fallback.
+// (except notify.speaker_busy: another connection plays now) marks the
+// speaker not available with the error until the cache expires or the
+// connection changes, so the next tones go straight to the fallback.
 func (sp *Speaker) Tone(ctx context.Context, freqHz, durMs int) error {
 	if g, _, ok := sp.gate(); !ok {
 		return errors.New(g.Reason)
 	}
 	ctx, cancel := context.WithTimeout(ctx, sp.timeout())
 	defer cancel()
-	d := durMs
+	d := durMs // a pointer: the stop request carries "durMs":0
 	req := model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: freqHz, DurMs: &d}
 	m, err := sp.C.Do(ctx, req)
 	if err == nil && m.Type == model.MsgError {
@@ -165,7 +169,7 @@ func (sp *Speaker) Tone(ctx context.Context, freqHz, durMs int) error {
 	}
 	if err != nil {
 		err = errors.New(reasonOf(err))
-		if durMs > 0 {
+		if durMs > 0 && err.Error() != model.MsgSpeakerBusy {
 			sp.store(model.SpeakerStatus{Reason: err.Error()}, sp.C.Status())
 		}
 	}

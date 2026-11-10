@@ -22,6 +22,17 @@ func TestCHK_TRAY_99_SpeakerLine(t *testing.T) {
 		{model.SpeakerStatus{Reason: trayipc.SpeakerNoCap}, "Системный динамик: недоступен (служба не поддерживает системный динамик) — тон звучит через колонки"},
 		{model.SpeakerStatus{Reason: trayipc.SpeakerTimeout}, "Системный динамик: недоступен (служба не ответила вовремя) — тон звучит через колонки"},
 		{model.SpeakerStatus{}, "Системный динамик: недоступен (причина не указана) — тон звучит через колонки"},
+		// the service's reasons and notify.speaker_* keys — short Russian texts
+		{model.SpeakerStatus{Reason: model.SpeakerNotInstalled}, "Системный динамик: недоступен (драйвер не установлен) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.SpeakerUnsupportedOS}, "Системный динамик: недоступен (не поддерживается этой версией Windows) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.SpeakerBlocked}, "Системный динамик: недоступен (драйвер заблокирован) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.SpeakerOpenFailed}, "Системный динамик: недоступен (не удалось открыть драйвер) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.SpeakerModuleFailed}, "Системный динамик: недоступен (не удалось загрузить драйвер) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.MsgSpeakerNotInstalled}, "Системный динамик: недоступен (драйвер не установлен) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.MsgSpeakerBusy}, "Системный динамик: недоступен (динамик занят другим подключением) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.MsgSpeakerNotOwner}, "Системный динамик: недоступен (тон включило другое подключение) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.MsgSpeakerInvalid}, "Системный динамик: недоступен (неверная частота или длительность тона) — тон звучит через колонки"},
+		{model.SpeakerStatus{Reason: model.MsgSpeakerFailed}, "Системный динамик: недоступен (ошибка обращения к динамику) — тон звучит через колонки"},
 		{model.SpeakerStatus{Reason: model.MsgMonitorInternal}, "Системный динамик: недоступен (" + model.MonitorMessage(model.MsgMonitorInternal) + ") — тон звучит через колонки"},
 	} {
 		if got := SpeakerLine(c.st); got != c.want {

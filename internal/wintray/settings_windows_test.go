@@ -342,7 +342,7 @@ func startCfgApp(t *testing.T, svc *cfgService, admin bool, el Elevator, conf ..
 	if at, ok := h.(ipc.AlarmTester); ok {
 		srv.AlarmTest = at // capability alarm_test (CHK-TRAY-67)
 	}
-	if sp, ok := h.(ipc.SpeakerPort); ok {
+	if sp, ok := h.(ipc.Speaker); ok {
 		srv.Speaker = sp // capabilities speaker / speaker_status (CHK-TRAY-99)
 	}
 	go srv.Serve(l)

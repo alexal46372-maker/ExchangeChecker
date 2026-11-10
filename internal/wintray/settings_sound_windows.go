@@ -35,7 +35,7 @@ func (w *settingsWindow) buildSoundSection(
 	w.sndWarn, warnN = w.buildEmbeddedProfile(add, label, idSndWarn, i18n.T(i18n.KeySoundWarning))
 	w.sndErr, errN = w.buildEmbeddedProfile(add, label, idSndErr, i18n.T(i18n.KeySoundError))
 	// phase 14 (CHK-TRAY-99): «Системный динамик: доступен / недоступен (…)»
-	spk := add("STATIC", "", 0, winapi.SS_LEFT, idSndSpeaker, ui.Box, 540, 20)
+	spk := add("STATIC", "", 0, winapi.SS_LEFT, idSndSpeaker, ui.Box, 540, 36)
 	spk.Grow = true
 	w.sndSpeaker = spk.H
 	info := add("STATIC", "", 0, winapi.SS_LEFT, idSndInfo, ui.Box, 540, 36)
@@ -97,7 +97,10 @@ func (w *settingsWindow) buildEmbeddedProfile(
 			&ui.Row{Gap: ui.P16, Items: []ui.Node{beep, file}},
 			&ui.Grid{Rows: []ui.GridRow{
 				{Label: freqL, Field: &ui.Row{Items: []ui.Node{freq, &ui.Space{W: ui.P8}, durL, dur}}},
-				{Label: volL, Field: &ui.Row{Items: []ui.Node{vol, &ui.Space{W: ui.P8}, volNote, &ui.Space{W: ui.P8}, loop}}},
+				{Label: volL, Field: &ui.Col{Items: []ui.Node{
+					&ui.Row{Items: []ui.Node{vol, &ui.Space{W: ui.P8}, loop}},
+					volNote, // phase 14: under the volume, the row stays as wide as before
+				}}},
 				{Label: gapL, Field: gap},
 			}},
 			&ui.Row{Grow: true, Items: []ui.Node{path, browse}},

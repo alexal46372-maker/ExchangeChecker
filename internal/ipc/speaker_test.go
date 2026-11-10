@@ -1,7 +1,9 @@
 package ipc
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"reflect"
 	"sync"
 	"testing"
@@ -10,6 +12,8 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/pcspeaker"
 )
+
+func intptr(v int) *int { return &v }
 
 type recPort struct {
 	pcspeaker.Port
@@ -127,12 +131,12 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 		st.Speaker.Available || st.Speaker.Reason != model.SpeakerNotInstalled {
 		t.Fatalf("status %+v %v", st, err)
 	}
-	tone, err := c0.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: 100})
+	tone, err := c0.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(100)})
 	if err != nil || tone.ErrorKey != model.MsgSpeakerNotInstalled || tone.Code != model.ErrCodeUnavailable {
 		t.Fatalf("tone not_installed %+v %v", tone, err)
 	}
 	// stop is a no-op even when not installed
-	stop, err := c0.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: 0})
+	stop, err := c0.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
 	if err != nil || stop.Type != model.MsgOK || stop.Result != model.ResultToneStopped {
 		t.Fatalf("stop %+v %v", stop, err)
 	}
@@ -148,9 +152,9 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 	}
 	// bad freq / negative dur
 	for _, req := range []model.IPCRequest{
-		{Cmd: model.CmdSpeakerTone, FreqHz: 36, DurMs: 100},
-		{Cmd: model.CmdSpeakerTone, FreqHz: 32768, DurMs: 100},
-		{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: -1},
+		{Cmd: model.CmdSpeakerTone, FreqHz: 36, DurMs: intptr(100)},
+		{Cmd: model.CmdSpeakerTone, FreqHz: 32768, DurMs: intptr(100)},
+		{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(-1)},
 	} {
 		m, err := c1.Do(ctx, req)
 		if err != nil || m.ErrorKey != model.MsgSpeakerInvalid || m.Code != model.ErrCodeInvalidRequest {
@@ -160,7 +164,20 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 	if len(p.seq()) != 0 {
 		t.Fatalf("invalid tone wrote %+v", p.seq())
 	}
-	ok, err := c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: 5000})
+	// omitted / nil durMs is invalid (not a stop)
+	nilDur, err := c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440})
+	if err != nil || nilDur.ErrorKey != model.MsgSpeakerInvalid || nilDur.Code != model.ErrCodeInvalidRequest {
+		t.Fatalf("nil durMs %+v %v", nilDur, err)
+	}
+	if len(p.seq()) != 0 {
+		t.Fatalf("nil durMs wrote %+v", p.seq())
+	}
+	// stop must encode as "durMs":0, not omit the field
+	raw, err := json.Marshal(model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
+	if err != nil || !bytes.Contains(raw, []byte(`"durMs":0`)) {
+		t.Fatalf("stop json %s %v", raw, err)
+	}
+	ok, err := c1.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(5000)})
 	if err != nil || ok.Type != model.MsgOK || ok.Result != model.ResultAccepted {
 		t.Fatalf("start %+v %v", ok, err)
 	}
@@ -174,11 +191,11 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 	if !reflect.DeepEqual(p.seq(), [][]pcspeaker.PortWrite{wantOn}) {
 		t.Fatalf("writes %+v", p.seq())
 	}
-	busy, err := c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 880, DurMs: 100})
+	busy, err := c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 880, DurMs: intptr(100)})
 	if err != nil || busy.ErrorKey != model.MsgSpeakerBusy || busy.Code != model.ErrCodeBusy {
 		t.Fatalf("busy %+v %v", busy, err)
 	}
-	denied, err := c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: 0})
+	denied, err := c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, DurMs: intptr(0)})
 	if err != nil || denied.ErrorKey != model.MsgSpeakerNotOwner {
 		t.Fatalf("foreign stop %+v %v", denied, err)
 	}
@@ -206,7 +223,7 @@ func TestCHK_IPC_20_SpeakerCapsStatusAndValidation(t *testing.T) {
 		t.Fatalf("close off %+v", p.seq())
 	}
 	// the speaker is free: c2 can start a tone
-	ok, err = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 1000, DurMs: 100})
+	ok, err = c2.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 1000, DurMs: intptr(100)})
 	if err != nil || ok.Type != model.MsgOK {
 		t.Fatalf("after close %+v %v", ok, err)
 	}

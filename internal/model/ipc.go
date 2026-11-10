@@ -224,9 +224,6 @@ type IPCRequest struct {
 	ClearBotToken bool   `json:"clearBotToken,omitempty"`
 	// Enabled: set_enabled (phase 13, CHK-IPC-18); required there.
 	Enabled *bool `json:"enabled,omitempty"`
-	// FreqHz / DurMs: speaker_tone (phase 14, CHK-IPC-20). durMs=0 stops.
-	FreqHz int `json:"freqHz,omitempty"`
-	DurMs  int `json:"durMs,omitempty"`
 	// Level / Viber: alarm_test (phase 11, CHK-IPC-11).
 	Level string `json:"level,omitempty"`
 	Viber bool   `json:"viber,omitempty"`
@@ -278,6 +275,11 @@ type IPCRequest struct {
 	Auth      string   `json:"auth,omitempty"`
 	Database  string   `json:"database,omitempty"`
 	Tables    []string `json:"tables,omitempty"`
+	// Phase 14 speaker_tone (feat/tray-speaker; MERGE: take the
+	// service's definition): FreqHz and DurMs of the tone; DurMs 0 stops
+	// it. DurMs is a pointer so the stop request carries "durMs":0.
+	FreqHz int  `json:"freqHz,omitempty"`
+	DurMs  *int `json:"durMs,omitempty"`
 }
 
 // String masks the password (fmt %v / %+v of a request).

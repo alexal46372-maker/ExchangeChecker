@@ -16,6 +16,8 @@ import (
 // (no Win7 amd64 + official driver) Status is unavailable: Windows/amd64
 // without the service → not_installed; any other GOOS/GOARCH → unsupported_os.
 // Starting a tone fails with the matching notify key; any client may call it.
+func intptr(v int) *int { return &v }
+
 func TestCHK_IPC_20_ServiceDefaultDriverStatus(t *testing.T) {
 	s := startSvcWith(t, t.TempDir(), 0, nil, &fakeEvents{}, func(ac *appConfig) {
 		ac.Authorize = func(io.ReadWriteCloser) (ipc.Peer, error) { return ipc.Peer{Account: `TEST\user`}, nil }
@@ -41,7 +43,7 @@ func TestCHK_IPC_20_ServiceDefaultDriverStatus(t *testing.T) {
 		st.Speaker.Available || st.Speaker.Reason != wantReason {
 		t.Fatalf("status %+v %v (want reason %s)", st, err, wantReason)
 	}
-	tone, err := s.c.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: 100})
+	tone, err := s.c.Do(ctx, model.IPCRequest{Cmd: model.CmdSpeakerTone, FreqHz: 440, DurMs: intptr(100)})
 	if err != nil || tone.ErrorKey != wantKey || tone.Code != model.ErrCodeUnavailable {
 		t.Fatalf("tone %+v %v (want key %s)", tone, err, wantKey)
 	}

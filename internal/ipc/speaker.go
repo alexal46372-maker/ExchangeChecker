@@ -28,16 +28,19 @@ func (s *Server) startSpeaker(c *conn, req model.IPCRequest) bool {
 		st := s.Speaker.Status()
 		return c.send(model.IPCMessage{ID: req.ID, Type: model.MsgSpeakerStatus, Speaker: &st})
 	case model.CmdSpeakerTone:
-		if req.DurMs < 0 {
+		// nil durMs is invalid (omitted); 0 stops. Pointer so "durMs":0
+		// survives omitempty (same shape as the tray client).
+		if req.DurMs == nil || *req.DurMs < 0 {
 			return c.send(errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgSpeakerInvalid,
 				Message: "ipc: speaker_tone durMs must be >= 0", Args: []string{"durMs", model.ValRange}}, ""))
 		}
-		err := s.Speaker.Tone(c, req.FreqHz, req.DurMs)
+		dur := *req.DurMs
+		err := s.Speaker.Tone(c, req.FreqHz, dur)
 		if err != nil {
 			return c.send(errorReply(req.ID, err, ""))
 		}
 		res := model.ResultAccepted
-		if req.DurMs <= 0 {
+		if dur == 0 {
 			res = model.ResultToneStopped
 		}
 		return c.send(model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: res})

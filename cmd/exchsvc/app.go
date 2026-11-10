@@ -67,6 +67,7 @@ type appConfig struct {
 	ViberURL    string
 	// EmailSendHook replaces the SMTP send of the email notifier (tests:
 	// fake SMTP); nil = net/smtp.
+	EmailSendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
 	// BeforeFlashDelivery: monitor test hook (CHK-MON-22 race test).
 	BeforeFlashDelivery func([]model.FlashEvent)
 	// Protector overrides DPAPI (tests on non-Windows hosts).
@@ -75,8 +76,7 @@ type appConfig struct {
 	TelegramBaseURL string
 	// SpeakerPort is the PC-speaker I/O backend (tests). nil = production
 	// InpOutx64 Port (CHK-SVC-12).
-	SpeakerPort   pcspeaker.Port
-	EmailSendHook func(ctx context.Context, host string, port int, tlsMode, from, password, to, subject, body string) error
+	SpeakerPort pcspeaker.Port
 	// Ready is called once the monitor and IPC server are running (tests).
 	Ready func(*monitor.Monitor, *ipc.Server)
 }
@@ -205,7 +205,7 @@ func runService(ctx context.Context, ac appConfig) error {
 	// (STOP / SHUTDOWN / PRESHUTDOWN / PBT_APMSUSPEND).
 	port := ac.SpeakerPort
 	if port == nil {
-		drv := pcspeaker.NewInpOut(pcspeaker.InpOutOptions{})
+		drv := pcspeaker.NewInpOut(pcspeaker.InpOutOptions{Log: log.Printf})
 		_ = drv.StopLeftover() // leftover from a previous crash, before any tone
 		port = drv
 	}
@@ -213,7 +213,16 @@ func runService(ctx context.Context, ac appConfig) error {
 	defer spk.Silence()
 	winsvc.SetOnSilence(spk.Silence)
 	defer winsvc.SetOnSilence(nil)
-	go func() { defer close(vdone); viber.Run(vctx) }()
+	go func() {
+		defer close(vdone)
+		defer func() {
+			if rec := recover(); rec != nil {
+				spk.Silence()
+				log.Printf("viber: panicked: %v", rec)
+			}
+		}()
+		viber.Run(vctx)
+	}()
 	defer func() { vcancel(); <-vdone }()
 
 	var srv *ipc.Server
@@ -313,6 +322,12 @@ func runService(ctx context.Context, ac appConfig) error {
 	if l != nil {
 		go func() {
 			defer close(served)
+			defer func() {
+				if rec := recover(); rec != nil {
+					spk.Silence()
+					log.Printf("ipc: serve panicked: %v", rec)
+				}
+			}()
 			if err := srv.Serve(l); err != nil {
 				log.Printf("ipc: serve: %v", err)
 			}

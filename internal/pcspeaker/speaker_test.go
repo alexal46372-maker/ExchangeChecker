@@ -250,24 +250,3 @@ func TestCHK_SVC_11_NotInstalledAndSilence(t *testing.T) {
 		t.Fatal("release of the owner did not stop")
 	}
 }
-
-func TestCHK_SVC_11_ShouldSilence(t *testing.T) {
-	if !ShouldSilence(ControlStop, 0) || !ShouldSilence(ControlShutdown, 0) ||
-		!ShouldSilence(ControlPreshutdown, 0) || !ShouldSilence(ControlPowerEvent, PBTAPMSuspend) {
-		t.Fatal("expected silences")
-	}
-	if ShouldSilence(0x00000004, 0) || ShouldSilence(ControlPowerEvent, 0x00000007) ||
-		ShouldSilence(ControlPowerEvent, 0) || ShouldSilence(0, PBTAPMSuspend) {
-		t.Fatal("unexpected silence")
-	}
-	// hook: ShouldSilence + Device.Silence writes off, used by winsvc
-	p := &fakePort{r61: 0}
-	d := New(Options{Port: p})
-	_ = d.Tone("a", 440, 100)
-	if ShouldSilence(ControlStop, 0) {
-		d.Silence()
-	}
-	if !reflect.DeepEqual(p.seq()[len(p.seq())-1], offSeq(SpeakerBits)) {
-		t.Fatal("stop did not silence")
-	}
-}

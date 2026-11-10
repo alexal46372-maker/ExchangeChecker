@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,11 +24,13 @@ type ioctlRec struct {
 }
 
 type fakeDev struct {
-	ppi      byte
-	calls    []ioctlRec
-	ioctlErr error
-	panicOn  bool
-	closed   int
+	ppi         byte
+	calls       []ioctlRec
+	ioctlErr    error
+	failWrites  int  // if > 0, the next N write IOCTLs fail (reads still work)
+	writeBudget bool // failWrites was used; later writes succeed
+	panicOn     bool
+	closed      int
 }
 
 func (d *fakeDev) DeviceIoControl(code uint32, in, out []byte) error {
@@ -37,7 +40,16 @@ func (d *fakeDev) DeviceIoControl(code uint32, in, out []byte) error {
 		panic("ioctl panic")
 	}
 	if d.ioctlErr != nil {
-		return d.ioctlErr
+		if d.failWrites > 0 {
+			if code == ioctlWritePortUchar {
+				d.failWrites--
+				d.writeBudget = true
+				return d.ioctlErr
+			}
+			// reads continue so a retried off can still RMW 0x61
+		} else if !d.writeBudget {
+			return d.ioctlErr
+		}
 	}
 	port := uint16(0)
 	if len(in) >= 2 {
@@ -73,6 +85,7 @@ type fakeKernel struct {
 	opens, starts, stops, closes, devices       int
 	dev                                         *fakeDev
 	running                                     bool
+	stopFailLeft                                int
 }
 
 func (k *fakeKernel) Open(name string) (bool, error) {
@@ -100,10 +113,15 @@ func (k *fakeKernel) Start() error {
 }
 func (k *fakeKernel) Stop() error {
 	k.stops++
-	if k.stopErr == nil {
-		k.running = false
+	if k.stopFailLeft > 0 {
+		k.stopFailLeft--
+		return errors.New("stop failed")
 	}
-	return k.stopErr
+	if k.stopErr != nil {
+		return k.stopErr
+	}
+	k.running = false
+	return nil
 }
 func (k *fakeKernel) Running() (bool, error) { return k.running, nil }
 func (k *fakeKernel) Close()                 { k.closes++ }
@@ -309,6 +327,58 @@ func TestCHK_SVC_12_IOCTLFailModuleFailed(t *testing.T) {
 	}
 	if p.Status().Reason != model.SpeakerModuleFailed {
 		t.Fatalf("status %+v", p.Status())
+	}
+	if k.running || k.stops < 1 {
+		t.Fatalf("ioctl fail must unload: running=%v stops=%d", k.running, k.stops)
+	}
+	if k.dev.ppi&SpeakerBits != 0 {
+		t.Fatalf("0x61 still gated: 0x%02x", k.dev.ppi)
+	}
+}
+
+func TestCHK_SVC_12_OffWriteRetryUnloadsAndClearsGate(t *testing.T) {
+	p, k, _, _ := newReady(t)
+	hold := make(chan time.Time)
+	d := New(Options{Port: p, After: func(time.Duration) <-chan time.Time { return hold }})
+	if err := d.Tone("a", 440, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if k.dev.ppi&SpeakerBits != SpeakerBits {
+		t.Fatalf("tone did not set 0x61: 0x%02x", k.dev.ppi)
+	}
+	// first off write fails; retry succeeds, then the driver is unloaded
+	k.dev.ioctlErr = errors.New("off write failed")
+	k.dev.failWrites = 1
+	if err := d.Stop("a"); err != nil {
+		t.Fatalf("stop after retry: %v", err)
+	}
+	if k.dev.ppi&SpeakerBits != 0 {
+		t.Fatalf("0x61 still gated after retried off: 0x%02x", k.dev.ppi)
+	}
+	if k.running || k.stops < 1 {
+		t.Fatalf("off-path error must unload: running=%v stops=%d", k.running, k.stops)
+	}
+}
+
+func TestCHK_SVC_12_StopRetriesIfStillRunning(t *testing.T) {
+	p, k, _, _ := newReady(t)
+	var logs []string
+	p.o.Log = func(format string, args ...interface{}) {
+		logs = append(logs, fmt.Sprintf(format, args...))
+	}
+	if err := p.Write([]PortWrite{{PortPPI, 0x04}}); err != nil {
+		t.Fatal(err)
+	}
+	if !k.running {
+		t.Fatal("expected running after write")
+	}
+	k.stopFailLeft = 2
+	p.Unload()
+	if k.running || k.stops < 3 {
+		t.Fatalf("retries: running=%v stops=%d", k.running, k.stops)
+	}
+	if len(logs) < 2 {
+		t.Fatalf("expected STOP errors logged, got %q", logs)
 	}
 }
 

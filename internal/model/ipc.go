@@ -130,6 +130,9 @@ const (
 	// ErrCodeUnavailable: the feature is not usable on this machine
 	// (phase 14, CHK-IPC-20: speaker not installed / unsupported).
 	ErrCodeUnavailable = "unavailable"
+	// ErrCodeDenied: the command is valid but refused by policy
+	// (phase 14, CHK-IPC-20: speaker_tone without an alarm / listen slot).
+	ErrCodeDenied = "denied"
 )
 
 // IPCError is an error with a protocol error code and a localizable

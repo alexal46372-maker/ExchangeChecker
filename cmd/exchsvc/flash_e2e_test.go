@@ -236,6 +236,7 @@ func TestCHK_MON_22_FlashE2E(t *testing.T) {
 	// set_enabled=false during flashing → flash_stop, then silence
 	atomic.StoreInt32(&r.admin, 1)
 	no, yes := false, true
+	beforeDisable := f2.EventID
 	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: p.ID, Enabled: &no})
 	if _, ok := nextPush(pushes, model.MsgFlashStop, 5*time.Second); !ok {
 		t.Fatal("no flash_stop on set_enabled=false")
@@ -244,8 +245,9 @@ func TestCHK_MON_22_FlashE2E(t *testing.T) {
 		t.Fatalf("disabled profile flashed %d times", n)
 	}
 	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: p.ID, Enabled: &yes})
-	if _, ok := nextPush(pushes, model.MsgFlash, 8*time.Second); !ok {
-		t.Fatal("no flash after set_enabled=true")
+	en, ok := nextPush(pushes, model.MsgFlash, 8*time.Second)
+	if !ok || en.EventID == 0 || en.EventID == beforeDisable {
+		t.Fatalf("no new flash after set_enabled=true %+v (old eventId %d)", en, beforeDisable)
 	}
 	// mute during flashing → flash_stop, silence
 	atomic.StoreInt32(&r.admin, 0)
@@ -347,5 +349,38 @@ func TestCHK_MON_22_FlashMuteRace(t *testing.T) {
 			}
 			time.Sleep(2 * time.Millisecond)
 		}
+	}
+}
+
+// TestCHK_IPC_21_DismissDisableEnableFlash — real service, one base, a
+// long poll so no later worker poll races with set_enabled: dismiss,
+// disable (flash_stop from reload itself), enable (new worker polls
+// once) → a new eventId flashes again.
+func TestCHK_IPC_21_DismissDisableEnableFlash(t *testing.T) {
+	r := newFlashRig(t, time.Hour, 0)
+	defer r.s.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r.ctx = ctx
+	atomic.StoreInt64(&r.lag, 600)
+	pushes := r.s.pushes
+	f, ok := nextPush(pushes, model.MsgFlash, 8*time.Second)
+	if !ok || f.EventID == 0 || f.ProfileID != r.p.ID {
+		t.Fatalf("first flash %+v %v", f, ok)
+	}
+	if m := r.do(model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: f.EventID}); m.Type != model.MsgOK || m.Result != model.ResultFlashDismissed {
+		t.Fatalf("dismiss %+v", m)
+	}
+	atomic.StoreInt32(&r.admin, 1)
+	no, yes := false, true
+	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: r.p.ID, Enabled: &no})
+	st, ok := nextPush(pushes, model.MsgFlashStop, 3*time.Second)
+	if !ok || st.ProfileID != r.p.ID {
+		t.Fatalf("no flash_stop on disable of the only base %+v %v", st, ok)
+	}
+	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: r.p.ID, Enabled: &yes})
+	f2, ok := nextPush(pushes, model.MsgFlash, 8*time.Second)
+	if !ok || f2.EventID == 0 || f2.EventID == f.EventID || f2.ProfileID != r.p.ID {
+		t.Fatalf("want a new flash after re-enable %+v (old eventId %d)", f2, f.EventID)
 	}
 }

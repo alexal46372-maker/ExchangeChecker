@@ -322,6 +322,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		t.Fatalf("shortcut target %q", sc.Target)
 	}
 	t.Logf("shortcut ok: %s -> %s", lnk, sc.Target)
+	checkInstalledIcon(t, dir, "1.0.0") // CHK-SETUP-18 / CHK-SETUP-21
 
 	// Windows Firewall SQL Browser rule (CHK-SETUP-13)
 	svcPath := filepath.Join(dir, config.ServiceExeName)
@@ -407,6 +408,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		t.Fatal("svc file not restored to V1 image after rollback")
 	}
 	t.Logf("rollback ok: version=%s (V1) service running", instRB.Version)
+	checkInstalledIcon(t, dir, "1.0.0") // exchtray-1.2.0.ico rolled back
 
 	// Real rollback #2: V2 service process starts and then hangs in
 	// START_PENDING (test-only build tag e2efault) — its exe is locked, so
@@ -450,6 +452,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		t.Fatal("svc file not restored to V1 image after hung-V2 rollback")
 	}
 	t.Logf("hung-V2 rollback ok: version=%s, V1 bytes, service RUNNING", instRB.Version)
+	checkInstalledIcon(t, dir, "1.0.0")
 
 	// Start V1 tray from the install folder; good upgrade must terminate it.
 	trayPath := filepath.Join(dir, config.TrayExeName)
@@ -511,6 +514,7 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		t.Fatal("start type not preserved (want AUTO) after upgrade")
 	}
 	t.Logf("upgraded 1.0.0 -> %s; tray terminated; ProgramData hashes stable (%d files)", inst2.Version, len(before))
+	checkInstalledIcon(t, dir, "1.1.0") // exchtray-1.0.0.ico removed by the upgrade
 
 	// uninstall via installed ExchangeCheckerUninstall.exe (keep data)
 	uninstLog := filepath.Join(os.TempDir(), "ec-setup-e2e-uninst.log")
@@ -549,6 +553,9 @@ func TestCHK_SETUP_12_E2E(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, n)); !os.IsNotExist(err) {
 			t.Fatalf("%s still present after uninstall: %v", n, err)
 		}
+	}
+	if left := trayIconFiles(t, dir); len(left) != 0 {
+		t.Fatalf("CHK-SETUP-21: icon files left after uninstall: %v", left)
 	}
 	if _, err := os.Stat(filepath.Join(dir, config.UninstallExeName)); err == nil && code != wininstall.ExitRebootRequired {
 		t.Fatalf("%s still present after uninstall exit %d", config.UninstallExeName, code)

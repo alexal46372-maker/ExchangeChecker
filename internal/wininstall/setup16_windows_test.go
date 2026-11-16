@@ -19,7 +19,7 @@ func TestCHK_SETUP_16_DesktopShortcutRoundTrip(t *testing.T) {
 	}
 	target := filepath.Join(win, "notepad.exe")
 	sys := winSystem{}
-	lnk, err := sys.CreateDesktopShortcut(target, win, "CHK-SETUP-16 test")
+	lnk, err := sys.CreateDesktopShortcut(target, win, "CHK-SETUP-16 test", "")
 	if err != nil {
 		t.Fatalf("CreateDesktopShortcut: %v", err)
 	}

@@ -452,7 +452,7 @@ func startMenuDir() (string, error) {
 	return filepath.Join(progs, StartMenuFolder), nil
 }
 
-func (winSystem) CreateStartShortcut(trayExe, workDir, desc string) (string, error) {
+func (winSystem) CreateStartShortcut(trayExe, workDir, desc, icon string) (string, error) {
 	dir, err := startMenuDir()
 	if err != nil {
 		return "", err
@@ -463,7 +463,7 @@ func (winSystem) CreateStartShortcut(trayExe, workDir, desc string) (string, err
 	lnk := filepath.Join(dir, ShortcutFile)
 	err = winapi.WithCOM(func() error {
 		return winapi.CreateShortcut(lnk, winapi.ShortcutSpec{
-			Target: trayExe, WorkDir: workDir, Description: desc, Icon: trayExe, IconIndex: 0,
+			Target: trayExe, WorkDir: workDir, Description: desc, Icon: shortcutIcon(icon, trayExe), IconIndex: 0,
 		})
 	})
 	if err != nil {
@@ -502,14 +502,14 @@ func publicDesktopLnk() (string, error) {
 	return filepath.Join(desk, ShortcutFile), nil
 }
 
-func (winSystem) CreateDesktopShortcut(trayExe, workDir, desc string) (string, error) {
+func (winSystem) CreateDesktopShortcut(trayExe, workDir, desc, icon string) (string, error) {
 	lnk, err := publicDesktopLnk()
 	if err != nil {
 		return "", err
 	}
 	err = winapi.WithCOM(func() error {
 		return winapi.CreateShortcut(lnk, winapi.ShortcutSpec{
-			Target: trayExe, WorkDir: workDir, Description: desc, Icon: trayExe, IconIndex: 0,
+			Target: trayExe, WorkDir: workDir, Description: desc, Icon: shortcutIcon(icon, trayExe), IconIndex: 0,
 		})
 	})
 	if err != nil {
@@ -529,6 +529,43 @@ func (winSystem) DeleteDesktopShortcut() error {
 	}
 	winapi.SHChangeNotifyDir(filepath.Dir(lnk))
 	return nil
+}
+
+// shortcutIcon: IconLocation of our shortcuts — the versioned .ico
+// (CHK-SETUP-18); the tray exe only when no icon file is known.
+func shortcutIcon(icon, trayExe string) string {
+	if icon != "" {
+		return icon
+	}
+	return trayExe
+}
+
+func (winSystem) ShortcutPaths() (string, string) {
+	var start, desk string
+	if dir, err := startMenuDir(); err == nil {
+		start = filepath.Join(dir, ShortcutFile)
+	}
+	if lnk, err := publicDesktopLnk(); err == nil {
+		desk = lnk
+	}
+	return start, desk
+}
+
+func (winSystem) ListDir(dir string) ([]string, error) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []string
+	for _, e := range ents {
+		if e.Type().IsRegular() { // no dirs, symlinks / reparse points
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil
 }
 
 func (winSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {

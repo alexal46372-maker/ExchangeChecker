@@ -74,8 +74,10 @@ type RegValue struct {
 }
 
 // UninstallValues: the Uninstall key (docs/PHASE7.md §6.1); no Publisher
-// (decision 5). uninstallExe is the full path of the uninstaller.
-func UninstallValues(dir, uninstallExe, trayExe, ver string, sizeKB uint32, now time.Time, desktopShortcut bool) []RegValue {
+// (decision 5). uninstallExe is the full path of the uninstaller; icon is
+// the DisplayIcon file (index 0): the versioned exchtray-<ver>.ico in the
+// install folder (CHK-SETUP-18), the tray exe only as a fallback.
+func UninstallValues(dir, uninstallExe, icon, ver string, sizeKB uint32, now time.Time, desktopShortcut bool) []RegValue {
 	q := `"` + uninstallExe + `"`
 	desk := uint32(0)
 	if desktopShortcut {
@@ -87,7 +89,7 @@ func UninstallValues(dir, uninstallExe, trayExe, ver string, sizeKB uint32, now 
 		{Name: "InstallLocation", Str: dir},
 		{Name: "UninstallString", Str: q + " /uninstall"},
 		{Name: "QuietUninstallString", Str: q + " /uninstall /S"},
-		{Name: "DisplayIcon", Str: trayExe + ",0"},
+		{Name: "DisplayIcon", Str: icon + ",0"},
 		{Name: "InstallDate", Str: now.Format("20060102")},
 		{Name: "EstimatedSize", DWord: true, Num: sizeKB},
 		{Name: "NoModify", DWord: true, Num: 1},

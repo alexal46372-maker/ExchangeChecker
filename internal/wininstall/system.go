@@ -82,6 +82,10 @@ type System interface {
 	RemoveFile(path string) (reboot bool, err error)
 	RemoveDirIfEmpty(dir string) (reboot bool, err error)
 	RemoveAll(dir string) error
+	// ListDir returns the names of the regular files directly in dir
+	// (no directories, no reparse points); a missing dir is (nil, nil).
+	// Used for the exchtray-*.ico cleanup (CHK-SETUP-21).
+	ListDir(dir string) ([]string, error)
 	// SelfDelete removes the running uninstaller exe (MoveFileEx out of the
 	// folder + delete at reboot).
 	SelfDelete(exe string) (reboot bool, err error)
@@ -101,14 +105,21 @@ type System interface {
 	ForceStopService(name, installDir string) (warnings []string, err error)
 	// Start-menu shortcut (§6.3, CHK-SETUP-08): CSIDL_COMMON_PROGRAMS\
 	// Exchange Checker\Exchange Checker.lnk → trayExe (COM IShellLinkW).
-	CreateStartShortcut(trayExe, workDir, description string) (lnk string, err error)
+	// IconLocation = icon,0 (the versioned exchtray-<ver>.ico, CHK-SETUP-18;
+	// the target stays trayExe).
+	CreateStartShortcut(trayExe, workDir, description, icon string) (lnk string, err error)
 	// DeleteStartShortcut removes the .lnk and its folder (missing = ok).
 	DeleteStartShortcut() error
 	// CreateDesktopShortcut writes Exchange Checker.lnk on the Public Desktop
 	// (CSIDL_COMMON_DESKTOPDIRECTORY) — per-machine install (CHK-SETUP-16).
-	CreateDesktopShortcut(trayExe, workDir, description string) (lnk string, err error)
+	// IconLocation = icon,0 as for the Start-menu shortcut.
+	CreateDesktopShortcut(trayExe, workDir, description, icon string) (lnk string, err error)
 	// DeleteDesktopShortcut removes the Public Desktop .lnk (missing = ok).
 	DeleteDesktopShortcut() error
+	// ShortcutPaths returns the full paths of the Start-menu and Public
+	// Desktop .lnk (whether they exist or not; "" = folder unknown) for the
+	// shell notifications (CHK-SETUP-21).
+	ShortcutPaths() (startLnk, desktopLnk string)
 	// AddSQLBrowserFirewallRule adds (or replaces) the inbound UDP rule for
 	// SSRP replies to the service exe (CHK-SETUP-13). Missing firewall
 	// service / COM failure is returned to the caller (plan logs WARNING).

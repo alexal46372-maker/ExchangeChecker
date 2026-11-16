@@ -40,6 +40,12 @@ const IconDir = "internal/wintray/icons"
 // installer shows; generated from trayui.ExeICO («metal and chrome»).
 const ExeIcon = "cmd/exchtray/exchtray.ico"
 
+// SetupIcon is the same bytes as ExeIcon, embedded by internal/wininstall
+// and written by the installer as <install folder>\exchtray-<version>.ico
+// (fix/setup-iconcache, CHK-SETUP-18): the setup must not import
+// internal/trayui (it pulls internal/ipc, CHK-SETUP-11).
+const SetupIcon = "internal/wininstall/icons/exchtray.ico"
+
 // icons returns the generated .ico files by path relative to the root.
 func icons() (map[string][]byte, error) {
 	out := map[string][]byte{}
@@ -52,6 +58,7 @@ func icons() (map[string][]byte, error) {
 	}
 	// the exe / installer icon (phase 13, CHK-TRAY-89): generated too
 	out[ExeIcon] = trayui.ExeICO()
+	out[SetupIcon] = out[ExeIcon]
 	return out, nil
 }
 
@@ -187,9 +194,11 @@ func main() {
 		os.Exit(2)
 	}
 	if !*check {
-		if err := os.MkdirAll(filepath.Join(*root, filepath.FromSlash(IconDir)), 0o755); err != nil {
-			fmt.Fprintf(os.Stderr, "mkres: %v\n", err)
-			os.Exit(2)
+		for _, d := range []string{IconDir, filepath.ToSlash(filepath.Dir(SetupIcon))} {
+			if err := os.MkdirAll(filepath.Join(*root, filepath.FromSlash(d)), 0o755); err != nil {
+				fmt.Fprintf(os.Stderr, "mkres: %v\n", err)
+				os.Exit(2)
+			}
 		}
 	}
 	for _, rel := range sortedKeys(ics) {

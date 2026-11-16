@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,8 @@ type recordingSystem struct {
 	TrayWarn       []string
 	Shortcut       string // target of the start-menu shortcut ("" = none)
 	DesktopLnk     string // target of the Public Desktop shortcut ("" = none)
+	ShortcutIcon   string // IconLocation (index 0) of the start-menu shortcut
+	DesktopIcon    string // IconLocation (index 0) of the desktop shortcut
 	LegacyShortcut bool   // pre-phase-13 ExchangeChecker.lnk still present
 	Firewall       string // service exe of the SQL Browser firewall rule ("" = none)
 	FwProfiles     int32  // active firewall profiles (FirewallCurrentProfiles)
@@ -276,14 +279,42 @@ func (f *recordingSystem) ForceStopService(name, dir string) ([]string, error) {
 	return nil, nil
 }
 
-func (f *recordingSystem) CreateStartShortcut(trayExe, workDir, desc string) (string, error) {
+const (
+	fakeStartLnk   = `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Exchange Checker\Exchange Checker.lnk`
+	fakeDesktopLnk = `C:\Users\Public\Desktop\Exchange Checker.lnk`
+)
+
+func (f *recordingSystem) CreateStartShortcut(trayExe, workDir, desc, icon string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.step("CreateStartShortcut|%s|%s", trayExe, workDir); err != nil {
+	if err := f.step("CreateStartShortcut|%s|%s|icon=%s", trayExe, workDir, icon); err != nil {
 		return "", err
 	}
 	f.Shortcut = trayExe
-	return `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Exchange Checker\Exchange Checker.lnk`, nil
+	f.ShortcutIcon = icon
+	return fakeStartLnk, nil
+}
+
+func (f *recordingSystem) ShortcutPaths() (string, string) {
+	return fakeStartLnk, fakeDesktopLnk
+}
+
+// ListDir: names of the fake files directly in dir (case-insensitive).
+func (f *recordingSystem) ListDir(dir string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.step("ListDir|%s", dir); err != nil {
+		return nil, err
+	}
+	pre := strings.ToLower(strings.TrimRight(dir, `\`) + `\`)
+	var out []string
+	for k := range f.Files {
+		if strings.HasPrefix(strings.ToLower(k), pre) && !strings.ContainsAny(k[len(pre):], `\/`) {
+			out = append(out, k[len(pre):])
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func (f *recordingSystem) DeleteStartShortcut() error {
@@ -292,18 +323,19 @@ func (f *recordingSystem) DeleteStartShortcut() error {
 	if err := f.step("DeleteStartShortcut"); err != nil {
 		return err
 	}
-	f.Shortcut = ""
+	f.Shortcut, f.ShortcutIcon = "", ""
 	return nil
 }
 
-func (f *recordingSystem) CreateDesktopShortcut(trayExe, workDir, description string) (string, error) {
+func (f *recordingSystem) CreateDesktopShortcut(trayExe, workDir, description, icon string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if err := f.step("CreateDesktopShortcut|%s", trayExe); err != nil {
+	if err := f.step("CreateDesktopShortcut|%s|icon=%s", trayExe, icon); err != nil {
 		return "", err
 	}
 	f.DesktopLnk = trayExe
-	return `C:\Users\Public\Desktop\Exchange Checker.lnk`, nil
+	f.DesktopIcon = icon
+	return fakeDesktopLnk, nil
 }
 
 func (f *recordingSystem) DeleteDesktopShortcut() error {
@@ -312,7 +344,7 @@ func (f *recordingSystem) DeleteDesktopShortcut() error {
 	if err := f.step("DeleteDesktopShortcut"); err != nil {
 		return err
 	}
-	f.DesktopLnk = ""
+	f.DesktopLnk, f.DesktopIcon = "", ""
 	return nil
 }
 

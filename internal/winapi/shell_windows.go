@@ -29,6 +29,7 @@ const (
 
 	SHCNE_ASSOCCHANGED = 0x08000000
 	SHCNE_UPDATEDIR    = 0x00001000
+	SHCNE_UPDATEITEM   = 0x00002000 // a file changed (icon cache key path,index)
 	SHCNF_IDLIST       = 0x0000
 	SHCNF_PATHW        = 0x0005
 
@@ -54,6 +55,20 @@ func SHGetFolderPath(csidl int32) (string, error) {
 // SHChangeNotifyDir tells the shell that dir changed (shortcuts).
 func SHChangeNotifyDir(dir string) {
 	callProc(procSHChangeNotify, SHCNE_UPDATEDIR, SHCNF_PATHW, uintptr(unsafe.Pointer(UTF16Ptr(dir))), 0)
+}
+
+// SHChangeNotifyUpdateItem tells the shell that the file path changed
+// (SHCNE_UPDATEITEM, SHCNF_PATHW): Explorer drops its cached icon for the
+// item (Win7 IconCache.db is keyed by path+index, fix/setup-iconcache).
+func SHChangeNotifyUpdateItem(path string) {
+	callProc(procSHChangeNotify, SHCNE_UPDATEITEM, SHCNF_PATHW, uintptr(unsafe.Pointer(UTF16Ptr(path))), 0)
+}
+
+// SHChangeNotifyAssocChanged broadcasts SHCNE_ASSOCCHANGED (SHCNF_IDLIST,
+// 0, 0): the shell rebuilds its icon/association caches. Sent last, after
+// the per-item UPDATEITEM notifications.
+func SHChangeNotifyAssocChanged() {
+	callProc(procSHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST, 0, 0)
 }
 
 type browseInfoW struct {

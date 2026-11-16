@@ -34,11 +34,11 @@ func (stubSystem) UpdateService(ServiceSpec, bool) error             { return Er
 func (stubSystem) StartService(string, time.Duration) error          { return ErrNotWindows }
 func (stubSystem) StopService(string, time.Duration) error           { return ErrNotWindows }
 func (stubSystem) ForceStopService(string, string) ([]string, error) { return nil, ErrNotWindows }
-func (stubSystem) CreateStartShortcut(string, string, string) (string, error) {
+func (stubSystem) CreateStartShortcut(string, string, string, string) (string, error) {
 	return "", ErrNotWindows
 }
 func (stubSystem) DeleteStartShortcut() error { return ErrNotWindows }
-func (stubSystem) CreateDesktopShortcut(string, string, string) (string, error) {
+func (stubSystem) CreateDesktopShortcut(string, string, string, string) (string, error) {
 	return "", ErrNotWindows
 }
 func (stubSystem) DeleteDesktopShortcut() error                { return ErrNotWindows }
@@ -63,6 +63,8 @@ func (stubSystem) DeleteUserKey() error                        { return ErrNotWi
 func (stubSystem) MigrateInstallDir(string, string) ([]string, error) { return nil, ErrNotWindows }
 func (stubSystem) RemoveLegacyInstallDir(string) error                { return ErrNotWindows }
 func (stubSystem) DeleteLegacyShortcuts() error                       { return ErrNotWindows }
+func (stubSystem) ListDir(string) ([]string, error)                   { return nil, ErrNotWindows }
+func (stubSystem) ShortcutPaths() (string, string)                    { return "", "" }
 
 func (stubSystem) QueryDriverService(string) (DriverInfo, error) { return DriverInfo{}, ErrNotWindows }
 func (stubSystem) CreateDriverService(DriverSpec) error          { return ErrNotWindows }

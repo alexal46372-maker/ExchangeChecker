@@ -26,6 +26,11 @@ type InstallConfig struct {
 	Files      map[string][]byte
 	Version    string
 	Now        time.Time
+	// Icon: bytes of the versioned exchtray-<ver>.ico; nil = AppIconBytes()
+	// (= cmd/exchtray/exchtray.ico). Tests inject other bytes.
+	Icon []byte
+	// Notifier: shell change notifications (CHK-SETUP-21); nil = platform.
+	Notifier ShellNotifier
 }
 
 // Result is the outcome of Install / Uninstall.
@@ -145,6 +150,23 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	fresh := mode == ModeFresh
 	log.Printf("%s %s: %s into %s (installed: %q)", version.ProductName, c.Version, mode, dir, inst.Version)
 
+	// versioned icon file (fix/setup-iconcache, CHK-SETUP-18 / CHK-SETUP-21)
+	notifier := shellNotifier(c.Notifier)
+	trayExe := joinDir(dir, config.TrayExeName)
+	icoBytes := c.Icon
+	if len(icoBytes) == 0 {
+		icoBytes = AppIconBytes()
+	}
+	icoName := IconFileName(c.Version, icoBytes)
+	icoPath := joinDir(dir, icoName)
+	iconLoc := trayExe // IconLocation / DisplayIcon until the .ico is written
+	icoOK := false
+	var prevIcon string // icon of the previous install (rollback of the shortcuts)
+	notifyAll := func(paths ...string) {
+		startLnk, deskLnk := sys.ShortcutPaths()
+		notifyShell(notifier, log, append(paths, startLnk, deskLnk)...)
+	}
+
 	var undo undoStack
 	failRollback := func(err error) Result {
 		if len(undo) > 0 {
@@ -154,6 +176,9 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 				log.Printf("rolling back the upgrade")
 			}
 			err = withRollback(err, undo.run(log))
+			if icoOK {
+				notifyAll(trayExe, icoPath, prevIcon)
+			}
 		}
 		return fail(err)
 	}
@@ -261,6 +286,38 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		}
 		log.Printf("file %s (%d bytes)", p, len(c.Files[n]))
 	}
+	// 4a. exchtray-<version>.ico (CHK-SETUP-18): not fatal — on failure the
+	// shortcuts / DisplayIcon fall back to the tray exe. Upgrade: *.bak +
+	// replace as for the exes (same-version reinstall), rollback restores
+	// or deletes it. Old exchtray-*.ico are removed only after the commit.
+	icoWrite := true
+	if !fresh {
+		existed, err := sys.BackupFile(icoPath)
+		if err != nil {
+			warn("резервная копия значка %s: %v", icoPath, err)
+			icoWrite = false
+		} else if existed {
+			bakPaths = append(bakPaths, icoPath)
+			undo.push(func() error { return sys.RestoreBackup(icoPath) })
+		} else {
+			undo.push(func() error { _, err := sys.RemoveFile(icoPath); return err })
+		}
+	}
+	if icoWrite {
+		reboot, err := sys.WriteFile(icoPath, icoBytes)
+		if err != nil {
+			warn("файл значка %s не записан: %v; ярлыки и DisplayIcon указывают на %s", icoPath, err, trayExe)
+		} else {
+			icoOK = true
+			iconLoc = icoPath
+			needReboot = needReboot || reboot
+			total += int64(len(icoBytes))
+			if fresh {
+				undo.push(func() error { _, err := sys.RemoveFile(icoPath); return err })
+			}
+			log.Printf("значок %s (%d байт)", icoPath, len(icoBytes))
+		}
+	}
 	// 4b. InpOutx64 kernel driver (phase 14, CHK-SETUP-20): never fatal;
 	// a completed step joins the journal so a later failure rolls the
 	// driver service and file back too.
@@ -343,11 +400,28 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 			}
 		}
 	}
+	// 7a. previous Uninstall values: journal for step 8 and the previous
+	// icon (DisplayIcon) the shortcuts are restored to on rollback
+	var prevVals []RegValue
+	if !fresh {
+		if pv, err := sys.ReadUninstallKey(); err != nil {
+			warn("read Uninstall key for rollback: %v", err)
+		} else {
+			prevVals = pv
+			prevIcon = prevDisplayIcon(pv)
+		}
+	}
+	restoreIcon := func(rd string) string {
+		if prevIcon != "" {
+			return prevIcon
+		}
+		return joinDir(rd, config.TrayExeName)
+	}
 	// 7b. Start-menu shortcut (§6.3) — not fatal; kept on upgrade unless
 	// re-created; /NOSHORTCUT leaves an existing one alone
 	if !c.Opts.NoShortcut {
 		desc := T("setup.shortcut.desc")
-		if lnk, err := sys.CreateStartShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
+		if lnk, err := sys.CreateStartShortcut(trayExe, dir, desc, iconLoc); err != nil {
 			warn("start menu shortcut: %v", err)
 		} else {
 			log.Printf("shortcut %s", lnk)
@@ -361,7 +435,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 				}
 				rd, rdesc := restoreDir, desc
 				undo.push(func() error {
-					_, err := sys.CreateStartShortcut(joinDir(rd, config.TrayExeName), rd, rdesc)
+					_, err := sys.CreateStartShortcut(joinDir(rd, config.TrayExeName), rd, rdesc, restoreIcon(rd))
 					return err
 				})
 			}
@@ -372,7 +446,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 	// and removes an existing desktop .lnk on upgrade.
 	if !c.Opts.NoDesktopShortcut {
 		desc := T("setup.shortcut.desc")
-		if lnk, err := sys.CreateDesktopShortcut(joinDir(dir, config.TrayExeName), dir, desc); err != nil {
+		if lnk, err := sys.CreateDesktopShortcut(trayExe, dir, desc, iconLoc); err != nil {
 			warn("desktop shortcut: %v", err)
 		} else {
 			log.Printf("desktop shortcut %s", lnk)
@@ -385,7 +459,7 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 				}
 				rd, rdesc := restoreDir, desc
 				undo.push(func() error {
-					_, err := sys.CreateDesktopShortcut(joinDir(rd, config.TrayExeName), rd, rdesc)
+					_, err := sys.CreateDesktopShortcut(joinDir(rd, config.TrayExeName), rd, rdesc, restoreIcon(rd))
 					return err
 				})
 			}
@@ -415,15 +489,11 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		}
 	}
 	// 8. Uninstall key — journal previous values (DisplayVersion etc.) for rollback
-	if !fresh {
-		if prevVals, err := sys.ReadUninstallKey(); err != nil {
-			warn("read Uninstall key for rollback: %v", err)
-		} else if len(prevVals) > 0 {
-			pv := prevVals
-			undo.push(func() error { return sys.WriteUninstallKey(pv) })
-		}
+	if !fresh && len(prevVals) > 0 {
+		pv := prevVals
+		undo.push(func() error { return sys.WriteUninstallKey(pv) })
 	}
-	vals := UninstallValues(dir, joinDir(dir, config.UninstallExeName), joinDir(dir, config.TrayExeName), c.Version, sizeKB(total), c.Now, !c.Opts.NoDesktopShortcut)
+	vals := UninstallValues(dir, joinDir(dir, config.UninstallExeName), iconLoc, c.Version, sizeKB(total), c.Now, !c.Opts.NoDesktopShortcut)
 	if err := sys.WriteUninstallKey(vals); err != nil {
 		return failRollback(errf("Uninstall key", err))
 	}
@@ -462,6 +532,9 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 					res.Err = withRollback(res.Err, errs)
 					log.Printf("ERROR: rollback incomplete: %v", joinErrs(errs))
 				}
+				if icoOK {
+					notifyAll(trayExe, icoPath, prevIcon)
+				}
 			}
 			res.Code = ExitError
 			return res
@@ -491,6 +564,31 @@ func Install(sys System, c InstallConfig, log Logger) Result {
 		} else {
 			log.Printf("legacy install folder removed: %s", legacyDir)
 		}
+	}
+	// CHK-SETUP-21 commit: old exchtray-*.ico (other versions / dev hashes)
+	// are removed; the current file stays. Not fatal.
+	keep := ""
+	if icoOK {
+		keep = icoName
+	}
+	if stale, err := staleTrayIcons(sys, dir, keep); err != nil {
+		warn("поиск старых файлов значка в %s: %v", dir, err)
+	} else {
+		for _, p := range stale {
+			reboot, err := sys.RemoveFile(p)
+			if err != nil {
+				warn("удаление старого файла значка %s: %v", p, err)
+				continue
+			}
+			needReboot = needReboot || reboot
+			log.Printf("старый файл значка удалён: %s", p)
+		}
+	}
+	// shell: UPDATEITEM tray exe, .ico, both .lnk; then ASSOCCHANGED (last)
+	if icoOK {
+		notifyAll(trayExe, icoPath)
+	} else {
+		notifyAll(trayExe)
 	}
 	res.Code = ExitOK
 	if needReboot {
@@ -524,6 +622,8 @@ type UninstallConfig struct {
 	DataDir   string
 	SelfExe   string // the running exe (os.Executable)
 	PurgeData bool
+	// Notifier: shell change notifications (CHK-SETUP-21); nil = platform.
+	Notifier ShellNotifier
 }
 
 // Uninstall removes the product; every step runs even after a failure
@@ -590,11 +690,22 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	// phase 14: driver service, driver\inpoutx64.sys and driver\ (before
 	// the install folder itself; the service also without a known folder)
 	res.Reboot = uninstallDriver(sys, dir, log, step) || res.Reboot
+	var notifyPaths []string
 	if dir != "" {
 		for _, n := range []string{config.ServiceExeName, config.TrayExeName} {
 			reboot, err := sys.RemoveFile(joinDir(dir, n))
 			res.Reboot = res.Reboot || reboot
 			step("remove "+n, err)
+		}
+		notifyPaths = append(notifyPaths, joinDir(dir, config.TrayExeName))
+		// CHK-SETUP-21: every exchtray-*.ico (current and leftovers)
+		icons, err := staleTrayIcons(sys, dir, "")
+		step("поиск файлов значка в "+dir, err)
+		for _, p := range icons {
+			reboot, err := sys.RemoveFile(p)
+			res.Reboot = res.Reboot || reboot
+			step("удаление файла значка "+p, err)
+			notifyPaths = append(notifyPaths, p)
 		}
 		u := joinDir(dir, config.UninstallExeName)
 		if selfExe != "" && strings.EqualFold(filepath.Clean(selfExe), filepath.Clean(u)) {
@@ -619,6 +730,9 @@ func Uninstall(sys System, c UninstallConfig, log Logger) Result {
 	if len(errs) == 0 {
 		step("delete Uninstall key", sys.DeleteUninstallKey())
 	}
+	// shell: UPDATEITEM tray exe, removed .ico, both .lnk; ASSOCCHANGED last
+	startLnk, deskLnk := sys.ShortcutPaths()
+	notifyShell(shellNotifier(c.Notifier), log, append(notifyPaths, startLnk, deskLnk)...)
 	switch {
 	case len(errs) > 0:
 		res.Code, res.Err = ExitError, joinErrs(errs)

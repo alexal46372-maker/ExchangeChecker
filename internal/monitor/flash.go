@@ -25,8 +25,12 @@ func flashKey(ev model.AlertEvent) string {
 // flashesLocked computes the flash / flash_stop pushes of one publish
 // (m.mu held). cands: transitions into an alert and repeats of active
 // alerts (every failing check); active: the tracker's active alerts.
-// Muted profiles do not flash (CHK-MON-20); disabled profiles are not
-// observed and their alerts are dropped → flash_stop.
+// Muted profiles do not flash (CHK-MON-20); disabled or removed
+// profiles have already left the tracker (reload, CHK-MON-23) →
+// flash_stop. flashDismissed is set by dismiss_flash and is cleared
+// when flash_stop is sent or the eventID is no longer active (recovery,
+// disable, delete, mute). A dismiss therefore does not survive disable:
+// re-enable of the same problem raises a new eventID and can flash again.
 func (m *Monitor) flashesLocked(cands, active []model.AlertEvent) []model.FlashEvent {
 	if m.flashing == nil {
 		m.flashing, m.flashDismissed = map[string]flashEntry{}, map[uint64]bool{}

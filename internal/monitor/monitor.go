@@ -921,13 +921,20 @@ func (m *Monitor) reloadConfigLocked(force bool) bool {
 	for _, e := range retired {
 		e.retire()
 	}
-	// counters state and alerts are pruned only after a successful load
+	// counters state is pruned only after a successful load (disabled
+	// profiles keep their baseline). Alerts of disabled or removed
+	// profiles are dropped here (CHK-MON-23): keepKeys is otherwise
+	// called only from publish(update!=nil), and set_enabled / reload
+	// go through publish(nil). Dropping the tracker keys lets
+	// flashesLocked emit flash_stop and clear flashDismissed, so a
+	// later re-enable raises a new eventID and can flash again.
 	if r, ok := m.opt.Counters.(interface{ Retain(map[string]bool) error }); ok {
 		_ = r.Retain(ids)
 	}
-	m.tracker.Retain(func(key string) bool { return ids[alert.KeyProfile(key)] })
+	keep := enabledProfileKeep(cfg.Profiles)
+	m.tracker.Retain(keep)
 	m.mu.Lock()
-	acksChanged := m.applyAcksLocked(func(key string) bool { return ids[alert.KeyProfile(key)] })
+	acksChanged := m.applyAcksLocked(keep)
 	m.mu.Unlock()
 	if acksChanged {
 		m.saveAcks()
@@ -1489,6 +1496,19 @@ func (m *Monitor) observe(ps model.ProfileSnapshot, now time.Time, stalledAfter 
 			Level: lvl, Event: st})
 	}
 	return out, reps
+}
+
+// enabledProfileKeep retains tracker and ack keys of enabled profiles
+// (CHK-MON-23). Disabled and removed profiles are dropped so their
+// alerts leave the tracker.
+func enabledProfileKeep(profiles []model.Profile) func(string) bool {
+	enabled := map[string]bool{}
+	for _, p := range profiles {
+		if p.Enabled {
+			enabled[p.ID] = true
+		}
+	}
+	return func(key string) bool { return enabled[alert.KeyProfile(key)] }
 }
 
 // keepKeys: tracker keys of existing enabled profiles/points; points of a

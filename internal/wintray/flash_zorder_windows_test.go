@@ -109,8 +109,15 @@ func TestCHK_TRAY_95_OverlayBelowAlertAndPanel(t *testing.T) {
 	// the body of the alert window (its title band blinks on its own) and
 	// the inside of the panel frame
 	alertBody := func(s shot) float64 { return darkShare(s.px, s.w, 0, s.h/2, s.w, s.h) }
+	// phase 16: the panel is a speech bubble (window region) — only the
+	// body inside the frame and away from the round corners is measured
+	// (outside the region the screen below shows through, the frame blinks)
 	b := panelBorderPx() + 2
-	panelIn := func(s shot) float64 { return darkShare(s.px, s.w, b, b, s.w-b, s.h-b) }
+	cl := app.Panel().cloud
+	in := b + cl.Radius
+	panelIn := func(s shot) float64 {
+		return darkShare(s.px, s.w, cl.Body.L+in, cl.Body.T+b, cl.Body.R-in, cl.Body.B-b)
+	}
 	refAll := func(s shot) float64 { return darkShare(s.px, s.w, 4, 4, s.w-4, s.h-4) }
 
 	for cycle := 0; cycle < 2; cycle++ {

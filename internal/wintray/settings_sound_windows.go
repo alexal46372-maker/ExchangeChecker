@@ -74,16 +74,21 @@ func (w *settingsWindow) buildEmbeddedProfile(
 	durL := label(i18n.T(i18n.KeySoundDur), 0)
 	dur := edit(base+idSndDur, 70, true)
 	c.dur = dur.H
+	// phase 16 E (CHK-TRAY-105): «Вывод звука» of «Тон»; no per-level
+	// volume any more (the only volume is the tray slider)
+	outL := label(i18n.T(i18n.KeySoundOutput), 0)
+	out := add("COMBOBOX", "", 0, winapi.WS_TABSTOP|winapi.CBS_DROPDOWNLIST, base+idSndOut, ui.Combo, 190, 0)
+	c.out = out.H
+	for _, k := range []string{i18n.KeySoundOutputSpeaker, i18n.KeySoundOutputSpeakers, i18n.KeySoundOutputBoth} {
+		winapi.SendMessageString(c.out, winapi.CB_ADDSTRING, 0, i18n.T(k))
+	}
+	outNote := add("STATIC", i18n.T(i18n.KeySoundOutputFile), 0, winapi.SS_LEFT, base+idSndOutNote, ui.Label, 0, 0)
+	c.outNote = outNote.H
 	path := edit(base+idSndPath, 430, false)
 	path.Grow = true
 	c.path = path.H
 	browse := add("BUTTON", i18n.T(i18n.KeySoundBrowse), 0, winapi.WS_TABSTOP, base+idSndBrowse, ui.Button, 0, 0)
 	c.browse = browse.H
-	volL := label(i18n.T(i18n.KeySoundVolume), 0)
-	vol := edit(base+idSndVol, 50, true)
-	c.vol = vol.H
-	volNote := label(i18n.T(i18n.KeySoundToneVolume), 0) // phase 14 (CHK-TRAY-99)
-	c.volNote = volNote.H
 	loop := add("BUTTON", i18n.T(i18n.KeySoundLoop), 0, winapi.BS_AUTOCHECKBOX|winapi.WS_TABSTOP, base+idSndLoop, ui.Check, 0, 0)
 	c.loop = loop.H
 	gapL := label(i18n.T(i18n.KeySoundGap), 0)
@@ -91,31 +96,36 @@ func (w *settingsWindow) buildEmbeddedProfile(
 	c.gap = gap.H
 	test := add("BUTTON", i18n.T(i18n.KeySoundTest), 0, winapi.WS_TABSTOP, base+idSndTest, ui.Button, 0, 0)
 	c.test = test.H
+	c.labels = []uintptr{freqL.H, durL.H, outL.H, gapL.H}
 	node := &ui.Col{Gap: ui.P8, Items: []ui.Node{
 		uiCtl(c.head, ui.Label, title),
 		&ui.Pad{Left: ui.P16, Child: &ui.Col{Gap: ui.P8, Items: []ui.Node{
 			&ui.Row{Gap: ui.P16, Items: []ui.Node{beep, file}},
 			&ui.Grid{Rows: []ui.GridRow{
 				{Label: freqL, Field: &ui.Row{Items: []ui.Node{freq, &ui.Space{W: ui.P8}, durL, dur}}},
-				{Label: volL, Field: &ui.Col{Items: []ui.Node{
-					&ui.Row{Items: []ui.Node{vol, &ui.Space{W: ui.P8}, loop}},
-					volNote, // phase 14: under the volume, the row stays as wide as before
-				}}},
-				{Label: gapL, Field: gap},
+				{Label: outL, Field: &ui.Row{Items: []ui.Node{out, &ui.Space{W: ui.P8}, outNote}}},
+				{Label: gapL, Field: &ui.Row{Items: []ui.Node{gap, &ui.Space{W: ui.P8}, loop}}},
 			}},
 			&ui.Row{Grow: true, Items: []ui.Node{path, browse}},
 			&ui.Row{Right: true, Items: []ui.Node{test}},
 		}}},
 	}}
 	if w.tips != nil {
-		for ctl, k := range map[uintptr]string{c.beep: i18n.KeyTipSoundKind, c.file: i18n.KeyTipSoundKind,
-			c.freq: i18n.KeyTipSoundFreq, c.dur: i18n.KeyTipSoundDur, c.path: i18n.KeyTipSoundFile,
-			c.browse: i18n.KeyTipSoundBrowse, c.vol: i18n.KeyTipSoundVolume, c.loop: i18n.KeyTipSoundLoop,
-			c.gap: i18n.KeyTipSoundGap, c.test: i18n.KeyTipSoundTest} {
+		w.setProfileTips(c)
+	}
+	return c, node
+}
+
+// setProfileTips sets the tooltips of one embedded profile.
+func (w *settingsWindow) setProfileTips(c profileCtl) {
+	for ctl, k := range map[uintptr]string{c.beep: i18n.KeyTipSoundKind, c.file: i18n.KeyTipSoundKind,
+		c.freq: i18n.KeyTipSoundFreq, c.dur: i18n.KeyTipSoundDur, c.path: i18n.KeyTipSoundFile,
+		c.browse: i18n.KeyTipSoundBrowse, c.out: i18n.KeyTipSoundOutput, c.loop: i18n.KeyTipSoundLoop,
+		c.gap: i18n.KeyTipSoundGap, c.test: i18n.KeyTipSoundTest} {
+		if ctl != 0 {
 			w.tips.set(ctl, i18n.T(k))
 		}
 	}
-	return c, node
 }
 
 // loadSoundSection fills the embedded profiles from the App or HKCU store.
@@ -152,27 +162,66 @@ func (w *settingsWindow) fillSoundProfiles(p trayalert.SoundPrefs) {
 		winapi.SetWindowText(x.c.freq, strconv.Itoa(x.pr.FreqHz))
 		winapi.SetWindowText(x.c.dur, strconv.Itoa(x.pr.DurMs))
 		winapi.SetWindowText(x.c.path, x.pr.File)
-		winapi.SetWindowText(x.c.vol, strconv.Itoa(x.pr.Volume))
+		winapi.SendMessage(x.c.out, winapi.CB_SETCURSEL, uintptr(outputIndex(x.pr.Output)), 0)
 		setCheck(x.c.loop, x.pr.Loop)
 		winapi.SetWindowText(x.c.gap, strconv.Itoa(x.pr.GapMs))
-		syncToneNote(x.c)
 	}
+	w.syncSoundControls()
 }
 
-// syncToneNote shows «громкость не регулируется» next to the volume while
-// «Тон» is selected (phase 14, CHK-TRAY-99): the PC speaker has no volume
-// and the tone sounds at full level whenever profile × master > 0 %.
-func syncToneNote(c profileCtl) {
-	if c.volNote == 0 {
+// outputIndex is the «Вывод звука» list index of o (unknown = the speaker).
+func outputIndex(o trayalert.SoundOutput) int {
+	for i, v := range trayalert.SoundOutputs {
+		if v == o {
+			return i
+		}
+	}
+	return 0
+}
+
+// syncSoundControls enables the «Звук» controls (phase 16 E, CHK-TRAY-105):
+// «Звуковой сигнал тревоги» off greys every control of the section — both
+// levels, their fields, «Прослушать» (a running preview stops) — except the
+// checkbox itself; on: «Файл» greys the frequency, the duration and «Вывод
+// звука» (the file plays through the speakers: the short note shows), «Тон»
+// greys the file path and «Обзор…».
+func (w *settingsWindow) syncSoundControls() {
+	if w.sndWarn.freq == 0 {
 		return
 	}
-	t := ""
-	if !isChecked(c.file) {
-		t = i18n.T(i18n.KeySoundToneVolume)
+	on := w.check(idGenBeep)
+	if !on && w.sndPreviewing != 0 {
+		w.stopSoundPreview()
 	}
-	if winapi.GetWindowText(c.volNote) != t {
-		winapi.SetWindowText(c.volNote, t)
+	en := func(h uintptr, v bool) {
+		if h != 0 && winapi.IsWindowEnabled(h) != v {
+			winapi.EnableWindow(h, v)
+		}
 	}
+	for _, c := range []profileCtl{w.sndWarn, w.sndErr} {
+		file := isChecked(c.file)
+		for _, h := range []uintptr{c.head, c.beep, c.file, c.loop, c.gap, c.test} {
+			en(h, on)
+		}
+		for _, h := range c.labels {
+			en(h, on)
+		}
+		en(c.freq, on && !file)
+		en(c.dur, on && !file)
+		en(c.out, on && !file)
+		en(c.path, on && file)
+		en(c.browse, on && file)
+		note := ""
+		if file {
+			note = i18n.T(i18n.KeySoundOutputFile)
+		}
+		if c.outNote != 0 && winapi.GetWindowText(c.outNote) != note {
+			winapi.SetWindowText(c.outNote, note)
+		}
+		en(c.outNote, on)
+	}
+	en(w.sndSpeaker, on)
+	en(w.sndInfo, on)
 }
 
 // speaker is the PC speaker of the service for the status line and the
@@ -242,13 +291,14 @@ func (w *settingsWindow) readSoundProfile(c profileCtl) (trayalert.SoundProfile,
 	if p.DurMs, bad = num(c.dur, 1, 10000, i18n.T(i18n.KeySoundDur)); bad != "" {
 		return p, bad
 	}
-	if p.Volume, bad = num(c.vol, 0, 100, i18n.T(i18n.KeySoundVolume)); bad != "" {
-		return p, bad
-	}
 	if p.GapMs, bad = num(c.gap, 0, 60000, i18n.T(i18n.KeySoundGap)); bad != "" {
 		return p, bad
 	}
 	p.Loop = isChecked(c.loop)
+	p.Output = trayalert.OutputSpeaker
+	if i := int(winapi.SendMessage(c.out, winapi.CB_GETCURSEL, 0, 0)); i >= 0 && i < len(trayalert.SoundOutputs) {
+		p.Output = trayalert.SoundOutputs[i]
+	}
 	p.File = strings.TrimSpace(winapi.GetWindowText(c.path))
 	if p.Kind == trayalert.SoundFile && p.File == "" {
 		return p, fmt.Sprintf(i18n.T(i18n.KeySoundBadFile), "—")
@@ -263,18 +313,24 @@ func (w *settingsWindow) soundValues() (trayalert.SoundPrefs, string) {
 	}
 	p.Master = w.sndMaster
 	var bad string
+	vw, ve := p.Warning.Volume, p.Error.Volume // legacy, not shown: kept as stored
 	if p.Warning, bad = w.readSoundProfile(w.sndWarn); bad != "" {
 		return p, i18n.T(i18n.KeySoundWarning) + ": " + bad
 	}
 	if p.Error, bad = w.readSoundProfile(w.sndErr); bad != "" {
 		return p, i18n.T(i18n.KeySoundError) + ": " + bad
 	}
+	p.Warning.Volume, p.Error.Volume = vw, ve
 	return p, ""
 }
 
 // soundCommand handles the embedded sound section; true = consumed.
 func (w *settingsWindow) soundCommand(id int32) bool {
 	if w.sndWarn.freq == 0 {
+		return false
+	}
+	if id == idGenBeep { // phase 16 E: the section follows the checkbox; readGeneral runs too
+		w.syncSoundControls()
 		return false
 	}
 	// CHK-TRAY-82: idSndSave removed from UI.
@@ -289,13 +345,16 @@ func (w *settingsWindow) soundCommand(id int32) bool {
 				winapi.SetWindowText(c.path, f)
 				setCheck(c.beep, false)
 				setCheck(c.file, true)
-				syncToneNote(c)
+				w.syncSoundControls()
 			}
 			return true
 		case idSndTest:
 			// CHK-TRAY-81: Прослушать ↔ Остановить; Stop must halt playback.
 			if w.sndPreviewing == c.base {
 				w.stopSoundPreview()
+				return true
+			}
+			if !w.check(idGenBeep) { // the section is off (the button is grey too)
 				return true
 			}
 			pr, bad := w.readSoundProfile(c)
@@ -305,10 +364,10 @@ func (w *settingsWindow) soundCommand(id int32) bool {
 			}
 			return true
 		case idSndBeep, idSndFile:
-			syncToneNote(c) // radio handled by Windows; the note follows it
+			w.syncSoundControls() // radio handled by Windows; the fields follow it
 			return true
-		case idSndLoop:
-			return true // check handled by Windows
+		case idSndLoop, idSndOut, idSndOutNote:
+			return true // check / list handled by Windows
 		}
 	}
 	return false
@@ -427,11 +486,6 @@ func (w *settingsWindow) applySoundTips() {
 		w.tips.set(w.sndSave, i18n.T(i18n.KeyTipSoundSave))
 	}
 	for _, c := range []profileCtl{w.sndWarn, w.sndErr} {
-		for ctl, k := range map[uintptr]string{c.beep: i18n.KeyTipSoundKind, c.file: i18n.KeyTipSoundKind,
-			c.freq: i18n.KeyTipSoundFreq, c.dur: i18n.KeyTipSoundDur, c.path: i18n.KeyTipSoundFile,
-			c.browse: i18n.KeyTipSoundBrowse, c.vol: i18n.KeyTipSoundVolume, c.loop: i18n.KeyTipSoundLoop,
-			c.gap: i18n.KeyTipSoundGap, c.test: i18n.KeyTipSoundTest} {
-			w.tips.set(ctl, i18n.T(k))
-		}
+		w.setProfileTips(c)
 	}
 }

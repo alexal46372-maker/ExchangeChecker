@@ -147,7 +147,9 @@ func pumpFor(d time.Duration) {
 // tests) topmost alert window and beeps with the error tone from the
 // settings; BM_CLICK on «Подтвердить» sends ack_alert (profile-level alert
 // as a whole, points by pointKey), the window closes and the beep stops; a
-// new alert reopens it; WM_CLOSE only mutes until the next change.
+// new alert reopens it; phase 16 (CHK-TRAY-104): there is no «Закрыть»,
+// WM_CLOSE / SC_CLOSE / Esc change nothing (still shown and sounding, not
+// acknowledged).
 func TestCHK_TRAY_03_AlertWindowAck(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -179,8 +181,8 @@ func TestCHK_TRAY_03_AlertWindowAck(t *testing.T) {
 	if ack == 0 || !winapi.IsWindowEnabled(ack) || winapi.GetWindowText(ack) != "Подтвердить" {
 		t.Fatalf("ack button %x %q", ack, winapi.GetWindowText(ack))
 	}
-	if winapi.GetWindowText(winapi.GetDlgItem(h, idAlertClose)) != "Закрыть" {
-		t.Error("close button")
+	if winapi.GetDlgItem(h, winapi.IDCANCEL) != 0 {
+		t.Error("a «Закрыть» (IDCANCEL) button is still there")
 	}
 
 	winapi.SendMessage(ack, winapi.BM_CLICK, 0, 0)
@@ -214,23 +216,25 @@ func TestCHK_TRAY_03_AlertWindowAck(t *testing.T) {
 		return v.Visible && v.Sound && len(v.Alerts) == 1 && b.has(777)
 	})
 
-	// WM_CLOSE: hidden + muted, window kept, alert not acknowledged
+	// phase 16: WM_CLOSE, SC_CLOSE (Alt+F4 / system menu) and Esc are
+	// ignored — still shown and sounding, window kept, not acknowledged
 	winapi.SendMessage(h, winapi.WM_CLOSE, 0, 0)
-	if v := app.AlertView(); v.Visible || v.Sound || len(v.Alerts) != 1 || !winapi.IsWindow(h) {
-		t.Fatalf("after close: %+v", v)
+	winapi.SendMessage(h, winapi.WM_SYSCOMMAND, winapi.SC_CLOSE, 0)
+	winapi.SendMessage(h, winapi.WM_COMMAND, winapi.IDCANCEL, 0)
+	pumpFor(100 * time.Millisecond)
+	if v := app.AlertView(); !v.Visible || !v.Sound || len(v.Alerts) != 1 || !winapi.IsWindow(h) || !app.awin.shown {
+		t.Fatalf("after close attempts: %+v", v)
+	}
+	if app.awin.closeAttempts != 2 {
+		t.Errorf("close attempts seen %d, want 2 (WM_CLOSE + SC_CLOSE)", app.awin.closeAttempts)
 	}
 	if len(svc.ackCalls()) != 2 {
 		t.Error("closing must not acknowledge")
 	}
-	srv.PublishStatus(svc.set(11, append(acked, newAlert)...))
-	pumpFor(150 * time.Millisecond)
-	if v := app.AlertView(); v.Visible || v.Sound {
-		t.Fatal("same status reopened the muted window")
-	}
 	worse := newAlert
 	worse.To = model.LevelError
 	srv.PublishStatus(svc.set(12, append(acked, worse)...))
-	pumpUntil(t, "escalation reopens", func() bool { v := app.AlertView(); return v.Visible && v.Sound })
+	pumpUntil(t, "escalation", func() bool { v := app.AlertView(); return v.Visible && v.Sound && v.Level == model.LevelError })
 
 	// already visible: a new alert and a warning -> error escalation bring
 	// the window to the front again; the same status does not
@@ -284,7 +288,7 @@ func TestCHK_TRAY_03_AckGone(t *testing.T) {
 func TestCHK_TRAY_45_AlertKeepsPosition(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	aw, err := newAlertWindow(0, nil, nil)
+	aw, err := newAlertWindow(0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

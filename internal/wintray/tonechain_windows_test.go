@@ -157,15 +157,20 @@ func TestCHK_TRAY_97_ToneFallbackChain(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_97_ToneLabel — phase 14 (Алекс, 10.11.2026): the label is
-// «Тон (системный динамик)»; the tip says the PC speaker comes first, the
-// speakers / sound card are the fallback and the volume is not adjustable.
+// TestCHK_TRAY_97_ToneLabel — phase 14, phase 16 E (CHK-TRAY-105): the
+// label is «Тон» (where it sounds is «Вывод звука»: the PC speaker with the
+// speakers as the fallback, the speakers, or both); the tips name the
+// choice, the file through the speakers and the one volume slider.
 func TestCHK_TRAY_97_ToneLabel(t *testing.T) {
-	if l := i18n.T(i18n.KeySoundBeep); l != "Тон (системный динамик)" {
+	if l := i18n.T(i18n.KeySoundBeep); l != "Тон" {
 		t.Errorf("label %q", l)
 	}
+	if tip := i18n.T(i18n.KeyTipSoundOutput); !strings.Contains(tip, "системный динамик") || !strings.Contains(tip, "если он недоступен — колонки") ||
+		!strings.Contains(tip, "оба сразу") {
+		t.Errorf("output tip %q", tip)
+	}
 	tip := i18n.T(i18n.KeyTipSoundKind)
-	for _, want := range []string{"системный динамик", "через колонки или звуковую карту", "не регулируется"} {
+	for _, want := range []string{"«Вывод звука»", "через колонки", "ползунок"} {
 		if !strings.Contains(tip, want) {
 			t.Errorf("tip %q lacks %q", tip, want)
 		}

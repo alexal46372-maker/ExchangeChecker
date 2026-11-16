@@ -122,7 +122,8 @@ func TestCHK_TRAY_33_SoundWindow(t *testing.T) {
 }
 
 // TestCHK_TRAY_35_MasterVolume — the trackbar by the clock stores the
-// master volume at once; the alarm plays profile × master.
+// master volume at once; the alarm plays at the master volume (phase 16 E:
+// the only volume, no per-level factor); 0 % silences the tone.
 func TestCHK_TRAY_35_MasterVolume(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -140,9 +141,14 @@ func TestCHK_TRAY_35_MasterVolume(t *testing.T) {
 		t.Fatalf("master %d saves %d", app.SoundPrefs().Master, store.saves)
 	}
 	s := app.alertSound(trayalert.View{Level: model.LevelWarning})
-	if s.Volume != 24 { // 80 % × 30 %
-		t.Errorf("effective %d", s.Volume)
+	if s.Volume != 30 || !s.ToneOn || trayalert.ToneLevel(s) != 100 { // the master alone (phase 16)
+		t.Errorf("effective %d tone %v", s.Volume, s.ToneOn)
 	}
+	app.setMasterVolumeLive(0)
+	if s0 := app.alertSound(trayalert.View{Level: model.LevelError}); s0.ToneOn || trayalert.ToneLevel(s0) != 0 {
+		t.Errorf("master 0 %%: tone %v level %d", s0.ToneOn, trayalert.ToneLevel(s0))
+	}
+	app.setMasterVolumeLive(30)
 	// drag-release (SB_ENDSCROLL) must play a short cue at the new master volume
 	before := b.count()
 	winapi.SendMessage(v.hwnd, winapi.WM_HSCROLL, winapi.SB_ENDSCROLL, v.bar)
@@ -175,8 +181,9 @@ func TestVolumeScrollEnded(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_36_ErrorWindow — the reworked CHK-TRAY-03 window: only
-// Minimize and Close boxes, «Звук вкл/выкл» mutes the current alarm,
+// TestCHK_TRAY_36_ErrorWindow — the reworked CHK-TRAY-03 window: the
+// Minimize box, no maximize, no Close (phase 16, CHK-TRAY-104: SC_CLOSE is
+// not in the system menu), «Звук вкл/выкл» mutes the current alarm,
 // «Подтвердить» hides it until the next check that still sees the error.
 func TestCHK_TRAY_36_ErrorWindow(t *testing.T) {
 	runtime.LockOSThread()
@@ -190,6 +197,13 @@ func TestCHK_TRAY_36_ErrorWindow(t *testing.T) {
 	aw := app.awin
 	if aw.style&winapi.WS_MINIMIZEBOX == 0 || aw.style&0x00010000 != 0 /* WS_MAXIMIZEBOX */ {
 		t.Errorf("style %x", aw.style)
+	}
+	if sm := winapi.GetSystemMenu(aw.hwnd, false); sm != 0 {
+		for i, n := 0, winapi.GetMenuItemCount(sm); i < n; i++ {
+			if winapi.GetMenuItemID(sm, i) == winapi.SC_CLOSE {
+				t.Error("SC_CLOSE in the system menu")
+			}
+		}
 	}
 	mute := winapi.GetDlgItem(aw.hwnd, idAlertMute)
 	if winapi.GetWindowText(mute) != "Звук выкл" || aw.tips.text(mute) == "" {
@@ -295,7 +309,8 @@ func TestCHK_TRAY_38_BlinkIcon(t *testing.T) {
 
 // TestCHK_TRAY_90_TrayIconBlinkArrows — the notification icon handle is
 // the app icon with state arrows; the existing blink alternates the
-// yellow / red arrows with the normal (green) icon.
+// yellow / red arrows with tray_blank — since phase 16 B black arrows in a
+// light chrome outline (CHK-TRAY-103), no longer the normal green icon.
 func TestCHK_TRAY_90_TrayIconBlinkArrows(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -303,16 +318,17 @@ func TestCHK_TRAY_90_TrayIconBlinkArrows(t *testing.T) {
 	svc.set(1, ptAlert("a", "Склад", "k1", model.LevelWarning))
 	app, srv, _ := startP10App(t, svc, &testBeeper{}, nil)
 	pumpUntil(t, "warning", func() bool { return app.Blink() == trayalert.BlinkYellow })
-	yellow, green := app.icons.ico(trayui.IcoTrayWarning, px(icoSmall)), app.icons.ico(trayui.IcoTrayBlank, px(icoSmall))
-	if yellow == 0 || green == 0 || yellow == green {
-		t.Fatalf("icons %x %x", yellow, green)
+	yellow, black := app.icons.ico(trayui.IcoTrayWarning, px(icoSmall)), app.icons.ico(trayui.IcoTrayBlank, px(icoSmall))
+	green := app.icons.ico(trayui.IcoTrayOK, px(icoSmall))
+	if yellow == 0 || black == 0 || green == 0 || yellow == black || black == green {
+		t.Fatalf("icons yellow %x black %x green %x", yellow, black, green)
 	}
 	if n := app.nid(); n.Icon != yellow {
 		t.Errorf("on phase icon %x want yellow %x", n.Icon, yellow)
 	}
 	app.blinkTick()
-	if n := app.nid(); n.Icon != green {
-		t.Errorf("off phase icon %x want normal %x", n.Icon, green)
+	if n := app.nid(); n.Icon != black || n.Icon == green {
+		t.Errorf("off phase icon %x want black arrows %x (not the green %x)", n.Icon, black, green)
 	}
 	app.blinkTick()
 	srv.PublishStatus(svc.set(2, ptAlert("a", "Склад", "k1", model.LevelError)))
@@ -321,8 +337,8 @@ func TestCHK_TRAY_90_TrayIconBlinkArrows(t *testing.T) {
 		t.Errorf("red phase icon %x", n.Icon)
 	}
 	app.blinkTick()
-	if n := app.nid(); n.Icon != green {
-		t.Error("red blink off phase must be the normal icon")
+	if n := app.nid(); n.Icon != black {
+		t.Error("red blink off phase must be tray_blank (black arrows)")
 	}
 	srv.PublishStatus(svc.set(3))
 	pumpUntil(t, "fine", func() bool { return app.Blink() == trayalert.BlinkNone })

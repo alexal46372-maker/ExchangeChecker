@@ -33,7 +33,14 @@ var (
 	ArrowYellow = [3]uint8{0xFF, 0xC6, 0x1A} // tray: warning
 	ArrowRed    = [3]uint8{0xFF, 0x4F, 0x4F} // tray: error, the problem dot
 	ArrowGrey   = [3]uint8{0xD2, 0xD8, 0xE2} // tray: no service / unknown
+	// ArrowBlack (phase 16 B, CHK-TRAY-103): the «off» phase of the
+	// blinking tray icon — black arrows in a light chrome outline.
+	ArrowBlack = [3]uint8{0x0C, 0x0E, 0x14}
 )
+
+// OutlineChrome is the light chrome outline of the black arrows (phase 16
+// B): bright on top, a little darker at the bottom, like the frame.
+var OutlineChrome = [3]uint8{0xD8, 0xE0, 0xF0}
 
 // arrowShade: the darker bottom of the gradient and the glow of an
 // arrow colour.
@@ -42,6 +49,7 @@ var arrowShade = map[[3]uint8][2][3]uint8{
 	ArrowYellow: {{0xE0, 0x8A, 0x00}, {0xFF, 0xC2, 0x1A}},
 	ArrowRed:    {{0xC8, 0x10, 0x1A}, {0xFF, 0x30, 0x30}},
 	ArrowGrey:   {{0x7C, 0x86, 0x96}, {0xB0, 0xC0, 0xD8}},
+	ArrowBlack:  {{0x00, 0x00, 0x00}, {0x00, 0x00, 0x00}}, // no glow
 }
 
 type pt struct{ x, y float64 }
@@ -301,6 +309,9 @@ func chromeEnv(n [3]float64) float64 {
 type metalStyle struct {
 	arrow, deep, glow rgb
 	problem           bool
+	// chrome (phase 16 B): a light chrome outline instead of OutlineDark
+	// (the black arrows of the blink «off» phase).
+	chrome bool
 }
 
 // sample: linear colour and coverage of one sample point.
@@ -332,6 +343,13 @@ func (g *metalGeom) sample(st *metalStyle, x, y float64) (rgb, float64) {
 		}
 		if ad > -g.outline {
 			col = lin(OutlineDark)
+			if st.chrome { // light chrome outline: bright top, darker bottom, a highlight
+				e := 1.0 - 0.30*clamp01(y/S)
+				if !g.small {
+					e += 0.25 * clamp01(agy) // above an arrow (gradient points down into it): the upper rims catch the light
+				}
+				col = lin(OutlineChrome).mul(e).add(lin(RimBlue).mul(0.10 * e))
+			}
 		}
 	} else { // the arrow
 		b := g.band[which]
@@ -340,7 +358,11 @@ func (g *metalGeom) sample(st *metalStyle, x, y float64) (rgb, float64) {
 		if g.small {
 			lit := body.mul(0.98)
 			if d, _, _, _ := g.arrowSDF(x, y-1); d < 0 { // 1-px light top edge
-				lit = lit.mix(whiteL, 0.22)
+				edge := 0.22
+				if st.chrome { // black arrows: a faint bevel, the body stays black
+					edge = 0.06
+				}
+				lit = lit.mix(whiteL, edge)
 			} else if d, _, _, _ := g.arrowSDF(x, y+1); d < 0 { // darker bottom edge
 				lit = lit.mix(st.deep, 0.45)
 			}
@@ -354,6 +376,12 @@ func (g *metalGeom) sample(st *metalStyle, x, y float64) (rgb, float64) {
 			lit = lit.add(st.arrow.mul(0.18 * clamp01(ad/(3*g.k))))      // inner glow
 			spec := math.Pow(clamp01(dot3(n, keyH)), 18)
 			rs := math.Pow(clamp01(dot3(n, rimH)), 30)
+			if st.chrome { // black arrows: highlights only on the bevel, the flat top stays black
+				bev := (1 - s) * (1 - s)
+				spec *= bev
+				rs *= bev
+				lit = lit.add(rgb{0.55, 0.6, 0.7}.mul(0.10 * diff * bev))
+			}
 			lit = lit.add(rgb{1, 0.97, 0.9}.mul(1.3 * spec)).add(rgb{0.5, 0.8, 1.0}.mul(0.30 * rs))
 			col = lit
 		}
@@ -447,7 +475,7 @@ func metalPixels(arrow [3]uint8, size int, problem bool) []uint32 {
 		if !known { // an unknown colour: darker bottom, same glow
 			sh = [2][3]uint8{{arrow[0] * 3 / 5, arrow[1] * 3 / 5, arrow[2] * 3 / 5}, arrow}
 		}
-		st := metalStyle{arrow: lin(arrow), deep: lin(sh[0]), glow: lin(sh[1]), problem: problem}
+		st := metalStyle{arrow: lin(arrow), deep: lin(sh[0]), glow: lin(sh[1]), problem: problem, chrome: arrow == ArrowBlack}
 		g := geomFor(size)
 		p = g.render(&st)
 		metalCache.Lock()

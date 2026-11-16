@@ -1341,6 +1341,24 @@ func (w *settingsWindow) setPage(p int) {
 	if p < 0 || p > pageTelegram {
 		return
 	}
+	// Phase 16 F (tab-switch flicker): the whole switch runs with the frame's
+	// painting suspended (WM_SETREDRAW, redraw_windows.go) — the inner
+	// relayout / scroll eraseRepaints paint nothing on screen — and ends with
+	// ONE eraseRepaint of the frame and all its children (CHK-TRAY-68/71
+	// contract, CHK-TRAY-107). A hidden frame is not suspended: WM_SETREDRAW
+	// TRUE would set WS_VISIBLE on it.
+	if w.hwnd != 0 && winapi.IsWindowVisible(w.hwnd) {
+		withSetRedraw(w.hwnd, func() { w.switchPage(p) })
+		return
+	}
+	w.switchPage(p)
+	eraseRepaint(w.hwnd)
+}
+
+// switchPage is the body of setPage; it paints nothing of its own (the one
+// repaint is setPage's). The second hideInactiveTabControls and the
+// UPDATENOW RedrawWindow pair of host + frame are gone (phase 16 F).
+func (w *settingsWindow) switchPage(p int) {
 	// remember scroll of the page we leave
 	if w.page >= 0 && w.page < len(w.scrollPos) {
 		w.scrollPos[w.page].x, w.scrollPos[w.page].y = w.scrollX, w.scrollY
@@ -1359,14 +1377,7 @@ func (w *settingsWindow) setPage(p int) {
 	w.scrollSet = false
 	w.scrollTo(sx, sy)
 	w.update()
-	w.hideInactiveTabControls()
 	w.showPageActions(w.page)
-	if w.host != 0 {
-		winapi.RedrawWindow(w.host, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
-	}
-	if w.hwnd != 0 {
-		winapi.RedrawWindow(w.hwnd, winapi.RDW_INVALIDATE|winapi.RDW_ERASE|winapi.RDW_ALLCHILDREN|winapi.RDW_UPDATENOW)
-	}
 }
 
 // readGeneral copies the general page into the editor (administrator).
@@ -1391,6 +1402,7 @@ func (w *settingsWindow) fillGeneral() {
 	}
 	w.setCheck(idGenBeep, g.BeepEnabled)
 	w.setCheck(idGenAutostart, g.Autostart)
+	w.syncSoundControls() // phase 16 E: the «Звук» section follows the checkbox
 }
 
 // saveSettings sends save_settings of the general page.

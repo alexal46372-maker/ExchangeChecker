@@ -190,17 +190,18 @@ func TestCHK_TRAY_15_Tooltips(t *testing.T) {
 	}
 	checkTips(t, "settings read-only", ro.settings.tips, ro.settings.ctl, settingsTips, settingsOutputs)
 
-	aw, err := newAlertWindow(0, nil, nil)
+	aw, err := newAlertWindow(0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer winapi.DestroyWindow(aw.hwnd)
-	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck) || aw.tips.text(aw.close) != i18n.T(i18n.KeyTipAlertClose) ||
-		aw.tips.text(aw.mute) != i18n.T(i18n.KeyTipAlertMute) || aw.tips.count() != 3 {
+	// phase 16 (CHK-TRAY-104): no «Закрыть», two button tips
+	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck) ||
+		aw.tips.text(aw.mute) != i18n.T(i18n.KeyTipAlertMute) || aw.tips.count() != 2 {
 		t.Error("alert tooltips")
 	}
-	aw.setTips() // set again (relayout): still exactly 3 tips
-	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck) || aw.tips.count() != 3 {
+	aw.setTips() // set again (relayout): still exactly 2 tips
+	if aw.tips.text(aw.ack) != i18n.T(i18n.KeyTipAlertAck) || aw.tips.count() != 2 {
 		t.Error("alert tooltips after setting them again")
 	}
 	h, err := newAboutWindow(0, "About", "text", "OK", i18n.T(i18n.KeyTipAboutOK), false, nil)

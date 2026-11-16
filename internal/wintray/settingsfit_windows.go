@@ -61,10 +61,34 @@ func settingsRectPx(style uint32, cw, ch int32) (x, y, w, h int32) {
 		return r.Right - r.Left, r.Bottom - r.Top
 	}
 	ow, oh := outer(cw, ch)
-	if oh > work.Bottom-work.Top {
-		ow, oh = outer(cw+winapi.GetSystemMetrics(winapi.SM_CXVSCROLL), ch)
+	if limit := settingsMaxOuterH(work, style); oh > limit {
+		ow, _ = outer(cw+winapi.GetSystemMetrics(winapi.SM_CXVSCROLL), ch)
+		oh = limit // the rest goes to the host's vertical scroll
 	}
 	return fitRect(ow, oh, work)
+}
+
+// Phase 16 G (Кончита 16.11.2026, CHK-TRAY-108): the settings window is
+// no taller than setMaxOuterH logical px and no taller than 3/4 of the
+// work area; what does not fit scrolls in the page host (tabs and footer
+// stay put). Never lower than the tab strip + footer + setMinViewH of page.
+const (
+	setMaxOuterH = 560
+	setMinViewH  = 160
+)
+
+// settingsMaxOuterH is the outer height limit of the settings window (px).
+func settingsMaxOuterH(work winapi.RECT, style uint32) int32 {
+	wh := work.Bottom - work.Top
+	limit := min32(px(setMaxOuterH), wh*3/4)
+	r := winapi.RECT{Bottom: px(setBarH) + px(settingsTabChromeH) + px(gridGap) + px(setMinViewH)}
+	if !winapi.AdjustWindowRectEx(&r, style, 0) {
+		r.Bottom += 32
+	}
+	if floor := r.Bottom - r.Top; limit < floor {
+		limit = min32(floor, wh)
+	}
+	return limit
 }
 
 // createHost creates the page host filling the client above the bar.

@@ -532,14 +532,38 @@ func TestCHK_TRAY_66_LayoutFitWrap144EN(t *testing.T) {
 
 // TestCHK_TRAY_66_TabChromeFixedAndNoOverlap — kept name for CI greps;
 // delegates coverage to AllTabs (page0 subset still exercised here lightly).
+// Phase 16 G: on the 1024×768 model (40 px taskbar) the lower window
+// (≤ 3/4 of the work area) scrolls every page; tabs and footer stay put.
 func TestCHK_TRAY_66_TabChromeFixedAndNoOverlap(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	app, _ := startChromeApp(t)
 	defer app.Exit()
-	defer func() { testDPI = 0 }()
+	defer func() { testDPI = 0; testWorkArea = nil }()
+	small := winapi.RECT{Right: 1024, Bottom: 728}
+	testWorkArea = &small
 	w := openChromeSettings(t, app, i18n.RU, 96, true)
 	defer w.close()
+	if r := winapi.GetWindowRect(w.hwnd); r.Bottom-r.Top > 728*3/4 {
+		t.Fatalf("1024×768: window height %d > %d", r.Bottom-r.Top, 728*3/4)
+	}
+	for _, p := range chromePages(w) {
+		w.setPage(p)
+		w.layoutFit()
+		if w.contentH <= w.viewH {
+			t.Errorf("1024×768 page %d: content %d fits the view %d (no scroll)", p, w.contentH, w.viewH)
+		}
+		f0 := winapi.GetWindowRect(w.ctl[idSetSave])
+		t0 := winapi.GetWindowRect(w.ctl[idSetTabs])
+		w.scrollTo(0, 1<<20)
+		if winapi.GetWindowRect(w.ctl[idSetSave]) != f0 || winapi.GetWindowRect(w.ctl[idSetTabs]) != t0 {
+			t.Errorf("1024×768 page %d: tabs / footer moved", p)
+		}
+		if why := assertSamePageNoOverlap(w); why != "" {
+			t.Errorf("1024×768 page %d: %s", p, why)
+		}
+		w.scrollTo(0, 0)
+	}
 	w.setPage(0)
 	w.layoutFit()
 	tab := w.ctl[idSetTabs]

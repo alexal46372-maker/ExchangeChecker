@@ -10,8 +10,8 @@ import (
 // bytes on every call (deterministic), equals the committed file in
 // internal/wintray/icons, decodes back to its image at every size (and
 // scales to a size it does not have). The blank state icon is empty (no
-// opaque pixel at any size); the tray blink «off» icon tray_blank stays
-// the normal icon (CHK-TRAY-90, logic unchanged).
+// opaque pixel at any size); the tray blink «off» icon tray_blank is no
+// longer the normal icon (phase 16 B: black arrows, CHK-TRAY-103).
 func TestCHK_TRAY_49_Icons(t *testing.T) {
 	names := IconNames()
 	if len(names) != 17 {
@@ -77,7 +77,7 @@ func TestCHK_TRAY_49_Icons(t *testing.T) {
 		t.Error("state mapping")
 	}
 	ok, _ := IconICO(IcoTrayOK)
-	if blank, _ := IconICO(IcoTrayBlank); !bytes.Equal(ok, blank) {
-		t.Error("tray_blank must be the normal icon")
+	if blank, _ := IconICO(IcoTrayBlank); bytes.Equal(ok, blank) { // phase 16 B (CHK-TRAY-103)
+		t.Error("tray_blank (black arrows) must differ from tray_ok")
 	}
 }

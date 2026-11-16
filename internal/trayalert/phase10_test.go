@@ -126,10 +126,17 @@ func (f *fakeSounder) n() int {
 }
 
 // TestCHK_TRAY_35_PlayerAndMaster — looped or once, the gap between
-// repeats, the effective volume = profile × master.
+// repeats; phase 16 E: the volume is the master alone (SoundFor ignores the
+// old per-level volume, master 0 % = the tone is silent).
 func TestCHK_TRAY_35_PlayerAndMaster(t *testing.T) {
 	if EffectiveVolume(80, 50) != 40 || EffectiveVolume(100, 100) != 100 || EffectiveVolume(120, -1) != 0 {
 		t.Error("effective volume")
+	}
+	for _, c := range []struct{ prof, master, vol int }{{80, 50, 50}, {0, 70, 70}, {100, 0, 0}, {50, 130, 100}} {
+		s := SoundFor(SoundProfile{Kind: SoundBeep, Volume: c.prof}, c.master)
+		if s.Volume != c.vol || s.ToneOn != (c.vol > 0) || ToneLevel(s) != map[bool]int{true: 100, false: 0}[c.vol > 0] {
+			t.Errorf("SoundFor(%d, %d) = %+v", c.prof, c.master, s)
+		}
 	}
 	f := &fakeSounder{}
 	p := NewSoundPlayer(f)

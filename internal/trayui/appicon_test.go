@@ -277,12 +277,12 @@ func TestCHK_TRAY_89_AppIconGreenArrows(t *testing.T) {
 
 // TestCHK_TRAY_90_TrayIconArrows — the notification icons (committed
 // internal/wintray/icons/tray_*.ico) are the app icon with state arrows:
-// green OK (and the blink «off» phase tray_blank = tray_ok, logic
-// unchanged), yellow warning, red error, grey offline; problem = grey
+// green OK, yellow warning, red error, grey offline (the blink «off» phase
+// tray_blank has black arrows since phase 16, CHK-TRAY-103); problem = grey
 // arrows and a red dot in a white ring. Hue and WCAG contrast at 32 and
 // 256 px: green ≥ 10, yellow ≥ 9, grey ≥ 10, red ≥ 4.5.
 func TestCHK_TRAY_90_TrayIconArrows(t *testing.T) {
-	want := map[Icon][3]uint8{IconOK: ArrowGreen, IconBlank: ArrowGreen, IconWarning: ArrowYellow,
+	want := map[Icon][3]uint8{IconOK: ArrowGreen, IconBlank: ArrowBlack, IconWarning: ArrowYellow,
 		IconError: ArrowRed, IconOffline: ArrowGrey, IconProblem: ArrowGrey}
 	names := map[string]bool{}
 	for k, arrow := range want {
@@ -299,6 +299,9 @@ func TestCHK_TRAY_90_TrayIconArrows(t *testing.T) {
 		probe, bgp := arrowProbe, bgProbe
 		if k == IconProblem {
 			probe, bgp = topProbe, topBgProbe
+		}
+		if k == IconBlank { // black arrows, chrome outline: CHK-TRAY-103
+			continue
 		}
 		for _, s := range []int{32, 256} {
 			d, err := DecodeICO(ico, s)
@@ -323,9 +326,9 @@ func TestCHK_TRAY_90_TrayIconArrows(t *testing.T) {
 		t.Errorf("tray icon names %v", names)
 	}
 	for _, s := range IconSizes {
-		if !equalPx(TrayIconPixels(IconBlank, s), TrayIconPixels(IconOK, s)) ||
+		if equalPx(TrayIconPixels(IconBlank, s), TrayIconPixels(IconOK, s)) ||
 			!equalPx(TrayIconPixels(IconOK, s), AppIconPixels(ArrowGreen, s)) {
-			t.Errorf("%d: blink off phase / OK must be the normal app icon", s)
+			t.Errorf("%d: OK must be the normal app icon, the blink off phase must not (phase 16)", s)
 		}
 		if equalPx(TrayIconPixels(IconOffline, s), TrayIconPixels(IconProblem, s)) {
 			t.Errorf("%d: problem icon has no dot", s)
@@ -333,7 +336,7 @@ func TestCHK_TRAY_90_TrayIconArrows(t *testing.T) {
 	}
 	ok, _ := IconICO(IcoTrayOK)
 	blank, _ := IconICO(IcoTrayBlank)
-	if !bytes.Equal(ok, blank) {
-		t.Error("tray_blank.ico must stay the normal icon (tray_ok.ico)")
+	if bytes.Equal(ok, blank) {
+		t.Error("tray_blank.ico (black arrows, phase 16) must differ from tray_ok.ico")
 	}
 }

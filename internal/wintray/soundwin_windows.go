@@ -37,8 +37,12 @@ const (
 	idSndLoop   = 7
 	idSndGap    = 8
 	idSndTest   = 9
-	idSndWarn   = 510
-	idSndErr    = 530
+	// phase 16 E (CHK-TRAY-105, settings window): «Вывод звука» and its
+	// short note for «Файл»
+	idSndOut     = 10
+	idSndOutNote = 11
+	idSndWarn    = 510
+	idSndErr     = 530
 
 	idVolBar = 600
 )
@@ -50,9 +54,11 @@ type profileCtl struct {
 	base                                int32
 	beep, file, freq, dur, path, browse uintptr
 	vol, loop, gap, test, head          uintptr
-	// volNote: «громкость не регулируется» while «Тон» is selected
-	// (phase 14, CHK-TRAY-99; settings window only)
-	volNote uintptr
+	// settings window only (phase 16 E): «Вывод звука» (combo), its note
+	// «файл — через колонки» and the field labels (greyed with the
+	// section when «Звуковой сигнал тревоги» is off)
+	out, outNote uintptr
+	labels       []uintptr
 }
 
 // soundWindow edits the two profiles; «Сохранить» stores them in HKCU.

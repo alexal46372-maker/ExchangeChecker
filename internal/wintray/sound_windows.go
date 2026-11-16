@@ -112,7 +112,69 @@ func (w *winSounder) Play(s trayalert.Sound, stop <-chan struct{}) error {
 		}
 		w.fallback(p.File, err)
 	}
+	if p.Kind == trayalert.SoundFile { // the tone instead of a broken file: as before
+		return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), !s.NoSpeaker, s.Listen, stop)
+	}
+	// phase 16 E (CHK-TRAY-105): «Вывод звука» of the level
+	switch p.Output {
+	case trayalert.OutputSpeakers:
+		return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), false, s.Listen, stop)
+	case trayalert.OutputBoth:
+		if w.speaker != nil && !s.NoSpeaker {
+			return w.playBoth(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), s.Listen, stop)
+		}
+		return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), false, s.Listen, stop)
+	}
 	return w.playTone(p.FreqHz, p.DurMs, trayalert.ToneLevel(s), !s.NoSpeaker, s.Listen, stop)
+}
+
+// playBoth («Динамик и колонки», phase 16 E): the sine through the
+// speakers (PlaySound, asynchronous) and the PC speaker of the service at
+// the same time; stop silences both (stopWAV + speaker_tone {durMs:0}). The
+// speaker not available: logged once, the speakers alone; PlaySound refused
+// too: the old chain (Beep, MessageBeep).
+func (w *winSounder) playBoth(freq, dur, vol int, listen bool, stop <-chan struct{}) error {
+	d := time.Duration(dur) * time.Millisecond
+	if vol <= 0 {
+		waitOrStop(d, stop)
+		return nil
+	}
+	o := w.tone.withDefaults()
+	start := time.Now()
+	wavErr := o.playWAV(w.alias, trayalert.SineWAV(freq, dur, vol))
+	if wavErr != nil {
+		w.fallback("PlaySound", wavErr)
+	}
+	reason, spk := w.playSpeaker(freq, speakerDur(dur, listen), stop)
+	if !spk {
+		w.viaSpeaker.Store(false)
+		w.speakerFallback(reason)
+	}
+	select {
+	case <-stop: // playSpeaker already sent the speaker stop
+		if wavErr == nil {
+			o.stopWAV(w.alias)
+		}
+		return nil
+	default:
+	}
+	if wavErr == nil {
+		if rest := d + 20*time.Millisecond - time.Since(start); rest > 0 && !waitOrStop(rest, stop) {
+			o.stopWAV(w.alias)
+		}
+		return nil
+	}
+	if spk {
+		return nil
+	}
+	// neither the speaker nor PlaySound: kernel32 Beep, then MessageBeep
+	if err := o.beep(uint32(freq), uint32(dur)); err != nil {
+		w.fallback("Beep", err)
+		err := o.messageBeep()
+		waitOrStop(d, stop)
+		return err
+	}
+	return nil
 }
 
 func (w *winSounder) fallback(file string, err error) {

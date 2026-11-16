@@ -181,8 +181,11 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	if w.sndSave != 0 || w.ctl[idSndSave] != 0 {
 		t.Fatal("CHK-TRAY-82: sound Save button must be removed")
 	}
-	if winapi.GetWindowText(w.sndWarn.vol) != "80" || winapi.GetWindowText(w.sndErr.vol) != "100" {
-		t.Fatalf("defaults warn=%q err=%q", winapi.GetWindowText(w.sndWarn.vol), winapi.GetWindowText(w.sndErr.vol))
+	// phase 16 E: no per-level volume; «Вывод звука» defaults to the PC speaker
+	if w.sndWarn.vol != 0 || w.sndErr.vol != 0 ||
+		winapi.SendMessage(w.sndWarn.out, winapi.CB_GETCURSEL, 0, 0) != 0 || winapi.SendMessage(w.sndErr.out, winapi.CB_GETCURSEL, 0, 0) != 0 {
+		t.Fatalf("defaults: volume fields %x %x, outputs %d %d", w.sndWarn.vol, w.sndErr.vol,
+			winapi.SendMessage(w.sndWarn.out, winapi.CB_GETCURSEL, 0, 0), winapi.SendMessage(w.sndErr.out, winapi.CB_GETCURSEL, 0, 0))
 	}
 	// invalid → not saved (persist via shared path / persistSoundSection)
 	winapi.SetWindowText(w.sndErr.freq, "5")
@@ -193,11 +196,12 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 		t.Fatalf("want error status, got %q", winapi.GetWindowText(w.sndInfo))
 	}
 	winapi.SetWindowText(w.sndErr.freq, "1500")
-	winapi.SetWindowText(w.sndErr.vol, "60")
+	winapi.SendMessage(w.sndErr.out, winapi.CB_SETCURSEL, 2, 0) // «Динамик и колонки»
 	if bad := w.persistSoundSection(); bad != "" || store.saves != 1 {
 		t.Fatalf("save failed bad=%q saves=%d prefs=%+v", bad, store.saves, app.SoundPrefs())
 	}
-	if app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Volume != 60 {
+	if app.SoundPrefs().Error.FreqHz != 1500 || app.SoundPrefs().Error.Output != trayalert.OutputBoth ||
+		app.SoundPrefs().Warning.Output != trayalert.OutputSpeaker {
 		t.Fatalf("prefs=%+v", app.SoundPrefs())
 	}
 	// menu: no CmdSound; no Theme submenu (CHK-TRAY-88)

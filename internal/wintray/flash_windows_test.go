@@ -76,8 +76,10 @@ func startFlashApp(t *testing.T, svc *flashService, store ScreenFlashStore, mod 
 // (app.ackAlerts, the button handler) stops the local flashing of the
 // acknowledged alerts at once, and the next flash push of the still failing
 // check turns it on again; flash_stop of one point keeps the others;
-// «Закрыть» of the alert window sends dismiss_flash {eventId} and stops it;
-// «Мигание экрана» off = no overlay.
+// phase 16 (CHK-TRAY-104): the alert window has no «Закрыть» — WM_CLOSE /
+// SC_CLOSE to it neither stop the flash nor send dismiss_flash (the service
+// still answers a dismiss_flash request: known event recorded, unknown =
+// not_found); «Мигание экрана» off = no overlay.
 func TestCHK_TRAY_95_ScreenFlash(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -162,17 +164,32 @@ func TestCHK_TRAY_95_ScreenFlash(t *testing.T) {
 	// recovery of the point
 	srv.Flash(model.FlashEvent{ProfileID: "p1", PointKey: "pt", Stop: true})
 	pumpUntil(t, "point stop", func() bool { return app.FlashActive() == 1 && fw.timer })
-	// «Закрыть» → dismiss_flash {eventId}
-	app.closeAlerts()
-	if app.FlashActive() != 0 || fw.timer || fw.on {
-		t.Fatal("«Закрыть» did not stop the flash")
+	// phase 16: closing the alert window is impossible — WM_CLOSE / SC_CLOSE
+	// keep the flash and send no dismiss_flash
+	if app.awin == nil {
+		t.Fatal("no alert window")
 	}
+	winapi.SendMessage(app.awin.hwnd, winapi.WM_CLOSE, 0, 0)
+	winapi.SendMessage(app.awin.hwnd, winapi.WM_SYSCOMMAND, winapi.SC_CLOSE, 0)
+	pumpFor(4 * FlashHalfMs * time.Millisecond)
+	if app.FlashActive() != 1 || !fw.timer || svc.nDismissed() != 0 || !winapi.IsWindow(app.awin.hwnd) {
+		t.Fatalf("close attempts changed the flash: active %d timer %v dismissed %d", app.FlashActive(), fw.timer, svc.nDismissed())
+	}
+	// dismiss_flash {eventId} of the protocol still works (service side)
+	ctx0, cancel0 := context.WithTimeout(context.Background(), 5*time.Second)
+	if m, err := app.session.Do(ctx0, model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: 7}); err != nil || m.Type == model.MsgError {
+		t.Errorf("dismiss_flash 7: %+v %v", m, err)
+	}
+	cancel0()
 	pumpUntil(t, "dismiss_flash", func() bool { return svc.nDismissed() == 1 })
 	svc.fmu.Lock()
 	if svc.dismissed[0] != 7 {
 		t.Errorf("dismissed %v", svc.dismissed)
 	}
 	svc.fmu.Unlock()
+	// recovery of the profile ends the last flash
+	srv.Flash(model.FlashEvent{ProfileID: "p1", Stop: true})
+	pumpUntil(t, "profile stop", func() bool { return app.FlashActive() == 0 && !fw.timer })
 	// unknown event: not_found / monitor.unknown_event; no eventId: invalid_request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	m, err := app.session.Do(ctx, model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: 99})

@@ -108,6 +108,8 @@ func (a *App) stopBlink() {
 }
 
 // blinkTick switches the blink phase (WM_TIMER; tests call it directly).
+// Phase 16 A (CHK-TRAY-92): the frame of the panel by the clock blinks
+// with the icon in the same tick — its colour ↔ black.
 func (a *App) blinkTick() {
 	if a.blink == trayalert.BlinkNone {
 		a.stopBlink()
@@ -118,18 +120,33 @@ func (a *App) blinkTick() {
 	if a.nidAdded {
 		a.modifyIcon()
 	}
+	if a.panel != nil && a.panel.shown && winapi.IsWindow(a.panel.hwnd) {
+		a.panel.frameRepaints++
+		eraseRepaint(a.panel.hwnd) // the frame in the new phase, the text over it
+	}
 }
 
 // panelWindow is the topmost problem panel by the clock: no caption, no
 // close button, never activated; it hides itself when the list is empty.
+// Phase 16 A: a speech bubble (window region: rounded body + tail to the
+// tray icon) with a thin frame in the colour of the worst problem.
 type panelWindow struct {
 	hwnd, text uintptr
 	lines      []string
 	shown      bool
+	cloud      trayui.Cloud // the placed bubble (window region)
+	// frameRepaints: blink-phase repaints of the frame (tests)
+	frameRepaints int
 }
 
 // Panel is the panel (nil before the first problem; test hook).
 func (a *App) Panel() *panelWindow { return a.panel }
+
+// PanelFrameColor is the current frame colour (COLORREF; tests): the worst
+// problem (red error / yellow warning), black in the «off» blink phase.
+func (a *App) PanelFrameColor() uint32 {
+	return trayui.PanelFrameColor(a.blink == trayalert.BlinkRed, a.blinkOff && a.blink != trayalert.BlinkNone)
+}
 
 func (a *App) updatePanel() {
 	lines := trayalert.PanelLines(a.problems)
@@ -147,9 +164,9 @@ func (a *App) updatePanel() {
 			winapi.WS_POPUP, 0, 0, panelWidth, 40, a.hwnd,
 			func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 				switch msg {
-				case winapi.WM_ERASEBKGND: // CHK-TRAY-92: the thick red frame
+				case winapi.WM_ERASEBKGND: // CHK-TRAY-92: the bubble and its frame
 					themeErase(wp, hw)
-					paintPanelFrame(wp, winapi.GetClientRect(hw))
+					paintPanelFrame(wp, p.cloud, a.PanelFrameColor())
 					return 1, true
 				case winapi.WM_LBUTTONUP:
 					a.OpenStatus()
@@ -178,11 +195,18 @@ func (a *App) updatePanel() {
 	// least panelWidth wide, one line per problem
 	text := uiCtl(p.text, ui.Label, strings.Join(lines, "\n"))
 	text.W = panelWidth - 18
-	b := int32(panelBorder) // logical; newForm scales the pad
+	b := int32(trayui.PanelBorder) // logical; newForm scales the pad
 	f := newForm(&ui.Pad{Left: ui.P8 + b, Right: ui.P8 + b, Top: 6 + b, Bottom: 6 + b, Child: text}, 0)
-	ow, oh := outerSize(f.W, f.H, winapi.WS_POPUP, winapi.WS_EX_TOPMOST|winapi.WS_EX_TOOLWINDOW|winapi.WS_EX_NOACTIVATE)
-	x, y := a.panelPos(ow, oh)
-	winapi.SetWindowPos(p.hwnd, winapi.HWND_TOPMOST, x, y, ow, oh, winapi.SWP_NOACTIVATE)
+	// phase 16 A: the body is the laid-out form; the bubble adds the tail
+	c := a.panelCloud(f.W, f.H)
+	if text.Placed && (c.Body.L != 0 || c.Body.T != 0) { // tail above / left: shift the text into the body
+		winapi.SetWindowPos(p.text, 0, text.Rect.X+c.Body.L, text.Rect.Y+c.Body.T, text.Rect.W, text.Rect.H, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
+	}
+	winapi.SetWindowPos(p.hwnd, winapi.HWND_TOPMOST, c.Win.L, c.Win.T, c.Win.W(), c.Win.H(), winapi.SWP_NOACTIVATE)
+	if c != p.cloud {
+		p.cloud = c
+		winapi.SetWindowRgn(p.hwnd, cloudRegion(c), true) // the system owns the region
+	}
 	winapi.InvalidateRect(p.hwnd, true) // the frame follows the new size
 	if !p.shown {
 		p.shown = true
@@ -192,36 +216,87 @@ func (a *App) updatePanel() {
 	}
 }
 
-// Thick red frame of the error panel by the clock (phase 13, item 4,
-// CHK-TRAY-92): panelBorder logical pixels (DPI-scaled) of bright red
-// instead of the thin WS_BORDER; the panel still has no close button.
-const panelBorder = 8
+// Thin frame of the panel by the clock (phase 13 item 4, phase 16 A,
+// CHK-TRAY-92): trayui.PanelBorder logical pixels (DPI-scaled) along the
+// inside of the bubble region; the panel still has no close button.
+const panelBorder = trayui.PanelBorder
 
-// PanelFrameRGB is the frame color (COLORREF 0x00BBGGRR, bright red).
-const PanelFrameRGB = 0x00303BFF
+// PanelFrameRGB is the error frame colour, PanelFrameYellow the warning
+// one (COLORREF 0x00BBGGRR); the frame blinks to black with the icon.
+const (
+	PanelFrameRGB    = trayui.PanelFrameRed
+	PanelFrameYellow = trayui.PanelFrameYellow
+)
 
-var panelFrameBrush uintptr
+var panelFrameBrushes = map[uint32]uintptr{}
 
 func panelBorderPx() int32 { return px(panelBorder) }
 
-// paintPanelFrame fills the four frame bands of client rectangle r.
-func paintPanelFrame(dc uintptr, r winapi.RECT) {
-	if panelFrameBrush == 0 {
-		panelFrameBrush = winapi.CreateSolidBrush(PanelFrameRGB)
+// panelMetrics are the DPI-scaled bubble sizes.
+func panelMetrics() trayui.CloudMetrics {
+	return trayui.CloudMetrics{Tail: px(trayui.PanelTail), TailHalf: px(trayui.PanelTailHalf),
+		Radius: px(trayui.PanelRadius), Gap: px(trayui.PanelGap)}
+}
+
+// cloudRegion builds the bubble region in window coordinates: the rounded
+// body (CreateRoundRectRgn, right / bottom exclusive, so +1) OR the tail
+// triangle (CreatePolygonRgn).
+func cloudRegion(c trayui.Cloud) uintptr {
+	d := 2 * c.Radius
+	body := winapi.CreateRoundRectRgn(c.Body.L, c.Body.T, c.Body.R+1, c.Body.B+1, d, d)
+	pts := make([]winapi.POINT, 3)
+	for i, q := range c.Tail {
+		pts[i] = winapi.POINT{X: q.X, Y: q.Y}
+	}
+	tail := winapi.CreatePolygonRgn(pts)
+	if body == 0 || tail == 0 {
+		if tail != 0 {
+			winapi.DeleteObject(tail)
+		}
+		return body
+	}
+	winapi.CombineRgn(body, body, tail, winapi.RGN_OR)
+	winapi.DeleteObject(tail)
+	return body
+}
+
+// paintPanelFrame draws the frame along the inside of the bubble region
+// (FrameRgn, panelBorderPx wide) in colour col.
+func paintPanelFrame(dc uintptr, c trayui.Cloud, col uint32) {
+	br := panelFrameBrushes[col]
+	if br == 0 {
+		br = winapi.CreateSolidBrush(col)
+		panelFrameBrushes[col] = br
+	}
+	rgn := cloudRegion(c)
+	if rgn == 0 {
+		return
 	}
 	b := panelBorderPx()
-	for _, band := range []winapi.RECT{
-		{Left: r.Left, Top: r.Top, Right: r.Right, Bottom: r.Top + b},
-		{Left: r.Left, Top: r.Bottom - b, Right: r.Right, Bottom: r.Bottom},
-		{Left: r.Left, Top: r.Top, Right: r.Left + b, Bottom: r.Bottom},
-		{Left: r.Right - b, Top: r.Top, Right: r.Right, Bottom: r.Bottom},
-	} {
-		winapi.FillRect(dc, band, panelFrameBrush)
+	winapi.FrameRgn(dc, rgn, br, b, b)
+	winapi.DeleteObject(rgn)
+}
+
+// panelCloud places the bubble of a w × h body by the tray icon (its
+// rectangle when known, Windows 7+), else at the bottom-right of the work
+// area (phase 16 A: the tail touches the icon, nothing is cut off).
+func (a *App) panelCloud(w, h int32) trayui.Cloud {
+	work, ok := winapi.WorkArea()
+	if !ok || work.Right <= work.Left {
+		work = winapi.RECT{Right: winapi.GetSystemMetrics(winapi.SM_CXSCREEN), Bottom: winapi.GetSystemMetrics(winapi.SM_CYSCREEN)}
 	}
+	var icon winapi.RECT
+	known := false
+	if a.nidAdded {
+		icon, known = winapi.NotifyIconRect(a.hwnd, trayID)
+	}
+	return trayui.PanelCloud(w, h, trayui.CloudRect{L: icon.Left, T: icon.Top, R: icon.Right, B: icon.Bottom}, known,
+		trayui.CloudRect{L: work.Left, T: work.Top, R: work.Right, B: work.Bottom}, panelMetrics())
 }
 
 // panelPos: above (or below, for a top taskbar) the tray icon when its
-// rectangle is known (Windows 7+), else the bottom-right of the work area.
+// rectangle is known (Windows 7+), else the bottom-right of the work area
+// (the volume window; the panel itself is placed by panelCloud).
 func (a *App) panelPos(w, h int32) (int32, int32) {
 	work, ok := winapi.WorkArea()
 	if !ok || work.Right <= work.Left {

@@ -45,9 +45,10 @@ func ExeICO() []byte {
 
 // Notification-area icons (phase 13, CHK-TRAY-90): the application icon
 // whose arrows show the state. The blink logic (CHK-TRAY-38) is
-// unchanged: it alternates IconError / IconWarning with IconBlank, and
-// IconBlank is now the normal icon (green arrows) — so the arrows blink
-// red (error) or yellow (warning).
+// unchanged: it alternates IconError / IconWarning with IconBlank. Phase 16
+// B (CHK-TRAY-103): IconBlank has black arrows in a light chrome outline
+// (no longer the green tray_ok), so the arrows blink red (error) or yellow
+// (warning) ↔ black.
 const (
 	IcoTrayOK      = "tray_ok"
 	IcoTrayWarning = "tray_warning"
@@ -77,8 +78,10 @@ func TrayIco(k Icon) string {
 // TrayArrow is the arrow colour of the notification icon of kind k.
 func TrayArrow(k Icon) [3]uint8 {
 	switch k {
-	case IconOK, IconBlank:
+	case IconOK:
 		return ArrowGreen
+	case IconBlank: // phase 16 B (CHK-TRAY-103): black arrows, chrome outline
+		return ArrowBlack
 	case IconWarning:
 		return ArrowYellow
 	case IconError:

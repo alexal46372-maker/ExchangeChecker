@@ -58,7 +58,6 @@ const (
 	KeyAlertProfile        = "alert.profile"
 	KeyAlertMore           = "alert.more"
 	KeyAlertAck            = "alert.ack"
-	KeyAlertClose          = "alert.close"
 	KeyAlertAckPending     = "alert.ack_pending"
 	KeyAlertAckGone        = "alert.ack_gone"
 	KeyAlertAckUnsupported = "alert.ack_unsupported"
@@ -451,7 +450,6 @@ const (
 	KeyTipDiscApply       = "tip.disc.apply"
 	KeyTipDiscClose       = "tip.disc.close"
 	KeyTipAlertAck        = "tip.alert.ack"
-	KeyTipAlertClose      = "tip.alert.close"
 	KeyTipAboutOK         = "tip.about.ok"
 )
 
@@ -713,7 +711,13 @@ const (
 	KeySoundFallback    = "sound.fallback"
 	// phase 14 (feat/tray-speaker, CHK-TRAY-98/99): «Тон» through the
 	// PC speaker of the service
-	KeySoundToneVolume    = "sound.tone_volume"
+	// phase 16 E (CHK-TRAY-105): «Вывод звука» of «Тон» per level
+	KeySoundOutput         = "sound.output"
+	KeySoundOutputSpeaker  = "sound.output_speaker"
+	KeySoundOutputSpeakers = "sound.output_speakers"
+	KeySoundOutputBoth     = "sound.output_both"
+	KeySoundOutputFile     = "sound.output_file"
+	KeyTipSoundOutput      = "tip.sound_output"
 	KeySpeakerAvailable   = "speaker.available"
 	KeySpeakerUnavailable = "speaker.unavailable"
 	KeySpeakerNoService   = "speaker.no_service"
@@ -1030,12 +1034,11 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyAlertProfile:        "%s: %s — %s",
 	KeyAlertMore:           "…и ещё %d",
 	KeyAlertAck:            "Подтвердить",
-	KeyAlertClose:          "Закрыть",
 	KeyAlertAckPending:     "Подтверждение…",
 	KeyAlertAckGone:        "Тревога уже снята или подтверждена.",
 	KeyAlertAckUnsupported: "Эта версия службы не поддерживает подтверждение тревог.",
 	KeyAlertAckFailed:      "Не удалось подтвердить: %s",
-	KeyAlertCloseHint:      "«Закрыть» выключает звук до следующего изменения; «Подтвердить» снимает тревогу.",
+	KeyAlertCloseHint:      "Окно не закрывается: «Подтвердить» снимает тревогу, «Звук выкл» выключает звук, окно можно свернуть.",
 	KeyPanelStalled:        "%s — %s: застой обмена (номера сообщений не меняются)",
 	KeyPtStalled:           "застой обмена",
 	KeyAlertTestBadge:      "ТЕСТ",
@@ -1435,7 +1438,6 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyTipDiscApply:        "Перенести настройку в профиль базы (затем «Сохранить» в окне настроек).",
 	KeyTipDiscClose:        "Закрыть окно без применения.",
 	KeyTipAlertAck:         "Подтвердить тревогу: звук смолкнет до следующего изменения.",
-	KeyTipAlertClose:       "Закрыть окно и заглушить звук до следующего изменения статуса.",
 	KeyTipAboutOK:          "Закрыть окно «О программе».",
 	KeyWizTitle:            "Добавить базу",
 	KeyWizStep:             "Шаг %d из 3: %s",
@@ -1561,7 +1563,7 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySoundTitle:         "Звук тревог",
 	KeySoundWarning:       "Предупреждение",
 	KeySoundError:         "Ошибка",
-	KeySoundBeep:          "Тон (системный динамик)",
+	KeySoundBeep:          "Тон",
 	KeySoundFile:          "Файл",
 	KeySoundFreq:          "Частота, Гц:",
 	KeySoundDur:           "Длительность, мс:",
@@ -1579,7 +1581,12 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySoundBadValue:      "Проверьте значение: %s",
 	KeySoundSaved:         "Сохранено",
 	KeySoundFallback:      "Не удалось воспроизвести «%s» (%s), звучит тон",
-	KeySoundToneVolume:    "громкость не регулируется",
+	KeySoundOutput:         "Вывод звука:",
+	KeySoundOutputSpeaker:  "Системный динамик",
+	KeySoundOutputSpeakers: "Колонки",
+	KeySoundOutputBoth:     "Динамик и колонки",
+	KeySoundOutputFile:     "файл — через колонки",
+	KeyTipSoundOutput:      "Куда звучит тон: системный динамик компьютера (если он недоступен — колонки), колонки или оба сразу. Файл всегда звучит через колонки",
 	KeySpeakerAvailable:   "Системный динамик: доступен",
 	KeySpeakerUnavailable: "Системный динамик: недоступен (%s) — тон звучит через колонки",
 	KeySpeakerNoService:   "нет связи со службой",
@@ -1597,13 +1604,13 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySpeakerFailed:        "ошибка обращения к динамику",
 	KeySpeakerDenied:        "служба отклонила запрос тона",
 	KeySpeakerFallback:    "Системный динамик недоступен (%s), тон звучит через колонки",
-	KeyTipSoundKind:       "Тон — заданная частота через системный динамик компьютера (его включает служба); если он недоступен — синусоида через колонки или звуковую карту. Громкость тона не регулируется. Файл — WAV, MP3, WMA или MID",
+	KeyTipSoundKind:       "Тон — сигнал заданной частоты, куда он звучит — см. «Вывод звука». Файл — WAV, MP3, WMA или MID, звучит через колонки. Громкость — общий ползунок в меню значка",
 	KeyTipSoundFreq:       "Частота тона, 37–32767 Гц",
 	KeyTipSoundDur:        "Длительность одного сигнала, мс",
 	KeyTipSoundFile:       "Путь к звуковому файлу. Если файл не воспроизводится, звучит тон",
 	KeyTipSoundBrowse:     "Выбрать звуковой файл",
 	KeyTipSoundVolume:     "Громкость этого профиля, 0–100%; умножается на общую громкость",
-	KeyTipSoundLoop:       "Повторять звук, пока тревогу не подтвердят или не закроют окно; иначе — один раз",
+	KeyTipSoundLoop:       "Повторять звук, пока тревогу не подтвердят; иначе — один раз",
 	KeyTipSoundGap:        "Пауза между повторами звука, мс",
 	KeyTipSoundTest:       "Проиграть звук с текущими настройками",
 	KeyTipSoundSave:       "Сохранить настройки звука для текущего пользователя Windows",

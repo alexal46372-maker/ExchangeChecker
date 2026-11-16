@@ -24,15 +24,35 @@ const (
 	SoundFile SoundKind = "file" // WAV / MP3 / WMA / MID through MCI
 )
 
+// SoundOutput is where «Тон» sounds (phase 16 E, CHK-TRAY-105), per
+// level: the PC speaker of the service (falls back to the speakers when it
+// is not available), the speakers (a sine through PlaySound), or both at
+// once. A file always plays through the speakers.
+type SoundOutput string
+
+const (
+	OutputSpeaker  SoundOutput = "speaker"  // «Системный динамик» (default)
+	OutputSpeakers SoundOutput = "speakers" // «Колонки»
+	OutputBoth     SoundOutput = "both"     // «Динамик и колонки»
+)
+
+// SoundOutputs in the order of the «Вывод звука» list.
+var SoundOutputs = []SoundOutput{OutputSpeaker, OutputSpeakers, OutputBoth}
+
 // SoundProfile is the sound of one level.
 type SoundProfile struct {
 	Kind   SoundKind `json:"kind"`
 	FreqHz int       `json:"freqHz"`
 	DurMs  int       `json:"durMs"`
 	File   string    `json:"file,omitempty"`
-	Volume int       `json:"volume"` // 0..100 %
-	Loop   bool      `json:"loop"`
-	GapMs  int       `json:"gapMs"`
+	// Volume is the old per-level volume (phase 10–15). Phase 16 E: no
+	// longer shown nor used — the only volume is the tray slider
+	// (SoundPrefs.Master); kept so a stored value round-trips.
+	Volume int  `json:"volume"`
+	Loop   bool `json:"loop"`
+	GapMs  int  `json:"gapMs"`
+	// Output: «Вывод звука» of «Тон» (phase 16 E; "" = OutputSpeaker).
+	Output SoundOutput `json:"output,omitempty"`
 }
 
 // SoundPrefs are the per-user sound settings (one REG_SZ JSON value).
@@ -53,12 +73,12 @@ const (
 var SoundExts = []string{".wav", ".mp3", ".wma", ".mid", ".midi", ".rmi"}
 
 // DefaultSoundPrefs: beep tones of the service settings (s may be nil),
-// volume 80 / 100 %, looped.
+// the PC speaker, looped (Volume 80 / 100 %: legacy, unused since phase 16).
 func DefaultSoundPrefs(s *model.Settings) SoundPrefs {
 	w, e := ToneFor(model.LevelWarning, s), ToneFor(model.LevelError, s)
 	return SoundPrefs{
-		Warning: SoundProfile{Kind: SoundBeep, FreqHz: w.FreqHz, DurMs: w.DurMs, Volume: DefaultWarningVolume, Loop: true, GapMs: w.GapMs},
-		Error:   SoundProfile{Kind: SoundBeep, FreqHz: e.FreqHz, DurMs: e.DurMs, Volume: DefaultErrorVolume, Loop: true, GapMs: e.GapMs},
+		Warning: SoundProfile{Kind: SoundBeep, FreqHz: w.FreqHz, DurMs: w.DurMs, Volume: DefaultWarningVolume, Loop: true, GapMs: w.GapMs, Output: OutputSpeaker},
+		Error:   SoundProfile{Kind: SoundBeep, FreqHz: e.FreqHz, DurMs: e.DurMs, Volume: DefaultErrorVolume, Loop: true, GapMs: e.GapMs, Output: OutputSpeaker},
 		Master:  DefaultMasterVolume,
 	}
 }
@@ -91,6 +111,11 @@ func (p SoundProfile) Normalized(d SoundProfile) SoundProfile {
 	p.File = strings.TrimSpace(p.File)
 	if p.Kind == SoundFile && p.File == "" {
 		p.Kind = SoundBeep
+	}
+	switch p.Output {
+	case OutputSpeaker, OutputSpeakers, OutputBoth:
+	default:
+		p.Output = OutputSpeaker
 	}
 	return p
 }
@@ -240,10 +265,13 @@ func ListenView(v View) bool {
 	return true
 }
 
-// SoundFor is the Sound of a profile at the master volume: Volume =
-// EffectiveVolume (files, unchanged), ToneOn = profile > 0 and master > 0.
+// SoundFor is the Sound of a profile at the master volume. Phase 16 E
+// (CHK-TRAY-105): the only volume is the tray slider — Volume = master
+// (files, the sine), ToneOn = master > 0 (0 % = the tone is silent); the
+// old per-level volume (SoundProfile.Volume) is ignored.
 func SoundFor(p SoundProfile, master int) Sound {
-	return Sound{Profile: p, Volume: EffectiveVolume(p.Volume, master), ToneOn: p.Volume > 0 && master > 0}
+	m := clamp(master, 0, 100)
+	return Sound{Profile: p, Volume: m, ToneOn: m > 0}
 }
 
 // Sounder plays one sound once and returns when it ended or stop was

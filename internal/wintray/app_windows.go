@@ -312,7 +312,7 @@ func (a *App) applyAlert(v trayalert.View) {
 			return
 		}
 		// unowned: own taskbar button (flashes when the foreground lock refuses)
-		aw, err := newAlertWindow(0, a.ackAlerts, a.closeAlerts)
+		aw, err := newAlertWindow(0, a.ackAlerts)
 		if err != nil {
 			return
 		}
@@ -320,13 +320,6 @@ func (a *App) applyAlert(v trayalert.View) {
 		a.awin = aw
 	}
 	a.awin.apply(v, !a.opt.HiddenAlerts)
-}
-
-// closeAlerts: the user closed the alert window (mute until the next
-// change, PLAN §12 p.50).
-func (a *App) closeAlerts() {
-	a.applyAlert(a.alerts.Close())
-	a.dismissFlashes() // «Закрыть» = dismiss_flash (CHK-TRAY-95)
 }
 
 // muteAlerts: «Звук вкл/выкл» of the current alarm (CHK-TRAY-36).

@@ -3,8 +3,6 @@
 package wintray
 
 import (
-	"context"
-
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
@@ -290,32 +288,4 @@ func (a *App) pauseFlashes(reqs []trayalert.AckRequest) {
 	if len(a.flashes) != n {
 		a.updateFlash()
 	}
-}
-
-// dismissFlashes: «Закрыть» of the alert window — dismiss_flash {eventId}
-// for every active flash (the service suppresses it until recovery); the
-// overlay stops at once.
-func (a *App) dismissFlashes() {
-	if len(a.flashes) == 0 {
-		return
-	}
-	var ids []uint64
-	for _, f := range a.flashes {
-		if f.eventID != 0 {
-			ids = append(ids, f.eventID)
-		}
-	}
-	a.flashes = nil
-	a.stopFlash()
-	s := a.session
-	if s == nil || !s.Status().Has(model.CapFlash) {
-		return
-	}
-	go func() {
-		for _, id := range ids {
-			ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
-			_, _ = s.Do(ctx, model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: id})
-			cancel()
-		}
-	}()
 }

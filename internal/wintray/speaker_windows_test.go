@@ -196,8 +196,9 @@ func waitCond(t *testing.T, what string, cond func() bool) {
 // available / refused (notify.speaker_failed) / busy (another
 // connection owns the speaker) / no capability / no connection → the old
 // chain PlaySound → Beep → MessageBeep with ONE journal line per reason
-// in Russian (no spam); profile 0 % or master 0 % = no IPC at all, 1 % ×
-// 50 % sounds at full level (speaker and fallback).
+// in Russian (no spam); master 0 % = no IPC at all, any master > 0 %
+// sounds at full level (speaker and fallback); phase 16 E: the old
+// per-level volume is ignored.
 func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	tone := trayalert.Sound{Profile: trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 880, DurMs: 30}, Volume: 50}
 	port := &ioPort{st: model.SpeakerStatus{Available: true, DriverVersion: "1.5.0.1"}}
@@ -278,9 +279,10 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	if err := newS(r0).Play(mute, nil); err != nil || len(port.starts()) != 3 || port.asked() != asked || len(r0.calls) != 0 {
 		t.Fatalf("volume 0: %v %v asked %d→%d %v", err, port.starts(), asked, port.asked(), r0.calls)
 	}
-	// profile 0 % × master 100 % and profile 80 % × master 0 % → silent,
-	// no IPC (trayalert.SoundFor, as the App builds the alarm / preview)
-	for _, v := range [][2]int{{0, 100}, {80, 0}} {
+	// phase 16 E: the only volume is the tray slider — master 0 % → silent,
+	// no IPC, whatever the old per-level volume (trayalert.SoundFor, as the
+	// App builds the alarm / preview)
+	for _, v := range [][2]int{{0, 0}, {80, 0}} {
 		p := tone.Profile
 		p.Volume = v[0]
 		rz := &toneRec{}
@@ -288,15 +290,16 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 			t.Fatalf("%d%% × %d%%: %v %v asked %d→%d %v", v[0], v[1], err, port.starts(), asked, port.asked(), rz.calls)
 		}
 	}
-	// 1 % × 50 % (product rounds down to 0) → sounds on the speaker
+	// the old per-level volume 0 % at master 50 % → sounds (ignored since
+	// phase 16) on the speaker
 	p1 := tone.Profile
-	p1.Volume = 1
+	p1.Volume = 0
 	low := trayalert.SoundFor(p1, 50)
-	if low.Volume != 0 {
-		t.Fatalf("effective volume %d", low.Volume)
+	if low.Volume != 50 || !low.ToneOn {
+		t.Fatalf("volume %d tone %v", low.Volume, low.ToneOn)
 	}
 	if err := newS(&toneRec{}).Play(low, nil); err != nil || len(port.starts()) != 4 || port.starts()[3] != pcspeaker.Divisor(880) {
-		t.Fatalf("1%% × 50%%: %v", port.starts())
+		t.Fatalf("0%% × 50%%: %v", port.starts())
 	}
 
 	// 4: speaker_status not available (not_installed) → the old chain,
@@ -322,18 +325,18 @@ func TestCHK_TRAY_98_SpeakerChain(t *testing.T) {
 	if len(spk) != 1 || !strings.Contains(spk[0], "(драйвер не установлен)") || !strings.Contains(spk[0], "через колонки") {
 		t.Fatalf("one journal line for the speaker: %q", logged())
 	}
-	// 1 % × 50 % through the fallback: the full-level sine, not silence
+	// master 50 % through the fallback: the full-level sine, not silence
 	rl := &toneRec{}
 	if err := newS(rl).Play(low, nil); err != nil || strings.Join(rl.calls, ",") != "PlaySound:"+aliasAlarm || !bytes.Equal(rl.wav, trayalert.SineWAV(880, 30, 100)) {
-		t.Fatalf("1%% × 50%% fallback: %v %v", err, rl.calls)
+		t.Fatalf("50%% fallback: %v %v", err, rl.calls)
 	}
-	// 0 % × 100 % with the speaker unavailable: silent, no output at all
+	// master 0 % with the speaker unavailable: silent, no output at all
 	p0 := tone.Profile
-	p0.Volume = 0
+	p0.Volume = 100
 	rz := &toneRec{}
 	asked = port.asked()
-	if err := newS(rz).Play(trayalert.SoundFor(p0, 100), nil); err != nil || len(rz.calls) != 0 || port.asked() != asked {
-		t.Fatalf("0%% fallback: %v %v", err, rz.calls)
+	if err := newS(rz).Play(trayalert.SoundFor(p0, 0), nil); err != nil || len(rz.calls) != 0 || port.asked() != asked {
+		t.Fatalf("master 0%% fallback: %v %v", err, rz.calls)
 	}
 
 	// 5: available, but the port fails → notify.speaker_failed: fallback,
@@ -493,14 +496,14 @@ func TestCHK_TRAY_98_SpeakerApp(t *testing.T) {
 	if at := port.offs()[1]; at.Sub(stopped) > time.Second {
 		t.Errorf("preview stop after %v", at.Sub(stopped))
 	}
-	// «Прослушать» 1 % × master 50 % → the speaker, full level
-	app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 3333, DurMs: 60, Volume: 1}, 50)
-	pumpUntil(t, "1% × 50% preview on the speaker", func() bool {
+	// «Прослушать» at master 50 % (the old per-level volume 0 % is ignored) → the speaker, full level
+	app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 3333, DurMs: 60, Volume: 0}, 50)
+	pumpUntil(t, "master 50% preview on the speaker", func() bool {
 		st := port.starts()
 		return len(st) == 3 && st[2] == pcspeaker.Divisor(3333) && !app.Previewing()
 	})
-	// «Прослушать» at profile 0 % or master 0 % → no speaker request at all
-	for _, v := range [][2]int{{0, 100}, {70, 0}} {
+	// «Прослушать» at master 0 % → no speaker request at all
+	for _, v := range [][2]int{{0, 0}, {70, 0}} {
 		asked := port.asked()
 		app.testSound(trayalert.SoundProfile{Kind: trayalert.SoundBeep, FreqHz: 2222, DurMs: 100, Volume: v[0]}, v[1])
 		pumpUntil(t, "silent preview ended", func() bool { return !app.Previewing() })
@@ -670,11 +673,13 @@ func (s speakerCfg) Release(owner any)              { s.dev.Release(owner) }
 func (s speakerCfg) Silence()                       { s.dev.Silence() }
 
 // TestCHK_TRAY_99_SpeakerLabels — the «Звук» group of the settings: the
-// profile label «Тон (системный динамик)»; the status line «Системный
-// динамик: доступен» / «Системный динамик: недоступен (причина) — тон
-// звучит через колонки» from speaker_status of the real server (also for
-// a service without the capability); «громкость не регулируется» next to
-// the volume while «Тон» is selected (not for «Файл»).
+// profile label «Тон» (phase 16: where it sounds is «Вывод звука»); the
+// status line «Системный динамик: доступен» / «Системный динамик:
+// недоступен (причина) — тон звучит через колонки» from speaker_status of
+// the real server (also for a service without the capability); phase 16 E:
+// no per-level volume field nor «громкость не регулируется»; «Вывод звука»
+// lists «Системный динамик» / «Колонки» / «Динамик и колонки», the short
+// note «файл — через колонки» shows only for «Файл».
 func TestCHK_TRAY_99_SpeakerLabels(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -695,12 +700,18 @@ func TestCHK_TRAY_99_SpeakerLabels(t *testing.T) {
 		}
 		w.Reload()
 		pumpUntil(t, "loaded", func() bool { w.update(); return !w.busy && w.ed.HasProfile() })
-		if w.sndSpeaker == 0 || w.sndWarn.volNote == 0 || w.sndErr.volNote == 0 {
-			t.Fatal("no speaker line / volume note")
+		if w.sndSpeaker == 0 || w.sndWarn.out == 0 || w.sndErr.out == 0 || w.sndWarn.outNote == 0 {
+			t.Fatal("no speaker line / «Вывод звука»")
 		}
 		for _, c := range []profileCtl{w.sndWarn, w.sndErr} {
-			if l := winapi.GetWindowText(c.beep); l != "Тон (системный динамик)" {
+			if l := winapi.GetWindowText(c.beep); l != "Тон" {
 				t.Errorf("profile label %q", l)
+			}
+			if c.vol != 0 || w.ctl[c.base+idSndVol] != 0 {
+				t.Error("the per-level volume field is still there")
+			}
+			if n := winapi.SendMessage(c.out, winapi.CB_GETCOUNT, 0, 0); n != 3 {
+				t.Errorf("«Вывод звука» has %d items", n)
 			}
 		}
 		w.refreshSpeakerLine()
@@ -714,25 +725,25 @@ func TestCHK_TRAY_99_SpeakerLabels(t *testing.T) {
 		want := "Системный динамик: недоступен (драйвер не установлен) — тон звучит через колонки"
 		pumpUntil(t, "unavailable", func() bool { return winapi.GetWindowText(w.sndSpeaker) == want })
 
-		// «Тон» → the volume note; «Файл» → none; back → again
+		// «Тон» → no note; «Файл» → «файл — через колонки»; back → none
 		c := w.sndWarn
 		setCheck(c.file, false)
 		setCheck(c.beep, true)
 		w.soundCommand(c.base + idSndBeep)
-		if n := winapi.GetWindowText(c.volNote); n != "громкость не регулируется" {
-			t.Errorf("tone volume note %q", n)
+		if n := winapi.GetWindowText(c.outNote); n != "" {
+			t.Errorf("tone output note %q", n)
 		}
 		setCheck(c.beep, false)
 		setCheck(c.file, true)
 		w.soundCommand(c.base + idSndFile)
-		if n := winapi.GetWindowText(c.volNote); n != "" {
-			t.Errorf("file volume note %q", n)
+		if n := winapi.GetWindowText(c.outNote); n != "файл — через колонки" {
+			t.Errorf("file output note %q", n)
 		}
 		setCheck(c.file, false)
 		setCheck(c.beep, true)
 		w.soundCommand(c.base + idSndBeep)
-		if n := winapi.GetWindowText(c.volNote); n != "громкость не регулируется" {
-			t.Errorf("tone volume note again %q", n)
+		if n := winapi.GetWindowText(c.outNote); n != "" {
+			t.Errorf("tone output note again %q", n)
 		}
 		w.close()
 	}

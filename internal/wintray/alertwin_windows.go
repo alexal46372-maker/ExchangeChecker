@@ -22,27 +22,29 @@ const (
 	idAlertTitle  = 304
 	idAlertAck    = 310
 	idAlertMute   = 311
-	idAlertClose  = winapi.IDCANCEL
 )
 
 // alertWindow is the topmost exchange error window (PLAN §6.3, §12 p.50,
 // reworked in phase 10: §12 p.117, CHK-TRAY-03/36). It is created once
-// and hidden / shown; only the Minimize and Close boxes (no maximize, no
-// hooks, no BlockInput). «Закрыть» and the close box call onClose (mute
-// until the next change), «Подтвердить» calls onAck (hidden until the
-// next check that still sees the error), «Звук вкл/выкл» calls onMute.
+// and hidden / shown; no maximize, no hooks, no BlockInput. Phase 16 C
+// (CHK-TRAY-104): the window cannot be closed — no «Закрыть» button, the
+// Close item is deleted from the system menu (the close box is inactive),
+// WM_CLOSE, SC_CLOSE (Alt+F4, the system menu) and Esc (IDCANCEL) are
+// ignored. What remains: «Подтвердить» (onAck: hidden until the next check
+// that still sees the error), «Звук вкл/выкл» (onMute) and the Minimize box
+// («Свернуть»).
 type alertWindow struct {
 	hwnd                     uintptr
 	icon, text, status, hint uintptr
-	ack, close, mute         uintptr
+	ack, mute                uintptr
 	muted                    bool
 	tips                     *tooltips
 	level                    model.AlertLevel
 	shown                    bool
 	raised                   int // bring-to-front requests (tests)
-	onAck, onClose           func()
+	onAck                    func()
 	onMute                   func()
-	style                    uint32 // window style (tests: only Minimize / Close)
+	style                    uint32 // window style (tests: Minimize, a system menu without Close)
 	laid                     bool   // laid out once: relayouts keep the position
 	textStr, statusStr       string // the shown texts (their size, phase 11)
 	// title: the blinking title strip at the top (phase 13, item 8,
@@ -52,6 +54,22 @@ type alertWindow struct {
 	titleRed   bool
 	titleBlink bool // the timer runs
 	titleFlips int  // phase changes (tests)
+	// closeAttempts: ignored WM_CLOSE / SC_CLOSE (tests, CHK-TRAY-104)
+	closeAttempts int
+}
+
+// removeCloseCommand deletes «Закрыть» (SC_CLOSE) from the system menu of
+// hwnd and the separator left above it; without SC_CLOSE Windows greys
+// the close box of the caption (phase 16 C, CHK-TRAY-104).
+func removeCloseCommand(hwnd uintptr) {
+	m := winapi.GetSystemMenu(hwnd, false)
+	if m == 0 {
+		return
+	}
+	winapi.DeleteMenu(m, winapi.SC_CLOSE, winapi.MF_BYCOMMAND)
+	if n := winapi.GetMenuItemCount(m); n > 0 && winapi.GetMenuItemID(m, n-1) == 0 {
+		winapi.DeleteMenu(m, uint32(n-1), winapi.MF_BYPOSITION) // the trailing separator
+	}
 }
 
 // Title strip blink (CHK-TRAY-93).
@@ -123,7 +141,8 @@ func (aw *alertWindow) stopTitleBlink() {
 }
 
 // layout places the controls (phase 11, CHK-TRAY-45): icon | text and
-// status, the hint, «Звук» on the left, «Подтвердить» / «Закрыть» right.
+// status, the hint, «Звук» on the left, «Подтвердить» right (phase 16: no
+// «Закрыть»).
 // The text and the status are dynamic: fixed boxes; the buttons are as
 // wide as their longest text.
 func (aw *alertWindow) layout() {
@@ -142,7 +161,7 @@ func (aw *alertWindow) layout() {
 		}},
 		uiCtl(aw.hint, ui.Label, ""),
 		&ui.Row{Grow: true, Items: []ui.Node{mute, &ui.Row{Right: true, Items: []ui.Node{
-			uiCtl(aw.ack, ui.Button, ""), uiCtl(aw.close, ui.Button, "")}}}},
+			uiCtl(aw.ack, ui.Button, "")}}}},
 	}}}
 	// a relayout (new text) keeps the position
 	fitForm(aw.hwnd, &ui.Pad{All: ui.P16, Child: &ui.Col{Gap: ui.P12, Items: root.Child.(*ui.Col).Items[:3]}},
@@ -161,11 +180,11 @@ func longest(s ...string) string {
 	return l
 }
 
-func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) {
+func newAlertWindow(owner uintptr, onAck func()) (*alertWindow, error) {
 	const w, h = 560, 330
 	x := (winapi.GetSystemMetrics(winapi.SM_CXSCREEN) - w) / 2
 	y := (winapi.GetSystemMetrics(winapi.SM_CYSCREEN) - h) / 3
-	aw := &alertWindow{onAck: onAck, onClose: onClose, level: -1}
+	aw := &alertWindow{onAck: onAck, level: -1}
 	handler := func(hw uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) {
 		switch msg {
 		case winapi.WM_TIMER:
@@ -191,17 +210,19 @@ func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) 
 					aw.onMute()
 				}
 				return 0, true
-			case idAlertClose:
-				if aw.onClose != nil {
-					aw.onClose()
-				}
+			case winapi.IDCANCEL: // Esc: the window cannot be closed (phase 16)
+				return 0, true
+			}
+		case winapi.WM_SYSCOMMAND:
+			// phase 16 C (CHK-TRAY-104): Alt+F4 / the system menu / the close
+			// box send SC_CLOSE — ignored (DefWindowProc would post WM_CLOSE)
+			if wp&0xFFF0 == winapi.SC_CLOSE {
+				aw.closeAttempts++
 				return 0, true
 			}
 		case winapi.WM_CLOSE:
-			// never destroyed by the user: closing = mute (PLAN §12 p.50)
-			if aw.onClose != nil {
-				aw.onClose()
-			}
+			// never closed by the user: only «Подтвердить», «Звук» and «Свернуть»
+			aw.closeAttempts++
 			return 0, true
 		}
 		return 0, false
@@ -213,6 +234,7 @@ func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) 
 		return nil, err
 	}
 	aw.hwnd = hwnd
+	removeCloseCommand(hwnd)
 	// phase 11 (CHK-TRAY-45): laid out by the ui framework
 	aw.title = child(hwnd, "STATIC", "", winapi.SS_CENTER|winapi.SS_CENTERIMAGE, idAlertTitle, 0, 0, 0, 0)
 	winapi.SendMessage(aw.title, winapi.WM_SETFONT, alertTitleFontFor(uiDPI()), 1)
@@ -222,7 +244,6 @@ func newAlertWindow(owner uintptr, onAck, onClose func()) (*alertWindow, error) 
 	aw.hint = child(hwnd, "STATIC", i18n.T(i18n.KeyAlertCloseHint), winapi.SS_LEFT, idAlertHint, 0, 0, 0, 0)
 	aw.mute = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertMute), winapi.WS_TABSTOP, idAlertMute, 0, 0, 0, 0)
 	aw.ack = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertAck), winapi.BS_DEFPUSHBUTTON|winapi.WS_TABSTOP, idAlertAck, 0, 0, 0, 0)
-	aw.close = child(hwnd, "BUTTON", i18n.T(i18n.KeyAlertClose), winapi.WS_TABSTOP, idAlertClose, 0, 0, 0, 0)
 	aw.layout()
 	aw.tips = newTooltips(hwnd) // CHK-TRAY-15
 	aw.setTips()
@@ -285,7 +306,6 @@ func (aw *alertWindow) bringToFront() {
 // setTips sets the button tooltips .
 func (aw *alertWindow) setTips() {
 	aw.tips.set(aw.ack, i18n.T(i18n.KeyTipAlertAck))
-	aw.tips.set(aw.close, i18n.T(i18n.KeyTipAlertClose))
 	aw.tips.set(aw.mute, i18n.T(i18n.KeyTipAlertMute))
 }
 

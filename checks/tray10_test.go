@@ -225,6 +225,12 @@ var winAPIMinVersion = map[string]float64{
 	// CreateServiceW, ChangeServiceConfigW, ControlService, DeleteService,
 	// QueryServiceConfigW, SetServiceObjectSecurity)
 	"WinVerifyTrust": 5.0,
+	// phase 16: the speech-bubble panel by the clock (window region + region
+	// frame, CHK-TRAY-92) and the alert window without Close in its system
+	// menu (CHK-TRAY-104)
+	"CreateRoundRectRgn": 5.0, "CreatePolygonRgn": 5.0, "CreateRectRgn": 5.0, "CombineRgn": 5.0,
+	"FrameRgn": 5.0, "PtInRegion": 5.0, "SetWindowRgn": 5.0, "GetWindowRgn": 5.0,
+	"GetSystemMenu": 5.0, "DeleteMenu": 5.0, "GetMenuItemID": 5.0,
 }
 
 func goSources(t *testing.T, root string, dirs ...string) map[string]string {
@@ -598,8 +604,10 @@ func TestCHK_TRAY_89_LinkedIconMetal(t *testing.T) {
 // TestCHK_TRAY_90_EmbeddedTrayIcons — the notification icons embedded in
 // the tray (internal/wintray/icons/tray_*.ico): all sizes
 // 16/20/24/32/40/48/256, state arrows (hue, WCAG at 32 and 256 px: green
-// ≥ 10, yellow ≥ 9, red ≥ 4.5, grey ≥ 10); tray_blank (blink «off» phase)
-// is byte-identical to tray_ok; state_blank is empty.
+// ≥ 10, yellow ≥ 9, red ≥ 4.5, grey ≥ 10); tray_blank (blink «off» phase,
+// phase 16 B) differs from tray_ok: black arrows (dark shaft probes) with a
+// light chrome outline above the top shaft that contrasts with the
+// background (WCAG ≥ 7) at 32 and 256 px; state_blank is empty.
 func TestCHK_TRAY_90_EmbeddedTrayIcons(t *testing.T) {
 	root := findModuleRoot(t)
 	dir := filepath.Join(root, "internal", "wintray", "icons")
@@ -627,8 +635,37 @@ func TestCHK_TRAY_90_EmbeddedTrayIcons(t *testing.T) {
 			t.Errorf("%s: %d images", name, len(imgs))
 		}
 	}
-	if !bytes.Equal(read("tray_blank"), read("tray_ok")) {
-		t.Error("tray_blank.ico must be the normal icon (tray_ok.ico)")
+	if bytes.Equal(read("tray_blank"), read("tray_ok")) {
+		t.Error("tray_blank.ico must differ from tray_ok.ico (black arrows, phase 16)")
+	}
+	blank := icoImages(t, read("tray_blank"))
+	if len(blank) != 7 {
+		t.Errorf("tray_blank: %d images", len(blank))
+	}
+	for _, s := range []int{32, 256} {
+		im := decodeIconImage(t, blank[s], s)
+		la, _ := im.probe(t, [][4]float64{{12, 16, 24, 18}, {24, 30, 36, 32}})
+		lb, _ := im.probe(t, [][4]float64{{8, 7, 22, 11}, {26, 37, 40, 41}})
+		// the outline: the brightest pixel of the column u = 18 between the
+		// background probe and the top shaft (design v 11..16)
+		x := 18 * s / 48
+		var lo float64
+		for y := 11 * s / 48; y <= 16*s/48; y++ {
+			p := im.pix[y*s+x]
+			if l := 0.2126*lin8(p.R) + 0.7152*lin8(p.G) + 0.0722*lin8(p.B); p.A == 255 && l > lo {
+				lo = l
+			}
+		}
+		t.Logf("tray_blank %d: arrows L %.4f, background L %.4f, outline L %.3f", s, la, lb, lo)
+		if la > 0.03 {
+			t.Errorf("tray_blank %d: arrows not black (L %.4f)", s, la)
+		}
+		if c := (lo + 0.05) / (lb + 0.05); c < 7 {
+			t.Errorf("tray_blank %d: outline/background contrast %.1f < 7", s, c)
+		}
+		if c := (lo + 0.05) / (la + 0.05); c < 7 {
+			t.Errorf("tray_blank %d: outline/arrow contrast %.1f < 7", s, c)
+		}
 	}
 	for s, data := range icoImages(t, read("state_blank")) {
 		for _, p := range decodeIconImage(t, data, s).pix {

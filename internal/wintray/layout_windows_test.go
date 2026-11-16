@@ -257,6 +257,10 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 		if !contains(work, r) {
 			t.Errorf("%s: settings window %+v outside the work area %+v", tag, r, work)
 		}
+		// phase 16 G (CHK-TRAY-108): ≤ 560 logical px and ≤ 3/4 of the work area
+		if lim := min32(px(setMaxOuterH), (work.Bottom-work.Top)*3/4); r.Bottom-r.Top > lim {
+			t.Errorf("%s: settings window height %d > %d", tag, r.Bottom-r.Top, lim)
+		}
 		ox, oy := winapi.ClientOrigin(w.hwnd)
 		cr := winapi.GetClientRect(w.hwnd)
 		client := winapi.RECT{Left: ox, Top: oy, Right: ox + cr.Right, Bottom: oy + cr.Bottom}
@@ -458,7 +462,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		vw.setPage(pageViber)
 		visit("settings viber", vw.hwnd)
 	}()
-	aw, err := newAlertWindow(0, nil, nil)
+	aw, err := newAlertWindow(0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

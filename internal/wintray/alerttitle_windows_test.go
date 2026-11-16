@@ -19,7 +19,7 @@ import (
 func TestCHK_TRAY_93_AlertTitleBlink(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	aw, err := newAlertWindow(0, nil, nil)
+	aw, err := newAlertWindow(0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

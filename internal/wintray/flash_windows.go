@@ -3,6 +3,9 @@
 package wintray
 
 import (
+	"context"
+	"strconv"
+
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayalert"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/trayipc"
@@ -22,9 +25,14 @@ import (
 // alert window and the panel by the clock (both stay readable).
 // «Подтвердить» (ack_alert) stops the local flashing of the acknowledged
 // alerts; the service keeps pushing flash on every failed check, and the
-// next push turns it on again. «Закрыть» of the alert window sends
-// dismiss_flash {eventId} for the active flashes (no repeat until
-// recovery). Turning «Мигание экрана» off stops it at once.
+// next push turns it on again. Phase 16: the alert window has no
+// «Закрыть». Phase 17 (CHK-TRAY-109): minimizing the alert window pauses
+// the flash at once (dismiss_flash {eventId} for every active flash), any
+// restore resumes it (resume_flash {eventId}; the service pushes flash
+// again while the alert is active and not confirmed); a confirmed alert is
+// never resumed; a new alert restores the window. Only with the service
+// capability resume_flash — an older service keeps flashing while
+// minimized. Turning «Мигание экрана» off stops it at once.
 
 // ScreenFlashValue is the HKCU REG_DWORD of «Мигание экрана» (1 = on,
 // missing = on).
@@ -115,7 +123,7 @@ func (a *App) screenFlashOn() bool {
 
 // onFlashEvents applies flash / flash_stop pushes of a drain.
 func (a *App) onFlashEvents(q []trayipc.Event) {
-	changed := false
+	changed, restore := false, false
 	for _, e := range q {
 		switch {
 		case e.Kind == trayipc.EventFlash && e.Message != nil:
@@ -142,6 +150,17 @@ func (a *App) onFlashEvents(q []trayipc.Event) {
 				}
 				continue
 			}
+			if a.flashMin {
+				if a.flashPausedID(m.EventID) {
+					continue // paused: a push that crossed the dismiss
+				}
+				// a new alert while minimized: the window comes back and
+				// the flash resumes (CHK-TRAY-109)
+				a.flashes[k] = flashState{eventID: m.EventID, level: lvl}
+				changed = true
+				restore = true
+				continue
+			}
 			a.flashes[k] = flashState{eventID: m.EventID, level: lvl}
 			changed = true
 		case e.Kind == trayipc.EventState && e.Status.State != trayipc.StateConnected && len(a.flashes) > 0:
@@ -149,6 +168,9 @@ func (a *App) onFlashEvents(q []trayipc.Event) {
 			a.flashes = nil
 			changed = true
 		}
+	}
+	if restore {
+		a.restoreAlertWindow()
 	}
 	if changed {
 		a.updateFlash()
@@ -271,6 +293,7 @@ func (a *App) flashKeepAbove() []uintptr {
 // alerts stops (by eventId and by profile / point); the next flash push
 // of the service (the alert is still failing) turns it on again.
 func (a *App) pauseFlashes(reqs []trayalert.AckRequest) {
+	a.forgetConfirmed(reqs) // CHK-TRAY-109: never resumed
 	if len(a.flashes) == 0 {
 		return
 	}
@@ -288,4 +311,153 @@ func (a *App) pauseFlashes(reqs []trayalert.AckRequest) {
 	if len(a.flashes) != n {
 		a.updateFlash()
 	}
+}
+
+// Phase 17 (CHK-TRAY-109): the flash follows the alert window state.
+
+// FlashPaused reports whether the flash is paused by a minimized alert
+// window and how many flashes wait for the restore (tests).
+func (a *App) FlashPaused() (bool, int) { return a.flashMin, len(a.flashPaused) }
+
+// FlashRequests are the dismiss_flash / resume_flash requests sent, as
+// "dismiss:<id>" / "resume:<id>" (tests).
+func (a *App) FlashRequests() []string {
+	a.flashMu.Lock()
+	defer a.flashMu.Unlock()
+	return append([]string(nil), a.flashSent...)
+}
+
+// canPauseFlash: the service announces flash and resume_flash.
+func (a *App) canPauseFlash() bool {
+	s := a.session
+	if s == nil {
+		return false
+	}
+	st := s.Status()
+	return st.State == trayipc.StateConnected && st.Has(model.CapFlash) && st.Has(trayipc.CapResumeFlash)
+}
+
+func (a *App) flashPausedID(id uint64) bool {
+	if id == 0 {
+		return false
+	}
+	for _, f := range a.flashPaused {
+		if f.eventID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// alertMinimized: the alert window was minimized — the screen flash stops
+// at once and dismiss_flash goes to the service for every active flash.
+// Without resume_flash (older service) nothing changes.
+func (a *App) alertMinimized() {
+	if a.flashMin || !a.canPauseFlash() {
+		return
+	}
+	a.flashMin = true
+	if a.flashPaused == nil {
+		a.flashPaused = map[flashKey]flashState{}
+	}
+	var ids []uint64
+	for k, f := range a.flashes {
+		a.flashPaused[k] = f
+		if f.eventID != 0 {
+			ids = append(ids, f.eventID)
+		}
+	}
+	a.flashes = nil
+	a.updateFlash()
+	a.sendFlashRequests(model.CmdDismissFlash, "dismiss:", ids)
+}
+
+// alertRestored: the alert window is back — resume_flash for every paused
+// flash that was not confirmed meanwhile; the service pushes flash again
+// (the alert is still active and not confirmed) and the overlay restarts
+// on that push. A paused flash without eventId restarts locally.
+func (a *App) alertRestored() {
+	if !a.flashMin {
+		return
+	}
+	a.flashMin = false
+	paused := a.flashPaused
+	a.flashPaused = nil
+	var ids []uint64
+	local := false
+	for k, f := range paused {
+		switch {
+		case f.eventID == 0:
+			if a.flashes == nil {
+				a.flashes = map[flashKey]flashState{}
+			}
+			a.flashes[k] = f
+			local = true
+		case a.flashAcked[f.eventID]:
+		default:
+			ids = append(ids, f.eventID)
+		}
+	}
+	if local {
+		a.updateFlash()
+	}
+	a.sendFlashRequests(trayipc.CmdResumeFlash, "resume:", ids)
+}
+
+// restoreAlertWindow: a new alert while the window is minimized restores
+// it (and with it the flash, alertRestored via WM_SIZE).
+func (a *App) restoreAlertWindow() {
+	if a.awin != nil && winapi.IsWindow(a.awin.hwnd) && winapi.IsIconic(a.awin.hwnd) {
+		winapi.ShowWindow(a.awin.hwnd, winapi.SW_RESTORE)
+	}
+	a.alertRestored() // no-op when WM_SIZE already resumed
+}
+
+// forgetConfirmed: «Подтвердить» — the confirmed alerts leave the paused
+// set and are never resumed.
+func (a *App) forgetConfirmed(reqs []trayalert.AckRequest) {
+	for _, r := range reqs {
+		if id := r.Req.EventID; id != 0 {
+			if a.flashAcked == nil {
+				a.flashAcked = map[uint64]bool{}
+			}
+			a.flashAcked[id] = true
+		}
+		for k, f := range a.flashPaused {
+			if r.Req.EventID != 0 && f.eventID == r.Req.EventID {
+				delete(a.flashPaused, k)
+			}
+		}
+		for _, id := range r.IDs {
+			if f, ok := a.flashPaused[flashKey{id.ProfileID, id.Key}]; ok {
+				if f.eventID != 0 {
+					if a.flashAcked == nil {
+						a.flashAcked = map[uint64]bool{}
+					}
+					a.flashAcked[f.eventID] = true
+				}
+				delete(a.flashPaused, flashKey{id.ProfileID, id.Key})
+			}
+		}
+	}
+}
+
+// sendFlashRequests sends cmd {eventId} for ids off the UI thread.
+func (a *App) sendFlashRequests(cmd, tag string, ids []uint64) {
+	s := a.session
+	if s == nil || len(ids) == 0 {
+		return
+	}
+	a.flashMu.Lock()
+	for _, id := range ids {
+		a.flashSent = append(a.flashSent, tag+strconv.FormatUint(id, 10))
+	}
+	a.flashMu.Unlock()
+	go func() {
+		for _, id := range ids {
+			ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
+			_, _ = s.Do(ctx, model.IPCRequest{Cmd: cmd, EventID: id})
+			cancel()
+		}
+	}()
 }

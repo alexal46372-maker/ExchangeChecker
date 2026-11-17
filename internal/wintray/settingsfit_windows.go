@@ -61,34 +61,13 @@ func settingsRectPx(style uint32, cw, ch int32) (x, y, w, h int32) {
 		return r.Right - r.Left, r.Bottom - r.Top
 	}
 	ow, oh := outer(cw, ch)
-	if limit := settingsMaxOuterH(work, style); oh > limit {
-		ow, _ = outer(cw+winapi.GetSystemMetrics(winapi.SM_CXVSCROLL), ch)
-		oh = limit // the rest goes to the host's vertical scroll
+	// Phase 17 (CHK-TRAY-110): no fixed height cap (phase 16 G had
+	// 560 logical px, which hid the buttons under the expert DB list);
+	// only the work area limits the window, the rest scrolls.
+	if oh > work.Bottom-work.Top {
+		ow, oh = outer(cw+winapi.GetSystemMetrics(winapi.SM_CXVSCROLL), ch)
 	}
 	return fitRect(ow, oh, work)
-}
-
-// Phase 16 G (Кончита 16.11.2026, CHK-TRAY-108): the settings window is
-// no taller than setMaxOuterH logical px and no taller than 3/4 of the
-// work area; what does not fit scrolls in the page host (tabs and footer
-// stay put). Never lower than the tab strip + footer + setMinViewH of page.
-const (
-	setMaxOuterH = 560
-	setMinViewH  = 160
-)
-
-// settingsMaxOuterH is the outer height limit of the settings window (px).
-func settingsMaxOuterH(work winapi.RECT, style uint32) int32 {
-	wh := work.Bottom - work.Top
-	limit := min32(px(setMaxOuterH), wh*3/4)
-	r := winapi.RECT{Bottom: px(setBarH) + px(settingsTabChromeH) + px(gridGap) + px(setMinViewH)}
-	if !winapi.AdjustWindowRectEx(&r, style, 0) {
-		r.Bottom += 32
-	}
-	if floor := r.Bottom - r.Top; limit < floor {
-		limit = min32(floor, wh)
-	}
-	return limit
 }
 
 // createHost creates the page host filling the client above the bar.
@@ -436,9 +415,57 @@ func (w *settingsWindow) layoutFit() {
 	if w.page >= 0 && w.page < len(w.scrollPos) {
 		sx, sy = w.scrollPos[w.page].x, w.scrollPos[w.page].y
 	}
+	w.fitPinnedChrome()
 	// syncPagePanels writes hostRect[pan]=slot and scrollTo's
 	w.scrollX, w.scrollY = sx, sy
 	w.syncPagePanels()
+}
+
+// pinnedListMinH: the lowest DB list (logical px) when the pinned chrome
+// must shrink to the view (about four rows).
+const pinnedListMinH = 90
+
+// fitPinnedChrome — phase 17 (CHK-TRAY-110): the DB list chrome of
+// «Базы данных» (list, «Добавить» / «Удалить» / «Клонировать» / «Найти …»)
+// is pinned to the host and does not scroll (CHK-TRAY-78); when the view
+// is lower than the chrome the list gets shorter so that the buttons under
+// it stay inside the view. Computed from the laid out rectangles every
+// time (idempotent); the form on the right still scrolls.
+func (w *settingsWindow) fitPinnedChrome() {
+	list := w.ctl[idSetList]
+	lc := w.ctlOf[list]
+	if list == 0 || lc == nil || !lc.Placed || lc.Hidden || !w.pinnedHost[list] {
+		return
+	}
+	lr := lc.Rect
+	bottom := lr.Y + lr.H
+	for h := range w.pinnedHost {
+		if c := w.ctlOf[h]; c != nil && c.Placed && !c.Hidden && c.Rect.Y+c.Rect.H > bottom {
+			bottom = c.Rect.Y + c.Rect.H
+		}
+	}
+	over := bottom - (w.viewH - px(gridGap))
+	newH := lr.H
+	if over > 0 {
+		newH = max32(lr.H-over, min32(lr.H, px(pinnedListMinH)))
+	}
+	d := lr.H - newH
+	for h := range w.pinnedHost {
+		c := w.ctlOf[h]
+		if c == nil || !c.Placed || c.Hidden {
+			continue
+		}
+		r := c.Rect
+		switch {
+		case h == list:
+			w.hostRect[h] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + newH}
+		case r.Y >= lr.Y+lr.H:
+			w.hostRect[h] = winapi.RECT{Left: r.X, Top: r.Y - d, Right: r.X + r.W, Bottom: r.Y - d + r.H}
+		default:
+			w.hostRect[h] = winapi.RECT{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + r.H}
+		}
+	}
+	w.pinnedShrink = d
 }
 
 // barButton is a button of the bottom row and its grid width.
@@ -493,13 +520,37 @@ func (w *settingsWindow) layoutPages(m *ui.Metrics, pages []ui.Node) {
 	// CHK-TRAY-77: stretch every tab to the host width when content is narrower
 	// (do not force minW above natural width — that caused HSCROLL at 144 dpi).
 	wid := min32(max32(w.pageW, allW), maxW)
+	minW := int32(0)
 	if w.pageW < wid {
+		minW = wid
 		w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, wid)
 	}
+	// Phase 17 (CHK-TRAY-110): the window is as high as the tallest tab
+	// with every control shown (expert «Базы данных» included), so no tab
+	// needs to scroll unless the work area is too low.
+	tallest := w.pageH
+	for i := range pages {
+		if pages[i] == nil {
+			continue
+		}
+		ui.Walk(w.root, func(c *ui.Ctl) { c.Hidden = false })
+		for j, n := range pages {
+			if j != i && n != nil {
+				ui.Walk(n, func(c *ui.Ctl) { c.Hidden = true })
+			}
+		}
+		if _, h := ui.Layout(w.root, m, 0, 0, minW); h > tallest {
+			tallest = h
+		}
+	}
+	for c, h := range hidden {
+		c.Hidden = h
+	}
+	w.pageW, w.pageH = ui.Layout(w.root, m, 0, 0, minW)
 	w.fitWrap()
 	ui.Walk(w.root, w.placeCtl)
 	w.syncPagePanels()
-	x, y, ww, wh := settingsRectPx(style, wid, w.pageH+px(setBarH)+px(settingsTabChromeH)+px(gridGap))
+	x, y, ww, wh := settingsRectPx(style, wid, tallest+px(setBarH)+px(settingsTabChromeH)+px(gridGap))
 	winapi.SetWindowPos(w.hwnd, 0, x, y, ww, wh, winapi.SWP_NOZORDER|winapi.SWP_NOACTIVATE)
 }
 

@@ -257,9 +257,9 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 		if !contains(work, r) {
 			t.Errorf("%s: settings window %+v outside the work area %+v", tag, r, work)
 		}
-		// phase 16 G (CHK-TRAY-108): ≤ 560 logical px and ≤ 3/4 of the work area
-		if lim := min32(px(setMaxOuterH), (work.Bottom-work.Top)*3/4); r.Bottom-r.Top > lim {
-			t.Errorf("%s: settings window height %d > %d", tag, r.Bottom-r.Top, lim)
+		// phase 17 (CHK-TRAY-110): no fixed cap, only the work area
+		if r.Bottom-r.Top > work.Bottom-work.Top {
+			t.Errorf("%s: settings window height %d > work area %d", tag, r.Bottom-r.Top, work.Bottom-work.Top)
 		}
 		ox, oy := winapi.ClientOrigin(w.hwnd)
 		cr := winapi.GetClientRect(w.hwnd)

@@ -116,3 +116,11 @@ func boolArg(b bool) uintptr {
 	}
 	return 0
 }
+
+// Phase 17 (CHK-TRAY-109): WM_SIZE wParam values and SC_RESTORE.
+const (
+	SIZE_RESTORED  = 0
+	SIZE_MINIMIZED = 1
+	SIZE_MAXIMIZED = 2
+	SC_RESTORE     = 0xF120
+)

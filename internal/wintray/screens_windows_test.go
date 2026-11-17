@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/alexal46372-maker/ExchangeChecker/internal/i18n"
+	"github.com/alexal46372-maker/ExchangeChecker/internal/traysettings"
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
@@ -49,6 +50,34 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 				})
 			}
 		}
+	}
+	// phase 17 (CHK-TRAY-110): settings, expert mode, «Базы данных» — 96 and
+	// 120 dpi on the runner's screen and 96 dpi on a 1024×768 work area
+	for _, sc := range []struct {
+		name string
+		dpi  int32
+		work *winapi.RECT
+	}{
+		{"settings_expert_db_96", 96, nil},
+		{"settings_expert_db_120", 120, nil},
+		{"settings_expert_db_1024x768", 96, &winapi.RECT{Right: 1024, Bottom: 728}},
+	} {
+		func() {
+			testWorkArea = sc.work
+			defer func() { testWorkArea = nil }()
+			app, _ := startChromeApp(t)
+			defer app.Exit()
+			w := openModeSettings(t, app, sc.dpi, traysettings.UIExpert)
+			defer w.close()
+			w.setPage(0)
+			w.layoutFit()
+			ApplyWindowTheme(w.hwnd)
+			if err := screenshot(w.hwnd, filepath.Join(dir, sc.name)); err != nil {
+				t.Errorf("%s: %v", sc.name, err)
+				return
+			}
+			n++
+		}()
 	}
 	t.Logf("%d screenshots in %s", n, dir)
 	if n == 0 {

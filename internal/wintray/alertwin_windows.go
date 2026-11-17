@@ -44,9 +44,13 @@ type alertWindow struct {
 	raised                   int // bring-to-front requests (tests)
 	onAck                    func()
 	onMute                   func()
-	style                    uint32 // window style (tests: Minimize, a system menu without Close)
-	laid                     bool   // laid out once: relayouts keep the position
-	textStr, statusStr       string // the shown texts (their size, phase 11)
+	// onMinimize / onRestore: the window was minimized / restored (WM_SIZE;
+	// phase 17, CHK-TRAY-109: the screen flash pauses while minimized)
+	onMinimize, onRestore func()
+	minimized             bool
+	style                 uint32 // window style (tests: Minimize, a system menu without Close)
+	laid                  bool   // laid out once: relayouts keep the position
+	textStr, statusStr    string // the shown texts (their size, phase 11)
 	// title: the blinking title strip at the top (phase 13, item 8,
 	// CHK-TRAY-93): bright red / black, white bold text, every
 	// alertTitleBlinkMs while the window is shown.
@@ -219,6 +223,26 @@ func newAlertWindow(owner uintptr, onAck func()) (*alertWindow, error) {
 			if wp&0xFFF0 == winapi.SC_CLOSE {
 				aw.closeAttempts++
 				return 0, true
+			}
+		case winapi.WM_SIZE:
+			// phase 17 (CHK-TRAY-109): «Свернуть» (the box, SC_MINIMIZE,
+			// Win+D …) pauses the screen flash; any restore (taskbar button,
+			// SW_RESTORE, a new alert) resumes it
+			switch wp {
+			case winapi.SIZE_MINIMIZED:
+				if !aw.minimized {
+					aw.minimized = true
+					if aw.onMinimize != nil {
+						aw.onMinimize()
+					}
+				}
+			case winapi.SIZE_RESTORED, winapi.SIZE_MAXIMIZED:
+				if aw.minimized {
+					aw.minimized = false
+					if aw.onRestore != nil {
+						aw.onRestore()
+					}
+				}
 			}
 		case winapi.WM_CLOSE:
 			// never closed by the user: only «Подтвердить», «Звук» and «Свернуть»

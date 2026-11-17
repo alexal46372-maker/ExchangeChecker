@@ -271,6 +271,7 @@ type settingsWindow struct {
 	scrollPos                        [5]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
 	pageActions                      []uintptr    // Test/Cancel/Alarm/Poll — footer, not pageCtl
 	pinnedHost                       map[uintptr]bool // CHK-TRAY-78: DB list chrome (no vertical scroll)
+	pinnedShrink                     int32            // CHK-TRAY-110: px the DB list gave up to keep its buttons in view
 	cur                              *[]uintptr   // page of the controls being created
 	connected                        bool         // service session state seen by onSessionState
 	loaded                           bool         // get_config (or a snapshot) loaded at least once

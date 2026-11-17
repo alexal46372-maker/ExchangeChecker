@@ -196,6 +196,14 @@ type App struct {
 	// full-screen overlay (CHK-TRAY-95)
 	flashes  map[flashKey]flashState
 	flashWin *flashWindow
+	// phase 17 (CHK-TRAY-109): the flash paused while the alert window is
+	// minimized (flashMin), the paused flashes, the confirmed eventIds
+	// (never resumed) and the dismiss / resume requests sent (tests)
+	flashMin    bool
+	flashPaused map[flashKey]flashState
+	flashAcked  map[uint64]bool
+	flashMu     sync.Mutex
+	flashSent   []string
 	balloons     []trayui.Balloon
 	statusWin    *statusWindow
 	checkResults []string
@@ -317,6 +325,7 @@ func (a *App) applyAlert(v trayalert.View) {
 			return
 		}
 		aw.onMute = a.muteAlerts
+		aw.onMinimize, aw.onRestore = a.alertMinimized, a.alertRestored // CHK-TRAY-109
 		a.awin = aw
 	}
 	a.awin.apply(v, !a.opt.HiddenAlerts)

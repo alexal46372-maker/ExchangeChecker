@@ -27,10 +27,13 @@ func flashKey(ev model.AlertEvent) string {
 // alerts (every failing check); active: the tracker's active alerts.
 // Muted profiles do not flash (CHK-MON-20); disabled or removed
 // profiles have already left the tracker (reload, CHK-MON-23) →
-// flash_stop. flashDismissed is set by dismiss_flash and is cleared
-// when flash_stop is sent or the eventID is no longer active (recovery,
-// disable, delete, mute). A dismiss therefore does not survive disable:
-// re-enable of the same problem raises a new eventID and can flash again.
+// flash_stop. flashDismissed is set by dismiss_flash (a suspend:
+// flash_stop is also pushed then) and is cleared by resume_flash, or
+// when the eventID is no longer active (recovery, disable, delete,
+// mute). A dismiss therefore does not survive disable: re-enable of the
+// same problem raises a new eventID and can flash again. resume_flash
+// of an active, unacked event clears the mark and immediately pushes
+// flash with the same eventID (CHK-MON-24).
 func (m *Monitor) flashesLocked(cands, active []model.AlertEvent) []model.FlashEvent {
 	if m.flashing == nil {
 		m.flashing, m.flashDismissed = map[string]flashEntry{}, map[uint64]bool{}
@@ -104,19 +107,67 @@ func (m *Monitor) flashCurrent(f model.FlashEvent) bool {
 	return false
 }
 
-// DismissFlash implements ipc.FlashDismisser (CHK-IPC-19): no more flash
-// pushes for the active alert eventID until it recovers.
+// DismissFlash implements ipc.FlashDismisser (CHK-IPC-19, phase 17
+// CHK-MON-24): suspend flashing of the active alert eventID. flash_stop
+// is pushed immediately; flashDismissed suppresses further flashes until
+// resume_flash, recovery, disable, delete or mute.
 func (m *Monitor) DismissFlash(eventID uint64) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	var stop model.FlashEvent
+	ok := false
 	for _, ev := range m.tracker.Active() {
 		if ev.ID == eventID && eventID != 0 && ev.To != model.LevelOK {
 			if m.flashDismissed == nil {
 				m.flashing, m.flashDismissed = map[string]flashEntry{}, map[uint64]bool{}
 			}
 			m.flashDismissed[eventID] = true
-			return nil
+			stop = model.FlashEvent{ProfileID: ev.ProfileID, PointKey: ev.Key, EventID: ev.ID, Stop: true}
+			ok = true
+			break
 		}
 	}
-	return ErrUnknownEvent
+	m.mu.Unlock()
+	if !ok {
+		return ErrUnknownEvent
+	}
+	m.deliverFlashes([]model.FlashEvent{stop})
+	return nil
+}
+
+// ResumeFlash implements ipc.FlashResumer (CHK-MON-24 / CHK-IPC-22):
+// clear flashDismissed for eventID. If that event is still an active,
+// unacked, unmuted alert, immediately push flash with the same eventID
+// and return true. Otherwise leave state alone and return false (acked,
+// recovered, unknown, muted, or another event). eventID 0 is a no-op
+// (the IPC layer already returns invalid_request).
+func (m *Monitor) ResumeFlash(eventID uint64) (bool, error) {
+	if eventID == 0 {
+		return false, nil
+	}
+	m.mu.Lock()
+	var ev model.AlertEvent
+	found := false
+	for _, a := range m.tracker.Active() {
+		if a.ID == eventID && a.To != model.LevelOK {
+			ev, found = a, true
+			break
+		}
+	}
+	if !found || m.mutedLocked(ev.ProfileID) {
+		m.mu.Unlock()
+		return false, nil
+	}
+	if _, acked := m.acks[eventKey(ev)]; acked {
+		m.mu.Unlock()
+		return false, nil
+	}
+	delete(m.flashDismissed, eventID)
+	if m.flashing == nil {
+		m.flashing, m.flashDismissed = map[string]flashEntry{}, map[uint64]bool{}
+	}
+	m.flashing[flashKey(ev)] = flashEntry{id: ev.ID, profileID: ev.ProfileID, pointKey: ev.Key}
+	flash := model.FlashEvent{ProfileID: ev.ProfileID, PointKey: ev.Key, EventID: ev.ID, Level: ev.To}
+	m.mu.Unlock()
+	m.deliverFlashes([]model.FlashEvent{flash})
+	return true, nil
 }

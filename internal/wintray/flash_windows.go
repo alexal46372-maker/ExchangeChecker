@@ -150,6 +150,7 @@ func (a *App) onFlashEvents(q []trayipc.Event) {
 				}
 				continue
 			}
+			a.resumedPush(m.EventID)
 			if a.flashMin {
 				if a.flashPausedID(m.EventID) {
 					continue // paused: a push that crossed the dismiss
@@ -166,6 +167,7 @@ func (a *App) onFlashEvents(q []trayipc.Event) {
 		case e.Kind == trayipc.EventState && e.Status.State != trayipc.StateConnected && len(a.flashes) > 0:
 			// the service is gone: it resends on its first failed check
 			a.flashes = nil
+			a.flashResuming = nil
 			changed = true
 		}
 	}
@@ -320,11 +322,19 @@ func (a *App) pauseFlashes(reqs []trayalert.AckRequest) {
 func (a *App) FlashPaused() (bool, int) { return a.flashMin, len(a.flashPaused) }
 
 // FlashRequests are the dismiss_flash / resume_flash requests sent, as
-// "dismiss:<id>" / "resume:<id>" (tests).
+// "dismiss:<id>" / "resume:<id>", in the order they went out (tests).
 func (a *App) FlashRequests() []string {
 	a.flashMu.Lock()
 	defer a.flashMu.Unlock()
 	return append([]string(nil), a.flashSent...)
+}
+
+// FlashSending reports whether a dismiss_flash / resume_flash worker is
+// still running (tests).
+func (a *App) FlashSending() bool {
+	a.flashMu.Lock()
+	defer a.flashMu.Unlock()
+	return len(a.flashBusy) != 0
 }
 
 // canPauseFlash: the service announces flash and resume_flash.
@@ -367,6 +377,18 @@ func (a *App) alertMinimized() {
 			ids = append(ids, f.eventID)
 		}
 	}
+	// restored a moment ago and the resume_flash not answered by a flash
+	// push yet: paused again (the dismiss follows it in order)
+	a.flashMu.Lock()
+	for k, f := range a.flashResuming {
+		if _, ok := a.flashPaused[k]; !ok && !a.flashNoResume[f.eventID] {
+			a.flashPaused[k] = f
+			ids = append(ids, f.eventID)
+		}
+	}
+	a.flashNoResume = nil
+	a.flashMu.Unlock()
+	a.flashResuming = nil
 	a.flashes = nil
 	a.updateFlash()
 	a.sendFlashRequests(model.CmdDismissFlash, "dismiss:", ids)
@@ -396,12 +418,29 @@ func (a *App) alertRestored() {
 		case a.flashAcked[f.eventID]:
 		default:
 			ids = append(ids, f.eventID)
+			if a.flashResuming == nil {
+				a.flashResuming = map[flashKey]flashState{}
+			}
+			a.flashResuming[k] = f
 		}
 	}
 	if local {
 		a.updateFlash()
 	}
 	a.sendFlashRequests(model.CmdResumeFlash, "resume:", ids)
+}
+
+// resumedPush: the flash push of a resumed event arrived — it is no longer
+// waiting for its resume_flash.
+func (a *App) resumedPush(id uint64) {
+	if id == 0 {
+		return
+	}
+	for k, f := range a.flashResuming {
+		if f.eventID == id {
+			delete(a.flashResuming, k)
+		}
+	}
 }
 
 // restoreAlertWindow: a new alert while the window is minimized restores
@@ -428,6 +467,11 @@ func (a *App) forgetConfirmed(reqs []trayalert.AckRequest) {
 				delete(a.flashPaused, k)
 			}
 		}
+		for k, f := range a.flashResuming {
+			if r.Req.EventID != 0 && f.eventID == r.Req.EventID {
+				delete(a.flashResuming, k)
+			}
+		}
 		for _, id := range r.IDs {
 			if f, ok := a.flashPaused[flashKey{id.ProfileID, id.Key}]; ok {
 				if f.eventID != 0 {
@@ -438,26 +482,85 @@ func (a *App) forgetConfirmed(reqs []trayalert.AckRequest) {
 				}
 				delete(a.flashPaused, flashKey{id.ProfileID, id.Key})
 			}
+			delete(a.flashResuming, flashKey{id.ProfileID, id.Key})
 		}
 	}
 }
 
-// sendFlashRequests sends cmd {eventId} for ids off the UI thread.
+// sendFlashRequests asks for the state cmd (dismiss_flash = paused,
+// resume_flash = flashing) of every event in ids, off the UI thread.
+// Per eventId the requests are serialized by one worker goroutine and
+// coalesced latest-wins: while a request of an event is in flight, a
+// newer wanted state replaces the pending one (intermediate states are
+// skipped) and goes out only after the reply, so a resume_flash never
+// overtakes a dismiss_flash still under way (the service would mark the
+// restored flash dismissed again); a pending state equal to the one just
+// delivered by the same worker is dropped (minimize→restore→minimize
+// during a slow dismiss sends one dismiss_flash). Order is never changed;
+// the worker ends when nothing is pending. CHK-TRAY-109.
 func (a *App) sendFlashRequests(cmd, tag string, ids []uint64) {
 	s := a.session
 	if s == nil || len(ids) == 0 {
 		return
 	}
 	a.flashMu.Lock()
-	for _, id := range ids {
-		a.flashSent = append(a.flashSent, tag+strconv.FormatUint(id, 10))
+	defer a.flashMu.Unlock()
+	if a.flashWant == nil {
+		a.flashWant = map[uint64]flashReq{}
+		a.flashLast = map[uint64]string{}
+		a.flashBusy = map[uint64]bool{}
 	}
-	a.flashMu.Unlock()
-	go func() {
-		for _, id := range ids {
-			ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
-			_, _ = s.Do(ctx, model.IPCRequest{Cmd: cmd, EventID: id})
-			cancel()
+	for _, id := range ids {
+		a.flashWant[id] = flashReq{cmd, tag}
+		if !a.flashBusy[id] {
+			a.flashBusy[id] = true
+			go a.flashWorker(s, id)
 		}
-	}()
+	}
+}
+
+// flashReq is the latest wanted state of one event (sendFlashRequests).
+type flashReq struct{ cmd, tag string }
+
+// flashWorker delivers the wanted states of one eventId one at a time.
+func (a *App) flashWorker(s *trayipc.Session, id uint64) {
+	for {
+		a.flashMu.Lock()
+		r, ok := a.flashWant[id]
+		delete(a.flashWant, id)
+		if !ok {
+			delete(a.flashBusy, id)
+			delete(a.flashLast, id) // only within one burst: no stale state later
+			a.flashMu.Unlock()
+			return
+		}
+		if a.flashLast[id] == r.cmd {
+			a.flashMu.Unlock()
+			continue // already the service's state
+		}
+		a.flashSent = append(a.flashSent, r.tag+strconv.FormatUint(id, 10))
+		a.flashMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
+		m, err := s.Do(ctx, model.IPCRequest{Cmd: r.cmd, EventID: id})
+		cancel()
+		a.flashMu.Lock()
+		if err == nil && m.Type == model.MsgOK {
+			a.flashLast[id] = r.cmd
+		} else {
+			delete(a.flashLast, id) // unknown: the next wanted state goes out
+		}
+		if r.cmd == model.CmdResumeFlash {
+			// not resumed (confirmed / cleared / failed): no flash push will
+			// come, a later minimize must not pause it again
+			if err != nil || m.Resumed == nil || !*m.Resumed {
+				if a.flashNoResume == nil {
+					a.flashNoResume = map[uint64]bool{}
+				}
+				a.flashNoResume[id] = true
+			} else {
+				delete(a.flashNoResume, id)
+			}
+		}
+		a.flashMu.Unlock()
+	}
 }

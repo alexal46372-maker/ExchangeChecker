@@ -30,12 +30,19 @@ type resumeService struct {
 	srv    *ipc.Server
 	events map[uint64]model.FlashEvent
 	mu     sync.Mutex
-	asked  []uint64 // resume_flash eventIds received
-	pushed []uint64 // resumed (flash pushed)
-	acked  []uint64 // ack_alert eventIds
+	asked  []uint64      // resume_flash eventIds received
+	pushed []uint64      // resumed (flash pushed)
+	acked  []uint64      // ack_alert eventIds
+	delay  time.Duration // a slow dismiss_flash: the reply comes after it
 }
 
+func (r *resumeService) setDismissDelay(d time.Duration) { r.mu.Lock(); r.delay = d; r.mu.Unlock() }
+
 func (r *resumeService) DismissFlash(id uint64) error {
+	r.mu.Lock()
+	d := r.delay
+	r.mu.Unlock()
+	time.Sleep(d)
 	if err := r.flashService.DismissFlash(id); err != nil {
 		return err
 	}
@@ -367,5 +374,66 @@ func TestCHK_TRAY_109_OldServiceKeepsFlashing(t *testing.T) {
 	pumpFor(2 * FlashHalfMs * time.Millisecond)
 	if app.FlashActive() != 1 || len(app.FlashRequests()) != 0 {
 		t.Fatal("restore changed the flash of an old service")
+	}
+}
+
+// TestCHK_TRAY_109_SlowDismissOrder — dismiss_flash / resume_flash of one
+// eventId go out one at a time, latest wins: the service answers
+// dismiss_flash slowly (400 ms) and the window is minimized / restored
+// quickly meanwhile; the final service state (dismissed or flashing) and
+// the tray overlay follow the last action, a resume never overtakes the
+// dismiss under way, intermediate states are skipped.
+func TestCHK_TRAY_109_SlowDismissOrder(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	svc := &flashService{alertService: &alertService{}, known: map[uint64]bool{7: true}}
+	ev := model.FlashEvent{ProfileID: "p1", EventID: 7, Level: model.LevelError}
+	svc.set(1, model.AlertEvent{ID: 7, ProfileID: "p1", ProfileName: "DB-p1", To: model.LevelError, ErrorKey: model.MsgMonitorConnError})
+	app, srv, rs := startResumeApp(t, svc, true, map[uint64]model.FlashEvent{7: ev})
+	rs.setDismissDelay(400 * time.Millisecond)
+	srv.Flash(ev)
+	pumpUntil(t, "flash + window", func() bool {
+		return app.FlashActive() == 1 && app.Flash() != nil && app.Flash().timer && app.AlertWindow() != 0 && winapi.IsWindowVisible(app.AlertWindow())
+	})
+	fw, hw := app.Flash(), app.AlertWindow()
+	settle := func(tag string) {
+		t.Helper()
+		pumpUntil(t, tag+": requests delivered", func() bool { return !app.FlashSending() })
+		pumpFor(3 * FlashHalfMs * time.Millisecond)
+	}
+	state := func(tag string, minimized bool) {
+		t.Helper()
+		dismissed := len(svc.dismissedIDs()) == 1
+		flashing := app.FlashActive() == 1 && fw.timer
+		if winapi.IsIconic(hw) != minimized || dismissed != minimized || flashing == minimized {
+			t.Fatalf("%s: iconic %v, service dismissed %v, tray flashing %v (last action minimized=%v)", tag, winapi.IsIconic(hw), dismissed, flashing, minimized)
+		}
+	}
+	for _, c := range []struct {
+		name, seq, want string
+	}{
+		{"minimize-restore-minimize", "mrm", "dismiss:7"},
+		{"minimize-restore", "mr", "dismiss:7,resume:7"},
+		{"minimize-restore-minimize-restore", "mrmr", "dismiss:7,resume:7"},
+		{"minimize-restore-minimize (again)", "mrm", "dismiss:7"},
+	} {
+		if winapi.IsIconic(hw) { // back to a restored, flashing window
+			winapi.ShowWindow(hw, winapi.SW_RESTORE)
+			settle(c.name + ": start")
+			state(c.name+": start", false)
+		}
+		n := len(app.FlashRequests())
+		for _, step := range c.seq {
+			if step == 'm' {
+				winapi.SendMessage(hw, winapi.WM_SYSCOMMAND, winapi.SC_MINIMIZE, 0)
+			} else {
+				winapi.ShowWindow(hw, winapi.SW_RESTORE)
+			}
+		}
+		settle(c.name)
+		state(c.name, c.seq[len(c.seq)-1] == 'm')
+		if got := strings.Join(app.FlashRequests()[n:], ","); got != c.want {
+			t.Errorf("%s: requests %q, want %q", c.name, got, c.want)
+		}
 	}
 }

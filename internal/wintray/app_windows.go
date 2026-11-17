@@ -204,6 +204,13 @@ type App struct {
 	flashAcked  map[uint64]bool
 	flashMu     sync.Mutex
 	flashSent   []string
+	flashWant   map[uint64]flashReq // pending state per eventId (latest wins)
+	flashLast   map[uint64]string   // state just delivered by the running worker
+	flashBusy   map[uint64]bool     // a worker runs for the eventId
+	// restored, resume_flash sent, no flash push yet (UI thread) / resume
+	// answered resumed:false (flashMu)
+	flashResuming map[flashKey]flashState
+	flashNoResume map[uint64]bool
 	balloons     []trayui.Balloon
 	statusWin    *statusWindow
 	checkResults []string

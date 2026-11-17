@@ -4,9 +4,7 @@ package wintray
 
 import (
 	"context"
-	"encoding/json"
 	"io"
-	"net"
 	"runtime"
 	"sort"
 	"strings"
@@ -20,127 +18,89 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
-// resumeProxy sits between the tray session and the real ipc.Server of
-// the flash fake and plays the service side of resume_flash as agreed with
-// EC Service (phase 17; the service implements it in feat/svc-phase17):
-// the hello gains the capability resume_flash; resume_flash {eventId} of
-// an event that is known, dismissed and not confirmed (no ack_alert for its
-// profile / point) clears the dismiss mark, replies ok {resumed:true} and
-// pushes flash with the same eventId through the real server; otherwise
-// ok {resumed:false} and nothing happens; no eventId → invalid_request.
-// Every other frame passes through unchanged.
-type resumeProxy struct {
-	l      *ipc.MemListener
+// resumeService is the flash fake with the service side of phase 17
+// (CHK-IPC-22, ipc.FlashResumer) on the real ipc.Server: dismiss_flash
+// records the dismiss and pushes flash_stop {profileId, pointKey} without
+// eventId (like EC Service); ack_alert by eventId (ipc.EventAcker) marks
+// the alert acknowledged; resume_flash of a known, dismissed and not
+// acknowledged event clears the dismiss and pushes flash with the same
+// eventId at once (resumed:true); otherwise resumed:false, nothing.
+type resumeService struct {
+	*flashService
 	srv    *ipc.Server
-	svc    *flashService
 	events map[uint64]model.FlashEvent
 	mu     sync.Mutex
-	asked  []uint64           // resume_flash eventIds received
-	pushed []uint64           // resumed (flash pushed)
-	acks   []model.IPCRequest // ack_alert requests seen (forwarded)
+	asked  []uint64 // resume_flash eventIds received
+	pushed []uint64 // resumed (flash pushed)
+	acked  []uint64 // ack_alert eventIds
 }
 
-func (p *resumeProxy) nAcks() int { p.mu.Lock(); defer p.mu.Unlock(); return len(p.acks) }
-
-func (p *resumeProxy) dial(context.Context) (io.ReadWriteCloser, error) {
-	up, err := p.l.Dial()
-	if err != nil {
-		return nil, err
+func (r *resumeService) DismissFlash(id uint64) error {
+	if err := r.flashService.DismissFlash(id); err != nil {
+		return err
 	}
-	cli, mid := net.Pipe()
-	var wmu sync.Mutex
-	write := func(v interface{}) error {
-		wmu.Lock()
-		defer wmu.Unlock()
-		return ipc.WriteFrame(mid, v, model.IPCMaxMessage)
+	if ev, ok := r.events[id]; ok && r.srv != nil {
+		r.srv.Flash(model.FlashEvent{ProfileID: ev.ProfileID, PointKey: ev.PointKey, Stop: true})
 	}
-	go func() { // service → tray
-		defer mid.Close()
-		for {
-			var raw map[string]json.RawMessage
-			if err := ipc.ReadFrame(up, &raw, model.IPCMaxMessage); err != nil {
-				return
-			}
-			if string(raw["type"]) == `"`+model.MsgHello+`"` {
-				var caps []string
-				_ = json.Unmarshal(raw["capabilities"], &caps)
-				caps = append(caps, trayipc.CapResumeFlash)
-				raw["capabilities"], _ = json.Marshal(caps)
-			}
-			if write(raw) != nil {
-				return
-			}
-		}
-	}()
-	go func() { // tray → service
-		defer up.Close()
-		for {
-			var raw map[string]json.RawMessage
-			if err := ipc.ReadFrame(mid, &raw, model.IPCMaxImportRequest); err != nil {
-				return
-			}
-			var req model.IPCRequest
-			b, _ := json.Marshal(raw)
-			_ = json.Unmarshal(b, &req)
-			if req.Cmd == model.CmdAckAlert {
-				p.mu.Lock()
-				p.acks = append(p.acks, req)
-				p.mu.Unlock()
-			}
-			if req.Cmd != trayipc.CmdResumeFlash {
-				if ipc.WriteFrame(up, raw, model.IPCMaxImportRequest) != nil {
-					return
-				}
-				continue
-			}
-			if req.EventID == 0 {
-				write(map[string]interface{}{"id": req.ID, "type": model.MsgError, "code": model.ErrCodeInvalidRequest, "error": "resume_flash needs eventId"})
-				continue
-			}
-			ev, resumed := p.resume(req.EventID)
-			write(map[string]interface{}{"id": req.ID, "type": model.MsgOK, "resumed": resumed})
-			if resumed {
-				p.srv.Flash(ev)
-			}
-		}
-	}()
-	return cli, nil
+	return nil
 }
 
-func (p *resumeProxy) resume(id uint64) (model.FlashEvent, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.asked = append(p.asked, id)
-	ev, ok := p.events[id]
-	if !ok {
-		return ev, false
-	}
-	for _, a := range p.acks {
-		if (a.EventID != 0 && a.EventID == id) || (a.EventID == 0 && a.ProfileID == ev.ProfileID && (a.PointKey == "" || a.PointKey == ev.PointKey)) {
-			return ev, false // confirmed
+func (r *resumeService) AckEvent(id uint64) (int, error) {
+	r.mu.Lock()
+	r.acked = append(r.acked, id)
+	r.mu.Unlock()
+	f := r.alertService
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, a := range f.snap.Alerts {
+		if a.ID == id && !a.Acknowledged {
+			f.snap.Alerts[i].Acknowledged = true
+			f.snap.Seq++
+			return 1, nil
 		}
 	}
-	p.svc.fmu.Lock()
+	return 0, &model.IPCError{Code: model.ErrCodeNoActiveAlert, Key: model.MsgMonitorNoActiveAlert, Message: "no active alert"}
+}
+
+func (r *resumeService) ResumeFlash(id uint64) (bool, error) {
+	r.mu.Lock()
+	r.asked = append(r.asked, id)
+	ev, ok := r.events[id]
+	confirmed := false
+	for _, a := range r.acked {
+		confirmed = confirmed || a == id
+	}
+	r.mu.Unlock()
+	if !ok || confirmed {
+		return false, nil
+	}
+	f := r.flashService
+	f.fmu.Lock()
 	dismissed := false
-	for i, d := range p.svc.dismissed {
+	for i, d := range f.dismissed {
 		if d == id {
 			dismissed = true
-			p.svc.dismissed = append(p.svc.dismissed[:i:i], p.svc.dismissed[i+1:]...)
+			f.dismissed = append(f.dismissed[:i:i], f.dismissed[i+1:]...)
 			break
 		}
 	}
-	p.svc.fmu.Unlock()
+	f.fmu.Unlock()
 	if !dismissed {
-		return ev, false
+		return false, nil
 	}
-	p.pushed = append(p.pushed, id)
-	return ev, true
+	r.mu.Lock()
+	r.pushed = append(r.pushed, id)
+	r.mu.Unlock()
+	r.srv.Flash(ev) // at once, like the service
+	return true, nil
 }
 
-func (p *resumeProxy) counts() (asked, pushed []uint64) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return append([]uint64(nil), p.asked...), append([]uint64(nil), p.pushed...)
+func (r *resumeService) nAcks() int { r.mu.Lock(); defer r.mu.Unlock(); return len(r.acked) }
+
+func (r *resumeService) counts() (asked, pushed []uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]uint64(nil), r.asked...), append([]uint64(nil), r.pushed...)
 }
 
 func (f *flashService) dismissedIDs() []uint64 {
@@ -151,17 +111,19 @@ func (f *flashService) dismissedIDs() []uint64 {
 	return out
 }
 
-func startResumeApp(t *testing.T, svc *flashService, withResume bool, events map[uint64]model.FlashEvent) (*App, *ipc.Server, *resumeProxy) {
+func startResumeApp(t *testing.T, svc *flashService, withResume bool, events map[uint64]model.FlashEvent) (*App, *ipc.Server, *resumeService) {
 	t.Helper()
 	l := ipc.NewMemListener()
-	srv := ipc.NewServer(svc, nil)
+	rs := &resumeService{flashService: svc, events: events}
+	var h ipc.Handler = svc
+	if withResume {
+		h = rs
+	}
+	srv := ipc.NewServer(h, nil)
+	rs.srv = srv
 	go srv.Serve(l)
 	t.Cleanup(func() { srv.Close() })
-	p := &resumeProxy{l: l, srv: srv, svc: svc, events: events}
-	dial := p.dial
-	if !withResume {
-		dial = func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
-	}
+	dial := func(context.Context) (io.ReadWriteCloser, error) { return l.Dial() }
 	app, err := NewApp(Options{NoNotifyIcon: true, HiddenPanel: true, NoBlink: true, HiddenFlash: true,
 		Beeper: &testBeeper{}, ScreenFlashStore: &memFlashStore{on: true},
 		Session: trayipc.Options{Dial: dial, BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond}})
@@ -170,7 +132,7 @@ func startResumeApp(t *testing.T, svc *flashService, withResume bool, events map
 	}
 	t.Cleanup(app.Exit)
 	pumpUntil(t, "connected", func() bool { return app.Status().State == trayipc.StateConnected })
-	return app, srv, p
+	return app, srv, rs
 }
 
 func idsOf(reqs []string, tag string) string {
@@ -187,7 +149,7 @@ func idsOf(reqs []string, tag string) string {
 // TestCHK_TRAY_109_FlashFollowsAlertWindow — phase 17 (Alex 17.11.2026):
 // the screen flash follows the alert window state, through the real alert
 // window (WM_SYSCOMMAND / ShowWindow), the real trayipc Session and the real
-// ipc.Server (resume_flash played by resumeProxy until feat/svc-phase17):
+// ipc.Server with the service side of resume_flash (CHK-IPC-22):
 // SC_MINIMIZE stops the overlay at once and sends dismiss_flash for every
 // active flash (the alert stays: the window, the alert view and the sound
 // are untouched); a push of a paused event that crossed the dismiss does
@@ -218,7 +180,7 @@ func TestCHK_TRAY_109_FlashFollowsAlertWindow(t *testing.T) {
 	}
 	svc.set(1, alertOf(7), alertOf(8))
 	app, srv, p := startResumeApp(t, svc, true, events)
-	if !app.Status().Has(trayipc.CapResumeFlash) || !app.Session().Supported(trayipc.CmdResumeFlash) {
+	if !app.Status().Has(model.CapResumeFlash) || !app.Session().Supported(model.CmdResumeFlash) {
 		t.Fatalf("capability resume_flash: %v", app.Status().Capabilities)
 	}
 	srv.Flash(events[7])
@@ -248,6 +210,12 @@ func TestCHK_TRAY_109_FlashFollowsAlertWindow(t *testing.T) {
 		t.Fatalf("paused %v %d", on, n)
 	}
 	waitCond(t, "dismiss_flash 7, 8", func() bool { d := svc.dismissedIDs(); return len(d) == 2 && d[0] == 7 && d[1] == 8 })
+	// the service answers the dismiss with flash_stop {profileId, pointKey}
+	// (no eventId): the paused flashes stay paused, nothing flashes
+	pumpFor(2 * FlashHalfMs * time.Millisecond)
+	if on, n := app.FlashPaused(); !on || n != 2 || app.FlashActive() != 0 || fw.timer {
+		t.Fatalf("flash_stop of the dismiss lost the pause: %v %d active %d", on, n, app.FlashActive())
+	}
 	if v := app.AlertView(); !v.Visible || len(v.Alerts) != len(view.Alerts) || !winapi.IsWindow(hw) {
 		t.Fatal("minimize dismissed the alert")
 	}
@@ -354,10 +322,23 @@ func TestCHK_TRAY_109_FlashFollowsAlertWindow(t *testing.T) {
 	if on, _ := app.FlashPaused(); on {
 		t.Error("still paused after the new alert")
 	}
+	// the reply of the real server: resumed:false for an unknown / confirmed
+	// event, invalid_request without eventId
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, id := range []uint64{99, 12} {
+		m, err := app.Session().Do(ctx, model.IPCRequest{Cmd: model.CmdResumeFlash, EventID: id})
+		if err != nil || m.Type != model.MsgOK || m.Resumed == nil || *m.Resumed {
+			t.Errorf("resume_flash %d: %+v %v", id, m, err)
+		}
+	}
+	if m, err := app.Session().Do(ctx, model.IPCRequest{Cmd: model.CmdResumeFlash}); err != nil || m.Type != model.MsgError || m.Code != model.ErrCodeInvalidRequest {
+		t.Errorf("resume_flash without eventId: %+v %v", m, err)
+	}
 }
 
 // TestCHK_TRAY_109_OldServiceKeepsFlashing — without the capability
-// resume_flash (a service before feat/svc-phase17) minimizing the alert
+// resume_flash (a service before phase 17) minimizing the alert
 // window changes nothing: the flash goes on, no dismiss_flash is sent.
 func TestCHK_TRAY_109_OldServiceKeepsFlashing(t *testing.T) {
 	runtime.LockOSThread()
@@ -366,7 +347,7 @@ func TestCHK_TRAY_109_OldServiceKeepsFlashing(t *testing.T) {
 	a := model.AlertEvent{ID: 7, ProfileID: "p1", ProfileName: "DB-p1", To: model.LevelError, ErrorKey: model.MsgMonitorConnError}
 	svc.set(1, a)
 	app, srv, _ := startResumeApp(t, svc, false, nil)
-	if app.Status().Has(trayipc.CapResumeFlash) || app.Session().Supported(trayipc.CmdResumeFlash) {
+	if app.Status().Has(model.CapResumeFlash) || app.Session().Supported(model.CmdResumeFlash) {
 		t.Fatal("resume_flash without the capability")
 	}
 	srv.Flash(model.FlashEvent{ProfileID: "p1", EventID: 7, Level: model.LevelError})

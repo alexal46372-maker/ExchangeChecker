@@ -334,7 +334,7 @@ func (a *App) canPauseFlash() bool {
 		return false
 	}
 	st := s.Status()
-	return st.State == trayipc.StateConnected && st.Has(model.CapFlash) && st.Has(trayipc.CapResumeFlash)
+	return st.State == trayipc.StateConnected && st.Has(model.CapFlash) && st.Has(model.CapResumeFlash)
 }
 
 func (a *App) flashPausedID(id uint64) bool {
@@ -401,7 +401,7 @@ func (a *App) alertRestored() {
 	if local {
 		a.updateFlash()
 	}
-	a.sendFlashRequests(trayipc.CmdResumeFlash, "resume:", ids)
+	a.sendFlashRequests(model.CmdResumeFlash, "resume:", ids)
 }
 
 // restoreAlertWindow: a new alert while the window is minimized restores

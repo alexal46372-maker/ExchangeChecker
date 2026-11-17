@@ -288,8 +288,7 @@ var commandCapability = map[string]string{
 	model.CmdAlarmTest:   model.CapAlarmTest,
 	model.CmdSummary:     model.CapSummary,
 	model.CmdClientHello: model.CapClientHello,
-	// phase 17 (CHK-TRAY-109): local names until feat/svc-phase17
-	CmdResumeFlash: CapResumeFlash,
+	model.CmdResumeFlash: model.CapResumeFlash, // phase 17 (CHK-TRAY-109 / CHK-IPC-22)
 }
 
 var v1Commands = map[string]bool{

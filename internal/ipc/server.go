@@ -62,9 +62,17 @@ type Muter interface {
 }
 
 // FlashDismisser runs dismiss_flash (phase 13, CHK-IPC-19; any client,
-// like ack_alert).
+// like ack_alert). Phase 17: a successful dismiss also pushes flash_stop
+// (suspend). The request and ok flash_dismissed reply are unchanged.
 type FlashDismisser interface {
 	DismissFlash(eventID uint64) error
+}
+
+// FlashResumer runs resume_flash (phase 17, CHK-IPC-22; any client, like
+// dismiss_flash). Resumed is true only when the event is still active
+// and not acknowledged and a flash was pushed.
+type FlashResumer interface {
+	ResumeFlash(eventID uint64) (resumed bool, err error)
 }
 
 // EventAcker runs ack_alert {eventId} (phase 11, CHK-MON-18, capability
@@ -417,6 +425,9 @@ func (s *Server) Capabilities() []string {
 	}
 	if _, ok := s.H.(FlashDismisser); ok {
 		caps = append(caps, model.CapFlash) // phase 13 (CHK-IPC-19)
+	}
+	if _, ok := s.H.(FlashResumer); ok {
+		caps = append(caps, model.CapResumeFlash) // phase 17 (CHK-IPC-22)
 	}
 	if _, ok := s.H.(ProfileEnabler); ok {
 		caps = append(caps, model.CapProfileEnabled) // phase 13 (CHK-IPC-18)
@@ -1474,6 +1485,18 @@ func (s *Server) handle(req model.IPCRequest) model.IPCMessage {
 				return errorReply(req.ID, err, "")
 			}
 			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, Result: model.ResultFlashDismissed, EventID: req.EventID}
+		}
+	case model.CmdResumeFlash: // phase 17 (CHK-IPC-22)
+		if fr, ok := s.H.(FlashResumer); ok {
+			if req.EventID == 0 {
+				return errorReply(req.ID, &model.IPCError{Code: model.ErrCodeInvalidRequest, Key: model.MsgMonitorBadRequest,
+					Message: "ipc: resume_flash needs eventId", Args: []string{"eventId", model.ValRequired}}, "")
+			}
+			resumed, err := fr.ResumeFlash(req.EventID)
+			if err != nil {
+				return errorReply(req.ID, err, "")
+			}
+			return model.IPCMessage{ID: req.ID, Type: model.MsgOK, EventID: req.EventID, Resumed: &resumed}
 		}
 	case model.CmdMuteUntilRecovered: // phase 12 (CHK-MON-20 / CHK-IPC-15)
 		if mu, ok := s.H.(Muter); ok {

@@ -236,7 +236,8 @@ type IPCRequest struct {
 	// with import_config), sql_test_steps Server (+ ProfileID).
 	Port int `json:"port,omitempty"`
 	// Capabilities of client_hello; EventID of ack_alert by event
-	// (phase 11, CHK-IPC-11 / CHK-MON-18).
+	// (phase 11, CHK-IPC-11 / CHK-MON-18), of dismiss_flash, and of
+	// resume_flash (phase 17, CHK-IPC-22).
 	Capabilities []string `json:"capabilities,omitempty"`
 	EventID      uint64   `json:"eventId,omitempty"`
 	CIDR         string   `json:"cidr,omitempty"`
@@ -398,9 +399,12 @@ type IPCMessage struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	// PointKey / EventID / Level: flash and flash_stop pushes (phase 13,
 	// CHK-IPC-19; pointKey "" = profile-level alert).
-	PointKey string      `json:"pointKey,omitempty"`
-	EventID  uint64      `json:"eventId,omitempty"`
-	Level    *AlertLevel `json:"level,omitempty"`
+	PointKey string `json:"pointKey,omitempty"`
+	EventID  uint64 `json:"eventId,omitempty"`
+	// Resumed: resume_flash reply (phase 17, CHK-IPC-22). Always
+	// present on a successful reply (true or false).
+	Resumed *bool       `json:"resumed,omitempty"`
+	Level   *AlertLevel `json:"level,omitempty"`
 	// AlarmTest: alarm_test reply (phase 11, CHK-IPC-11).
 	AlarmTest *AlarmTestResult `json:"alarmTest,omitempty"`
 	// Summary: summary reply (phase 11, CHK-SVC-07).

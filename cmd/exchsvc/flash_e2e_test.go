@@ -19,6 +19,7 @@ type flashRig struct {
 	s     *svc
 	p     model.Profile
 	lag   int64 // minutes behind
+	gone  int32 // 1 = the point has disappeared (clears the lag alert in one poll)
 	admin int32 // 1 = Authorize reports an administrator
 	lis   *ipc.MemListener
 	ctx   context.Context
@@ -46,6 +47,9 @@ func newFlashRig(t *testing.T, poll time.Duration, delayFlash time.Duration) *fl
 		ac.PollInterval = poll
 		ac.NewReader = func(model.Profile, string, sqlcheck.Options) (sqlcheck.ReadCloser, error) {
 			return &stubRC{list: func() []model.ExchangePoint {
+				if atomic.LoadInt32(&r.gone) == 1 {
+					return nil
+				}
 				ts := now.Add(-time.Duration(atomic.LoadInt64(&r.lag)) * time.Minute)
 				return []model.ExchangePoint{{Name: "Магазин 1", LastSend: &ts}}
 			}, onClose: func() {}}, nil
@@ -126,6 +130,21 @@ func drain(ch chan model.IPCMessage) {
 	}
 }
 
+// noFlashPush fails if a flash or flash_stop is already in ch
+// (synchronous replies such as resume_flash have already pushed).
+func noFlashPush(t *testing.T, ch chan model.IPCMessage) {
+	t.Helper()
+	select {
+	case m := <-ch:
+		if m.Type == model.MsgFlash || m.Type == model.MsgFlashStop {
+			t.Fatalf("unexpected %s %+v", m.Type, m)
+		}
+		// some other push (status etc.) is ignored; keep looking
+		noFlashPush(t, ch)
+	default:
+	}
+}
+
 func (r *flashRig) do(req model.IPCRequest) model.IPCMessage {
 	r.t.Helper()
 	m, err := r.s.c.Do(r.ctx, req)
@@ -160,11 +179,12 @@ func TestCHK_MON_22_FlashE2E(t *testing.T) {
 	r.ctx = ctx
 	p := r.p
 	hello := r.s.waitPush(t, func(m model.IPCMessage) bool { return m.Type == model.MsgHello })
-	has := false
+	hasFlash, hasResume := false, false
 	for _, c := range hello.Capabilities {
-		has = has || c == model.CapFlash
+		hasFlash = hasFlash || c == model.CapFlash
+		hasResume = hasResume || c == model.CapResumeFlash
 	}
-	if !has {
+	if !hasFlash || !hasResume {
 		t.Fatalf("caps %v", hello.Capabilities)
 	}
 	p2, _ := r.client()
@@ -212,19 +232,26 @@ func TestCHK_MON_22_FlashE2E(t *testing.T) {
 		t.Fatalf("no eventId %+v", m)
 	}
 	r.ok(model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: ev})
-	countFlash(pushes, ev, 200*time.Millisecond)
+	// dismiss is a suspend: flash_stop immediately (phase 17)
+	stop, ok := nextPush(pushes, model.MsgFlashStop, 3*time.Second)
+	if !ok || stop.ProfileID != p.ID || stop.PointKey != f.PointKey {
+		t.Fatalf("flash_stop on dismiss %+v %v", stop, ok)
+	}
+	if _, ok := nextPush(p2, model.MsgFlashStop, 3*time.Second); !ok {
+		t.Fatal("second client got no flash_stop on dismiss")
+	}
 	if n := countFlash(pushes, ev, 1200*time.Millisecond); n != 0 {
 		t.Fatalf("flash after dismiss: %d", n)
 	}
-	// recovery → flash_stop on both clients
+	// recovery → another flash_stop on both clients
 	drain(p2)
 	atomic.StoreInt64(&r.lag, 0)
-	stop, ok := nextPush(pushes, model.MsgFlashStop, 8*time.Second)
+	stop, ok = nextPush(pushes, model.MsgFlashStop, 8*time.Second)
 	if !ok || stop.ProfileID != p.ID || stop.PointKey != f.PointKey {
-		t.Fatalf("flash_stop %+v %v", stop, ok)
+		t.Fatalf("flash_stop on recovery %+v %v", stop, ok)
 	}
 	if _, ok := nextPush(p2, model.MsgFlashStop, 3*time.Second); !ok {
-		t.Fatal("second client got no flash_stop")
+		t.Fatal("second client got no flash_stop on recovery")
 	}
 	// a new error flashes again (suppression reset)
 	atomic.StoreInt64(&r.lag, 600)
@@ -371,6 +398,9 @@ func TestCHK_IPC_21_DismissDisableEnableFlash(t *testing.T) {
 	if m := r.do(model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: f.EventID}); m.Type != model.MsgOK || m.Result != model.ResultFlashDismissed {
 		t.Fatalf("dismiss %+v", m)
 	}
+	if st, ok := nextPush(pushes, model.MsgFlashStop, 3*time.Second); !ok || st.ProfileID != r.p.ID {
+		t.Fatalf("no flash_stop on dismiss %+v", st)
+	}
 	atomic.StoreInt32(&r.admin, 1)
 	no, yes := false, true
 	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: r.p.ID, Enabled: &no})
@@ -381,6 +411,97 @@ func TestCHK_IPC_21_DismissDisableEnableFlash(t *testing.T) {
 	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: r.p.ID, Enabled: &yes})
 	f2, ok := nextPush(pushes, model.MsgFlash, 8*time.Second)
 	if !ok || f2.EventID == 0 || f2.EventID == f.EventID || f2.ProfileID != r.p.ID {
+		t.Fatalf("want a new flash after re-enable %+v (old eventId %d)", f2, f.EventID)
+	}
+}
+
+// TestCHK_IPC_22_ResumeFlash — real service, one base, a long poll so no
+// later worker poll races: dismiss_flash suspends (flash_stop);
+// resume_flash of the same active unacked eventID flashes again;
+// resume after ack, after the alert clears, or for another eventID is a
+// no-op (resumed:false); a later new eventID flashes as before
+// (CHK-IPC-22, CHK-MON-24).
+func TestCHK_IPC_22_ResumeFlash(t *testing.T) {
+	r := newFlashRig(t, time.Hour, 0)
+	defer r.s.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r.ctx = ctx
+	hello := r.s.waitPush(t, func(m model.IPCMessage) bool { return m.Type == model.MsgHello })
+	has := false
+	for _, c := range hello.Capabilities {
+		has = has || c == model.CapResumeFlash
+	}
+	if !has {
+		t.Fatalf("caps %v", hello.Capabilities)
+	}
+	atomic.StoreInt64(&r.lag, 600)
+	pushes := r.s.pushes
+	f, ok := nextPush(pushes, model.MsgFlash, 8*time.Second)
+	if !ok || f.EventID == 0 || f.ProfileID != r.p.ID {
+		t.Fatalf("first flash %+v %v", f, ok)
+	}
+	if m := r.do(model.IPCRequest{Cmd: model.CmdResumeFlash}); m.Code != model.ErrCodeInvalidRequest {
+		t.Fatalf("no eventId %+v", m)
+	}
+	if m := r.do(model.IPCRequest{Cmd: model.CmdDismissFlash, EventID: f.EventID}); m.Type != model.MsgOK || m.Result != model.ResultFlashDismissed {
+		t.Fatalf("dismiss %+v", m)
+	}
+	st, ok := nextPush(pushes, model.MsgFlashStop, 3*time.Second)
+	if !ok || st.ProfileID != r.p.ID {
+		t.Fatalf("flash_stop on suspend %+v %v", st, ok)
+	}
+
+	m := r.do(model.IPCRequest{Cmd: model.CmdResumeFlash, EventID: f.EventID})
+	if m.Type != model.MsgOK || m.EventID != f.EventID || m.Resumed == nil || !*m.Resumed {
+		t.Fatalf("resume of active event %+v", m)
+	}
+	fl, ok := nextPush(pushes, model.MsgFlash, 3*time.Second)
+	if !ok || fl.EventID != f.EventID || fl.ProfileID != r.p.ID || fl.Level == nil || *fl.Level != model.LevelError {
+		t.Fatalf("flash after resume %+v %v", fl, ok)
+	}
+
+	// another eventID
+	drain(pushes)
+	m = r.do(model.IPCRequest{Cmd: model.CmdResumeFlash, EventID: f.EventID + 1})
+	if m.Type != model.MsgOK || m.Resumed == nil || *m.Resumed {
+		t.Fatalf("resume of other eventId %+v", m)
+	}
+	noFlashPush(t, pushes)
+
+	// ack, then resume of the same (still active) event must do nothing
+	r.ok(model.IPCRequest{Cmd: model.CmdAckAlert, EventID: f.EventID})
+	drain(pushes)
+	m = r.do(model.IPCRequest{Cmd: model.CmdResumeFlash, EventID: f.EventID})
+	if m.Type != model.MsgOK || m.EventID != f.EventID || m.Resumed == nil || *m.Resumed {
+		t.Fatalf("resume after ack %+v", m)
+	}
+	noFlashPush(t, pushes)
+
+	// the point disappears: one poll drops the alert (keepKeys), then
+	// resume of that eventId is a no-op. (LevelOK recovery with
+	// ClearPolls=2 is covered by TestCHK_MON_24_ResumeNoEffect; a
+	// second poll_now here would be coalesced within CommandInterval.)
+	atomic.StoreInt32(&r.gone, 1)
+	r.ok(model.IPCRequest{Cmd: model.CmdPollNow, ProfileID: r.p.ID})
+	if _, ok := nextPush(pushes, model.MsgFlashStop, 8*time.Second); !ok {
+		t.Fatal("no flash_stop after the alert cleared")
+	}
+	drain(pushes)
+	m = r.do(model.IPCRequest{Cmd: model.CmdResumeFlash, EventID: f.EventID})
+	if m.Type != model.MsgOK || m.Resumed == nil || *m.Resumed {
+		t.Fatalf("resume after clear %+v", m)
+	}
+	noFlashPush(t, pushes)
+
+	// a new eventId flashes as before (re-enable starts a new worker poll)
+	atomic.StoreInt32(&r.gone, 0)
+	atomic.StoreInt32(&r.admin, 1)
+	no, yes := false, true
+	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: r.p.ID, Enabled: &no})
+	r.ok(model.IPCRequest{Cmd: model.CmdSetEnabled, ProfileID: r.p.ID, Enabled: &yes})
+	f2, ok := nextPush(pushes, model.MsgFlash, 8*time.Second)
+	if !ok || f2.EventID == 0 || f2.EventID == f.EventID {
 		t.Fatalf("want a new flash after re-enable %+v (old eventId %d)", f2, f.EventID)
 	}
 }

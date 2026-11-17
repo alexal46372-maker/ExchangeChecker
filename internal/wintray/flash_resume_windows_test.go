@@ -35,9 +35,12 @@ type resumeProxy struct {
 	svc    *flashService
 	events map[uint64]model.FlashEvent
 	mu     sync.Mutex
-	asked  []uint64 // resume_flash eventIds received
-	pushed []uint64 // resumed (flash pushed)
+	asked  []uint64           // resume_flash eventIds received
+	pushed []uint64           // resumed (flash pushed)
+	acks   []model.IPCRequest // ack_alert requests seen (forwarded)
 }
+
+func (p *resumeProxy) nAcks() int { p.mu.Lock(); defer p.mu.Unlock(); return len(p.acks) }
 
 func (p *resumeProxy) dial(context.Context) (io.ReadWriteCloser, error) {
 	up, err := p.l.Dial()
@@ -79,6 +82,11 @@ func (p *resumeProxy) dial(context.Context) (io.ReadWriteCloser, error) {
 			var req model.IPCRequest
 			b, _ := json.Marshal(raw)
 			_ = json.Unmarshal(b, &req)
+			if req.Cmd == model.CmdAckAlert {
+				p.mu.Lock()
+				p.acks = append(p.acks, req)
+				p.mu.Unlock()
+			}
 			if req.Cmd != trayipc.CmdResumeFlash {
 				if ipc.WriteFrame(up, raw, model.IPCMaxImportRequest) != nil {
 					return
@@ -107,8 +115,8 @@ func (p *resumeProxy) resume(id uint64) (model.FlashEvent, bool) {
 	if !ok {
 		return ev, false
 	}
-	for _, c := range p.svc.ackCalls() {
-		if c.profile == ev.ProfileID && c.key == ev.PointKey {
+	for _, a := range p.acks {
+		if (a.EventID != 0 && a.EventID == id) || (a.EventID == 0 && a.ProfileID == ev.ProfileID && (a.PointKey == "" || a.PointKey == ev.PointKey)) {
 			return ev, false // confirmed
 		}
 	}
@@ -273,7 +281,7 @@ func TestCHK_TRAY_109_FlashFollowsAlertWindow(t *testing.T) {
 	if app.FlashActive() != 0 || fw.timer {
 		t.Fatal("«Подтвердить» did not stop the flash")
 	}
-	pumpUntil(t, "ack sent", func() bool { return len(svc.ackCalls()) >= 2 })
+	pumpUntil(t, "ack sent", func() bool { return p.nAcks() >= 1 })
 	reqs := len(app.FlashRequests())
 	if winapi.IsWindowVisible(hw) {
 		minimize("minimize after ack")
@@ -299,8 +307,9 @@ func TestCHK_TRAY_109_FlashFollowsAlertWindow(t *testing.T) {
 	})
 	minimize("minimize 12")
 	waitCond(t, "dismiss 12", func() bool { d := svc.dismissedIDs(); return len(d) == 1 && d[0] == 12 })
+	acks := p.nAcks()
 	app.ackAlerts()
-	pumpUntil(t, "ack 12 sent", func() bool { return len(svc.ackCalls()) >= 3 })
+	pumpUntil(t, "ack 12 sent", func() bool { return p.nAcks() > acks })
 	if _, n := app.FlashPaused(); n != 0 {
 		t.Errorf("confirmed 12 still paused (%d)", n)
 	}

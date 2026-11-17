@@ -12,6 +12,9 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 )
 
+// smCYMaxTrack: SM_CYMAXTRACK of GetSystemMetrics.
+const smCYMaxTrack = 60
+
 // openModeSettings opens the settings window (admin) in uiMode, like
 // openChromeSettings.
 func openModeSettings(t *testing.T, app *App, dpi int32, mode traysettings.UIMode) *settingsWindow {
@@ -164,7 +167,11 @@ func TestCHK_TRAY_108_SettingsWindowHeight(t *testing.T) {
 			if !contains(work, r) || h > work.Bottom-work.Top {
 				t.Errorf("%s: window %+v outside the work area", tag, r)
 			}
-			full := h < work.Bottom-work.Top // not clamped by the work area
+			// not clamped by the work area nor by Windows (a top-level window
+			// is never taller than the real screen + its frame: the CI
+			// runner's 1024×768 screen limits the 1920×1080 model)
+			maxTrack := winapi.GetSystemMetrics(smCYMaxTrack)
+			full := h < work.Bottom-work.Top && (maxTrack == 0 || h < maxTrack)
 			for _, p := range chromePages(w) {
 				w.setPage(p)
 				w.layoutFit()
@@ -187,7 +194,7 @@ func TestCHK_TRAY_108_SettingsWindowHeight(t *testing.T) {
 				}
 				w.scrollTo(0, 0)
 			}
-			if dpi == 96 && work.Bottom >= 1000 && !full {
+			if dpi == 96 && work.Bottom >= 1000 && maxTrack >= 1080 && !full {
 				t.Errorf("%s: the window is clamped on a 1920×1080 screen (height %d)", tag, h)
 			}
 			w.close()

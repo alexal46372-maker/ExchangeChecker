@@ -178,8 +178,11 @@ type IPCRequest struct {
 	ProfileID string `json:"profileId,omitempty"`
 	// Profile is the unsaved profile of test_profile (version 2).
 	Profile *Profile `json:"profile,omitempty"`
-	// Password of Profile (test_profile). Never logged, never written to
-	// disk; String / GoString mask it.
+	// Password of Profile: the SQL login password of test_profile, of the
+	// sql_* wizard commands (one-off use, not stored) and of save_profile
+	// (the service stores it encrypted in secrets.dpapi; empty keeps the
+	// saved one, see ClearPassword). Never logged (scrubRequest, String /
+	// GoString mask it) and never returned to the tray.
 	Password string `json:"password,omitempty"`
 	// PointKey restricts ack_alert to one point (PointStatus.Key).
 	PointKey string `json:"pointKey,omitempty"`
@@ -279,8 +282,7 @@ type IPCRequest struct {
 	Auth      string   `json:"auth,omitempty"`
 	Database  string   `json:"database,omitempty"`
 	Tables    []string `json:"tables,omitempty"`
-	// Phase 14 speaker_tone (feat/tray-speaker; MERGE: take the
-	// service's definition): FreqHz and DurMs of the tone; DurMs 0 stops
+	// Phase 14 speaker_tone: FreqHz and DurMs of the tone; DurMs 0 stops
 	// it. DurMs is a pointer so the stop request carries "durMs":0.
 	FreqHz int  `json:"freqHz,omitempty"`
 	DurMs  *int `json:"durMs,omitempty"`

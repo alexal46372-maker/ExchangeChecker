@@ -20,9 +20,12 @@ type Protector interface {
 var SecretsEntropy = []byte("ExchangeChecker/secrets.dpapi/v1")
 
 // DPAPIProtector uses CryptProtectData with CRYPTPROTECT_LOCAL_MACHINE |
-// CRYPTPROTECT_UI_FORBIDDEN: the tray (user) encrypts, the LocalSystem
-// service decrypts. Access boundary = ACL of the ProgramData folder
-// (PLAN.md §4.1, §12 p.9).
+// CRYPTPROTECT_UI_FORBIDDEN: the LocalSystem service both encrypts and
+// decrypts (the tray never touches the files; it sends a SQL password in
+// save_profile and the service stores it encrypted in
+// secrets.dpapi). Access boundary = the DACL of the file (SYSTEM +
+// Administrators, SecretsSDDL) inside the data folder (PLAN.md §4.1,
+// §12 п. 58).
 type DPAPIProtector struct {
 	Entropy []byte
 }

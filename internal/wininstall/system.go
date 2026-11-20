@@ -5,7 +5,7 @@ import "time"
 // ServiceSpec is the SCM registration of the service.
 type ServiceSpec struct {
 	Name, DisplayName, ImagePath, Description string
-	// AutoStart: SERVICE_AUTO_START + delayed (checkbox on); false =
+	// AutoStart: SERVICE_AUTO_START + delayed ("Options" checkbox on, no /NOSTART); false =
 	// SERVICE_DEMAND_START.
 	AutoStart     bool
 	ResetPeriod   time.Duration

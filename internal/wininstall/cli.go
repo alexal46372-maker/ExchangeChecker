@@ -25,7 +25,7 @@ type Options struct {
 	Silent            bool
 	Uninstall         bool
 	Dir               string
-	NoStart           bool // the checkbox "start the service and start it automatically" off
+	NoStart           bool // /NOSTART or the "Options" page checkbox "start the service and start it automatically" off
 	NoShortcut        bool
 	NoDesktopShortcut bool // /NODESKTOPSHORTCUT (CHK-SETUP-16)
 	Log               string
@@ -82,7 +82,8 @@ func ParseArgs(args []string) (Options, error) {
 		case "LOG":
 			o.Log, err = needVal()
 		case "LANG":
-			// phase 13 (CHK-TRAY-86): Russian only; /LANG=xx accepted and ignored.
+			// phase 13 (CHK-TRAY-86): Russian only; /LANG=xx of old scripts is
+			// accepted (a value is still required) and ignored, also with /uninstall.
 			_, err = needVal()
 		default:
 			err = fmt.Errorf("%w: unknown switch /%s", ErrUsage, name)

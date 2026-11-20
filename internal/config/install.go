@@ -42,7 +42,7 @@ func DeliveryInstallerName(ver string) string {
 
 // InpOutx64 kernel driver (phase 14, decision of 10.11.2026: the built-in
 // «Тон» signal through the PC speaker on Win7 x64). Owner of these names:
-// EC Service (feat/svc-speaker opens InpOutDevicePath and starts the
+// EC Service (internal/pcspeaker opens InpOutDevicePath and starts the
 // service on demand); the installer copies the file and registers the
 // service (CHK-SETUP-19/20). The file is third_party/inpout/inpoutx64.sys,
 // unmodified, from the official highrez distribution (README there).

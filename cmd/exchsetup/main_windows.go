@@ -112,7 +112,7 @@ func run(args []string) int {
 			DataDir:    config.DefaultDir(),
 			Files:      files,
 			Version:    version.Version,
-					Now:        time.Now(),
+			Now:        time.Now(),
 		}, lg)
 		if res.Err != nil {
 			logf("ERROR: %v", res.Err)

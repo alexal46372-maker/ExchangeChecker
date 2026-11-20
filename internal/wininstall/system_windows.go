@@ -622,7 +622,6 @@ func (winSystem) MigrateInstallDir(oldDir, newDir string) ([]string, error) {
 	return copied, err
 }
 
-
 // walkNoReparse walks root without descending into reparse points/junctions
 // (os.Lstat + ModeSymlink). rel is slash-separated relative to root.
 func walkNoReparse(root, rel string, fn func(rel, full string, dir bool) error) error {

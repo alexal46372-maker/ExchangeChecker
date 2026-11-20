@@ -61,7 +61,6 @@ func hintFontPx() int32 {
 	return FolderHintFontPx
 }
 
-
 // FolderHintTop is y of the hint STATIC (below the path EDIT).
 func FolderHintTop() int32 { return ContentTop() + FolderEditOffset + WizardEditH + FolderHintGap }
 

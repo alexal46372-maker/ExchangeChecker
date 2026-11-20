@@ -22,13 +22,13 @@ const (
 	KeyDBStale    = "db.stale"
 	// KeyDBMuted: the database is muted until recovery by the service
 	// (mute_until_recovered; shown in the left menu, CHK-TRAY-91).
-	KeyDBMuted = "db.muted"
+	KeyDBMuted    = "db.muted"
 	KeyDBNone     = "db.none"
 	KeyDBNoPoints = "db.no_points"
 	// KeyDBToggleFailed: balloon after a failed set_enabled from the
 	// database check mark (CHK-TRAY-91).
 	KeyDBToggleFailed = "db.toggle_failed"
-	KeyDBNoData   = "db.no_data"
+	KeyDBNoData       = "db.no_data"
 
 	KeyPtSend     = "pt.send"
 	KeyPtRecv     = "pt.recv"
@@ -64,32 +64,32 @@ const (
 	KeyAlertAckFailed      = "alert.ack_failed"
 	KeyAlertCloseHint      = "alert.close_hint"
 
-	KeyPanelStalled        = "panel.stalled"
-	KeyPtStalled           = "pt.stalled"
-	KeyAlertTestBadge      = "alert.test_badge"
-	KeyMenuSummary         = "menu.summary"
-	KeySumTitle            = "sum.title"
-	KeySumHours            = "sum.hours"
-	KeySumTruncated        = "sum.truncated"
-	KeySumBusy             = "sum.busy"
-	KeySumEmpty            = "sum.empty"
-	KeySumClose            = "sum.close"
-	KeyAlarmTest           = "alarm.test"
-	KeyAlarmTestTip        = "alarm.test_tip"
-	KeyAlarmTestTipDenied  = "alarm.test_tip_denied"
-	KeyAlarmTestTitle      = "alarm.test_title"
-	KeyAlarmTestWarning    = "alarm.test_warning"
-	KeyAlarmTestError      = "alarm.test_error"
-	KeyAlarmTestViber      = "alarm.test_viber"
-	KeyAlarmTestRun        = "alarm.test_run"
-	KeyAlarmTestClose      = "alarm.test_close"
-	KeyAlarmTestNoViber    = "alarm.test_no_viber"
-	KeyAlarmTestRetry      = "alarm.test_retry"
-	KeyAlarmTestAccess     = "alarm.test_access"
-	KeySetStalledMin       = "set.stalled_min"
-	KeyTipSetStalled       = "tip.set_stalled"
-	KeyGenStalled          = "gen.stalled"
-	KeyCueStalled          = "cue.stalled"
+	KeyPanelStalled       = "panel.stalled"
+	KeyPtStalled          = "pt.stalled"
+	KeyAlertTestBadge     = "alert.test_badge"
+	KeyMenuSummary        = "menu.summary"
+	KeySumTitle           = "sum.title"
+	KeySumHours           = "sum.hours"
+	KeySumTruncated       = "sum.truncated"
+	KeySumBusy            = "sum.busy"
+	KeySumEmpty           = "sum.empty"
+	KeySumClose           = "sum.close"
+	KeyAlarmTest          = "alarm.test"
+	KeyAlarmTestTip       = "alarm.test_tip"
+	KeyAlarmTestTipDenied = "alarm.test_tip_denied"
+	KeyAlarmTestTitle     = "alarm.test_title"
+	KeyAlarmTestWarning   = "alarm.test_warning"
+	KeyAlarmTestError     = "alarm.test_error"
+	KeyAlarmTestViber     = "alarm.test_viber"
+	KeyAlarmTestRun       = "alarm.test_run"
+	KeyAlarmTestClose     = "alarm.test_close"
+	KeyAlarmTestNoViber   = "alarm.test_no_viber"
+	KeyAlarmTestRetry     = "alarm.test_retry"
+	KeyAlarmTestAccess    = "alarm.test_access"
+	KeySetStalledMin      = "set.stalled_min"
+	KeyTipSetStalled      = "tip.set_stalled"
+	KeyGenStalled         = "gen.stalled"
+	KeyCueStalled         = "cue.stalled"
 
 	// settings window (phase 6c, CHK-TRAY-04/05/06)
 	KeyMenuSettings         = "menu.settings"
@@ -239,107 +239,107 @@ const (
 	KeyGenPage              = "gen.page"
 	KeyGenProfilesPage      = "gen.profiles_page"
 	// phase 11 (CHK-TRAY-47): left navigation of the settings window
-	KeySetNavProfiles     = "set.nav_profiles"
-	KeyDiscCandidates     = "disc.candidates"
-	KeyDiscDetails        = "disc.details"
-	KeyDiscResultLabel    = "disc.result_label"
-	KeySetNavGeneral      = "set.nav_general"
-	KeySetNavViber        = "set.nav_viber"
+	KeySetNavProfiles  = "set.nav_profiles"
+	KeyDiscCandidates  = "disc.candidates"
+	KeyDiscDetails     = "disc.details"
+	KeyDiscResultLabel = "disc.result_label"
+	KeySetNavGeneral   = "set.nav_general"
+	KeySetNavViber     = "set.nav_viber"
 
-	KeySetNavEmail        = "set.nav_email"
-	KeyEmGroup            = "set.em_group"
-	KeyEmEnabled          = "set.em_enabled"
-	KeyEmHost             = "set.em_host"
-	KeyEmPort             = "set.em_port"
-	KeyEmTLSMode          = "set.em_tls_mode"
-	KeyEmTLSNone          = "set.em_tls_none"
-	KeyEmTLSStartTLS      = "set.em_tls_starttls"
-	KeyEmTLSImplicit      = "set.em_tls_tls"
-	KeyEmFromAddr         = "set.em_from_addr"
-	KeyEmPassword         = "set.em_password"
-	KeyEmClearPassword    = "set.em_clear_password"
-	KeyEmPasswordSaved    = "set.em_password_saved"
-	KeyEmPasswordNone     = "set.em_password_none"
-	KeyEmPasswordNew      = "set.em_password_new"
-	KeyEmPasswordClear    = "set.em_password_clear"
-	KeyEmPasswordNoneTLS  = "set.em_password_none_tls"
-	KeyEmRecipients       = "set.em_recipients"
-	KeyEmBadAddr          = "set.em_bad_addr"
-	KeyEmDays             = "set.em_days"
-	KeyEmFrom             = "set.em_from"
-	KeyEmTo               = "set.em_to"
-	KeyEmEvents           = "set.em_events"
-	KeyEmTestTo           = "set.em_test_to"
-	KeyEmTestAll          = "set.em_test_all"
-	KeyEmTest             = "set.em_test"
-	KeyEmTesting          = "set.em_testing"
-	KeyEmTestOK           = "set.em_test_ok"
-	KeyEmTestFailed       = "set.em_test_failed"
-	KeyEmTestItemOK       = "set.em_test_item_ok"
-	KeyEmTestNoResult     = "set.em_test_no_result"
-	KeyEmStatus           = "set.em_status"
-	KeyEmLastOK           = "set.em_last_ok"
-	KeyEmLastError        = "set.em_last_error"
-	KeyEmSaved            = "set.em_saved"
-	KeyTipEmPage          = "tip.em_page"
-	KeyTipEmEnabled       = "tip.em_enabled"
-	KeyTipEmHost          = "tip.em_host"
-	KeyTipEmPort          = "tip.em_port"
-	KeyTipEmTLSMode       = "tip.em_tls_mode"
-	KeyTipEmFromAddr      = "tip.em_from_addr"
-	KeyTipEmPassword      = "tip.em_password"
-	KeyTipEmClearPassword = "tip.em_clear_password"
-	KeyTipEmRecipients    = "tip.em_recipients"
-	KeyTipEmDay           = "tip.em_day"
-	KeyTipEmFrom          = "tip.em_from"
-	KeyTipEmTo            = "tip.em_to"
-	KeyTipEmEvent         = "tip.em_event"
-	KeyTipEmTestTo        = "tip.em_test_to"
-	KeyTipEmTest          = "tip.em_test"
-	KeyCueEmHost          = "cue.em_host"
-	KeyCueEmPort          = "cue.em_port"
-	KeyCueEmFrom          = "cue.em_from"
-	KeyCueEmPassword      = "cue.em_password"
-	KeyXferEmailCheck     = "set.xfer_email_check"
+	KeySetNavEmail         = "set.nav_email"
+	KeyEmGroup             = "set.em_group"
+	KeyEmEnabled           = "set.em_enabled"
+	KeyEmHost              = "set.em_host"
+	KeyEmPort              = "set.em_port"
+	KeyEmTLSMode           = "set.em_tls_mode"
+	KeyEmTLSNone           = "set.em_tls_none"
+	KeyEmTLSStartTLS       = "set.em_tls_starttls"
+	KeyEmTLSImplicit       = "set.em_tls_tls"
+	KeyEmFromAddr          = "set.em_from_addr"
+	KeyEmPassword          = "set.em_password"
+	KeyEmClearPassword     = "set.em_clear_password"
+	KeyEmPasswordSaved     = "set.em_password_saved"
+	KeyEmPasswordNone      = "set.em_password_none"
+	KeyEmPasswordNew       = "set.em_password_new"
+	KeyEmPasswordClear     = "set.em_password_clear"
+	KeyEmPasswordNoneTLS   = "set.em_password_none_tls"
+	KeyEmRecipients        = "set.em_recipients"
+	KeyEmBadAddr           = "set.em_bad_addr"
+	KeyEmDays              = "set.em_days"
+	KeyEmFrom              = "set.em_from"
+	KeyEmTo                = "set.em_to"
+	KeyEmEvents            = "set.em_events"
+	KeyEmTestTo            = "set.em_test_to"
+	KeyEmTestAll           = "set.em_test_all"
+	KeyEmTest              = "set.em_test"
+	KeyEmTesting           = "set.em_testing"
+	KeyEmTestOK            = "set.em_test_ok"
+	KeyEmTestFailed        = "set.em_test_failed"
+	KeyEmTestItemOK        = "set.em_test_item_ok"
+	KeyEmTestNoResult      = "set.em_test_no_result"
+	KeyEmStatus            = "set.em_status"
+	KeyEmLastOK            = "set.em_last_ok"
+	KeyEmLastError         = "set.em_last_error"
+	KeyEmSaved             = "set.em_saved"
+	KeyTipEmPage           = "tip.em_page"
+	KeyTipEmEnabled        = "tip.em_enabled"
+	KeyTipEmHost           = "tip.em_host"
+	KeyTipEmPort           = "tip.em_port"
+	KeyTipEmTLSMode        = "tip.em_tls_mode"
+	KeyTipEmFromAddr       = "tip.em_from_addr"
+	KeyTipEmPassword       = "tip.em_password"
+	KeyTipEmClearPassword  = "tip.em_clear_password"
+	KeyTipEmRecipients     = "tip.em_recipients"
+	KeyTipEmDay            = "tip.em_day"
+	KeyTipEmFrom           = "tip.em_from"
+	KeyTipEmTo             = "tip.em_to"
+	KeyTipEmEvent          = "tip.em_event"
+	KeyTipEmTestTo         = "tip.em_test_to"
+	KeyTipEmTest           = "tip.em_test"
+	KeyCueEmHost           = "cue.em_host"
+	KeyCueEmPort           = "cue.em_port"
+	KeyCueEmFrom           = "cue.em_from"
+	KeyCueEmPassword       = "cue.em_password"
+	KeyXferEmailCheck      = "set.xfer_email_check"
 	KeyXferEmailWarnExport = "set.xfer_email_warn_export"
 	KeyXferEmailWarnImport = "set.xfer_email_warn_import"
-	KeyTipXferEmail       = "tip.xfer_email"
-	KeyTipSetNavProfiles  = "tip.set.nav_profiles"
-	KeyGenPoll            = "gen.poll"
-	KeyGenWarn            = "gen.warn"
-	KeyGenError           = "gen.error"
-	KeyGenBeepEnabled     = "gen.beep_enabled"
-	KeyGenWarnFreq        = "gen.warn_freq"
-	KeyGenWarnDur         = "gen.warn_dur"
-	KeyGenErrorFreq       = "gen.error_freq"
-	KeyGenErrorDur        = "gen.error_dur"
-	KeyGenGap             = "gen.gap"
-	KeyGenAutostart       = "gen.autostart"
-	KeyGenNote            = "gen.note"
-	KeyGenSaved           = "gen.saved"
-	KeySetTesting         = "set.testing"
-	KeySetTestCanceled    = "set.test_canceled"
-	KeySetTestOK          = "set.test_ok"
-	KeySetTestFailed      = "set.test_failed"
-	KeySetTestVersion     = "set.test_version"
-	KeySetTestCompat      = "set.test_compat"
-	KeySetTestEncrypt     = "set.test_encrypt"
-	KeySetTestNoReply     = "set.test_no_reply"
-	KeySetPolled          = "set.polled"
-	KeySetPollCoalesced   = "set.poll_coalesced"
-	KeySetNotConnected    = "set.not_connected"
-	KeySetChangedOffline  = "set.changed_offline"
-	KeySetUnsupported     = "set.unsupported"
-	KeySetTooLarge        = "set.too_large"
-	KeySetNoRevision      = "set.no_revision"
-	KeySetConflictHint    = "set.conflict_hint"
-	KeySetOtherInvalid    = "set.other_invalid"
-	KeySetAccessHint      = "set.access_hint"
-	KeySetRateHint        = "set.rate_hint"
-	KeySetTimeoutHint     = "set.timeout_hint"
-	KeySetFailed          = "set.failed"
-	KeySetElevateCanceled = "set.elevate_canceled"
-	KeySetElevateFailed   = "set.elevate_failed"
+	KeyTipXferEmail        = "tip.xfer_email"
+	KeyTipSetNavProfiles   = "tip.set.nav_profiles"
+	KeyGenPoll             = "gen.poll"
+	KeyGenWarn             = "gen.warn"
+	KeyGenError            = "gen.error"
+	KeyGenBeepEnabled      = "gen.beep_enabled"
+	KeyGenWarnFreq         = "gen.warn_freq"
+	KeyGenWarnDur          = "gen.warn_dur"
+	KeyGenErrorFreq        = "gen.error_freq"
+	KeyGenErrorDur         = "gen.error_dur"
+	KeyGenGap              = "gen.gap"
+	KeyGenAutostart        = "gen.autostart"
+	KeyGenNote             = "gen.note"
+	KeyGenSaved            = "gen.saved"
+	KeySetTesting          = "set.testing"
+	KeySetTestCanceled     = "set.test_canceled"
+	KeySetTestOK           = "set.test_ok"
+	KeySetTestFailed       = "set.test_failed"
+	KeySetTestVersion      = "set.test_version"
+	KeySetTestCompat       = "set.test_compat"
+	KeySetTestEncrypt      = "set.test_encrypt"
+	KeySetTestNoReply      = "set.test_no_reply"
+	KeySetPolled           = "set.polled"
+	KeySetPollCoalesced    = "set.poll_coalesced"
+	KeySetNotConnected     = "set.not_connected"
+	KeySetChangedOffline   = "set.changed_offline"
+	KeySetUnsupported      = "set.unsupported"
+	KeySetTooLarge         = "set.too_large"
+	KeySetNoRevision       = "set.no_revision"
+	KeySetConflictHint     = "set.conflict_hint"
+	KeySetOtherInvalid     = "set.other_invalid"
+	KeySetAccessHint       = "set.access_hint"
+	KeySetRateHint         = "set.rate_hint"
+	KeySetTimeoutHint      = "set.timeout_hint"
+	KeySetFailed           = "set.failed"
+	KeySetElevateCanceled  = "set.elevate_canceled"
+	KeySetElevateFailed    = "set.elevate_failed"
 
 	KeyUnknownMessage = "msg.unknown"
 )
@@ -389,7 +389,7 @@ const (
 	KeyTipSetList         = "tip.set.list"
 	KeyTipSetAdd          = "tip.set.add"
 	KeyTipSetDelete       = "tip.set.delete"
-	KeyTipSetClone         = "tip.set.clone"
+	KeyTipSetClone        = "tip.set.clone"
 	KeyTipSetDiscover     = "tip.set.discover"
 	KeyTipSetName         = "tip.set.name"
 	KeyTipSetHost         = "tip.set.host"
@@ -563,41 +563,41 @@ const (
 
 // phase 9b part 2: «Добавить базу» wizard (CHK-TRAY-30..32)
 const (
-	KeyWizTitle            = "wiz.title"
-	KeyWizStep             = "wiz.step"
-	KeyWizStepServer       = "wiz.step_server"
-	KeyWizStepDB           = "wiz.step_db"
-	KeyWizStepFinish       = "wiz.step_finish"
-	KeyWizServer           = "wiz.server"
-	KeyWizFind             = "wiz.find"
-	KeyWizBrowsing         = "wiz.browsing"
-	KeyWizFound            = "wiz.found"
-	KeyWizFoundPartial     = "wiz.found_partial"
-	KeyWizNoneFound        = "wiz.none_found"
-	KeyWizRateLimited      = "wiz.rate_limited"
-	KeyWizBusy             = "wiz.busy"
-	KeyWizPort             = "wiz.port"
-	KeyWizAuth             = "wiz.auth"
-	KeyWizAuthSQL          = "wiz.auth_sql"
-	KeyWizAuthWindows      = "wiz.auth_windows"
-	KeyWizLogin            = "wiz.login"
-	KeyWizPassword         = "wiz.password"
-	KeyWizEncrypt          = "wiz.encrypt"
-	KeyWizDBs              = "wiz.dbs"
-	KeyWizRefresh          = "wiz.refresh"
-	KeyWizDBLoading        = "wiz.db_loading"
-	KeyWizDBCount          = "wiz.db_count"
-	KeyWizDBTruncated      = "wiz.db_truncated"
-	KeyWizDB1C             = "wiz.db_1c"
-	KeyWizDBNode           = "wiz.db_node"
-	KeyWizDBSize           = "wiz.db_size"
-	KeyWizDBNone           = "wiz.db_none"
-	KeyWizTesting          = "wiz.testing"
-	KeyWizTestOK           = "wiz.test_ok"
-	KeyWizDiscovering      = "wiz.discovering"
-	KeyWizApplied          = "wiz.applied"
-	KeyWizChoose           = "wiz.choose"
-	KeyWizChosen           = "wiz.chosen"
+	KeyWizTitle        = "wiz.title"
+	KeyWizStep         = "wiz.step"
+	KeyWizStepServer   = "wiz.step_server"
+	KeyWizStepDB       = "wiz.step_db"
+	KeyWizStepFinish   = "wiz.step_finish"
+	KeyWizServer       = "wiz.server"
+	KeyWizFind         = "wiz.find"
+	KeyWizBrowsing     = "wiz.browsing"
+	KeyWizFound        = "wiz.found"
+	KeyWizFoundPartial = "wiz.found_partial"
+	KeyWizNoneFound    = "wiz.none_found"
+	KeyWizRateLimited  = "wiz.rate_limited"
+	KeyWizBusy         = "wiz.busy"
+	KeyWizPort         = "wiz.port"
+	KeyWizAuth         = "wiz.auth"
+	KeyWizAuthSQL      = "wiz.auth_sql"
+	KeyWizAuthWindows  = "wiz.auth_windows"
+	KeyWizLogin        = "wiz.login"
+	KeyWizPassword     = "wiz.password"
+	KeyWizEncrypt      = "wiz.encrypt"
+	KeyWizDBs          = "wiz.dbs"
+	KeyWizRefresh      = "wiz.refresh"
+	KeyWizDBLoading    = "wiz.db_loading"
+	KeyWizDBCount      = "wiz.db_count"
+	KeyWizDBTruncated  = "wiz.db_truncated"
+	KeyWizDB1C         = "wiz.db_1c"
+	KeyWizDBNode       = "wiz.db_node"
+	KeyWizDBSize       = "wiz.db_size"
+	KeyWizDBNone       = "wiz.db_none"
+	KeyWizTesting      = "wiz.testing"
+	KeyWizTestOK       = "wiz.test_ok"
+	KeyWizDiscovering  = "wiz.discovering"
+	KeyWizApplied      = "wiz.applied"
+	KeyWizChoose       = "wiz.choose"
+	KeyWizChosen       = "wiz.chosen"
 	// wizard auto-find (CHK-TRAY-83..85)
 	KeyWizFoundPlan        = "wiz.found_plan"
 	KeyWizFoundPlans       = "wiz.found_plans"
@@ -718,12 +718,12 @@ const (
 	KeySoundOutputBoth     = "sound.output_both"
 	KeySoundOutputFile     = "sound.output_file"
 	KeyTipSoundOutput      = "tip.sound_output"
-	KeySpeakerAvailable   = "speaker.available"
-	KeySpeakerUnavailable = "speaker.unavailable"
-	KeySpeakerNoService   = "speaker.no_service"
-	KeySpeakerNoCap       = "speaker.no_cap"
-	KeySpeakerNoReason    = "speaker.no_reason"
-	KeySpeakerTimeout     = "speaker.timeout"
+	KeySpeakerAvailable    = "speaker.available"
+	KeySpeakerUnavailable  = "speaker.unavailable"
+	KeySpeakerNoService    = "speaker.no_service"
+	KeySpeakerNoCap        = "speaker.no_cap"
+	KeySpeakerNoReason     = "speaker.no_reason"
+	KeySpeakerTimeout      = "speaker.timeout"
 	// short reasons of the service (speaker_status.reason, notify.speaker_*)
 	// for the status line and the journal (CHK-TRAY-99)
 	KeySpeakerUnsupportedOS = "speaker.unsupported_os"
@@ -736,19 +736,19 @@ const (
 	KeySpeakerInvalid       = "speaker.invalid"
 	KeySpeakerFailed        = "speaker.failed"
 	KeySpeakerDenied        = "speaker.denied"
-	KeySpeakerFallback    = "speaker.fallback"
-	KeyTipSoundKind     = "tip.sound_kind"
-	KeyTipSoundFreq     = "tip.sound_freq"
-	KeyTipSoundDur      = "tip.sound_dur"
-	KeyTipSoundFile     = "tip.sound_file"
-	KeyTipSoundBrowse   = "tip.sound_browse"
-	KeyTipSoundVolume   = "tip.sound_volume"
-	KeyTipSoundLoop     = "tip.sound_loop"
-	KeyTipSoundGap      = "tip.sound_gap"
-	KeyTipSoundTest     = "tip.sound_test"
-	KeyTipSoundSave     = "tip.sound_save"
-	KeyVolumeTitle      = "volume.title"
-	KeyTipVolume        = "tip.volume"
+	KeySpeakerFallback      = "speaker.fallback"
+	KeyTipSoundKind         = "tip.sound_kind"
+	KeyTipSoundFreq         = "tip.sound_freq"
+	KeyTipSoundDur          = "tip.sound_dur"
+	KeyTipSoundFile         = "tip.sound_file"
+	KeyTipSoundBrowse       = "tip.sound_browse"
+	KeyTipSoundVolume       = "tip.sound_volume"
+	KeyTipSoundLoop         = "tip.sound_loop"
+	KeyTipSoundGap          = "tip.sound_gap"
+	KeyTipSoundTest         = "tip.sound_test"
+	KeyTipSoundSave         = "tip.sound_save"
+	KeyVolumeTitle          = "volume.title"
+	KeyTipVolume            = "tip.volume"
 )
 
 // phase 10 D
@@ -764,126 +764,126 @@ const (
 	KeySetGroupGeneral = "set.group_general"
 	KeySetGroupSound   = "set.group_sound"
 	// phase 10 D4: «Viber» page
-	KeyVbPage             = "set.vb_page"
-	KeyVbGroup            = "set.vb_group"
-	KeyVbEnabled          = "set.vb_enabled"
-	KeyVbToken            = "set.vb_token"
-	KeyVbClearToken       = "set.vb_clear_token"
-	KeyVbTokenSaved       = "set.vb_token_saved"
-	KeyVbTokenNone        = "set.vb_token_none"
-	KeyVbTokenNew         = "set.vb_token_new"
-	KeyVbTokenClear       = "set.vb_token_clear"
-	KeyVbRecipients       = "set.vb_recipients"
-	KeyVbDays             = "set.vb_days"
-	KeyVbDay1             = "set.vb_day1"
-	KeyVbDay2             = "set.vb_day2"
-	KeyVbDay3             = "set.vb_day3"
-	KeyVbDay4             = "set.vb_day4"
-	KeyVbDay5             = "set.vb_day5"
-	KeyVbDay6             = "set.vb_day6"
-	KeyVbDay7             = "set.vb_day7"
-	KeyVbFrom             = "set.vb_from"
-	KeyVbTo               = "set.vb_to"
-	KeyVbEvents           = "set.vb_events"
-	KeyVbEvError          = "set.vb_ev_error"
-	KeyVbEvWarning        = "set.vb_ev_warning"
-	KeyVbEvRecovered      = "set.vb_ev_recovered"
-	KeyVbEvNoConn         = "set.vb_ev_no_connection"
-	KeyVbReminder         = "set.vb_reminder"
-	KeyVbReminderHint     = "set.vb_reminder_hint"
-	KeyVbTestTo           = "set.vb_test_to"
-	KeyVbTestAll          = "set.vb_test_all"
-	KeyVbTest             = "set.vb_test"
-	KeyVbTesting          = "set.vb_testing"
-	KeyVbTestOK           = "set.vb_test_ok"
-	KeyVbTestFailed       = "set.vb_test_failed"
-	KeyVbTestItemOK       = "set.vb_test_item_ok"
-	KeyVbTestNoResult     = "set.vb_test_no_result"
-	KeyVbStatus           = "set.vb_status"
-	KeyVbLastOK           = "set.vb_last_ok"
-	KeyVbLastError        = "set.vb_last_error"
-	KeyVbSaved            = "set.vb_saved"
+	KeyVbPage         = "set.vb_page"
+	KeyVbGroup        = "set.vb_group"
+	KeyVbEnabled      = "set.vb_enabled"
+	KeyVbToken        = "set.vb_token"
+	KeyVbClearToken   = "set.vb_clear_token"
+	KeyVbTokenSaved   = "set.vb_token_saved"
+	KeyVbTokenNone    = "set.vb_token_none"
+	KeyVbTokenNew     = "set.vb_token_new"
+	KeyVbTokenClear   = "set.vb_token_clear"
+	KeyVbRecipients   = "set.vb_recipients"
+	KeyVbDays         = "set.vb_days"
+	KeyVbDay1         = "set.vb_day1"
+	KeyVbDay2         = "set.vb_day2"
+	KeyVbDay3         = "set.vb_day3"
+	KeyVbDay4         = "set.vb_day4"
+	KeyVbDay5         = "set.vb_day5"
+	KeyVbDay6         = "set.vb_day6"
+	KeyVbDay7         = "set.vb_day7"
+	KeyVbFrom         = "set.vb_from"
+	KeyVbTo           = "set.vb_to"
+	KeyVbEvents       = "set.vb_events"
+	KeyVbEvError      = "set.vb_ev_error"
+	KeyVbEvWarning    = "set.vb_ev_warning"
+	KeyVbEvRecovered  = "set.vb_ev_recovered"
+	KeyVbEvNoConn     = "set.vb_ev_no_connection"
+	KeyVbReminder     = "set.vb_reminder"
+	KeyVbReminderHint = "set.vb_reminder_hint"
+	KeyVbTestTo       = "set.vb_test_to"
+	KeyVbTestAll      = "set.vb_test_all"
+	KeyVbTest         = "set.vb_test"
+	KeyVbTesting      = "set.vb_testing"
+	KeyVbTestOK       = "set.vb_test_ok"
+	KeyVbTestFailed   = "set.vb_test_failed"
+	KeyVbTestItemOK   = "set.vb_test_item_ok"
+	KeyVbTestNoResult = "set.vb_test_no_result"
+	KeyVbStatus       = "set.vb_status"
+	KeyVbLastOK       = "set.vb_last_ok"
+	KeyVbLastError    = "set.vb_last_error"
+	KeyVbSaved        = "set.vb_saved"
 	// Telegram page (phase 13, CHK-TRAY-94).
-	KeyTgGroup           = "set.tg_group"
+	KeyTgGroup = "set.tg_group"
 	// «Мигание экрана» on «Общие» (phase 13, CHK-TRAY-95).
 	KeyGenScreenFlash       = "gen.screen_flash"
 	KeyGenScreenFlashFailed = "gen.screen_flash_failed"
 	KeyTipGenScreenFlash    = "tip.gen_screen_flash"
-	KeyTgEnabled         = "set.tg_enabled"
-	KeyTgToken           = "set.tg_token"
-	KeyTgClearToken      = "set.tg_clear_token"
-	KeyTgChat            = "set.tg_chat"
-	KeyTgChatHint        = "set.tg_chat_hint"
-	KeyTgTest            = "set.tg_test"
-	KeyTgTesting         = "set.tg_testing"
-	KeyTgTestOK          = "set.tg_test_ok"
-	KeyTgTestFailed      = "set.tg_test_failed"
-	KeyTgTestRateLimited = "set.tg_test_rate_limited"
-	KeyTgSaved           = "set.tg_saved"
-	KeySetNavTelegram    = "set.nav_telegram"
-	KeyTipTgPage         = "tip.tg_page"
-	KeyTipTgEnabled      = "tip.tg_enabled"
-	KeyTipTgToken        = "tip.tg_token"
-	KeyTipTgClearToken   = "tip.tg_clear_token"
-	KeyTipTgChat         = "tip.tg_chat"
-	KeyTipTgTest         = "tip.tg_test"
-	KeyTipVbPage          = "tip.vb_page"
-	KeyTipVbEnabled       = "tip.vb_enabled"
-	KeyTipVbToken         = "tip.vb_token"
-	KeyTipVbClearToken    = "tip.vb_clear_token"
-	KeyTipVbRecipients    = "tip.vb_recipients"
-	KeyTipVbDay           = "tip.vb_day"
-	KeyTipVbFrom          = "tip.vb_from"
-	KeyTipVbTo            = "tip.vb_to"
-	KeyTipVbEvent         = "tip.vb_event"
-	KeyTipVbReminder      = "tip.vb_reminder"
-	KeyTipVbTestTo        = "tip.vb_test_to"
-	KeyTipVbTest          = "tip.vb_test"
-	KeyXferExport         = "set.xfer_export"
-	KeyXferImport         = "set.xfer_import"
-	KeyTipXferExport      = "tip.xfer_export"
-	KeyTipXferImport      = "tip.xfer_import"
-	KeyXferFilter         = "set.xfer_filter"
-	KeyXferContainsLogins = "set.xfer_contains_logins"
-	KeyXferConflict       = "set.xfer_conflict"
-	KeyXferExported       = "set.xfer_exported"
-	KeyXferWriteFailed    = "set.xfer_write_failed"
-	KeyXferReadFailed     = "set.xfer_read_failed"
-	KeyXferTooLarge       = "set.xfer_too_large"
-	KeyXferBadFile        = "set.xfer_bad_file"
-	KeyXferTitle          = "set.xfer_title"
-	KeyXferMerge          = "set.xfer_merge"
-	KeyXferReplace        = "set.xfer_replace"
-	KeyXferTrayCheck      = "set.xfer_tray_check"
-	KeyXferDo             = "set.xfer_do"
-	KeyXferChecking       = "set.xfer_checking"
-	KeyXferImporting      = "set.xfer_importing"
-	KeyXferAdded          = "set.xfer_added"
-	KeyXferUpdated        = "set.xfer_updated"
-	KeyXferRemoved        = "set.xfer_removed"
-	KeyXferNeedPw         = "set.xfer_need_pw"
-	KeyXferNoChanges      = "set.xfer_no_changes"
-	KeyXferNoTray         = "set.xfer_no_tray"
-	KeyXferTrayKept       = "set.xfer_tray_kept"
-	KeyXferTraySummary    = "set.xfer_tray_summary"
-	KeyXferOn             = "set.xfer_on"
-	KeyXferOff            = "set.xfer_off"
-	KeyXferNoSoundFile    = "set.xfer_no_sound_file"
-	KeyXferDone           = "set.xfer_done"
-	KeyXferTrayApplied    = "set.xfer_tray_applied"
-	KeyXferOtherUser      = "set.xfer_other_user"
-	KeyXferEnterPw        = "set.xfer_enter_pw"
-	KeyXferTrayFailed     = "set.xfer_tray_failed"
-	KeyXferViberCheck     = "set.xfer_viber_check"
-	KeyXferViberWarnExport = "set.xfer_viber_warn_export"
-	KeyXferViberWarnImport = "set.xfer_viber_warn_import"
-	KeyXferExportTitle    = "set.xfer_export_title"
-	KeyTipXferMerge       = "tip.xfer_merge"
-	KeyTipXferReplace     = "tip.xfer_replace"
-	KeyTipXferTray        = "tip.xfer_tray"
-	KeyTipXferViber       = "tip.xfer_viber"
-	KeyTipXferDo          = "tip.xfer_do"
-	KeyTipXferPreview     = "tip.xfer_preview"
+	KeyTgEnabled            = "set.tg_enabled"
+	KeyTgToken              = "set.tg_token"
+	KeyTgClearToken         = "set.tg_clear_token"
+	KeyTgChat               = "set.tg_chat"
+	KeyTgChatHint           = "set.tg_chat_hint"
+	KeyTgTest               = "set.tg_test"
+	KeyTgTesting            = "set.tg_testing"
+	KeyTgTestOK             = "set.tg_test_ok"
+	KeyTgTestFailed         = "set.tg_test_failed"
+	KeyTgTestRateLimited    = "set.tg_test_rate_limited"
+	KeyTgSaved              = "set.tg_saved"
+	KeySetNavTelegram       = "set.nav_telegram"
+	KeyTipTgPage            = "tip.tg_page"
+	KeyTipTgEnabled         = "tip.tg_enabled"
+	KeyTipTgToken           = "tip.tg_token"
+	KeyTipTgClearToken      = "tip.tg_clear_token"
+	KeyTipTgChat            = "tip.tg_chat"
+	KeyTipTgTest            = "tip.tg_test"
+	KeyTipVbPage            = "tip.vb_page"
+	KeyTipVbEnabled         = "tip.vb_enabled"
+	KeyTipVbToken           = "tip.vb_token"
+	KeyTipVbClearToken      = "tip.vb_clear_token"
+	KeyTipVbRecipients      = "tip.vb_recipients"
+	KeyTipVbDay             = "tip.vb_day"
+	KeyTipVbFrom            = "tip.vb_from"
+	KeyTipVbTo              = "tip.vb_to"
+	KeyTipVbEvent           = "tip.vb_event"
+	KeyTipVbReminder        = "tip.vb_reminder"
+	KeyTipVbTestTo          = "tip.vb_test_to"
+	KeyTipVbTest            = "tip.vb_test"
+	KeyXferExport           = "set.xfer_export"
+	KeyXferImport           = "set.xfer_import"
+	KeyTipXferExport        = "tip.xfer_export"
+	KeyTipXferImport        = "tip.xfer_import"
+	KeyXferFilter           = "set.xfer_filter"
+	KeyXferContainsLogins   = "set.xfer_contains_logins"
+	KeyXferConflict         = "set.xfer_conflict"
+	KeyXferExported         = "set.xfer_exported"
+	KeyXferWriteFailed      = "set.xfer_write_failed"
+	KeyXferReadFailed       = "set.xfer_read_failed"
+	KeyXferTooLarge         = "set.xfer_too_large"
+	KeyXferBadFile          = "set.xfer_bad_file"
+	KeyXferTitle            = "set.xfer_title"
+	KeyXferMerge            = "set.xfer_merge"
+	KeyXferReplace          = "set.xfer_replace"
+	KeyXferTrayCheck        = "set.xfer_tray_check"
+	KeyXferDo               = "set.xfer_do"
+	KeyXferChecking         = "set.xfer_checking"
+	KeyXferImporting        = "set.xfer_importing"
+	KeyXferAdded            = "set.xfer_added"
+	KeyXferUpdated          = "set.xfer_updated"
+	KeyXferRemoved          = "set.xfer_removed"
+	KeyXferNeedPw           = "set.xfer_need_pw"
+	KeyXferNoChanges        = "set.xfer_no_changes"
+	KeyXferNoTray           = "set.xfer_no_tray"
+	KeyXferTrayKept         = "set.xfer_tray_kept"
+	KeyXferTraySummary      = "set.xfer_tray_summary"
+	KeyXferOn               = "set.xfer_on"
+	KeyXferOff              = "set.xfer_off"
+	KeyXferNoSoundFile      = "set.xfer_no_sound_file"
+	KeyXferDone             = "set.xfer_done"
+	KeyXferTrayApplied      = "set.xfer_tray_applied"
+	KeyXferOtherUser        = "set.xfer_other_user"
+	KeyXferEnterPw          = "set.xfer_enter_pw"
+	KeyXferTrayFailed       = "set.xfer_tray_failed"
+	KeyXferViberCheck       = "set.xfer_viber_check"
+	KeyXferViberWarnExport  = "set.xfer_viber_warn_export"
+	KeyXferViberWarnImport  = "set.xfer_viber_warn_import"
+	KeyXferExportTitle      = "set.xfer_export_title"
+	KeyTipXferMerge         = "tip.xfer_merge"
+	KeyTipXferReplace       = "tip.xfer_replace"
+	KeyTipXferTray          = "tip.xfer_tray"
+	KeyTipXferViber         = "tip.xfer_viber"
+	KeyTipXferDo            = "tip.xfer_do"
+	KeyTipXferPreview       = "tip.xfer_preview"
 )
 
 var catalog = map[string]string{ // key -> text (RU)
@@ -998,14 +998,14 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyLevelWarning: "предупреждение",
 	KeyLevelError:   "ошибка",
 
-	KeyDBDisabled: "выключена",
-	KeyDBPending:  "ожидание опроса",
-	KeyDBStale:    "последние известные данные",
-	KeyDBMuted:    "заглушено",
-	KeyDBNone:     "Нет настроенных баз",
-	KeyDBNoPoints: "Нет точек обмена",
+	KeyDBDisabled:     "выключена",
+	KeyDBPending:      "ожидание опроса",
+	KeyDBStale:        "последние известные данные",
+	KeyDBMuted:        "заглушено",
+	KeyDBNone:         "Нет настроенных баз",
+	KeyDBNoPoints:     "Нет точек обмена",
 	KeyDBToggleFailed: "Не удалось переключить опрос базы",
-	KeyDBNoData:   "Нет данных от службы",
+	KeyDBNoData:       "Нет данных от службы",
 
 	KeyPtSend:     "отпр.",
 	KeyPtRecv:     "приём",
@@ -1239,100 +1239,100 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySetNavGeneral:          "Общие настройки",
 	KeySetNavViber:            "Уведомления Viber",
 
-	KeySetNavEmail:            "Уведомления e-mail",
-	KeyEmGroup:                "Уведомления e-mail",
-	KeyEmEnabled:              "Отправлять уведомления по e-mail",
-	KeyEmHost:                 "SMTP-сервер:",
-	KeyEmPort:                 "Порт:",
-	KeyEmTLSMode:              "TLS:",
-	KeyEmTLSNone:              "Без TLS (без AUTH)",
-	KeyEmTLSStartTLS:          "STARTTLS",
-	KeyEmTLSImplicit:          "TLS (порт 465)",
-	KeyEmFromAddr:             "От кого (From):",
-	KeyEmPassword:             "Пароль SMTP:",
-	KeyEmClearPassword:        "Удалить сохранённый пароль",
-	KeyEmPasswordSaved:        "Пароль сохранён (не показывается).",
-	KeyEmPasswordNone:         "Пароль не задан.",
-	KeyEmPasswordNew:          "Новый пароль будет сохранён.",
-	KeyEmPasswordClear:        "Сохранённый пароль будет удалён.",
-	KeyEmPasswordNoneTLS:      "Пароль не используется (tlsMode = none).",
-	KeyEmRecipients:           "Получатели (адреса через запятую, точку с запятой, пробел или с новой строки):",
-	KeyEmBadAddr:              "Неверный адрес e-mail получателя: «%s». Укажите адреса через запятую, точку с запятой, пробел или с новой строки, например: ivanov@mail.ru, petrov@mail.ru",
-	KeyEmDays:                 "Дни:",
-	KeyEmFrom:                 "Время с (ЧЧ:ММ):",
-	KeyEmTo:                   "по:",
-	KeyEmEvents:               "События:",
-	KeyEmTestTo:               "Тест для:",
-	KeyEmTestAll:              "Все получатели",
-	KeyEmTest:                 "Тест",
-	KeyEmTesting:              "Отправка теста…",
-	KeyEmTestOK:               "Тест отправлен.",
-	KeyEmTestFailed:           "Тест не удался.",
-	KeyEmTestItemOK:           "доставлено",
-	KeyEmTestNoResult:         "Нет результата теста.",
-	KeyEmStatus:               "Отправлено: %d, в очереди: %d, отброшено: %d",
-	KeyEmLastOK:               "Последняя успешная отправка: %s",
-	KeyEmLastError:            "Последняя ошибка (%s): %s",
-	KeyEmSaved:                "Настройки e-mail сохранены.",
-	KeyTipEmPage:              "Уведомления по электронной почте",
-	KeyTipEmEnabled:           "Включить отправку писем по событиям обмена",
-	KeyTipEmHost:              "Имя или адрес SMTP-сервера",
-	KeyTipEmPort:              "Порт SMTP (обычно 25, 465 или 587)",
-	KeyTipEmTLSMode:           "none — без TLS и без AUTH; starttls / tls — AUTH с паролем, логин = From",
-	KeyTipEmFromAddr:          "Адрес отправителя (и логин SMTP AUTH)",
-	KeyTipEmPassword:          "Пароль SMTP (только запись; при tlsMode=none не используется)",
-	KeyTipEmClearPassword:     "Удалить пароль, сохранённый службой",
-	KeyTipEmRecipients:        "Адреса через запятую, точку с запятой, пробел или с новой строки (например: ivanov@mail.ru, petrov@mail.ru); строка «ID адрес имя» тоже допускается",
-	KeyTipEmDay:               "День недели окна рассылки",
-	KeyTipEmFrom:              "Начало окна (локальное время службы)",
-	KeyTipEmTo:                "Конец окна (локальное время службы)",
-	KeyTipEmEvent:             "Какие события слать письмом",
-	KeyTipEmTestTo:            "Кому отправить тестовое письмо",
-	KeyTipEmTest:              "Отправить тестовое письмо сейчас (игнорирует расписание)",
-	KeyCueEmHost:              "smtp.example.com",
-	KeyCueEmPort:              "587",
-	KeyCueEmFrom:              "monitor@example.com",
-	KeyCueEmPassword:          "пароль SMTP",
-	KeyXferEmailCheck:         "Получатели e-mail",
-	KeyXferEmailWarnExport:    "В файл попадут получатели e-mail (пароль SMTP не переносится). Храните файл в надёжном месте.",
-	KeyXferEmailWarnImport:    "Получатели e-mail из файла будут применены (пароль SMTP не переносится).",
-	KeyTipXferEmail:           "Несекретные получатели e-mail в файле (пароль SMTP никогда не переносится)",
-	KeyTipSetNavProfiles:      "Базы данных: подключение, вход, шифрование, опрос и пороги каждой базы.",
-	KeyGenPoll:                "Интервал опроса, с:",
-	KeyGenWarn:                "Предупреждение через, мин:",
-	KeyGenError:               "Ошибка через, мин:",
-	KeyGenBeepEnabled:         "Звуковой сигнал тревоги",
-	KeyGenWarnFreq:            "Предупреждение: частота, Гц:",
-	KeyGenWarnDur:             "Предупреждение: длительность, мс:",
-	KeyGenErrorFreq:           "Ошибка: частота, Гц:",
-	KeyGenErrorDur:            "Ошибка: длительность, мс:",
-	KeyGenGap:                 "Пауза между сигналами, мс:",
-	KeyGenAutostart:           "Запускать значок в трее при входе в Windows (для всех пользователей)",
-	KeyGenNote:                "Общие настройки действуют на весь компьютер и применяются службой. Звук выключает только сигнал: окно тревоги показывается всегда.",
-	KeyGenSaved:               "Общие настройки сохранены.",
-	KeySetTesting:             "Проверка подключения… (до 15 с)",
-	KeySetTestCanceled:        "Проверка отменена.",
-	KeySetTestOK:              "Подключение успешно (%d мс).",
-	KeySetTestFailed:          "Подключение не удалось: %s",
-	KeySetTestVersion:         "Сервер: %s",
-	KeySetTestCompat:          "Уровень совместимости базы: %d",
-	KeySetTestEncrypt:         "Шифрование: %s",
-	KeySetTestNoReply:         "Служба не ответила за %d с.",
-	KeySetPolled:              "Опрос запущен.",
-	KeySetPollCoalesced:       "Опрос уже запланирован.",
-	KeySetNotConnected:        "Нет связи со службой Exchange Checker.",
-	KeySetChangedOffline:      "Настройки изменились, пока не было связи со службой. Нажмите «Перечитать» (несохранённые правки будут потеряны).",
-	KeySetUnsupported:         "Эта версия службы не поддерживает эту команду.",
-	KeySetTooLarge:            "Запрос больше 64 КиБ — сократите данные профиля.",
-	KeySetNoRevision:          "Неизвестна версия настроек — нажмите «Перечитать».",
-	KeySetConflictHint:        "Нажмите «Перечитать»: несохранённые правки будут потеряны.",
-	KeySetOtherInvalid:        "Сохранить нельзя: в файле настроек неверно заполнена другая база «%s» (%s). Исправьте или удалите её.",
-	KeySetRateHint:            "Проверку подключения и опрос служба выполняет не чаще раза в 10 секунд.",
-	KeySetTimeoutHint:         "Проверка ограничена 15 секундами: проверьте сеть, порт и брандмауэр.",
-	KeySetAccessHint:          "Нажмите «Изменить (администратор)».",
-	KeySetFailed:              "Ошибка: %s",
-	KeySetElevateCanceled:     "Запуск от имени администратора отменён.",
-	KeySetElevateFailed:       "Не удалось запустить настройки от имени администратора: %s",
+	KeySetNavEmail:         "Уведомления e-mail",
+	KeyEmGroup:             "Уведомления e-mail",
+	KeyEmEnabled:           "Отправлять уведомления по e-mail",
+	KeyEmHost:              "SMTP-сервер:",
+	KeyEmPort:              "Порт:",
+	KeyEmTLSMode:           "TLS:",
+	KeyEmTLSNone:           "Без TLS (без AUTH)",
+	KeyEmTLSStartTLS:       "STARTTLS",
+	KeyEmTLSImplicit:       "TLS (порт 465)",
+	KeyEmFromAddr:          "От кого (From):",
+	KeyEmPassword:          "Пароль SMTP:",
+	KeyEmClearPassword:     "Удалить сохранённый пароль",
+	KeyEmPasswordSaved:     "Пароль сохранён (не показывается).",
+	KeyEmPasswordNone:      "Пароль не задан.",
+	KeyEmPasswordNew:       "Новый пароль будет сохранён.",
+	KeyEmPasswordClear:     "Сохранённый пароль будет удалён.",
+	KeyEmPasswordNoneTLS:   "Пароль не используется (tlsMode = none).",
+	KeyEmRecipients:        "Получатели (адреса через запятую, точку с запятой, пробел или с новой строки):",
+	KeyEmBadAddr:           "Неверный адрес e-mail получателя: «%s». Укажите адреса через запятую, точку с запятой, пробел или с новой строки, например: ivanov@mail.ru, petrov@mail.ru",
+	KeyEmDays:              "Дни:",
+	KeyEmFrom:              "Время с (ЧЧ:ММ):",
+	KeyEmTo:                "по:",
+	KeyEmEvents:            "События:",
+	KeyEmTestTo:            "Тест для:",
+	KeyEmTestAll:           "Все получатели",
+	KeyEmTest:              "Тест",
+	KeyEmTesting:           "Отправка теста…",
+	KeyEmTestOK:            "Тест отправлен.",
+	KeyEmTestFailed:        "Тест не удался.",
+	KeyEmTestItemOK:        "доставлено",
+	KeyEmTestNoResult:      "Нет результата теста.",
+	KeyEmStatus:            "Отправлено: %d, в очереди: %d, отброшено: %d",
+	KeyEmLastOK:            "Последняя успешная отправка: %s",
+	KeyEmLastError:         "Последняя ошибка (%s): %s",
+	KeyEmSaved:             "Настройки e-mail сохранены.",
+	KeyTipEmPage:           "Уведомления по электронной почте",
+	KeyTipEmEnabled:        "Включить отправку писем по событиям обмена",
+	KeyTipEmHost:           "Имя или адрес SMTP-сервера",
+	KeyTipEmPort:           "Порт SMTP (обычно 25, 465 или 587)",
+	KeyTipEmTLSMode:        "none — без TLS и без AUTH; starttls / tls — AUTH с паролем, логин = From",
+	KeyTipEmFromAddr:       "Адрес отправителя (и логин SMTP AUTH)",
+	KeyTipEmPassword:       "Пароль SMTP (только запись; при tlsMode=none не используется)",
+	KeyTipEmClearPassword:  "Удалить пароль, сохранённый службой",
+	KeyTipEmRecipients:     "Адреса через запятую, точку с запятой, пробел или с новой строки (например: ivanov@mail.ru, petrov@mail.ru); строка «ID адрес имя» тоже допускается",
+	KeyTipEmDay:            "День недели окна рассылки",
+	KeyTipEmFrom:           "Начало окна (локальное время службы)",
+	KeyTipEmTo:             "Конец окна (локальное время службы)",
+	KeyTipEmEvent:          "Какие события слать письмом",
+	KeyTipEmTestTo:         "Кому отправить тестовое письмо",
+	KeyTipEmTest:           "Отправить тестовое письмо сейчас (игнорирует расписание)",
+	KeyCueEmHost:           "smtp.example.com",
+	KeyCueEmPort:           "587",
+	KeyCueEmFrom:           "monitor@example.com",
+	KeyCueEmPassword:       "пароль SMTP",
+	KeyXferEmailCheck:      "Получатели e-mail",
+	KeyXferEmailWarnExport: "В файл попадут получатели e-mail (пароль SMTP не переносится). Храните файл в надёжном месте.",
+	KeyXferEmailWarnImport: "Получатели e-mail из файла будут применены (пароль SMTP не переносится).",
+	KeyTipXferEmail:        "Несекретные получатели e-mail в файле (пароль SMTP никогда не переносится)",
+	KeyTipSetNavProfiles:   "Базы данных: подключение, вход, шифрование, опрос и пороги каждой базы.",
+	KeyGenPoll:             "Интервал опроса, с:",
+	KeyGenWarn:             "Предупреждение через, мин:",
+	KeyGenError:            "Ошибка через, мин:",
+	KeyGenBeepEnabled:      "Звуковой сигнал тревоги",
+	KeyGenWarnFreq:         "Предупреждение: частота, Гц:",
+	KeyGenWarnDur:          "Предупреждение: длительность, мс:",
+	KeyGenErrorFreq:        "Ошибка: частота, Гц:",
+	KeyGenErrorDur:         "Ошибка: длительность, мс:",
+	KeyGenGap:              "Пауза между сигналами, мс:",
+	KeyGenAutostart:        "Запускать значок в трее при входе в Windows (для всех пользователей)",
+	KeyGenNote:             "Общие настройки действуют на весь компьютер и применяются службой. Звук выключает только сигнал: окно тревоги показывается всегда.",
+	KeyGenSaved:            "Общие настройки сохранены.",
+	KeySetTesting:          "Проверка подключения… (до 15 с)",
+	KeySetTestCanceled:     "Проверка отменена.",
+	KeySetTestOK:           "Подключение успешно (%d мс).",
+	KeySetTestFailed:       "Подключение не удалось: %s",
+	KeySetTestVersion:      "Сервер: %s",
+	KeySetTestCompat:       "Уровень совместимости базы: %d",
+	KeySetTestEncrypt:      "Шифрование: %s",
+	KeySetTestNoReply:      "Служба не ответила за %d с.",
+	KeySetPolled:           "Опрос запущен.",
+	KeySetPollCoalesced:    "Опрос уже запланирован.",
+	KeySetNotConnected:     "Нет связи со службой Exchange Checker.",
+	KeySetChangedOffline:   "Настройки изменились, пока не было связи со службой. Нажмите «Перечитать» (несохранённые правки будут потеряны).",
+	KeySetUnsupported:      "Эта версия службы не поддерживает эту команду.",
+	KeySetTooLarge:         "Запрос больше 64 КиБ — сократите данные профиля.",
+	KeySetNoRevision:       "Неизвестна версия настроек — нажмите «Перечитать».",
+	KeySetConflictHint:     "Нажмите «Перечитать»: несохранённые правки будут потеряны.",
+	KeySetOtherInvalid:     "Сохранить нельзя: в файле настроек неверно заполнена другая база «%s» (%s). Исправьте или удалите её.",
+	KeySetRateHint:         "Проверку подключения и опрос служба выполняет не чаще раза в 10 секунд.",
+	KeySetTimeoutHint:      "Проверка ограничена 15 секундами: проверьте сеть, порт и брандмауэр.",
+	KeySetAccessHint:       "Нажмите «Изменить (администратор)».",
+	KeySetFailed:           "Ошибка: %s",
+	KeySetElevateCanceled:  "Запуск от имени администратора отменён.",
+	KeySetElevateFailed:    "Не удалось запустить настройки от имени администратора: %s",
 
 	KeyUnknownMessage:      "Ошибка",
 	KeySetPreset:           "Тип сервера:",
@@ -1478,12 +1478,12 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyWizFoundPlans:       " (+%d)",
 	KeyWizFoundFields:      "поля %s",
 	KeyWizDetails:          "Подробнее",
-	KeyWizErrNone: "Таблицы обмена не найдены: у учётной записи службы, вероятно, нет прав на чтение таблиц базы. Нажмите «Скопировать SQL-скрипт прав», выполните его в SQL Server Management Studio и повторите поиск.",
-	KeyWizErrAmbiguous: "Найдены два равноценных варианта: %s и %s. Откройте «Подробнее» и выберите нужный.",
-	KeyWizErrWinUnsaved: "Вход Windows для новой базы служба проверяет только после сохранения профиля. Выберите вход SQL Server или сохраните базу через «Расширенные настройки» и запустите поиск таблиц там.",
-	KeyWizErrTruncated: "Поиск таблиц прерван по времени или объёму, ничего не найдено. Повторите поиск; если повторится — откройте «Расширенные настройки».",
-	KeyWizErrLowScore: "Найденные таблицы не похожи на таблицы обмена с достаточной уверенностью — автоматически ничего не применено. Лучший вариант выделен в списке «Подробнее»: проверьте его и нажмите на него, чтобы выбрать.",
-	KeyWizErrIncomplete: "Лучший найденный вариант неполный (нет времени отправки или приёма, нет точек или поиск прерван) — автоматически ничего не применено. Он выделен в списке «Подробнее»: выберите его или другой вариант.",
+	KeyWizErrNone:          "Таблицы обмена не найдены: у учётной записи службы, вероятно, нет прав на чтение таблиц базы. Нажмите «Скопировать SQL-скрипт прав», выполните его в SQL Server Management Studio и повторите поиск.",
+	KeyWizErrAmbiguous:     "Найдены два равноценных варианта: %s и %s. Откройте «Подробнее» и выберите нужный.",
+	KeyWizErrWinUnsaved:    "Вход Windows для новой базы служба проверяет только после сохранения профиля. Выберите вход SQL Server или сохраните базу через «Расширенные настройки» и запустите поиск таблиц там.",
+	KeyWizErrTruncated:     "Поиск таблиц прерван по времени или объёму, ничего не найдено. Повторите поиск; если повторится — откройте «Расширенные настройки».",
+	KeyWizErrLowScore:      "Найденные таблицы не похожи на таблицы обмена с достаточной уверенностью — автоматически ничего не применено. Лучший вариант выделен в списке «Подробнее»: проверьте его и нажмите на него, чтобы выбрать.",
+	KeyWizErrIncomplete:    "Лучший найденный вариант неполный (нет времени отправки или приёма, нет точек или поиск прерван) — автоматически ничего не применено. Он выделен в списке «Подробнее»: выберите его или другой вариант.",
 	KeyTipWizDetails:       "Показать все найденные варианты таблиц обмена и выбрать другой вручную.",
 	KeyWizNoteTruncated:    "Поиск был прерван, результат может быть неполным.",
 	KeyWizConfidence:       "[%d%%]",
@@ -1549,50 +1549,50 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeyTipWizGrant:         "Скопировать в буфер обмена T-SQL, выдающий права только на чтение; EC скрипт не выполняет.",
 	KeyTipWizCancel:        "Закрыть мастер без сохранения.",
 	// phase 10 A–C
-	KeyPanelNoService:     "Нет связи со службой Exchange Checker",
-	KeyPanelNoSQL:         "%s: нет связи с SQL Server",
-	KeyPanelTitle:         "Exchange Checker — проблемы",
-	KeyAlertMute:          "Звук выкл",
-	KeyAlertUnmute:        "Звук вкл",
-	KeyTipAlertMute:       "Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком",
-	KeyMenuSound:          "Звук тревог…",
-	KeyMenuVolume:         "Громкость",
-	KeyMenuPinHelp:        "Как закрепить значок…",
-	KeyPinHelpTitle:       "Значок Exchange Checker",
-	KeyPinHelpText:        "Чтобы значок всегда был виден рядом с часами (Windows 7):\r\n1. Нажмите стрелку «Отображать скрытые значки» слева от часов.\r\n2. Выберите «Настроить…».\r\n3. Для Exchange Checker выберите «Показать значок и уведомления».\r\n\r\nВ Windows 10 и 11: Параметры → Персонализация → Панель задач → Значки в углу панели задач — включите Exchange Checker.",
-	KeySoundTitle:         "Звук тревог",
-	KeySoundWarning:       "Предупреждение",
-	KeySoundError:         "Ошибка",
-	KeySoundBeep:          "Тон",
-	KeySoundFile:          "Файл",
-	KeySoundFreq:          "Частота, Гц:",
-	KeySoundDur:           "Длительность, мс:",
-	KeySoundBrowse:        "Обзор…",
-	KeySoundVolume:        "Громкость, %:",
-	KeySoundLoop:          "Повторять до подтверждения",
-	KeySoundGap:           "Пауза между повторами, мс:",
-	KeySoundTest:          "Прослушать",
-	KeySoundStop:          "Остановить",
-	KeySoundSave:          "Сохранить",
-	KeySoundCancel:        "Отмена",
-	KeySoundFilterAudio:   "Звуковые файлы (*.wav; *.mp3; *.wma; *.mid)",
-	KeySoundFilterAll:     "Все файлы (*.*)",
-	KeySoundBadFile:       "Файл не найден или не поддерживается: %s",
-	KeySoundBadValue:      "Проверьте значение: %s",
-	KeySoundSaved:         "Сохранено",
-	KeySoundFallback:      "Не удалось воспроизвести «%s» (%s), звучит тон",
-	KeySoundOutput:         "Вывод звука:",
-	KeySoundOutputSpeaker:  "Системный динамик",
-	KeySoundOutputSpeakers: "Колонки",
-	KeySoundOutputBoth:     "Динамик и колонки",
-	KeySoundOutputFile:     "файл — через колонки",
-	KeyTipSoundOutput:      "Куда звучит тон: системный динамик компьютера (если он недоступен — колонки), колонки или оба сразу. Файл всегда звучит через колонки",
-	KeySpeakerAvailable:   "Системный динамик: доступен",
-	KeySpeakerUnavailable: "Системный динамик: недоступен (%s) — тон звучит через колонки",
-	KeySpeakerNoService:   "нет связи со службой",
-	KeySpeakerNoCap:       "служба не поддерживает системный динамик",
-	KeySpeakerNoReason:    "причина не указана",
-	KeySpeakerTimeout:     "служба не ответила вовремя",
+	KeyPanelNoService:       "Нет связи со службой Exchange Checker",
+	KeyPanelNoSQL:           "%s: нет связи с SQL Server",
+	KeyPanelTitle:           "Exchange Checker — проблемы",
+	KeyAlertMute:            "Звук выкл",
+	KeyAlertUnmute:          "Звук вкл",
+	KeyTipAlertMute:         "Выключить или включить звук этой тревоги. Следующая новая тревога снова будет со звуком",
+	KeyMenuSound:            "Звук тревог…",
+	KeyMenuVolume:           "Громкость",
+	KeyMenuPinHelp:          "Как закрепить значок…",
+	KeyPinHelpTitle:         "Значок Exchange Checker",
+	KeyPinHelpText:          "Чтобы значок всегда был виден рядом с часами (Windows 7):\r\n1. Нажмите стрелку «Отображать скрытые значки» слева от часов.\r\n2. Выберите «Настроить…».\r\n3. Для Exchange Checker выберите «Показать значок и уведомления».\r\n\r\nВ Windows 10 и 11: Параметры → Персонализация → Панель задач → Значки в углу панели задач — включите Exchange Checker.",
+	KeySoundTitle:           "Звук тревог",
+	KeySoundWarning:         "Предупреждение",
+	KeySoundError:           "Ошибка",
+	KeySoundBeep:            "Тон",
+	KeySoundFile:            "Файл",
+	KeySoundFreq:            "Частота, Гц:",
+	KeySoundDur:             "Длительность, мс:",
+	KeySoundBrowse:          "Обзор…",
+	KeySoundVolume:          "Громкость, %:",
+	KeySoundLoop:            "Повторять до подтверждения",
+	KeySoundGap:             "Пауза между повторами, мс:",
+	KeySoundTest:            "Прослушать",
+	KeySoundStop:            "Остановить",
+	KeySoundSave:            "Сохранить",
+	KeySoundCancel:          "Отмена",
+	KeySoundFilterAudio:     "Звуковые файлы (*.wav; *.mp3; *.wma; *.mid)",
+	KeySoundFilterAll:       "Все файлы (*.*)",
+	KeySoundBadFile:         "Файл не найден или не поддерживается: %s",
+	KeySoundBadValue:        "Проверьте значение: %s",
+	KeySoundSaved:           "Сохранено",
+	KeySoundFallback:        "Не удалось воспроизвести «%s» (%s), звучит тон",
+	KeySoundOutput:          "Вывод звука:",
+	KeySoundOutputSpeaker:   "Системный динамик",
+	KeySoundOutputSpeakers:  "Колонки",
+	KeySoundOutputBoth:      "Динамик и колонки",
+	KeySoundOutputFile:      "файл — через колонки",
+	KeyTipSoundOutput:       "Куда звучит тон: системный динамик компьютера (если он недоступен — колонки), колонки или оба сразу. Файл всегда звучит через колонки",
+	KeySpeakerAvailable:     "Системный динамик: доступен",
+	KeySpeakerUnavailable:   "Системный динамик: недоступен (%s) — тон звучит через колонки",
+	KeySpeakerNoService:     "нет связи со службой",
+	KeySpeakerNoCap:         "служба не поддерживает системный динамик",
+	KeySpeakerNoReason:      "причина не указана",
+	KeySpeakerTimeout:       "служба не ответила вовремя",
 	KeySpeakerUnsupportedOS: "не поддерживается этой версией Windows",
 	KeySpeakerNotInstalled:  "драйвер не установлен",
 	KeySpeakerBlocked:       "драйвер заблокирован",
@@ -1603,144 +1603,144 @@ var catalog = map[string]string{ // key -> text (RU)
 	KeySpeakerInvalid:       "неверная частота или длительность тона",
 	KeySpeakerFailed:        "ошибка обращения к динамику",
 	KeySpeakerDenied:        "служба отклонила запрос тона",
-	KeySpeakerFallback:    "Системный динамик недоступен (%s), тон звучит через колонки",
-	KeyTipSoundKind:       "Тон — сигнал заданной частоты, куда он звучит — см. «Вывод звука». Файл — WAV, MP3, WMA или MID, звучит через колонки. Громкость — общий ползунок в меню значка",
-	KeyTipSoundFreq:       "Частота тона, 37–32767 Гц",
-	KeyTipSoundDur:        "Длительность одного сигнала, мс",
-	KeyTipSoundFile:       "Путь к звуковому файлу. Если файл не воспроизводится, звучит тон",
-	KeyTipSoundBrowse:     "Выбрать звуковой файл",
-	KeyTipSoundVolume:     "Громкость этого профиля, 0–100%; умножается на общую громкость",
-	KeyTipSoundLoop:       "Повторять звук, пока тревогу не подтвердят; иначе — один раз",
-	KeyTipSoundGap:        "Пауза между повторами звука, мс",
-	KeyTipSoundTest:       "Проиграть звук с текущими настройками",
-	KeyTipSoundSave:       "Сохранить настройки звука для текущего пользователя Windows",
-	KeyVolumeTitle:        "Громкость тревог",
-	KeyTipVolume:          "Общая громкость звуков тревог, 0–100%. Сохраняется сразу",
-	KeySetModeExpert:      "Экспертный режим",
-	KeySetModeSimple:      "Простой режим",
-	KeyTipSetUIMode:       "Простой режим — только основные поля; экспертный — все настройки. Выбор запоминается для пользователя Windows",
-	KeySetGroupConn:       "Подключение",
-	KeySetGroupLogin:      "Вход",
-	KeySetGroupTLS:        "Шифрование",
-	KeySetGroupChecks:     "Опрос и пороги",
-	KeySetGroupGeneral:    "Общие настройки компьютера",
-	KeySetGroupSound:      "Звук",
-	KeyVbPage:             "Уведомления Viber…",
-	KeyVbGroup:            "Уведомления Viber",
-	KeyVbEnabled:          "Отправлять уведомления в Viber",
-	KeyVbToken:            "Токен бота:",
-	KeyVbClearToken:       "Удалить сохранённый токен",
-	KeyVbTokenSaved:       "Токен сохранён (не показывается).",
-	KeyVbTokenNone:        "Токен не задан.",
-	KeyVbTokenNew:         "Новый токен будет сохранён.",
-	KeyVbTokenClear:       "Сохранённый токен будет удалён.",
-	KeyVbRecipients:       "Получатели (по одному в строке: ID имя):",
-	KeyVbDays:             "Дни:",
-	KeyVbDay1:             "Пн",
-	KeyVbDay2:             "Вт",
-	KeyVbDay3:             "Ср",
-	KeyVbDay4:             "Чт",
-	KeyVbDay5:             "Пт",
-	KeyVbDay6:             "Сб",
-	KeyVbDay7:             "Вс",
-	KeyVbFrom:             "Время с (ЧЧ:ММ):",
-	KeyVbTo:               "до:",
-	KeyVbEvents:           "События:",
-	KeyVbEvError:          "Ошибка обмена",
-	KeyVbEvWarning:        "Предупреждение",
-	KeyVbEvRecovered:      "Восстановление",
-	KeyVbEvNoConn:         "Нет подключения к базе",
-	KeyVbReminder:         "Напоминание, мин:",
-	KeyVbReminderHint:     "0 — без напоминаний, иначе 15–1440",
-	KeyVbTestTo:           "Тест для:",
-	KeyVbTestAll:          "Все получатели",
-	KeyVbTest:             "Тест",
-	KeyVbTesting:          "Отправка тестового сообщения…",
-	KeyVbTestOK:           "Тест Viber: доставлено.",
-	KeyVbTestFailed:       "Тест Viber: есть ошибки.",
-	KeyVbTestItemOK:       "доставлено",
-	KeyVbTestNoResult:     "Служба не вернула результат теста.",
-	KeyVbStatus:           "Отправлено: %d, в очереди: %d, отброшено: %d",
-	KeyVbLastOK:           "Последняя доставка: %s",
-	KeyVbLastError:        "Последняя ошибка: %s — %s",
-	KeyVbSaved:            "Настройки Viber сохранены.",
-	KeyTgGroup:           "Уведомления Telegram",
+	KeySpeakerFallback:      "Системный динамик недоступен (%s), тон звучит через колонки",
+	KeyTipSoundKind:         "Тон — сигнал заданной частоты, куда он звучит — см. «Вывод звука». Файл — WAV, MP3, WMA или MID, звучит через колонки. Громкость — общий ползунок в меню значка",
+	KeyTipSoundFreq:         "Частота тона, 37–32767 Гц",
+	KeyTipSoundDur:          "Длительность одного сигнала, мс",
+	KeyTipSoundFile:         "Путь к звуковому файлу. Если файл не воспроизводится, звучит тон",
+	KeyTipSoundBrowse:       "Выбрать звуковой файл",
+	KeyTipSoundVolume:       "Громкость этого профиля, 0–100%; умножается на общую громкость",
+	KeyTipSoundLoop:         "Повторять звук, пока тревогу не подтвердят; иначе — один раз",
+	KeyTipSoundGap:          "Пауза между повторами звука, мс",
+	KeyTipSoundTest:         "Проиграть звук с текущими настройками",
+	KeyTipSoundSave:         "Сохранить настройки звука для текущего пользователя Windows",
+	KeyVolumeTitle:          "Громкость тревог",
+	KeyTipVolume:            "Общая громкость звуков тревог, 0–100%. Сохраняется сразу",
+	KeySetModeExpert:        "Экспертный режим",
+	KeySetModeSimple:        "Простой режим",
+	KeyTipSetUIMode:         "Простой режим — только основные поля; экспертный — все настройки. Выбор запоминается для пользователя Windows",
+	KeySetGroupConn:         "Подключение",
+	KeySetGroupLogin:        "Вход",
+	KeySetGroupTLS:          "Шифрование",
+	KeySetGroupChecks:       "Опрос и пороги",
+	KeySetGroupGeneral:      "Общие настройки компьютера",
+	KeySetGroupSound:        "Звук",
+	KeyVbPage:               "Уведомления Viber…",
+	KeyVbGroup:              "Уведомления Viber",
+	KeyVbEnabled:            "Отправлять уведомления в Viber",
+	KeyVbToken:              "Токен бота:",
+	KeyVbClearToken:         "Удалить сохранённый токен",
+	KeyVbTokenSaved:         "Токен сохранён (не показывается).",
+	KeyVbTokenNone:          "Токен не задан.",
+	KeyVbTokenNew:           "Новый токен будет сохранён.",
+	KeyVbTokenClear:         "Сохранённый токен будет удалён.",
+	KeyVbRecipients:         "Получатели (по одному в строке: ID имя):",
+	KeyVbDays:               "Дни:",
+	KeyVbDay1:               "Пн",
+	KeyVbDay2:               "Вт",
+	KeyVbDay3:               "Ср",
+	KeyVbDay4:               "Чт",
+	KeyVbDay5:               "Пт",
+	KeyVbDay6:               "Сб",
+	KeyVbDay7:               "Вс",
+	KeyVbFrom:               "Время с (ЧЧ:ММ):",
+	KeyVbTo:                 "до:",
+	KeyVbEvents:             "События:",
+	KeyVbEvError:            "Ошибка обмена",
+	KeyVbEvWarning:          "Предупреждение",
+	KeyVbEvRecovered:        "Восстановление",
+	KeyVbEvNoConn:           "Нет подключения к базе",
+	KeyVbReminder:           "Напоминание, мин:",
+	KeyVbReminderHint:       "0 — без напоминаний, иначе 15–1440",
+	KeyVbTestTo:             "Тест для:",
+	KeyVbTestAll:            "Все получатели",
+	KeyVbTest:               "Тест",
+	KeyVbTesting:            "Отправка тестового сообщения…",
+	KeyVbTestOK:             "Тест Viber: доставлено.",
+	KeyVbTestFailed:         "Тест Viber: есть ошибки.",
+	KeyVbTestItemOK:         "доставлено",
+	KeyVbTestNoResult:       "Служба не вернула результат теста.",
+	KeyVbStatus:             "Отправлено: %d, в очереди: %d, отброшено: %d",
+	KeyVbLastOK:             "Последняя доставка: %s",
+	KeyVbLastError:          "Последняя ошибка: %s — %s",
+	KeyVbSaved:              "Настройки Viber сохранены.",
+	KeyTgGroup:              "Уведомления Telegram",
 	KeyGenScreenFlash:       "Мигание экрана при ошибке обмена",
 	KeyGenScreenFlashFailed: "Не удалось сохранить «Мигание экрана»:",
 	KeyTipGenScreenFlash:    "Пока есть ошибка обмена, весь экран (все мониторы) мигает чёрным; фокус не перехватывается. «Закрыть» в окне тревоги останавливает мигание до восстановления",
-	KeyTgEnabled:         "Отправлять уведомления в Telegram",
-	KeyTgToken:           "Токен бота:",
-	KeyTgClearToken:      "Удалить сохранённый токен",
-	KeyTgChat:            "ID чата:",
-	KeyTgChatHint:        "Число (например, -1001234567890) или @имя_канала; бот должен быть добавлен в чат.",
-	KeyTgTest:            "Тест",
-	KeyTgTesting:         "Отправка тестового сообщения в Telegram…",
-	KeyTgTestOK:          "Тест Telegram: доставлено.",
-	KeyTgTestFailed:      "Тест Telegram: не доставлено.",
-	KeyTgTestRateLimited: "Тест Telegram — не чаще раза в 10 с; повторите через %d с.",
-	KeyTgSaved:           "Настройки Telegram сохранены.",
-	KeySetNavTelegram:    "Telegram",
-	KeyTipTgPage:         "Уведомления о тревогах в Telegram: токен бота, чат, расписание, события",
-	KeyTipTgEnabled:      "Служба отправляет сообщения только в окне расписания",
-	KeyTipTgToken:        "Токен бота Telegram (от @BotFather). Только запись: сохранённый токен не показывается; пусто — не менять",
-	KeyTipTgClearToken:   "Удалить сохранённый токен при сохранении",
-	KeyTipTgChat:         "Куда отправлять: числовой ID чата или @имя_канала",
-	KeyTipTgTest:         "Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с",
-	KeyTipVbPage:          "Уведомления о тревогах в Viber: токен бота, получатели, расписание, события",
-	KeyTipVbEnabled:       "Служба отправляет сообщения только в окне расписания",
-	KeyTipVbToken:         "Токен бота Viber. Только запись: сохранённый токен не показывается; пусто — не менять",
-	KeyTipVbClearToken:    "Удалить сохранённый токен при сохранении",
-	KeyTipVbRecipients:    "ID пользователя Viber (без пробелов, до 64 символов) и имя, до 20 получателей",
-	KeyTipVbDay:           "День недели, в который отправляются уведомления",
-	KeyTipVbFrom:          "Начало окна отправки, местное время компьютера службы",
-	KeyTipVbTo:            "Конец окна отправки (позже начала)",
-	KeyTipVbEvent:         "Отправлять сообщение об этом событии",
-	KeyTipVbReminder:      "Сводка нерешённых проблем каждые N минут в окне расписания",
-	KeyTipVbTestTo:        "Кому отправить тест: одному получателю или всем",
-	KeyTipVbTest:          "Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с",
-	KeyXferExport:         "Экспорт…",
-	KeyXferImport:         "Импорт…",
-	KeyTipXferExport:      "Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей; получатели Viber — по флажку)",
-	KeyTipXferImport:      "Загрузить настройки из файла: сначала показывается, что изменится",
-	KeyXferFilter:         "Настройки EC (*.json)",
-	KeyXferContainsLogins: "Файл содержит адреса серверов, логины SQL (без паролей) и пути к звуковым файлам. Храните его в надёжном месте.",
-	KeyXferConflict:       "Конфигурация изменилась, проверьте заново",
-	KeyXferExported:       "Настройки сохранены в файл %s",
-	KeyXferWriteFailed:    "Не удалось записать файл: %s",
-	KeyXferReadFailed:     "Не удалось прочитать файл: %s",
-	KeyXferTooLarge:       "Файл слишком большой (больше %d КБ).",
-	KeyXferBadFile:        "Это не файл настроек EC: %s",
-	KeyXferTitle:          "Импорт настроек",
-	KeyXferMerge:          "Объединить: добавить новые базы и обновить существующие",
-	KeyXferReplace:        "Заменить: базы, которых нет в файле, будут удалены",
-	KeyXferTrayCheck:      "Также звук и вид трея",
-	KeyXferDo:             "Импортировать",
-	KeyXferChecking:       "Проверка файла службой…",
-	KeyXferImporting:      "Импорт…",
-	KeyXferAdded:          "Будут добавлены (%d): %s",
-	KeyXferUpdated:        "Будут обновлены (%d): %s",
-	KeyXferRemoved:        "Будут удалены (%d): %s",
-	KeyXferNeedPw:         "Нужно будет заново ввести пароль (%d): %s",
-	KeyXferNoChanges:      "Базы данных не изменятся.",
-	KeyXferNoTray:         "В файле нет настроек трея.",
-	KeyXferTrayKept:       "Звук и вид трея не меняются.",
-	KeyXferTraySummary:    "Трей: всплывающие уведомления %s, громкость %s, %s",
-	KeyXferOn:             "вкл.",
-	KeyXferOff:            "выкл.",
-	KeyXferNoSoundFile:    "Внимание: звуковой файл не найден на этом компьютере, будет звучать тон: %s",
-	KeyXferDone:           "Импорт выполнен.",
-	KeyXferTrayApplied:    "Звук и вид трея применены",
-	KeyXferOtherUser:      "Окно настроек запущено от имени другого пользователя Windows, чем трей: звук и вид трея не экспортируются и не импортируются (они хранятся в профиле пользователя трея).",
-	KeyXferEnterPw:        "Введите пароль заново для «%s» и сохраните (осталось: %d).",
-	KeyXferTrayFailed:     "Не удалось сохранить настройки трея: %s",
-	KeyXferViberCheck:     "Получатели Viber",
-	KeyXferViberWarnExport: "В файл попадут получатели Viber (токен бота не переносится). Храните файл в надёжном месте.",
-	KeyXferViberWarnImport: "Получатели Viber из файла будут применены (токен бота не переносится).",
-	KeyXferExportTitle:    "Экспорт настроек",
-	KeyTipXferMerge:       "Базы с тем же идентификатором обновляются, новые добавляются, остальные остаются",
-	KeyTipXferReplace:     "Список баз становится таким, как в файле",
-	KeyTipXferTray:        "Всплывающие уведомления, звук и режим окна этого пользователя",
-	KeyTipXferViber:       "Несекретные получатели Viber в файле (токен бота никогда не переносится)",
-	KeyTipXferDo:          "Выполнить импорт, как показано выше",
-	KeyTipXferPreview:     "Что изменит импорт",
+	KeyTgEnabled:            "Отправлять уведомления в Telegram",
+	KeyTgToken:              "Токен бота:",
+	KeyTgClearToken:         "Удалить сохранённый токен",
+	KeyTgChat:               "ID чата:",
+	KeyTgChatHint:           "Число (например, -1001234567890) или @имя_канала; бот должен быть добавлен в чат.",
+	KeyTgTest:               "Тест",
+	KeyTgTesting:            "Отправка тестового сообщения в Telegram…",
+	KeyTgTestOK:             "Тест Telegram: доставлено.",
+	KeyTgTestFailed:         "Тест Telegram: не доставлено.",
+	KeyTgTestRateLimited:    "Тест Telegram — не чаще раза в 10 с; повторите через %d с.",
+	KeyTgSaved:              "Настройки Telegram сохранены.",
+	KeySetNavTelegram:       "Telegram",
+	KeyTipTgPage:            "Уведомления о тревогах в Telegram: токен бота, чат, расписание, события",
+	KeyTipTgEnabled:         "Служба отправляет сообщения только в окне расписания",
+	KeyTipTgToken:           "Токен бота Telegram (от @BotFather). Только запись: сохранённый токен не показывается; пусто — не менять",
+	KeyTipTgClearToken:      "Удалить сохранённый токен при сохранении",
+	KeyTipTgChat:            "Куда отправлять: числовой ID чата или @имя_канала",
+	KeyTipTgTest:            "Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с",
+	KeyTipVbPage:            "Уведомления о тревогах в Viber: токен бота, получатели, расписание, события",
+	KeyTipVbEnabled:         "Служба отправляет сообщения только в окне расписания",
+	KeyTipVbToken:           "Токен бота Viber. Только запись: сохранённый токен не показывается; пусто — не менять",
+	KeyTipVbClearToken:      "Удалить сохранённый токен при сохранении",
+	KeyTipVbRecipients:      "ID пользователя Viber (без пробелов, до 64 символов) и имя, до 20 получателей",
+	KeyTipVbDay:             "День недели, в который отправляются уведомления",
+	KeyTipVbFrom:            "Начало окна отправки, местное время компьютера службы",
+	KeyTipVbTo:              "Конец окна отправки (позже начала)",
+	KeyTipVbEvent:           "Отправлять сообщение об этом событии",
+	KeyTipVbReminder:        "Сводка нерешённых проблем каждые N минут в окне расписания",
+	KeyTipVbTestTo:          "Кому отправить тест: одному получателю или всем",
+	KeyTipVbTest:            "Тестовое сообщение сейчас (без учёта расписания и «Отправлять»), не чаще раза в 10 с",
+	KeyXferExport:           "Экспорт…",
+	KeyXferImport:           "Импорт…",
+	KeyTipXferExport:        "Сохранить базы и общие настройки службы, а также звук и вид трея в файл (без паролей; получатели Viber — по флажку)",
+	KeyTipXferImport:        "Загрузить настройки из файла: сначала показывается, что изменится",
+	KeyXferFilter:           "Настройки EC (*.json)",
+	KeyXferContainsLogins:   "Файл содержит адреса серверов, логины SQL (без паролей) и пути к звуковым файлам. Храните его в надёжном месте.",
+	KeyXferConflict:         "Конфигурация изменилась, проверьте заново",
+	KeyXferExported:         "Настройки сохранены в файл %s",
+	KeyXferWriteFailed:      "Не удалось записать файл: %s",
+	KeyXferReadFailed:       "Не удалось прочитать файл: %s",
+	KeyXferTooLarge:         "Файл слишком большой (больше %d КБ).",
+	KeyXferBadFile:          "Это не файл настроек EC: %s",
+	KeyXferTitle:            "Импорт настроек",
+	KeyXferMerge:            "Объединить: добавить новые базы и обновить существующие",
+	KeyXferReplace:          "Заменить: базы, которых нет в файле, будут удалены",
+	KeyXferTrayCheck:        "Также звук и вид трея",
+	KeyXferDo:               "Импортировать",
+	KeyXferChecking:         "Проверка файла службой…",
+	KeyXferImporting:        "Импорт…",
+	KeyXferAdded:            "Будут добавлены (%d): %s",
+	KeyXferUpdated:          "Будут обновлены (%d): %s",
+	KeyXferRemoved:          "Будут удалены (%d): %s",
+	KeyXferNeedPw:           "Нужно будет заново ввести пароль (%d): %s",
+	KeyXferNoChanges:        "Базы данных не изменятся.",
+	KeyXferNoTray:           "В файле нет настроек трея.",
+	KeyXferTrayKept:         "Звук и вид трея не меняются.",
+	KeyXferTraySummary:      "Трей: всплывающие уведомления %s, громкость %s, %s",
+	KeyXferOn:               "вкл.",
+	KeyXferOff:              "выкл.",
+	KeyXferNoSoundFile:      "Внимание: звуковой файл не найден на этом компьютере, будет звучать тон: %s",
+	KeyXferDone:             "Импорт выполнен.",
+	KeyXferTrayApplied:      "Звук и вид трея применены",
+	KeyXferOtherUser:        "Окно настроек запущено от имени другого пользователя Windows, чем трей: звук и вид трея не экспортируются и не импортируются (они хранятся в профиле пользователя трея).",
+	KeyXferEnterPw:          "Введите пароль заново для «%s» и сохраните (осталось: %d).",
+	KeyXferTrayFailed:       "Не удалось сохранить настройки трея: %s",
+	KeyXferViberCheck:       "Получатели Viber",
+	KeyXferViberWarnExport:  "В файл попадут получатели Viber (токен бота не переносится). Храните файл в надёжном месте.",
+	KeyXferViberWarnImport:  "Получатели Viber из файла будут применены (токен бота не переносится).",
+	KeyXferExportTitle:      "Экспорт настроек",
+	KeyTipXferMerge:         "Базы с тем же идентификатором обновляются, новые добавляются, остальные остаются",
+	KeyTipXferReplace:       "Список баз становится таким, как в файле",
+	KeyTipXferTray:          "Всплывающие уведомления, звук и режим окна этого пользователя",
+	KeyTipXferViber:         "Несекретные получатели Viber в файле (токен бота никогда не переносится)",
+	KeyTipXferDo:            "Выполнить импорт, как показано выше",
+	KeyTipXferPreview:       "Что изменит импорт",
 }

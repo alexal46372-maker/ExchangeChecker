@@ -28,10 +28,10 @@ type EmailForm struct {
 	From    string
 	// Recipients: addresses separated by commas, semicolons, spaces or
 	// new lines; a line "id addr name" keeps its id and name.
-	Recipients string
-	Days       [7]bool
+	Recipients       string
+	Days             [7]bool
 	FromTime, ToTime string
-	Events     [4]bool // model.ViberEventKinds order
+	Events           [4]bool // model.ViberEventKinds order
 	// Password typed in the write-only box ("" = keep the saved one);
 	// ClearPassword removes the saved SMTP password.
 	Password      string

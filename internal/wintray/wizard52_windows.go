@@ -2,7 +2,6 @@
 
 package wintray
 
-
 import (
 	"context"
 	"time"

@@ -160,7 +160,7 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 	app.loadSoundPrefs()
 	w, err := newSettingsWindow(settingsConfig{mode: traysettings.Admin, session: app.session,
 		hidden: true, uiMode: traysettings.UIExpert,
-		stores: trayStores{Sound: store},
+		stores:      trayStores{Sound: store},
 		onSoundSave: app.SaveSoundPrefs, onSoundTest: app.testSound, onSoundStop: app.stopTestSound,
 		soundPrefs: func() trayalert.SoundPrefs { return app.SoundPrefs() },
 	})
@@ -211,7 +211,7 @@ func TestCHK_TRAY_62_SoundInGeneral(t *testing.T) {
 			sound = true
 		}
 		if it.Text == "Тема" {
-				theme = true
+			theme = true
 		}
 	}
 	if sound {

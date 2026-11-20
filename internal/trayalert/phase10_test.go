@@ -326,7 +326,6 @@ func TestCHK_TRAY_53_TestBadge(t *testing.T) {
 	}
 }
 
-
 func TestCHK_TRAY_54_ProblemsFilter(t *testing.T) {
 	at := time.Now()
 	st := trayipc.Status{State: trayipc.StateConnected, Snapshot: &model.StatusSnapshot{

@@ -242,8 +242,6 @@ func (f *cfgService) UnmuteProfile(profileID string) error {
 	return nil
 }
 
-
-
 func (f *cfgService) SaveSettings(s model.Settings, rev, account string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

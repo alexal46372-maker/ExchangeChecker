@@ -168,7 +168,9 @@ func TestCHK_TRAY_94_TelegramTab(t *testing.T) {
 	}
 	// second test within 10 s: rate_limited + retryAfterMs
 	w.click(t, idTgTest)
-	pumpUntil(t, "rate limited", func() bool { return w.tgTesting == nil && strings.Contains(w.text(idTgResult), "не чаще раза в 10 с") })
+	pumpUntil(t, "rate limited", func() bool {
+		return w.tgTesting == nil && strings.Contains(w.text(idTgResult), "не чаще раза в 10 с")
+	})
 	if svc.nTests() != 1 {
 		t.Errorf("tests %d", svc.nTests())
 	}

@@ -503,7 +503,6 @@ func TestCHK_TRAY_42_FocusScroll(t *testing.T) {
 	}
 }
 
-
 // TestCHK_TRAY_57_ExportImportViberFlag — checkbox sets includeViberRecipients
 // on the request JSON path (via ExportRequest / ImportRequest builders used
 // by the dialogs); warning strings; no theme in the tray block (CHK-TRAY-88).
@@ -623,4 +622,3 @@ func TestCHK_TRAY_57_TrayBlockApplyNoRestart(t *testing.T) {
 		t.Errorf("tray block: bal %v ui %q", e.bal.on, e.ui.m)
 	}
 }
-

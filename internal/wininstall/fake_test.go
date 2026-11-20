@@ -16,35 +16,35 @@ type recordingSystem struct {
 	// Log of "verb|arg" steps
 	Steps []string
 
-	Installed      Installed
-	Service        ServiceInfo
-	Dirs           map[string]bool
-	Files          map[string][]byte
-	DACLs          map[string]string
-	Owners         map[string]bool // path -> takeOwnership called
-	EventSrc       string
-	TrayRun        string
-	TrayRunCmd     string // full Run command for Read/WriteTrayRun
-	Uninst         []RegValue
-	UserKey        bool
-	FixedOK        bool
-	FailAt         string // step prefix that returns error
-	FailOnce       bool   // clear FailAt after the first injected error
+	Installed        Installed
+	Service          ServiceInfo
+	Dirs             map[string]bool
+	Files            map[string][]byte
+	DACLs            map[string]string
+	Owners           map[string]bool // path -> takeOwnership called
+	EventSrc         string
+	TrayRun          string
+	TrayRunCmd       string // full Run command for Read/WriteTrayRun
+	Uninst           []RegValue
+	UserKey          bool
+	FixedOK          bool
+	FailAt           string // step prefix that returns error
+	FailOnce         bool   // clear FailAt after the first injected error
 	FailMigrateAfter int    // copy N files then error (CHK-SETUP-17 mid-migrate)
-	RebootRm       bool
-	WriteReboot    bool   // WriteFile returns reboot=true
-	FailAlso       string // second prefix that always fails (e.g. a rollback step)
-	Specs          []ServiceSpec
-	Long           map[string]string
-	TrayWarn       []string
-	Shortcut       string // target of the start-menu shortcut ("" = none)
-	DesktopLnk     string // target of the Public Desktop shortcut ("" = none)
-	ShortcutIcon   string // IconLocation (index 0) of the start-menu shortcut
-	DesktopIcon    string // IconLocation (index 0) of the desktop shortcut
-	LegacyShortcut bool   // pre-phase-13 ExchangeChecker.lnk still present
-	Firewall       string // service exe of the SQL Browser firewall rule ("" = none)
-	FwProfiles     int32  // active firewall profiles (FirewallCurrentProfiles)
-	Driver         fakeDriver // InpOutx64 driver service (phase 14)
+	RebootRm         bool
+	WriteReboot      bool   // WriteFile returns reboot=true
+	FailAlso         string // second prefix that always fails (e.g. a rollback step)
+	Specs            []ServiceSpec
+	Long             map[string]string
+	TrayWarn         []string
+	Shortcut         string     // target of the start-menu shortcut ("" = none)
+	DesktopLnk       string     // target of the Public Desktop shortcut ("" = none)
+	ShortcutIcon     string     // IconLocation (index 0) of the start-menu shortcut
+	DesktopIcon      string     // IconLocation (index 0) of the desktop shortcut
+	LegacyShortcut   bool       // pre-phase-13 ExchangeChecker.lnk still present
+	Firewall         string     // service exe of the SQL Browser firewall rule ("" = none)
+	FwProfiles       int32      // active firewall profiles (FirewallCurrentProfiles)
+	Driver           fakeDriver // InpOutx64 driver service (phase 14)
 }
 
 func newFake() *recordingSystem {

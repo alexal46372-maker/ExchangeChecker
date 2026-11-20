@@ -328,7 +328,7 @@ func TestCHK_TRAY_86_NoLanguageMenu(t *testing.T) {
 				if strings.Contains(low, "язык") || strings.Contains(low, "language") || strings.Contains(low, "english") || strings.Contains(low, "как в windows") {
 					t.Errorf("%s: language item %q", name, it.Text)
 				}
-				if it.ID >= 1011 && it.ID <= 1013 { // the old CmdLangAuto/RU/EN
+				if it.ID >= 1011 && it.ID <= 1013 { // former language items CmdLangAuto/RU/EN (removed in CHK-TRAY-86) must not appear
 					t.Errorf("%s: old language command %d", name, it.ID)
 				}
 				walk(it.Sub)

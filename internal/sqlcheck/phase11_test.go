@@ -176,7 +176,7 @@ func TestCHK_SQL_10_SendErrors(t *testing.T) {
 		t.Errorf("advice %v", res.Advice)
 	}
 	for _, k := range res.Advice {
-		if model.SQLMessage(k) == "" || model.SQLMessage(k) == "" {
+		if model.SQLMessage(k) == "" {
 			t.Errorf("%s has no text", k)
 		}
 	}
@@ -431,7 +431,7 @@ func TestCHK_SQL_13_CheckServerFake(t *testing.T) {
 	// every advice key has a Russian text (the UI is Russian-only, CHK-TRAY-86)
 	for _, id := range model.SQLCheckSteps() {
 		k := model.SQLCheckAdviceKey(id)
-		if model.SQLMessage(k) == "" || model.SQLMessage(k) == "" {
+		if model.SQLMessage(k) == "" {
 			t.Errorf("%s", k)
 		}
 	}
@@ -462,7 +462,7 @@ func TestCHK_SQL_12_SubnetNarrowedAndDefaultMode(t *testing.T) {
 		!hasKey(res.Advice, model.MsgSQLBrowseAdviceSubnetNarrowed) {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if model.SQLMessage(model.MsgSQLBrowseAdviceSubnetNarrowed) == "" || model.SQLMessage(model.MsgSQLBrowseAdviceSubnetNarrowed) == "" {
+	if model.SQLMessage(model.MsgSQLBrowseAdviceSubnetNarrowed) == "" {
 		t.Error("no text")
 	}
 	// mode "" (no host) is broadcast: no TCP scan at all
@@ -547,7 +547,7 @@ func TestCHK_SQL_11_BrowserDisabled(t *testing.T) {
 		t.Fatalf("%+v %v", res, err)
 	}
 	k := model.MsgSQLBrowseAdviceBrowserDisabled
-	if model.SQLMessage(k) == "" || model.SQLMessage(k) == "" || !hasKey(model.SQLWizardMessageKeys(), k) {
+	if model.SQLMessage(k) == "" || !hasKey(model.SQLWizardMessageKeys(), k) {
 		t.Error("not registered")
 	}
 }

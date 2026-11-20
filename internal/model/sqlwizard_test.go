@@ -122,7 +122,7 @@ func TestCHK_SQL_08_AutoPick(t *testing.T) {
 // key for history (monitor.KnownErrorKey uses model.SQLMessage).
 func TestCHK_SQL_09_WizardKeysKnown(t *testing.T) {
 	for _, k := range append(SQLWizardMessageKeys(), SQLWizardValidationKeys()...) {
-		if SQLMessage(k) == "" || SQLMessage(k) == "" {
+		if SQLMessage(k) == "" {
 			t.Errorf("%s: no text", k)
 		}
 	}
@@ -340,7 +340,7 @@ func TestCHK_SQL_16_AutoPickReviewCases(t *testing.T) {
 		t.Errorf("old client one plan %+v", p)
 	}
 	for _, k := range []string{MsgSQLAutoPickMultiplePlans, MsgSQLAutoPickCounters, MsgSQLAutoPickCountersOK} {
-		if SQLMessage(k) == "" || SQLMessage(k) == "" {
+		if SQLMessage(k) == "" {
 			t.Errorf("no text %s", k)
 		}
 	}

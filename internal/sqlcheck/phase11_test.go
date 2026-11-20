@@ -428,7 +428,7 @@ func TestCHK_SQL_13_CheckServerFake(t *testing.T) {
 	if res.OK || last(res).ID != model.SQLStepBrowser || last(res).Code != model.SQLCodeBrowserUnreachable {
 		t.Errorf("%+v", res)
 	}
-	// every advice key has RU/EN text
+	// every advice key has a Russian text (the UI is Russian-only, CHK-TRAY-86)
 	for _, id := range model.SQLCheckSteps() {
 		k := model.SQLCheckAdviceKey(id)
 		if model.SQLMessage(k) == "" || model.SQLMessage(k) == "" {

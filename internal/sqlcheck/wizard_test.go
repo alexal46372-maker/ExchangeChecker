@@ -135,7 +135,7 @@ func TestCHK_SQL_16_AutoPick81Counters(t *testing.T) {
 		}
 	}
 	if model.SQLMessage(model.MsgSQLAutoPickCountersOK) == "" || model.SQLMessage(model.MsgSQLAutoPickCountersOK) == "" {
-		t.Error("no RU/EN text")
+		t.Error("no Russian text")
 	}
 }
 

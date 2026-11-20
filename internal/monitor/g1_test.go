@@ -12,7 +12,7 @@ import (
 
 // TestCHK_SQL_04_ServiceSQLKeysInModel — G1/G4 on the service side: every
 // sql.* key the service can put into errorKey (sqlcheck.Error.Key of a
-// poll or of test_profile) and into ProfileSnapshot.warnings has its RU/EN
+// poll or of test_profile) and into ProfileSnapshot.warnings has its Russian
 // text in model (model.SQLMessage, SQLMessageKeys); every
 // validation.sql_* reason (errorArgs[1] of the G3 check) is formatted by
 // model.FormatMessage.

@@ -420,7 +420,7 @@ func TestCHK_TRAY_84_WizardEqualsExpert(t *testing.T) {
 }
 
 // TestCHK_TRAY_85_WizardErrorTexts — errors only when real, each with its
-// own RU and EN text: none (no exchange tables; offers the permissions
+// own Russian text: none (no exchange tables; offers the permissions
 // script), ambiguous (names both candidates), windows_unsaved (the Windows
 // login of a new profile, from the real test_profile), truncated (search
 // cut short, nothing found).
@@ -511,7 +511,7 @@ func TestCHK_TRAY_85_WizardErrorTexts(t *testing.T) {
 // TestCHK_TRAY_83_NotAutoAppliedWithoutAutoApply — only an autoPick with
 // AutoApply is applied: a non-1C table below the threshold (low_score) and
 // a 1C 8.1 counters plan with 0 points (incomplete) are NOT applied, through
-// the wizard and the expert dialog alike: a problem with its own RU/EN
+// the wizard and the expert dialog alike: a problem with its own Russian
 // text, the best candidate preselected, no mapping put into the profile.
 func TestCHK_TRAY_83_NotAutoAppliedWithoutAutoApply(t *testing.T) {
 	cases := []struct {

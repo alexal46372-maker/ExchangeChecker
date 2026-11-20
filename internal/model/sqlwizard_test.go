@@ -118,7 +118,7 @@ func TestCHK_SQL_08_AutoPick(t *testing.T) {
 	}
 }
 
-// CHK-SQL-09: every new key has RU/EN text and is therefore a known error
+// CHK-SQL-09: every new key has a Russian text and is therefore a known error
 // key for history (monitor.KnownErrorKey uses model.SQLMessage).
 func TestCHK_SQL_09_WizardKeysKnown(t *testing.T) {
 	for _, k := range append(SQLWizardMessageKeys(), SQLWizardValidationKeys()...) {

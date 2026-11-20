@@ -58,7 +58,7 @@ func TestCHK_TRAY_54_LayoutV2(t *testing.T) {
 			testDPI = dpi
 			testWorkArea = nil
 			tag := fmt.Sprintf("%s %d dpi", i18n.RU, dpi)
-			uiScenes(t, i18n.RU, func(name string, hwnd uintptr) {
+			uiScenes(t, func(name string, hwnd uintptr) {
 				checkLayout(t, name+" "+tag, hwnd)
 			})
 		}

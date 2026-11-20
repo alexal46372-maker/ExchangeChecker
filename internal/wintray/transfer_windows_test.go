@@ -133,7 +133,7 @@ type xferEnv struct {
 	ui      *memUI
 }
 
-func newXferEnv(t *testing.T, lang string, otherUser ...bool) *xferEnv {
+func newXferEnv(t *testing.T, otherUser ...bool) *xferEnv {
 	t.Helper()
 	e := &xferEnv{x: newXferService(), path: filepath.Join(t.TempDir(), "cfg.json"),
 		bal: &memBalloon{on: false}, snd: &memSound{}, ui: &memUI{m: traysettings.UIExpert}}
@@ -161,7 +161,7 @@ func TestCHK_TRAY_44_Export(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	{
-		e := newXferEnv(t, i18n.RU)
+		e := newXferEnv(t)
 		e.w.click(t, idSetExport)
 		d := e.w.exp
 		if d == nil {
@@ -218,7 +218,7 @@ func writeImportFile(t *testing.T, path string, tray *traysettings.TrayBlock, pr
 func TestCHK_TRAY_44_Import(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	e := newXferEnv(t, i18n.RU)
+	e := newXferEnv(t)
 	snd := trayalert.DefaultSoundPrefs(nil)
 	snd.Master = 70
 	snd.Error = trayalert.SoundProfile{Kind: trayalert.SoundFile, File: `Z:\нет\alarm.wav`, Volume: 100}
@@ -304,7 +304,7 @@ func TestCHK_TRAY_44_Import(t *testing.T) {
 func TestCHK_TRAY_44_ImportErrors(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	e := newXferEnv(t, i18n.RU)
+	e := newXferEnv(t)
 	for name, data := range map[string]string{"format": `{"format":"x","profiles":[]}`, "json": `nope`,
 		"large": `{"format":"ec-config/1","x":"` + strings.Repeat("a", traysettings.TransferFileMax) + `"}`} {
 		os.WriteFile(e.path, []byte(data), 0o600)
@@ -356,7 +356,7 @@ func TestCHK_TRAY_44_ImportLayout(t *testing.T) {
 		{
 			for _, wa := range []*winapi.RECT{nil, &small} {
 				testDPI, testWorkArea = dpi, wa
-				e := newXferEnv(t, i18n.RU)
+				e := newXferEnv(t)
 				writeImportFile(t, e.path, &traysettings.TrayBlock{}, e.x.profiles[0])
 				e.w.click(t, idSetImport)
 				d := e.w.imp
@@ -389,7 +389,7 @@ func TestCHK_TRAY_44_OtherUser(t *testing.T) {
 	}
 	{
 		warn := i18n.T(i18n.KeyXferOtherUser)
-		e := newXferEnv(t, i18n.RU, true)
+		e := newXferEnv(t, true)
 		e.w.click(t, idSetExport)
 		if e.w.exp == nil {
 			t.Fatalf("%s: export dialog", i18n.RU)
@@ -435,7 +435,7 @@ func TestCHK_TRAY_42_FocusScroll(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	testWorkArea = &winapi.RECT{Right: 1024, Bottom: 500}
 	defer func() { testWorkArea = nil }()
-	e := newXferEnv(t, i18n.RU)
+	e := newXferEnv(t)
 	w := e.w
 	contentRect := func(h uintptr) (winapi.RECT, bool) {
 		if c := w.ctlOf[h]; c != nil && c.Placed {
@@ -521,7 +521,7 @@ func TestCHK_TRAY_57_ExportImportViberFlag(t *testing.T) {
 			t.Errorf("%s: warn must mention token never transferred", i18n.RU)
 		}
 	}
-	e := newXferEnv(t, i18n.RU)
+	e := newXferEnv(t)
 	e.w.click(t, idSetExport)
 	d := e.w.exp
 	if d == nil || d.checked(idExpViber) {
@@ -602,7 +602,7 @@ func TestCHK_TRAY_57_ReloadPrefsMessage(t *testing.T) {
 func TestCHK_TRAY_57_TrayBlockApplyNoRestart(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	e := newXferEnv(t, i18n.RU)
+	e := newXferEnv(t)
 	snd := trayalert.DefaultSoundPrefs(nil)
 	snd.Master = 40
 	writeImportFile(t, e.path, &traysettings.TrayBlock{Balloons: true, Sound: &snd, UIMode: traysettings.UISimple}, e.x.profiles[0])

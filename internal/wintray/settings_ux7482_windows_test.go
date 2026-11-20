@@ -281,9 +281,9 @@ func TestCHK_TRAY_82_NoSoundSaveButton(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke — phase 13: no Language
+// TestCHK_TRAY_79_NoLanguageNoThemeMenu_Smoke — phase 13: no Language
 // (CHK-TRAY-86) and no Theme (CHK-TRAY-88) submenu; rest, sep, About, sep, Exit.
-func TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke(t *testing.T) {
+func TestCHK_TRAY_79_NoLanguageNoThemeMenu_Smoke(t *testing.T) {
 	m := trayui.BuildTrayRightMenu(trayui.RightMenuOpts{})
 	for _, it := range m {
 		if strings.Contains(it.Text, "Язык") || it.Text == "Тема" {

@@ -42,7 +42,7 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 		for _, dpi := range []int32{96, 144} {
 			{
 				testDPI = dpi
-				uiScenes(t, i18n.RU, func(name string, hwnd uintptr) {
+				uiScenes(t, func(name string, hwnd uintptr) {
 					ApplyWindowTheme(hwnd)
 					file := fmt.Sprintf("%s-%s-%d", strings.ReplaceAll(name, " ", "_"), i18n.RU, dpi)
 					if err := screenshot(hwnd, filepath.Join(dir, file)); err != nil {

@@ -71,15 +71,15 @@ func TestCHK_TRAY_03_ToneDefaults(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_03_CloseMutesUntilChange — PLAN §12 p.50: Controller.Close
+// TestCHK_TRAY_03_MuteUntilChange — PLAN §12 p.50: Controller.MuteUntilChange
 // hides and mutes; the same alerts do not reopen it; a new alert or a
 // worse level does; an improvement does not. (The alert window itself
 // cannot be closed since phase 16, CHK-TRAY-104.)
-func TestCHK_TRAY_03_CloseMutesUntilChange(t *testing.T) {
+func TestCHK_TRAY_03_MuteUntilChange(t *testing.T) {
 	c := New()
 	w := pointAlert("a", "Склад", "k1", model.LevelWarning, 35)
 	c.Update(status(1, nil, w), true)
-	v := c.Close()
+	v := c.MuteUntilChange()
 	if v.Visible || v.Sound || len(v.Alerts) != 1 {
 		t.Fatalf("closed view %+v", v)
 	}
@@ -90,7 +90,7 @@ func TestCHK_TRAY_03_CloseMutesUntilChange(t *testing.T) {
 	if v = c.Update(status(3, nil, e), true); !v.Visible || !v.Sound {
 		t.Fatal("escalation must reopen")
 	}
-	c.Close()
+	c.MuteUntilChange()
 	if v = c.Update(status(4, nil, w), true); v.Visible || v.Sound {
 		t.Fatal("improvement error -> warning must not re-arm")
 	}

@@ -232,9 +232,9 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 			func() {
 				testWorkArea = &small
 				defer func() { testWorkArea = nil }()
-				checkSettingsFit(t, "small "+tag, i18n.RU, small)
+				checkSettingsFit(t, "small "+tag, small)
 			}()
-			uiScenes(t, i18n.RU, func(name string, hwnd uintptr) { checkLayout(t, name+" "+tag, hwnd) })
+			uiScenes(t, func(name string, hwnd uintptr) { checkLayout(t, name+" "+tag, hwnd) })
 		}
 	}
 }
@@ -242,7 +242,7 @@ func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 // checkSettingsFit — the settings window (admin expert / simple /
 // «Общие», read-only) inside the work area, «Сохранить» / «Закрыть»
 // inside the client, every page control reachable by scrolling.
-func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
+func checkSettingsFit(t *testing.T, tag string, work winapi.RECT) {
 	t.Helper()
 	ds := newDiscService()
 	app := startCfgApp(t, ds.cfgService, true, nil)
@@ -294,12 +294,12 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 
 // uiScenes opens every tray window (settings expert / general / simple /
 // read-only, import, discovery, sound, history, volume, panel, about, wizard,
-// alert, status, status selected, summary, alarm_test; callers pass
-// i18n.RU, the only UI language) and visits it (layout test, CI
+// alert, status, status selected, summary, alarm_test; Russian UI, the
+// only language) and visits it (layout test, CI
 // screenshots). Summary / alarm_test use demo data under mock caps
 // CapSummary / CapAlarmTest (CHK-TRAY-54). Settings expert shows the clone
 // button when CapCloneProfile is present (CHK-TRAY-58).
-func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
+func uiScenes(t *testing.T, visit func(name string, hwnd uintptr)) {
 	t.Helper()
 	done, ok := useComCtl6()
 	defer done()
@@ -307,7 +307,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 		t.Log("Common Controls 6 activation context not available: cues are not drawn")
 	}
 	func() { // import / export dialogs (phase 11 / CHK-TRAY-57)
-		e := newXferEnv(t, lang)
+		e := newXferEnv(t)
 		e.w.click(t, idSetExport)
 		ex := e.w.exp
 		if ex == nil {
@@ -466,7 +466,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	aw.apply(sampleAlert(lang), false) // a sample alert: text and status filled
+	aw.apply(sampleAlert(), false) // a sample alert: text and status filled
 	visit("alert", aw.hwnd)
 	winapi.DestroyWindow(aw.hwnd)
 	st, err := newStatusWindow(false, nil)
@@ -507,7 +507,7 @@ func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) 
 }
 
 // sampleAlert is an alert view for the layout test and the screenshots.
-func sampleAlert(lang string) trayalert.View {
+func sampleAlert() trayalert.View {
 	msg := "Служба: подтверждение отправлено"
 	at := time.Date(2026, 10, 20, 9, 30, 0, 0, time.FixedZone("UTC+3", 3*3600))
 	return trayalert.View{Visible: true, Level: model.LevelError, CanAck: true, Message: msg,

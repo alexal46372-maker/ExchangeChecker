@@ -12,7 +12,7 @@
 //     and starts the endless beep (tone of the worst shown level);
 //   - since phase 16 (CHK-TRAY-104) the alert window cannot be closed,
 //     only minimized; an alert is dismissed only by «Подтвердить»
-//     (Controller.Close is not used by the window any more);
+//     (Controller.MuteUntilChange is not used by the window);
 //   - «Подтвердить» sends ack_alert per profile (profile-level alert) or
 //     per point (pointKey); ok, not_found and no_active_alert remove the
 //     alert from the window (the latter two: already gone / acknowledged),

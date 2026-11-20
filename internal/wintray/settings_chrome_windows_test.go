@@ -488,9 +488,9 @@ func TestCHK_TRAY_66_ScrollPosPerTab(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_66_LayoutFitWrap144EN — 144 dpi footer wrap; host band
+// TestCHK_TRAY_66_LayoutFitWrap144 — 144 dpi footer wrap; host band
 // sits in [tabChromeH, footerTop); tabs ∉ hostRect after layoutFit/scrollTo.
-func TestCHK_TRAY_66_LayoutFitWrap144EN(t *testing.T) {
+func TestCHK_TRAY_66_LayoutFitWrap144(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	app, _ := startChromeApp(t)

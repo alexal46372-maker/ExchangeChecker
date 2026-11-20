@@ -172,10 +172,10 @@ func (c *Controller) Update(st trayipc.Status, ackable bool) View {
 	return v
 }
 
-// Close hides and mutes until the next change; the alerts stay
-// unacknowledged (PLAN §12 p.50). Since phase 16 (CHK-TRAY-104) the alert
-// window cannot be closed and does not call it; kept for the logic tests.
-func (c *Controller) Close() View {
+// MuteUntilChange hides and mutes until the next change; the alerts stay
+// unacknowledged (PLAN §12 p.50). Logic only: since phase 16
+// (CHK-TRAY-104) the alert window cannot be closed and does not call it.
+func (c *Controller) MuteUntilChange() View {
 	c.visible, c.sound = false, false
 	return c.View()
 }

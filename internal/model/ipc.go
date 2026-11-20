@@ -25,8 +25,10 @@ const (
 	// without importing internal/wintray. wParam / lParam are ignored.
 	TrayExitMessage = "ExchangeChecker.TrayExit"
 	// TrayReloadPrefsMessage is the RegisterWindowMessageW name that makes
-	// the tray (window class ExchangeCheckerTray) reread Sound / UIMode /
-	// Theme / balloons from HKCU without exiting (CHK-TRAY-57).
+	// the tray (window class ExchangeCheckerTray) reread its Sound / UIMode /
+	// balloon / screen-flash preferences from HKCU without exiting
+	// (CHK-TRAY-57); there is no theme preference any more (the dark
+	// theme was removed, CHK-TRAY-88).
 	// The settings window posts it after importing the tray block.
 	TrayReloadPrefsMessage = "ExchangeChecker.TrayReloadPrefs"
 	// Window classes that handle TrayExitMessage (CHK-TRAY-11). A separate
@@ -196,7 +198,8 @@ type IPCRequest struct {
 	// conflict.
 	ExpectedRevision string `json:"expectedRevision,omitempty"`
 	// NewID / NewName of clone_profile (phase 12, CHK-CFG-08): optional;
-	// empty NewID = generate, empty NewName = "<old> (копия)" / "(copy)".
+	// empty NewID = generate, empty NewName = "<old> (копия)" (see
+	// CloneNameSuffix; the interface language is Russian only).
 	NewID   string `json:"newId,omitempty"`
 	NewName string `json:"newName,omitempty"`
 	// import_config (phase 10, CHK-CFG-06): Config, Mode (merge default |

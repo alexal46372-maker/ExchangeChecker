@@ -462,7 +462,9 @@ Wizard Win32 (страницы):
 
 ## 10. Автотесты и check ID
 
-Файл `checks/CHECKS.md` (или `checks/manifest.json`) — реестр. **Без check ID мерж фичи запрещён** (`POLICY.md`).
+Файл `checks/CHECKS.md` — реестр (`checks/manifest.json` не заводился). **Без check ID мерж фичи запрещён** (`POLICY.md`).
+
+**Актуально в v0.17.0:** в `checks/CHECKS.md` 224 check ID (группы POL, CI, CFG, MODEL, SQL, MON, IPC, SVC, TRAY, SETUP, RES, VER, DELIV); два из них — `CHK-TRAY-55` и `CHK-TRAY-59` — помечены **removed** (фаза 13). Таблица ниже — исходный каркас фазы 0.
 
 Предлагаемый каркас ID:
 

@@ -32,7 +32,7 @@ const (
 const (
 	UninstallKeyPath = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\` + model.ServiceName
 	EventLogKeyPath  = `SYSTEM\CurrentControlSet\Services\EventLog\Application\` + model.EventSource
-	// UserKeyPath is the tray's per-user key (HKCU, language); removed for
+	// UserKeyPath is the tray's per-user key (HKCU; tray settings in the Tray subkey); removed for
 	// the current user only on /PURGEDATA.
 	UserKeyPath = `Software\ExchangeChecker`
 	// EventTypesSupported: ERROR | WARNING | INFORMATION.

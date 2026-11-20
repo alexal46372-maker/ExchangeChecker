@@ -2,9 +2,10 @@ package wininstall
 
 import "fmt"
 
-// Setup string catalog, Russian only (phase 13, CHK-TRAY-86; docs/PHASE7.md §1.3, CHK-SETUP-10): keys
-// setup.*; completeness is tested (TestCHK_SETUP_10_Catalog*). The tray
-// catalog internal/i18n is EC Tray's and is not used here.
+// Setup string catalog, Russian only (phase 13, CHK-TRAY-86; docs/PHASE7.md
+// §1.3, CHK-SETUP-10): keys setup.*; completeness is tested
+// (TestCHK_SETUP_10_Catalog*). The tray catalog internal/i18n is EC Tray's
+// and is not used here.
 
 var catalog = map[string]string{
 

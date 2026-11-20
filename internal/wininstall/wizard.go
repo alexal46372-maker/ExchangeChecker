@@ -28,7 +28,7 @@ type WizardState struct {
 	DataDir         string
 	Shortcut        bool // Start menu, default on
 	DesktopShortcut bool // Public Desktop, default on (CHK-SETUP-16)
-	Service         bool // "start the service and start it automatically", default on (§D.1)
+	Service         bool // "Options" page: "start the service and start it automatically", default on (§D.1)
 	LaunchTray      bool // Finish page, default on (§D.8)
 	// SvcWasRunning: state before the upgrade (the locked checkbox value).
 	SvcWasRunning bool

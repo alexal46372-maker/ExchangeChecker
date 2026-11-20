@@ -106,7 +106,7 @@ var winAPIMinVersion = map[string]float64{
 	"DisconnectNamedPipe": 5.0, "GetModuleHandleW": 5.0, "GetNamedPipeServerProcessId": 6.0,
 	"GetOverlappedResult": 5.0, "GetSystemDirectoryW": 5.0, "DeviceIoControl": 5.0, // InpOutx64 port IOCTL (CHK-SVC-12, Windows 2000+)
 	"GetUserDefaultUILanguage": 5.0,
-	"LocalFree": 5.0, "MoveFileExW": 5.0, "ResetEvent": 5.0, "SetEvent": 5.0,
+	"LocalFree":                5.0, "MoveFileExW": 5.0, "ResetEvent": 5.0, "SetEvent": 5.0,
 	"WaitForMultipleObjects": 5.0, "WaitNamedPipeW": 5.0,
 	"MultiByteToWideChar": 5.0, // internal/sqlcheck: SSRP ANSI names (CP_ACP), phase 9
 	// advapi32

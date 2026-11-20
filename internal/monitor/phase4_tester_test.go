@@ -246,7 +246,7 @@ func TestCHK_IPC_03_TestProfile(t *testing.T) {
 	}
 	if model.MonitorMessage(model.MsgTestWindowsUnsaved) != "Сохраните профиль, чтобы проверить Windows-аутентификацию." ||
 		model.MonitorMessage(model.MsgTestWindowsUnsaved) == "" {
-		t.Error("windows message RU/EN")
+		t.Error("windows message is not the expected Russian text")
 	}
 }
 

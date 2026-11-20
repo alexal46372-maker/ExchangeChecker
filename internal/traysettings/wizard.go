@@ -217,7 +217,7 @@ func (z *Wizard) PickDatabase(i int) bool {
 }
 
 // DiscoveryDone takes the discover reply and decides by itself
-// (fix/tray-wizard-autofind, CHK-TRAY-83): ResolveDiscovery — the same
+// (wizard auto-find, CHK-TRAY-83): ResolveDiscovery — the same
 // decision as the expert dialog — gives the main mapping and the mappings
 // of every other exchange plan (autoPick Plans, 1C 8.1 counters
 // included); the returned candidate is the main one, applied without

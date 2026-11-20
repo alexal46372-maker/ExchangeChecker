@@ -244,7 +244,7 @@ func (wd *wizardDialog) build() {
 	wd.cur = &wd.stepCtl[traysettings.WizFinish]
 	cands := c("LISTBOX", "", winapi.WS_EX_CLIENTEDGE, list, idWizCands, ui.Box, 736, 300)
 	cands.Grow = true
-	// fix/tray-wizard-autofind: the candidates only behind «Подробнее»
+	// auto-find (CHK-TRAY-83): the candidates only behind «Подробнее»
 	details := c("BUTTON", wd.t(i18n.KeyWizDetails), 0, winapi.WS_TABSTOP, idWizDetails, ui.Button, 0, 0)
 	candsL := label(i18n.KeyWizCands)
 	candsL.Hidden, cands.Hidden = true, true
@@ -408,7 +408,7 @@ func (wd *wizardDialog) read() {
 // password returns the password box text for one request (the UTF-16
 // copy is wiped; nothing is kept).
 //
-// The box itself is read every time (fix/tray-wizard-autofind): a
+// The box itself is read every time (CHK-TRAY-83..85): a
 // password pasted or set without EN_CHANGE reaching the dialog was sent
 // empty when only an EN_CHANGE flag was trusted.
 func (wd *wizardDialog) password() string {

@@ -20,7 +20,7 @@ import (
 // Phase 10 E (CHK-TRAY-44) + phase 12 (CHK-TRAY-57): «Экспорт…» /
 // «Импорт…» of the administrator settings window. Export: options dialog
 // (optional «Получатели Viber») then export_config + the tray block of
-// this user (HKCU, including Theme). Import: the file, import_config
+// this user (HKCU; no theme, CHK-TRAY-88). Import: the file, import_config
 // dryRun with a preview (merge / replace, «Также звук и вид трея»,
 // «Получатели Viber»), then the real import; the tray block is written
 // to HKCU and applied live via ExchangeChecker.TrayReloadPrefs (no

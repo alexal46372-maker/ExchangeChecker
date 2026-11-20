@@ -22,7 +22,10 @@ import (
 // theme (CHK-TRAY-88), as PNG into $EC_UI_SCREENS (the ui-screens artifact
 // of the windows job, 7 days). The windows are shown off-screen (not
 // hidden) and rendered with PrintWindow. Includes summary* and
-// alarm_test* (CHK-TRAY-54).
+// alarm_test* (CHK-TRAY-54), and since phase 17 (CHK-TRAY-110) the
+// settings window, expert mode, «Базы данных»: settings_expert_db_96,
+// settings_expert_db_120 (120 dpi) and settings_expert_db_1024x768
+// (96 dpi, 1024×768 work area).
 func TestCHK_TRAY_46_Screens(t *testing.T) {
 	dir := os.Getenv("EC_UI_SCREENS")
 	if dir == "" {

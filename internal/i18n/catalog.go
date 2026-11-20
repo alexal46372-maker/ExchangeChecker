@@ -598,7 +598,7 @@ const (
 	KeyWizApplied          = "wiz.applied"
 	KeyWizChoose           = "wiz.choose"
 	KeyWizChosen           = "wiz.chosen"
-	// fix/tray-wizard-autofind (CHK-TRAY-83..85)
+	// wizard auto-find (CHK-TRAY-83..85)
 	KeyWizFoundPlan        = "wiz.found_plan"
 	KeyWizFoundPlans       = "wiz.found_plans"
 	KeyWizFoundFields      = "wiz.found_fields"
@@ -709,7 +709,7 @@ const (
 	KeySoundBadValue    = "sound.bad_value"
 	KeySoundSaved       = "sound.saved"
 	KeySoundFallback    = "sound.fallback"
-	// phase 14 (feat/tray-speaker, CHK-TRAY-98/99): «Тон» through the
+	// phase 14 (CHK-TRAY-98/99): «Тон» through the
 	// PC speaker of the service
 	// phase 16 E (CHK-TRAY-105): «Вывод звука» of «Тон» per level
 	KeySoundOutput         = "sound.output"

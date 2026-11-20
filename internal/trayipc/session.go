@@ -558,7 +558,7 @@ func (s *Session) connectOnce(ctx context.Context) bool {
 
 // ClientHelloCaps are the capabilities the tray declares in client_hello;
 // CapAutoPickPlans: the tray applies every plan of autoPick Plans (main +
-// additional mappings, fix/tray-wizard-autofind, CHK-TRAY-83).
+// additional mappings, wizard auto-find, CHK-TRAY-83).
 var ClientHelloCaps = []string{model.ClientCapAlarmTest, model.CapSummary, model.CapAckEvent, model.CapAutoPickPlans}
 
 // sendClientHello declares tray capabilities (alarm_test) so the service

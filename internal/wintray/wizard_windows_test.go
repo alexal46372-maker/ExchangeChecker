@@ -148,7 +148,7 @@ func TestCHK_TRAY_30_Wizard(t *testing.T) {
 	wd.pick(idWizDBs, 1)
 	wd.click(t, idWizNext)
 	pumpUntil(t, "discovered", func() bool { return wd.idle() && len(wd.z.Candidates) == 2 })
-	// fix/tray-wizard-autofind: found and applied without asking (both
+	// auto-find (CHK-TRAY-83): found and applied without asking (both
 	// plans), «Сохранить» right away; the list only behind «Подробнее»
 	if svc.count("test") != 1 || !winapi.IsWindowEnabled(wd.ctl[idWizSave]) || wd.z.Chosen != 0 ||
 		wd.w.ed.MapEdit == nil || wd.w.ed.MapEdit.Table != "_Node10" || len(wd.w.ed.MapsEdit) != 1 || wd.w.ed.MapsEdit[0].Table != "_Node20" {

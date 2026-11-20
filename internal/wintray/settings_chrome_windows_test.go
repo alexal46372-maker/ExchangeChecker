@@ -336,8 +336,8 @@ func TestCHK_TRAY_65_SettingsChromeErase(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_66_AllTabsScrollNoOverlap — pages 0/1/Viber/Email × RU/EN ×
-// 96/120/144; force CapEmail; scroll 0/mid/max; tab rect fixed; no ghosts.
+// TestCHK_TRAY_66_AllTabsScrollNoOverlap — pages 0/1/Viber/Email (Russian
+// UI) × 96/120/144; force CapEmail; scroll 0/mid/max; tab rect fixed; no ghosts.
 func TestCHK_TRAY_66_AllTabsScrollNoOverlap(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -488,7 +488,7 @@ func TestCHK_TRAY_66_ScrollPosPerTab(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_66_LayoutFitWrap144EN — 144 dpi EN footer wrap; host band
+// TestCHK_TRAY_66_LayoutFitWrap144EN — 144 dpi footer wrap; host band
 // sits in [tabChromeH, footerTop); tabs ∉ hostRect after layoutFit/scrollTo.
 func TestCHK_TRAY_66_LayoutFitWrap144EN(t *testing.T) {
 	runtime.LockOSThread()

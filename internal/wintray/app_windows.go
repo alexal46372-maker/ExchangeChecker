@@ -491,8 +491,8 @@ func (a *App) wndProc(hwnd uintptr, msg uint32, wp, lp uintptr) (uintptr, bool) 
 		a.blinkTick()
 		return 0, true
 	case isTrayReloadPrefs(msg):
-		// CHK-TRAY-57: reread Sound / UIMode / Theme / balloons
-		// from HKCU without Exit (wParam / lParam ignored)
+		// CHK-TRAY-57: reread balloons / Sound / UIMode (and «Мигание
+		// экрана») from HKCU without Exit (wParam / lParam ignored)
 		a.reloadTrayPrefs()
 		return 0, true
 	case isTrayExit(msg), msg == winapi.WM_CLOSE:

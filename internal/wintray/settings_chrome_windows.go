@@ -19,7 +19,7 @@ const (
 var pageActionIDs = []int32{idSetTest, idSetCancelTest, idSetAlarmTest, idSetPoll}
 
 // settingsChromeErase paints content + footer bar (installer look).
-// Not COLOR_BTNFACE. Dark theme keeps trayui dark palette (CHK-TRAY-55).
+// Not COLOR_BTNFACE. One light palette (dark theme removed, CHK-TRAY-88).
 // Persistent brushes via ensureChromeBrushes (no Create+Delete per erase).
 func (w *settingsWindow) settingsChromeErase(hdc uintptr) uintptr {
 	if w == nil || w.hwnd == 0 {

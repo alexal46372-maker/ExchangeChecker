@@ -666,7 +666,7 @@ func (w *settingsWindow) build() {
 	profileForm := &ui.Col{Gap: ui.P8, Items: []ui.Node{conn, login, tls, checks, &ui.Col{Gap: ui.P4, Items: []ui.Node{hints, info}}}}
 	profilePage := &ui.Row{Align: ui.Top, Gap: ui.P12, Items: []ui.Node{&ui.Pad{Top: 6, Child: basesChrome}, profileForm}}
 
-	// general settings page — children of pagePanel[1]; Theme removed (CHK-TRAY-61 → tray menu in 63)
+	// general settings page — children of pagePanel[1]; Theme removed (CHK-TRAY-61; no theme at all, CHK-TRAY-88)
 	w.pageParent = w.pagePanel[1]
 	w.cur = &w.pageCtl[1]
 	gBox := add("BUTTON", w.t(i18n.KeySetGroupGeneral), 0, winapi.BS_GROUPBOX, 0, ui.Group, 0, 0)
@@ -778,7 +778,7 @@ func (w *settingsWindow) build() {
 			w.tips.set(h, w.t(key))
 		}
 	}
-	// Theme combo removed from General (CHK-TRAY-61); tray menu in CHK-TRAY-63.
+	// Theme combo removed from General (CHK-TRAY-61); the dark theme is gone (CHK-TRAY-88).
 	for _, h := range w.pageCtl[1] {
 		w.show(h, false)
 	}

@@ -10,7 +10,7 @@ import (
 
 // ResolveDiscovery is the one decision on a Discovery result shared by the
 // «Добавить базу» wizard and the expert «Таблицы обмена…» dialog
-// (fix/tray-wizard-autofind, CHK-TRAY-83/84): model.SQLAutoPickFor over
+// (wizard auto-find, CHK-TRAY-83/84): model.SQLAutoPickFor over
 // the candidates (computed here, never trusted from a reply). Only an
 // autoPick with AutoApply is applied: the main mapping and one mapping per
 // other exchange plan (autoPick Plans; 1C 8.1 counters plans are part of

@@ -9,7 +9,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// Phase 14 (feat/tray-speaker, CHK-TRAY-98): the client side of the PC
+// Phase 14 (CHK-TRAY-98): the client side of the PC
 // speaker of the service (CHK-IPC-20: capabilities speaker /
 // speaker_status; speaker_status → {type:"speaker_status", speaker:{…}};
 // speaker_tone → ok, result accepted / stopped; errors

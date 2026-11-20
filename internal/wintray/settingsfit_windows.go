@@ -326,7 +326,7 @@ func (w *settingsWindow) layoutFit() {
 		winapi.MoveWindow(s.b.h, s.x, by+s.row*(bh+gap), s.b.width, bh)
 	}
 	// Right buttons: wrap to extra rows when they do not fit on one line
-	// (144 dpi EN Export/Import/Mode/Save/Close overflowed left of client).
+	// (at 144 dpi Export/Import/Mode/Save/Close overflowed left of client).
 	rx, rrow := cw-m, row
 	for i := len(right) - 1; i >= 0; i-- {
 		if rx < m+right[i].width && rx < cw-m {

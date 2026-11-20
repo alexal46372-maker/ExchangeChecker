@@ -84,7 +84,7 @@ func TestCHK_TRAY_88_NoDarkTheme(t *testing.T) {
 	for _, bad := range []string{"Theme" + "Dark", "Is" + "Dark", "dark" + "Pale", "dark" + "Page", "dark" + "Panel", "sync.RWMutex"} {
 		if strings.Contains(string(b), bad) {
 			t.Errorf("theme.go still has %s", bad)
-	}
+		}
 	}
 }
 
@@ -156,4 +156,3 @@ func TestCHK_TRAY_65_PaletteExact(t *testing.T) {
 		t.Fatal("light ChromePage/Panel must match constants")
 	}
 }
-

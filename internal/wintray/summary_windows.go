@@ -27,10 +27,10 @@ const (
 )
 
 type summaryWindow struct {
-	a           *App
-	hwnd, chart uintptr
+	a                  *App
+	hwnd, chart        uintptr
 	info, close, cards uintptr
-	session     *trayipc.Session
+	session            *trayipc.Session
 
 	mu      sync.Mutex
 	pending *model.Summary

@@ -424,7 +424,6 @@ func pageColorShare(bgra []byte, page uint32) float64 {
 	return float64(match) / float64(n)
 }
 
-
 // mustCaptureWindow CaptureWindow's hwnd or hard-fails on Windows CI /
 // explicitly Skips when capture is unavailable locally.
 func mustCaptureWindow(t *testing.T, hwnd uintptr, what string) []byte {
@@ -439,7 +438,6 @@ func mustCaptureWindow(t *testing.T, hwnd uintptr, what string) []byte {
 	return pix
 }
 
-
 // pumpN drains up to n pending UI messages.
 func pumpN(n int) {
 	var msg winapi.MSG
@@ -451,7 +449,6 @@ func pumpN(n int) {
 		winapi.DispatchMessage(&msg)
 	}
 }
-
 
 // TestCHK_TRAY_71_PageHostEraseContract — Conchita root-cause contract for the
 // shared settings page host (ALL tabs): NOCOPYBITS, SetScrollNoRedraw in batch,
@@ -556,7 +553,6 @@ func TestCHK_TRAY_71_PageHostEraseContract(t *testing.T) {
 		}
 	}
 }
-
 
 // bringSettingsOnScreen places the settings frame on-screen topmost so
 // CaptureScreen (BitBlt) sees real pixels — PrintWindow alone masked #15.

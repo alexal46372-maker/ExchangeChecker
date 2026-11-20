@@ -71,4 +71,3 @@ func contentPaint(hwnd uintptr) {
 	winapi.FillRect(dc, winapi.GetClientRect(hwnd), page)
 	winapi.EndPaint(hwnd, &ps)
 }
-

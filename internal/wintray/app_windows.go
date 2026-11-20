@@ -66,7 +66,7 @@ func isTrayReloadPrefs(msg uint32) bool {
 
 // Options configure the tray application.
 type Options struct {
-	Session   trayipc.Options // Dial and Verify; OnEvent is set by the App
+	Session trayipc.Options // Dial and Verify; OnEvent is set by the App
 	// NoNotifyIcon skips Shell_NotifyIconW (tests without Explorer).
 	NoNotifyIcon bool
 	// Beeper plays the alert sound; nil = kernel32 Beep (tests: a fake).
@@ -163,18 +163,18 @@ type App struct {
 	volumeDrawnOn    uintptr
 	volumeDrawnValue int
 	volumeFont       uintptr // font of the last slider text (CHK-TRAY-96 test hook)
-	soundStored bool
-	soundWin    *soundWindow
-	volWin      *volumeWindow
-	problems    []trayalert.Problem
-	statusExt   trayalert.StatusExt
-	blink       trayalert.Blink
-	blinkOff    bool // the icon is in its dark phase
-	blinkTimer  bool
-	blinks      int // icon changes by the blink timer (test hook)
-	panel       *panelWindow
-	awin        *alertWindow
-	alertView   trayalert.View
+	soundStored      bool
+	soundWin         *soundWindow
+	volWin           *volumeWindow
+	problems         []trayalert.Problem
+	statusExt        trayalert.StatusExt
+	blink            trayalert.Blink
+	blinkOff         bool // the icon is in its dark phase
+	blinkTimer       bool
+	blinks           int // icon changes by the blink timer (test hook)
+	panel            *panelWindow
+	awin             *alertWindow
+	alertView        trayalert.View
 
 	status         trayipc.Status
 	ind            trayui.Indicator
@@ -191,7 +191,7 @@ type App struct {
 	taskbarRecreated int
 	// phase 9a: balloons (CHK-TRAY-18), «Состояние» (CHK-TRAY-19/21),
 	// «Проверить сейчас» results (CHK-TRAY-20, test hook)
-	balloonsOn   bool
+	balloonsOn bool
 	// flashes: active flash pushes by profile / point; flashWin: the
 	// full-screen overlay (CHK-TRAY-95)
 	flashes  map[flashKey]flashState
@@ -211,9 +211,9 @@ type App struct {
 	// answered resumed:false (flashMu)
 	flashResuming map[flashKey]flashState
 	flashNoResume map[uint64]bool
-	balloons     []trayui.Balloon
-	statusWin    *statusWindow
-	checkResults []string
+	balloons      []trayui.Balloon
+	statusWin     *statusWindow
+	checkResults  []string
 	// phase 9b: check_now wait (CHK-TRAY-22), service clock (CHK-TRAY-23),
 	// balloon debounce (CHK-TRAY-24), events_since catch-up (CHK-TRAY-25),
 	// history window (CHK-TRAY-26)
@@ -592,8 +592,8 @@ func (a *App) LeftMenu() []trayui.Item { return trayui.BuildLeftMenu(a.status) }
 func (a *App) RightMenu() []trayui.Item {
 	sum := a.session != nil && (a.session.Supported(model.CmdSummary) || a.session.Status().Has(model.CapSummary))
 	return trayui.BuildTrayRightMenu(trayui.RightMenuOpts{
-		Svc:   a.serviceState(),
-		Balloons: a.balloonsOn,
+		Svc:       a.serviceState(),
+		Balloons:  a.balloonsOn,
 		Connected: a.connected() && !a.check.Busy, SummaryAvailable: sum,
 	})
 }

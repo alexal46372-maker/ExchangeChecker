@@ -326,7 +326,7 @@ type Problem struct {
 	Field  Field
 	Reload bool
 	// Code: kind of a wizard / discovery problem (Problem* of resolve.go)
-	Code   string
+	Code string
 }
 
 // fieldLabel is the localized name of a JSON path ({0} of validation
@@ -353,7 +353,7 @@ func (e *Editor) fieldLabel(path string) string {
 		"beep.enabled": i18n.KeyGenBeepEnabled, "beep.warningFreqHz": i18n.KeyGenWarnFreq, "beep.warningDurMs": i18n.KeyGenWarnDur,
 		"beep.errorFreqHz": i18n.KeyGenErrorFreq, "beep.errorDurMs": i18n.KeyGenErrorDur, "beep.gapMs": i18n.KeyGenGap,
 		"trayAutostart": i18n.KeyGenAutostart,
-		"serverPreset": i18n.KeySetPreset, "connectTimeoutSec": i18n.KeySetConnTimeout, "queryTimeoutSec": i18n.KeySetQueryTimeout,
+		"serverPreset":  i18n.KeySetPreset, "connectTimeoutSec": i18n.KeySetConnTimeout, "queryTimeoutSec": i18n.KeySetQueryTimeout,
 	}[path]
 	if !e.settingsCtx { // the profile's own thresholds (phase 8)
 		switch path {
@@ -593,7 +593,6 @@ func (e *Editor) CloneDone(m model.IPCMessage) string {
 	}
 	return fmt.Sprintf(e.t(i18n.KeySetCloned), m.ProfileID)
 }
-
 
 // TestRequest is test_profile: the saved profile by id when nothing was
 // edited (always in read-only mode), else the form with the typed

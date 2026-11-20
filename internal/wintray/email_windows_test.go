@@ -18,12 +18,12 @@ import (
 // emailCfg is a service with capability email.
 type emailCfg struct {
 	*cfgService
-	emu      sync.Mutex
-	email    model.EmailSettings
-	hasPass  bool
-	saves    []emailSave
-	tests    []model.IPCRequest
-	saveErr  error
+	emu     sync.Mutex
+	email   model.EmailSettings
+	hasPass bool
+	saves   []emailSave
+	tests   []model.IPCRequest
+	saveErr error
 }
 
 type emailSave struct {

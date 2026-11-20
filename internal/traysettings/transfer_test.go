@@ -121,7 +121,6 @@ func TestCHK_TRAY_44_ErrorTexts(t *testing.T) {
 	}
 }
 
-
 // TestCHK_TRAY_88_OldThemeFieldIgnored — a file exported before phase 13
 // with "theme": "dark" in the tray block still imports; the field is
 // silently dropped (not re-exported, not in the summary).

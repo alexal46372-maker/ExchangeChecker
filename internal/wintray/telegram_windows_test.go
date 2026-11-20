@@ -14,7 +14,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// tgService adds the Telegram contract of EC Service (phase 13) to the fake
+// tgService adds the Telegram contract of the service to the fake
 // config service: settings.telegram in get_config (hasToken read-only),
 // save_settings with botToken / clearBotToken (ipc.TelegramSettingsSaver),
 // telegram_test (ipc.TelegramTester, at most once per 10 s like the
@@ -168,7 +168,9 @@ func TestCHK_TRAY_94_TelegramTab(t *testing.T) {
 	}
 	// second test within 10 s: rate_limited + retryAfterMs
 	w.click(t, idTgTest)
-	pumpUntil(t, "rate limited", func() bool { return w.tgTesting == nil && strings.Contains(w.text(idTgResult), "не чаще раза в 10 с") })
+	pumpUntil(t, "rate limited", func() bool {
+		return w.tgTesting == nil && strings.Contains(w.text(idTgResult), "не чаще раза в 10 с")
+	})
 	if svc.nTests() != 1 {
 		t.Errorf("tests %d", svc.nTests())
 	}

@@ -57,10 +57,10 @@ type AckResult struct {
 // Controller is the alert state machine. Not safe for concurrent use (the
 // UI thread owns it).
 type Controller struct {
-	connected bool
-	ackable   bool // service supports ack_alert
+	connected  bool
+	ackable    bool // service supports ack_alert
 	ackByEvent bool // capability ack_event: ack by eventId
-	settings  *model.Settings
+	settings   *model.Settings
 
 	shown map[ID]model.AlertEvent // unacknowledged active alerts shown
 	// acked: acknowledged alerts (by us or by the service), hidden until a

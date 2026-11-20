@@ -252,14 +252,14 @@ func ListViewSetColumnWidth(lv uintptr, i int, width int32) {
 
 // NMLISTVIEW is the LVN_ITEMCHANGED payload (subset used by settings).
 type NMLISTVIEW struct {
-	Hdr       NMHDR
-	Item      int32
-	SubItem   int32
-	NewState  uint32
-	OldState  uint32
-	Changed   uint32
-	PtAction  POINT
-	Param     uintptr
+	Hdr      NMHDR
+	Item     int32
+	SubItem  int32
+	NewState uint32
+	OldState uint32
+	Changed  uint32
+	PtAction POINT
+	Param    uintptr
 }
 
 // ReadNMLISTVIEW copies NMLISTVIEW at lp.

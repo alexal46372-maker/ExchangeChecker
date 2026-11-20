@@ -114,7 +114,7 @@ func checkLayout(t *testing.T, what string, hwnd uintptr) {
 			switch {
 			case a.group() && contains(a.r, b.r), b.group() && contains(b.r, a.r):
 				continue // control fully inside a group box
-			// peer group boxes that intersect fall through → error (Conn/Login)
+				// peer group boxes that intersect fall through → error (Conn/Login)
 			}
 			t.Errorf("%s: %v overlaps %v", what, a, b)
 		}

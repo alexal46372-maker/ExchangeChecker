@@ -263,8 +263,8 @@ func (s *Session) setElevatedLocked(v *bool) {
 // commandCapability maps version-2 commands to the capability that the
 // service must announce. Commands of version 1 need nothing.
 var commandCapability = map[string]string{
-	model.CmdTestProfile: model.CapTestProfile,
-	model.CmdAckAlert:    model.CapAckAlert,
+	model.CmdTestProfile:        model.CapTestProfile,
+	model.CmdAckAlert:           model.CapAckAlert,
 	model.CmdMuteUntilRecovered: model.CapMuteProfile, // phase 12; tray menu removed in phase 13 (CHK-TRAY-91)
 	model.CmdUnmuteProfile:      model.CapMuteProfile,
 	// phase 6 (G5 / G6)
@@ -279,11 +279,11 @@ var commandCapability = map[string]string{
 	model.CmdCheckNow:    model.CapCheckNow,
 	model.CmdEventsSince: model.CapEventsSince,
 	// phase 11 wizard (CHK-TRAY-52 / CHK-IPC-12/13)
-	model.CmdSQLBrowse:    model.CapSQLBrowse,
-	model.CmdSQLDatabases: model.CapSQLDatabases,
-	model.CmdSQLDiagnose:  model.CapSQLDiagnose,
+	model.CmdSQLBrowse:      model.CapSQLBrowse,
+	model.CmdSQLDatabases:   model.CapSQLDatabases,
+	model.CmdSQLDiagnose:    model.CapSQLDiagnose,
 	model.CmdSQLGrantScript: model.CapSQLGrantScript,
-	model.CmdSQLTestSteps: model.CapTestSteps,
+	model.CmdSQLTestSteps:   model.CapTestSteps,
 	// phase 11 (CHK-TRAY-53)
 	model.CmdAlarmTest:   model.CapAlarmTest,
 	model.CmdSummary:     model.CapSummary,

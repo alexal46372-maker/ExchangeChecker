@@ -741,7 +741,6 @@ func (w *settingsWindow) syncPagePanels() {
 	w.scrollTo(w.scrollX, w.scrollY)
 }
 
-
 // fitWrap sets the height of the wrapped text boxes to their text at
 // the width of the last layout (an empty box takes almost no room) and
 // lays the tree out again when a height changed.

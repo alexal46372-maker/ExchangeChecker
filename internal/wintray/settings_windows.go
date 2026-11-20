@@ -140,11 +140,11 @@ type settingsSession interface {
 
 // settingsConfig configures a settings window.
 type settingsConfig struct {
-	mode     traysettings.Mode
-	session  settingsSession
+	mode    traysettings.Mode
+	session settingsSession
 	// speaker: the PC speaker of the service shared with the App's
 	// sounders (phase 14); nil = one of this window's session.
-	speaker *trayipc.Speaker
+	speaker  *trayipc.Speaker
 	elevator Elevator
 	// confirm asks Yes/No (delete, discard changes); nil = MessageBoxW
 	// with «Нет» as the default button.
@@ -174,8 +174,8 @@ type settingsConfig struct {
 	// CHK-TRAY-95)
 	onFlashSave func()
 	onSoundTest func(trayalert.SoundProfile, int)
-	onSoundStop func()            // CHK-TRAY-81: halt «Прослушать»
-	onSoundDone func(cb func())   // register one-shot preview-done callback
+	onSoundStop func()                      // CHK-TRAY-81: halt «Прослушать»
+	onSoundDone func(cb func())             // register one-shot preview-done callback
 	soundPrefs  func() trayalert.SoundPrefs // live prefs from the tray App; nil = load store
 }
 
@@ -257,24 +257,24 @@ type settingsWindow struct {
 	// statusRefreshes / statusRefreshed: get_status re-reads started /
 	// done after save_settings (test hook)
 	statusRefreshes, statusRefreshed int
-	page                             int          // 0 = databases, 1 = general, 2 = Viber, 3 = e-mail
-	pageCtl                          [5][]uintptr // profiles, «Общие», «Viber», «e-mail», «Telegram»
-	pagePanel                        [5]uintptr   // one child HWND per tab (SW_HIDE hides tree)
-	pageParent                       uintptr      // CreateWindow parent while building a page
-	pageSlot                         winapi.RECT  // shared Gap:-1 slot (host coords) for panels
-	pages                            [5]ui.Node   // page roots for SetHidden on switch (no overlay)
-	tabCtl                           *ui.Ctl      // SysTabControl32 section tabs (frame child; fixed)
-	tabPages                         []int        // tab index → page index
-	tabSync                          bool         // ignore TCN_SELCHANGE while syncing
-	tabChromeH                       int32        // fixed tab strip height (px); not scrolled
-	footerTop                        int32        // y of footer bar in client (paint)
+	page                             int                     // 0 = databases, 1 = general, 2 = Viber, 3 = e-mail
+	pageCtl                          [5][]uintptr            // profiles, «Общие», «Viber», «e-mail», «Telegram»
+	pagePanel                        [5]uintptr              // one child HWND per tab (SW_HIDE hides tree)
+	pageParent                       uintptr                 // CreateWindow parent while building a page
+	pageSlot                         winapi.RECT             // shared Gap:-1 slot (host coords) for panels
+	pages                            [5]ui.Node              // page roots for SetHidden on switch (no overlay)
+	tabCtl                           *ui.Ctl                 // SysTabControl32 section tabs (frame child; fixed)
+	tabPages                         []int                   // tab index → page index
+	tabSync                          bool                    // ignore TCN_SELCHANGE while syncing
+	tabChromeH                       int32                   // fixed tab strip height (px); not scrolled
+	footerTop                        int32                   // y of footer bar in client (paint)
 	scrollPos                        [5]struct{ x, y int32 } // per-page scroll (CHK-TRAY-66)
-	pageActions                      []uintptr    // Test/Cancel/Alarm/Poll — footer, not pageCtl
-	pinnedHost                       map[uintptr]bool // CHK-TRAY-78: DB list chrome (no vertical scroll)
-	pinnedShrink                     int32            // CHK-TRAY-110: px the DB list gave up to keep its buttons in view
-	cur                              *[]uintptr   // page of the controls being created
-	connected                        bool         // service session state seen by onSessionState
-	loaded                           bool         // get_config (or a snapshot) loaded at least once
+	pageActions                      []uintptr               // Test/Cancel/Alarm/Poll — footer, not pageCtl
+	pinnedHost                       map[uintptr]bool        // CHK-TRAY-78: DB list chrome (no vertical scroll)
+	pinnedShrink                     int32                   // CHK-TRAY-110: px the DB list gave up to keep its buttons in view
+	cur                              *[]uintptr              // page of the controls being created
+	connected                        bool                    // service session state seen by onSessionState
+	loaded                           bool                    // get_config (or a snapshot) loaded at least once
 	disc                             *discoveryDialog
 	wiz                              *wizardDialog // «Добавить базу» (CHK-TRAY-30)
 	diagnoses                        int           // sql_diagnose replies shown (test hook)
@@ -289,13 +289,13 @@ type settingsWindow struct {
 	// navIco: mode button and its icon static (tabs replaced page nav buttons)
 	navIco [][2]*ui.Ctl
 	// CHK-TRAY-62: «Звук» section (warning/error profiles) on General
-	sndWarn, sndErr profileCtl
+	sndWarn, sndErr  profileCtl
 	sndInfo, sndSave uintptr
-	sndPick         func(cur string) (string, bool)
-	sndMaster       int
-	sndPreview      *trayalert.SoundPlayer
-	sndPreviewer    trayalert.Sounder
-	sndPreviewing   int32 // profile base currently previewing (0 = none); CHK-TRAY-81
+	sndPick          func(cur string) (string, bool)
+	sndMaster        int
+	sndPreview       *trayalert.SoundPlayer
+	sndPreviewer     trayalert.Sounder
+	sndPreviewing    int32 // profile base currently previewing (0 = none); CHK-TRAY-81
 	// phase 14 (CHK-TRAY-99): the speaker status line, the speaker
 	// (cfg.speaker or one of this window's session) and a running query
 	sndSpeaker     uintptr
@@ -346,7 +346,7 @@ var settingsTips = map[int32]string{
 	idGenStalled: i18n.KeyTipSetStalled, idSetStalled: i18n.KeyTipSetStalled, idSetAlarmTest: i18n.KeyAlarmTestTip,
 	idGenAutostart: i18n.KeyTipGenAutostart, idGenFlash: i18n.KeyTipGenScreenFlash,
 	// CHK-TRAY-62: General «Звук» section (same tips as soundwin)
-	idSndSave: i18n.KeyTipSoundSave,
+	idSndSave:             i18n.KeyTipSoundSave,
 	idSndWarn + idSndBeep: i18n.KeyTipSoundKind, idSndWarn + idSndFile: i18n.KeyTipSoundKind,
 	idSndWarn + idSndFreq: i18n.KeyTipSoundFreq, idSndWarn + idSndDur: i18n.KeyTipSoundDur,
 	idSndWarn + idSndPath: i18n.KeyTipSoundFile, idSndWarn + idSndBrowse: i18n.KeyTipSoundBrowse,
@@ -556,7 +556,7 @@ func (w *settingsWindow) build() {
 	// Window-common Export/Import/UIMode live in the bottom bar (CHK-TRAY-61).
 	w.cur = nil
 	winapi.InitTooltips() // ICC_WIN95_CLASSES registers SysTabControl32
-	w.inBar = true // parent = frame
+	w.inBar = true        // parent = frame
 	tabH := w.add(wcTabControl, "", 0, winapi.WS_TABSTOP|tcsHotTrack|winapi.WS_CLIPSIBLINGS, idSetTabs, 0, 0, 600, 28)
 	w.inBar = false
 	w.tabCtl = &ui.Ctl{H: tabH, Kind: ui.Box, W: 600, Hgt: settingsTabChromeH, Grow: true, NoShrink: true}
@@ -1260,7 +1260,7 @@ var fieldControl = map[traysettings.Field]int32{
 	traysettings.FieldStalledMinutes: idGenStalled,
 	traysettings.FieldBeepEnabled:    idGenBeep, traysettings.FieldWarnFreq: idGenWarnFreq, traysettings.FieldWarnDur: idGenWarnDur,
 	traysettings.FieldErrorFreq: idGenErrFreq, traysettings.FieldErrorDur: idGenErrDur, traysettings.FieldGap: idGenGap,
-	traysettings.FieldAutostart: idGenAutostart,
+	traysettings.FieldAutostart:      idGenAutostart,
 	traysettings.FieldDiscoverButton: idSetDiscover, // mapping.* / mappings[i].*
 	traysettings.FieldPreset:         idSetPreset, traysettings.FieldProfWarn: idSetWarn, traysettings.FieldProfError: idSetError,
 	traysettings.FieldProfStalled: idSetStalled,

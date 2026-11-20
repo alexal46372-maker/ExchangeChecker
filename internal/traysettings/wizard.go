@@ -43,7 +43,7 @@ type Wizard struct {
 	Instances     []model.SQLServerInstance
 	BrowsePartial bool
 	Responders    int
-	BrowseAdvice  []string                 // sql_browse advice keys
+	BrowseAdvice  []string                  // sql_browse advice keys
 	BrowseLocal   *model.SQLBrowseLocalInfo // local.browserState etc.
 
 	CheckSteps []model.SQLCheckStep // sql_test_steps progress / result

@@ -11,17 +11,17 @@ import (
 // General settings fields (focus targets; values are the JSON paths of
 // settings.json, PLAN §4.3).
 const (
-	FieldPollInterval Field = "pollIntervalSec"
-	FieldWarnMinutes  Field = "warnMinutes"
-	FieldErrorMinutes Field = "errorMinutes"
-	FieldBeepEnabled  Field = "beep.enabled"
-	FieldWarnFreq     Field = "beep.warningFreqHz"
-	FieldWarnDur      Field = "beep.warningDurMs"
-	FieldErrorFreq    Field = "beep.errorFreqHz"
-	FieldErrorDur     Field = "beep.errorDurMs"
-	FieldGap             Field = "beep.gapMs"
-	FieldStalledMinutes  Field = "stalledMinutes"
-	FieldAutostart       Field = "trayAutostart"
+	FieldPollInterval   Field = "pollIntervalSec"
+	FieldWarnMinutes    Field = "warnMinutes"
+	FieldErrorMinutes   Field = "errorMinutes"
+	FieldBeepEnabled    Field = "beep.enabled"
+	FieldWarnFreq       Field = "beep.warningFreqHz"
+	FieldWarnDur        Field = "beep.warningDurMs"
+	FieldErrorFreq      Field = "beep.errorFreqHz"
+	FieldErrorDur       Field = "beep.errorDurMs"
+	FieldGap            Field = "beep.gapMs"
+	FieldStalledMinutes Field = "stalledMinutes"
+	FieldAutostart      Field = "trayAutostart"
 )
 
 // GeneralFields are the fields of the general settings page.

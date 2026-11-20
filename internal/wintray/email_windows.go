@@ -35,8 +35,8 @@ const (
 	idEmTest
 	idEmResult
 	idEmStatus
-	idEmDay1                   // .. idEmDay1+6
-	idEmEv1  = idEmDay1 + 7    // .. idEmEv1+3
+	idEmDay1                // .. idEmDay1+6
+	idEmEv1  = idEmDay1 + 7 // .. idEmEv1+3
 )
 
 // pageEmail is the page index of the e-mail page.

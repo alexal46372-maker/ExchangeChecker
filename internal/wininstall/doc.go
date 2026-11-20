@@ -14,9 +14,18 @@
 // The wizard is Russian only (CHK-TRAY-86); the service checkbox is on the
 // "Опции" page, the tray launch checkbox is on the "Готово" page.
 //
-// Check IDs: CHK-SETUP-01 … CHK-SETUP-21 (see checks/CHECKS.md): 01–07 plan,
-// SCM, ACL, Run, Uninstall key; 08–09 shortcut, upgrade; 10, 14, 15 wizard UI;
-// 11 build policy; 12 gated E2E (EC_SETUP_E2E=1); 13 firewall; 16 desktop
-// shortcut; 17 migration to "Exchange Checker"; 18, 21 icon and icon cache;
-// 19, 20 InpOutx64 driver.
+// Check IDs: CHK-SETUP-01 … CHK-SETUP-21 (see checks/CHECKS.md):
+//   - 01 install / uninstall / purge plans, CLI, exit codes, rollback (fake System);
+//   - 02 payload: -tags payload, gzip, sha256 after write, atomic replace;
+//   - 03 service in the SCM (own process, LocalSystem, failure actions, delayed start);
+//   - 04 Event Log source; 05 ACL of ProgramData and the install folder;
+//   - 06 HKLM Run of the tray; 07 Uninstall key, uninstall.exe, purge / keep data;
+//   - 08 Start-menu shortcut (IShellLinkW); 09 upgrade, downgrade, rollback of V2;
+//   - 10 wizard pages and options; 14 modern wizard chrome; 15 Folder page hint;
+//   - 11 setup build policy (dependencies, manifest, exe names);
+//   - 12 gated E2E of the real setup (EC_SETUP_E2E=1; 17 and 20 have gated E2E too);
+//   - 13 Windows Firewall rule for SQL Browser replies (COM INetFwPolicy2);
+//   - 16 Public Desktop shortcut; 17 migration to "Exchange Checker" folder;
+//   - 18 setup / shortcut icon (exchtray-<version>.ico); 21 shell icon cache update;
+//   - 19 InpOutx64 driver file and signature; 20 driver service step of the plan.
 package wininstall

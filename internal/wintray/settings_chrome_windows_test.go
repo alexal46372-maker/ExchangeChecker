@@ -22,8 +22,8 @@ import (
 // cover every tab and Alarm page-action (forced CapEmail / Alarm).
 type chromeCfg struct {
 	*cfgService
-	viber            model.ViberSettings
-	email            model.EmailSettings
+	viber             model.ViberSettings
+	email             model.EmailSettings
 	hasToken, hasPass bool
 }
 
@@ -470,7 +470,7 @@ func TestCHK_TRAY_66_ScrollPosPerTab(t *testing.T) {
 		t.Fatalf("leave page1: scrollPos[1]=%d want %d", w.scrollPos[1].y, want1)
 	}
 	// Re-apply restored slot (setPage already scrollTo'd it before update;
-	 // focus scrollIntoView may have moved live Y) and prove layoutFit keeps it.
+	// focus scrollIntoView may have moved live Y) and prove layoutFit keeps it.
 	w.scrollTo(0, want0)
 	w.layoutFit()
 	if _, yFit := w.ScrollPos(); yFit != want0 || w.scrollPos[0].y != want0 {

@@ -1,5 +1,12 @@
 # Фаза 7: Win32-инсталлятор Exchange Checker (план, утверждён 12.10.2026)
 
+> **Исторический документ (план фазы 7, 12.10.2026).** Текст ниже не переписывается задним числом. Что изменилось позже (актуальное поведение — [`DELIVERY.md`](../DELIVERY.md), [`PLAN.md`](../PLAN.md) §12):
+>
+> - **Фаза 11 (`CHK-SETUP-13`):** правило брандмауэра `Exchange Checker (SQL Browser)`.
+> - **Фаза 13 (v0.13.0, PLAN §12 п. 206; `CHK-SETUP-15`…`18`, `CHK-TRAY-86`):** только русский язык — RU/EN и выбор языка по ОС убраны, ключ `/LANG=` принимается и игнорируется; папка по умолчанию — `%ProgramFiles%\Exchange Checker` (со старой `ExchangeChecker` — перенос, `CHK-SETUP-17`); ярлык на общем рабочем столе и ключ `/NODESKTOPSHORTCUT` (`CHK-SETUP-16`); файл в zip — `Exchange Checker <V>.exe`; страница прогресса в мастере называется «Установка».
+> - **Фаза 14 (v0.14.0, PLAN §12 п. 213–216; `CHK-SETUP-19`/`20`):** шаг 4b — драйвер `driver\inpoutx64.sys` и служба `ExchangeCheckerInpOut`, см. [`PHASE14.md`](PHASE14.md).
+> - **v0.16.0 (PLAN §12 п. 218; `CHK-SETUP-18`/`21`):** шаг 4a — значок `exchtray-<версия>.ico` в папке программы для ярлыков и «Программ и компонентов».
+
 План написан EC Setup на `main` 56bba90 (7a реализована от `main` f892603) и утверждён координатором 12.10.2026 с решениями ниже. **Решения координатора (§D) имеют приоритет над текстом плана**; противоречащие места плана исправлены или помечены. Решения перенесены в PLAN.md §12 п. 90 (пп. 87–89 в `main` заняты решениями EC Tray T1). Статус подфаз: **7a — реализована** (ветка `phase7a`), **7b — реализована** (ветка `phase7b`), **7c — реализована** (ветка `phase7c`), **7d — реализована** (ветка `phase7d`), **7e — реализована** (ветка `phase7e`). **Фаза 7 завершена.**
 
 ## D. Решения координатора (12.10.2026)
@@ -119,16 +126,16 @@
 - Одно окно верхнего уровня класса `ExchangeCheckerSetup` из `CreateWindowExW`: STATIC, BUTTON, EDIT, чекбоксы `BS_AUTOCHECKBOX`, клавиатура через `IsDialogMessageW`. Это тот же подход, что в окне настроек трея. Шаблонов диалогов нет: rc.exe недоступен.
 - Страницы по PLAN §9:
   1. Приветствие (при обновлении: «Установлена версия X, будет обновлена до Y»).
-  2. Папка: EDIT, по умолчанию `%ProgramFiles%\ExchangeChecker`. Процесс 64-битный, поэтому это `C:\Program Files`; брать через `SHGetFolderPathW(CSIDL_PROGRAM_FILES)`. Кнопка «Обзор…» вызывает **`SHBrowseForFolderW`** (`BIF_RETURNONLYFSDIRS|BIF_NEWDIALOGSTYLE|BIF_EDITBOX|BIF_VALIDATE`, перед этим `OleInitialize`), затем `SHGetPathFromIDListW` и `CoTaskMemFree`. `IFileDialog` (Vista+) тоже работает на Win7, но через COM-vtable кода больше, а пользы мало. При обновлении папка не меняется (поле только для чтения).
+  2. Папка: EDIT, по умолчанию `%ProgramFiles%\ExchangeChecker` *(изменено в фазе 13: `%ProgramFiles%\Exchange Checker`, см. CHK-SETUP-17)*. Процесс 64-битный, поэтому это `C:\Program Files`; брать через `SHGetFolderPathW(CSIDL_PROGRAM_FILES)`. Кнопка «Обзор…» вызывает **`SHBrowseForFolderW`** (`BIF_RETURNONLYFSDIRS|BIF_NEWDIALOGSTYLE|BIF_EDITBOX|BIF_VALIDATE`, перед этим `OleInitialize`), затем `SHGetPathFromIDListW` и `CoTaskMemFree`. `IFileDialog` (Vista+) тоже работает на Win7, но через COM-vtable кода больше, а пользы мало. При обновлении папка не меняется (поле только для чтения).
   3. Опции: «Ярлык в меню Пуск».
   4. Прогресс: STATIC с текущим шагом плюс `msctls_progress32` (`InitCommonControlsEx`, comctl32 v6 по манифесту). Шаги выполняет рабочая горутина на `LockOSThread` (COM для ярлыка), прогресс уходит в окно через `PostMessageW(WM_APP+n)`. Отмена во время шагов не предусмотрена; при ошибке выполняется откат (§7.4).
   5. «Готово»: чекбокс службы (см. §2.4 и «Открытые вопросы», п. 1). Если сбой — текст ошибки и путь к журналу установки.
 - Проверка папки: абсолютный путь, локальный фиксированный диск (`GetDriveTypeW == DRIVE_FIXED`, без UNC), не внутри `%ProgramData%\ExchangeChecker`, не корень диска, длина с запасом под имена файлов, свободное место (`GetDiskFreeSpaceExW`).
-- Язык RU/EN: по `GetUserDefaultUILanguage` (`winapi.LanguageFromLANGID`), иначе RU; явно — ключ `/LANG=ru|en`. Каталог строк лежит в `internal/wininstall` (ключи `setup.*`), с тестом полноты RU/EN по образцу CHK-TRAY-08. Каталог трея `internal/i18n` (зона EC Tray) не трогаем.
+- Язык RU/EN: по `GetUserDefaultUILanguage` (`winapi.LanguageFromLANGID`), иначе RU; явно — ключ `/LANG=ru|en`. Каталог строк лежит в `internal/wininstall` (ключи `setup.*`), с тестом полноты RU/EN по образцу CHK-TRAY-08. Каталог трея `internal/i18n` (зона EC Tray) не трогаем. *(Изменено в фазе 13: только русский, `/LANG=` игнорируется — CHK-TRAY-86.)*
 - Права: манифест `requireAdministrator` (§8) и проверка во время работы `winapi.ProcessIsAdmin()` (на случай отключённого UAC у обычного пользователя).
 - Один экземпляр: мьютекс `Global\ExchangeCheckerSetup`.
 - **Тихий режим, нужен для CI и администраторов.** Окна и MessageBox не создаются, результат — код выхода и журнал.
-  - Установка: `/S`, `/DIR=<путь>`, `/NOSTART` (не запускать службу), `/NOSHORTCUT`, `/LOG=<файл>`, `/ALLOWDOWNGRADE`, `/LANG=`.
+  - Установка: `/S`, `/DIR=<путь>`, `/NOSTART` (не запускать службу), `/NOSHORTCUT`, `/LOG=<файл>`, `/ALLOWDOWNGRADE`, `/LANG=`. *(Фаза 13: добавлен `/NODESKTOPSHORTCUT`, `/LANG=` игнорируется; актуальный список — DELIVERY.md.)*
   - Удаление: `/uninstall [/S] [/PURGEDATA]`.
   - Коды выхода: 0 — успех; 1 — ошибка; 2 — отмена пользователем; 3 — даунгрейд запрещён; 3010 — нужна перезагрузка (`ERROR_SUCCESS_REBOOT_REQUIRED`, если удаление отложено до перезагрузки).
   - Разбор строки свой: `flag` не подходит, он пишет usage в stderr GUI-процесса. Unit-тесты на linux.

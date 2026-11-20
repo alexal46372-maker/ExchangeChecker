@@ -15,14 +15,17 @@
   `internal/trayui/metal.go`: float64, только стандартная библиотека,
   детерминированно); тот же значок — у окон трея
   (`internal/wintray/icons/app.ico`) и у установщика (setup берёт
-  `cmd/exchtray/exchtray.ico` в свой `.syso`);
+  `cmd/exchtray/exchtray.ico` в свой `.syso`); те же байты `tools/mkres`
+  пишет в `internal/wininstall/icons/exchtray.ico` — установщик кладёт их
+  в папку программы как `exchtray-<версия>.ico` для ярлыков (CHK-SETUP-18/21);
 - `RT_VERSION` 1 — VERSIONINFO: `FileVersion`/`ProductVersion` = версия сборки,
   `ProductName` = `Exchange Checker`, `FileDescription` = `Exchange Checker Tray`,
   `InternalName` = `exchtray`, `OriginalFilename` = `ExchangeCheckerTray.exe`;
   `CompanyName`/`LegalCopyright` не пишутся (решение 5 фазы 7).
 
 Значки в области уведомлений (`tray_*.ico`: тот же рисунок, цвет стрелок по
-состоянию) и остальные значки окон — не в `.syso`: `tools/mkres` пишет их в
+состоянию; `tray_blank.ico` — кадр «выкл» мигания: чёрные стрелки со светлой
+хромовой обводкой, фаза 16, CHK-TRAY-103) и остальные значки окон — не в `.syso`: `tools/mkres` пишет их в
 `internal/wintray/icons/` (16/20/24/32/40/48 и 256 PNG), трей встраивает их
 через `embed` (CHK-TRAY-49/90).
 
@@ -35,6 +38,6 @@ go run ./tools/mkres          # все .syso (setup, служба, трей), в
 go run ./tools/mkres -check   # код 1, если закоммиченный .syso устарел
 ```
 
-Закоммиченный `.syso` — для `0.0.0-dev`; шаг CI «release-like build»
+Закоммиченный `.syso` — для `0.0.0-dev`; шаг CI «release build + delivery zip»
 перегенерирует его с `-version 0.0.0-ci.N` (или версией тега) только в рабочей
-копии job. Проверки: `go test ./tools/mkres ./checks ./internal/trayui -run 'CHK_RES_01|CHK_VER_01|CHK_TRAY_10|CHK_TRAY_49|CHK_TRAY_89|CHK_TRAY_90|CHK_TRAY_10[0-2]'`.
+копии job. Проверки: `go test ./tools/mkres ./checks ./internal/trayui -run 'CHK_RES_01|CHK_VER_01|CHK_TRAY_10|CHK_TRAY_49|CHK_TRAY_89|CHK_TRAY_90|CHK_TRAY_10[0-3]'`.

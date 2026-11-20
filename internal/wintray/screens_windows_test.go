@@ -25,7 +25,7 @@ import (
 // alarm_test* (CHK-TRAY-54), and since phase 17 (CHK-TRAY-110) the
 // settings window, expert mode, «Базы данных»: settings_expert_db_96,
 // settings_expert_db_120 (120 dpi) and settings_expert_db_1024x768
-// (96 dpi, 1024×768 work area).
+// (96 dpi, a 1024×768 screen: work area without the taskbar, 1024×728).
 func TestCHK_TRAY_46_Screens(t *testing.T) {
 	dir := os.Getenv("EC_UI_SCREENS")
 	if dir == "" {
@@ -55,7 +55,8 @@ func TestCHK_TRAY_46_Screens(t *testing.T) {
 		}
 	}
 	// phase 17 (CHK-TRAY-110): settings, expert mode, «Базы данных» — 96 and
-	// 120 dpi on the runner's screen and 96 dpi on a 1024×768 work area
+	// 120 dpi on the runner's screen and 96 dpi on a 1024×768 screen (work
+	// area without the 40 px taskbar: 1024×728)
 	for _, sc := range []struct {
 		name string
 		dpi  int32

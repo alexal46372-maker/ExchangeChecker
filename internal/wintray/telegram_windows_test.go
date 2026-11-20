@@ -14,7 +14,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// tgService adds the Telegram contract of EC Service (phase 13) to the fake
+// tgService adds the Telegram contract of the service to the fake
 // config service: settings.telegram in get_config (hasToken read-only),
 // save_settings with botToken / clearBotToken (ipc.TelegramSettingsSaver),
 // telegram_test (ipc.TelegramTester, at most once per 10 s like the

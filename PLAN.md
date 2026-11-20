@@ -80,7 +80,7 @@ Toolchain (жёстко): **Go 1.20.14**, `GOOS=windows` `GOARCH=amd64` `CGO_ENA
 |------|------------|-----------|
 | `settings.json` | интервал опроса, пороги warning/error (минуты), параметры звука, общие флаги, разделы `viber` / `email` / `telegram` | служба (по IPC-командам трея, с фазы 6) |
 | `profiles.json` | список профилей SQL (без паролей; логин SQL — в поле `login`) | служба (с фазы 6) |
-| `secrets.dpapi` | пароли профилей, защищённые `CryptProtectData` с **`CRYPTPROTECT_LOCAL_MACHINE`** (+ `UI_FORBIDDEN`); см. §12 п.9 (расходится с POLICY.md §9, см. примечание под таблицей) | служба (с фазы 6) |
+| `secrets.dpapi` | пароли профилей, защищённые `CryptProtectData` с **`CRYPTPROTECT_LOCAL_MACHINE`** (+ `UI_FORBIDDEN`); см. §12 п.9 и POLICY.md §9 (редакция 20.11.2026, п. 223) | служба (с фазы 6) |
 | `state.json` | последний снимок статусов (опциональный кэш для трея при старте до ответа службы) — **в v1 не используется**: трей получает снимок по IPC сразу после подключения | служба |
 | `counters-state.json` | состояние режима `counters` по всем профилям (фаза 3, `monitor.FileCounterStore`, атомарная запись) | служба |
 | `logs\exchsvc.log` | журнал службы с ротацией по размеру (1 МиБ × 5, `alert.RotatingFile`) | служба |
@@ -88,7 +88,7 @@ Toolchain (жёстко): **Go 1.20.14**, `GOOS=windows` `GOARCH=amd64` `CGO_ENA
 | `ack-state.json`, `mute-state.json` | подтверждения тревог (фаза 4) и mute профилей (фаза 12; в трее mute убран в фазе 13) | служба |
 | `history\` | история опросов, один JSON-файл в день (фаза 9, CHK-SVC-03) | служба |
 
-**Актуально в v0.17.0:** все файлы пишет только служба (§6.2, «Только служба пишет конфигурацию»); трей файлы не читает и не пишет — всё по IPC (каталог доступен только SYSTEM и Administrators, §12 п. 90). **Расхождение с POLICY.md §9 (13.10.2026):** по POLICY логин и пароль SQL не должны храниться на диске, а код хранит пароль в `secrets.dpapi` (`internal/config/secrets.go`) и логин в `profiles.json` (`internal/model/profile.go`, поле `login`). Решения заказчика, отменяющего §9, в §12 нет — вопрос открыт, решает Алекс.
+**Актуально в v0.17.0:** все файлы пишет только служба (§6.2, «Только служба пишет конфигурацию»); трей файлы не читает и не пишет — всё по IPC (каталог доступен только SYSTEM и Administrators, §12 п. 90). ~~Расхождение с POLICY.md §9 (13.10.2026)~~ — **снято решением Алекса 20.11.2026 (п. 223):** POLICY.md §9 переписан по коду — пароль хранится зашифрованным в `secrets.dpapi` (`internal/config/secrets.go`), логин — в `profiles.json` (`internal/model/profile.go`, поле `login`).
 
 Служба и трей читают одни и те же файлы; **источник истины по статусу обмена — служба** (живой снимок по IPC). Трей при сохранении настроек уведомляет службу по IPC: `ReloadConfig`.
 
@@ -165,7 +165,7 @@ ExchangePointStatus {
 
 ### 5.2. Стратегия доступа
 
-1. Драйвер (выбран в фазе 2, `CHK-SQL-01`): **`github.com/microsoft/go-mssqldb v1.8.2`** — чистый Go TDS, без CGO; последняя версия с `go 1.18` в go.mod (v1.9.0+ требует go ≥ 1.23 — несовместимо с Go 1.20). Транзитивно компилируются: `golang-sql/civil v0.0.0-20220223132316-b832511892a9`, `golang-sql/sqlexp v0.1.0`, `google/uuid v1.6.0`, `golang.org/x/crypto v0.24.0` (md4 для NTLM), `golang.org/x/text v0.16.0` — все объявляют go ≤ 1.18. Azure/Kerberos-модули драйвера не импортируются. `os/exec` в графе сборки нет (windows/amd64 и linux/amd64; CI-шаг `go list -deps … | grep -x os/exec`). Windows Auth: `integratedauth/winsspi` (secur32.dll через syscall).
+1. Драйвер (выбран в фазе 2, `CHK-SQL-01`): **`github.com/microsoft/go-mssqldb v1.8.2`** — чистый Go TDS, без CGO; последняя версия с `go 1.18` в go.mod (v1.9.0+ требует go ≥ 1.23 — несовместимо с Go 1.20). Транзитивно компилируются: `golang-sql/civil v0.0.0-20220223132316-b832511892a9`, `golang-sql/sqlexp v0.1.0`, `google/uuid v1.6.0`, `golang.org/x/crypto v0.24.0` (md4 для NTLM), `golang.org/x/text v0.16.0` — все объявляют go ≤ 1.18. Azure/Kerberos-модули драйвера не импортируются. `os/exec` в графе сборки нет (windows/amd64 и linux/amd64; CI-шаг `go list -deps … | grep -x os/exec`). Windows Auth: `integratedauth/winsspi` (secur32.dll через syscall). **Актуально в v0.17.0:** драйвер и эти зависимости записаны исключением в POLICY.md §4 (решение Алекса 20.11.2026, §12 п. 223).
    - TLS (с фазы 2d, решение заказчика — §12 п. 31): `Encrypt` "" (поле не задано) = **`disable`** (`EffectiveEncrypt()`), `optional` — TLS только для логина (умолчание драйвера, сертификат не проверяется), `disable` — без TLS, `on` (+`TrustServerCert`), `strict` (TDS 8, SQL 2022+). Go 1.20 по умолчанию требует TLS ≥ 1.2: для SQL 2005/2008 без TLS 1.2 — `TLSMinVersion "1.0"` или `Encrypt "disable"`.
    - **Целевой сервер заказчика — только SQL Server 2008** (возможно R2; считаем уровень совместимости **100**, ничего из 2008 R2 не используем) — §12 п. 21. Все запросы службы (построители `sqlbuild.go`, `select 1;` драйвера при Ping, `sp_executesql` для параметров, транзакции через TDS TransMgrReq) и шаблоны ручного SQL (`sqlcheck.ManualSQLTemplates`) — T-SQL 2005/2008: `TOP (@p)`, `COUNT_BIG`, `CASE`, `ROW_NUMBER() OVER (PARTITION BY … ORDER BY …)`, `INFORMATION_SCHEMA`, `sys.partitions`/`sysindexes`, `WITH (NOLOCK)`. Запрещено (2012+): OFFSET/FETCH, TRY_CONVERT/TRY_CAST/TRY_PARSE/PARSE, IIF, CHOOSE, CONCAT(_WS), FORMAT, STRING_AGG/STRING_SPLIT, TRIM, EOMONTH, `*FROMPARTS`, THROW, LAG/LEAD/FIRST_VALUE/LAST_VALUE/PERCENTILE_*, агрегаты с `OVER (… ORDER BY …)` и рамки ROWS/RANGE, `sys.dm_*`, JSON-функции. Проверка — `sqlcheck.Compat2008Violations` (CHK-SQL-05, все построители + Discovery + DiscoverByValue + шаблоны); ручной SQL с такими конструкциями отклоняется (`ErrManualCompat2008`, подсказка: TOP / ROW_NUMBER() / CASE / CONVERT / `+`). Интеграционные базы в CI создаются с `COMPATIBILITY_LEVEL = 100`.
    - **Пресет «SQL Server 2008»:** `Profile.ServerPreset "mssql2008"` (`omitempty`) и `Profile.ApplyServerPreset("mssql2008")`: `Encrypt "disable"`, если не задан (фаза 2d, §12 п. 31; явные `optional`/`on`/`disable` сохраняются), `TLSMinVersion "1.0"` (если не задан явно; `EffectiveTLSMinVersion()` даёт "1.0" и без явного поля; действует, только если шифрование включено), `strict` → `disable`; `strict` + пресет не проходит `Validate`. В go-mssqldb v1.8.2 `tlsmin=1.0` → `tls.Config.MinVersion = tls.VersionTLS10` (выставляется явно: клиент Go 1.20 без этого требует TLS 1.2). Подсказка в UI — ключ `sql.preset_mssql2008_hint` («без обновлений TLS 1.2 нужен TLS 1.0»).
@@ -633,7 +633,7 @@ Wizard Win32 (страницы):
 
 - `DELIVERY.md` + скрипт упаковки **в среде нейронки** (не у заказчика)
 - check: `CHK-DELIV-01`
-- Сборка zip — **только по явной просьбе**
+- Сборка zip **для поставки** — **только по слову заказчика**; CI собирает exe и zip только для проверки и ничего не загружает (POLICY.md §6, уточнено п. 223)
 - **Актуально:** zip собирает `release.yml` по тегу `vX.Y.Z`; координатор по слову заказчика выкладывает его в GitHub Release «Exchange Checker X.Y.Z» (DELIVERY.md, «Канал поставки»)
 
 ### Фаза 9 — мастер подключения (EC SQL) ✅
@@ -693,7 +693,7 @@ Wizard Win32 (страницы):
 7. **ЛКМ-список:** только базы; цвет базы жёлтый (warning) / красный (error) по худшему уровню точек; точки обмена — во **выпадающем меню при наведении** на базу.
 8. ~~**Язык по умолчанию при первом запуске = язык ОС Windows** (если не RU/EN — fallback RU).~~ Отменено в фазе 13 (п. 206).
 
-9. **DPAPI LocalMachine (фаза 1):** `CryptProtectData` с флагами `CRYPTPROTECT_LOCAL_MACHINE` (0x4) и `CRYPTPROTECT_UI_FORBIDDEN` (0x1), опциональный entropy `ExchangeChecker/secrets.dpapi/v1`. Трей (пользователь) шифрует, служба под LocalSystem расшифровывает. Граница доступа — ACL каталога `%ProgramData%\ExchangeChecker\` (инсталлятор, фаза 7: ~~Administrators+SYSTEM+Users-read~~ — **изменено п. 90:** только SYSTEM+Administrators, без Users, логи тоже). (**Изменено решением Вики от 03.10, п. 58:** `secrets.dpapi` — DACL только SY+BA; трей больше не шифрует сам — пишет только служба по IPC.) Tradeoff v1: любой локальный процесс на машине может расшифровать blob — принято как допустимое для v1. *С 13.10.2026 POLICY.md §9 требует хранить логин и пароль SQL только в памяти службы; код по-прежнему хранит пароль в `secrets.dpapi` — расхождение, решения заказчика нет (см. §4.1).*
+9. **DPAPI LocalMachine (фаза 1):** `CryptProtectData` с флагами `CRYPTPROTECT_LOCAL_MACHINE` (0x4) и `CRYPTPROTECT_UI_FORBIDDEN` (0x1), опциональный entropy `ExchangeChecker/secrets.dpapi/v1`. Трей (пользователь) шифрует, служба под LocalSystem расшифровывает. Граница доступа — ACL каталога `%ProgramData%\ExchangeChecker\` (инсталлятор, фаза 7: ~~Administrators+SYSTEM+Users-read~~ — **изменено п. 90:** только SYSTEM+Administrators, без Users, логи тоже). (**Изменено решением Вики от 03.10, п. 58:** `secrets.dpapi` — DACL только SY+BA; трей больше не шифрует сам — пишет только служба по IPC.) Tradeoff v1: любой локальный процесс на машине может расшифровать blob — принято как допустимое для v1. *С 13.10.2026 POLICY.md §9 требовал хранить логин и пароль SQL только в памяти службы; код хранил пароль в `secrets.dpapi`. **Решение Алекса 20.11.2026 (п. 223):** правило исправлено под код — POLICY.md §9 описывает хранение по этому пункту.*
 
 10. **Сеть SQL (фаза 2):** драйвер использует собственный `net.Dialer` (TCP, `dial timeout`); общего сетевого пакета/конвенции в проекте пока нет (`internal/hcwinnet` — заглушка). Логин/пароль задаются только полями `msdsn.Config`, в DSN/логи/ошибки не попадают.
 11. **`Encrypt ""` = умолчание драйвера** (TLS только для логина, без проверки сертификата) — максимальная совместимость с SQL 2005/2008; для старых серверов без TLS 1.2 — `tlsMinVersion "1.0"` или `encrypt "disable"`. **Заменено п. 31 (фаза 2d):** `""` = `disable`; прежнее поведение — явный `encrypt "optional"`.
@@ -1009,6 +1009,26 @@ Wizard Win32 (страницы):
 Трей (ветка `feat/tray-phase17`; EC Tray):
 
 222. **Фаза 17 трея (`CHK-TRAY-109`, `CHK-TRAY-110`; пересмотрена `CHK-TRAY-108`).** **1. Мигание и свёрнутое окно тревоги.** Свернуть окно тревоги (кнопка в заголовке, SC_MINIMIZE, Win+D — WM_SIZE SIZE_MINIMIZED) — мигание экрана сразу прекращается, трей шлёт `dismiss_flash {eventId}` по каждому активному миганию (служба помечает dismiss и шлёт `flash_stop`). Развернуть (кнопка на панели задач, SC_RESTORE, SW_RESTORE — WM_SIZE SIZE_RESTORED) — трей шлёт новый запрос `resume_flash {eventId}`; служба снимает отметку и, если алерт ещё активен и не подтверждён, сразу пушит `flash` с тем же eventId — мигание возобновляется. Тревога не снимается: окно, звук и значок в трее — как раньше. Подтверждённое (в развёрнутом или свёрнутом окне) мигание не возобновляется (трей не шлёт `resume_flash`, служба ответила бы `resumed:false`). Новый алерт (новый eventId) разворачивает окно, мигание возобновляется. Протокол согласован с EC Service (ветка `feat/svc-phase17`): `resume_flash {eventId}` → ok `{resumed:true|false}`, без eventId — `invalid_request`; capability `resume_flash` в hello. Без неё (старая служба) трей при сворачивании ничего не меняет — мигание продолжается, `dismiss_flash` не шлётся. Имена — `model.CmdResumeFlash` / `model.CapResumeFlash`, ответ — `IPCMessage.Resumed` (служба: `CHK-MON-24`, `CHK-IPC-22`). **2. Окно настроек.** Потолок высоты фазы 16 G (560 логических px и 3/4 рабочей области) убран: в экспертном режиме на вкладке «Базы данных» кнопки под списком баз («Добавить», «Удалить», «Клонировать базу», «Таблицы обмена…») оказывались за краем — эта часть закреплена и не прокручивается (`CHK-TRAY-78`). Теперь окно по высоте самой высокой вкладки (все элементы, экспертный режим) и ограничено только рабочей областью; лишнее прокручивается. Если закреплённая часть не помещается в видимую область, список баз становится ниже (не меньше 90 логических px), кнопки под ним всегда видны.
+
+### Правила и документация (решения Алекса 20.11.2026; п. 223)
+
+223. **Конфликты «правило ↔ код» по итогам сверки документов с v0.17.0 (решения Алекса 20.11.2026; PR #30).** Сверка нашла пять мест, где POLICY.md расходился с кодом v0.17.0. Решения Алекса (дословно):
+    1. «Пароль: поправь правило под код, пусть хранится зашифрованным». POLICY.md §9 и строка §8 переписаны по фактическому поведению кода:
+       - логин хранится в `profiles.json`;
+       - пароль хранится в `secrets.dpapi`: DPAPI LocalMachine, энтропия `ExchangeChecker/secrets.dpapi/v1`, DACL SY+BA, пишет и читает только служба;
+       - у каждого утверждения в POLICY указан check ID: `CHK-CFG-01`/`02`/`03`, `CHK-IPC-03`/`06`/`13`, `CHK-CFG-06`/`08`, `CHK-SQL-01`, `CHK-TRAY-06`/`28`, `CHK-SVC-03`, `CHK-SETUP-05`/`12`;
+       - редакция POLICY от 13.10.2026 («нигде на диске», «только в памяти») отменена;
+       - открыто: что пароль и логин не пишутся в журнал событий и реестр, подтверждено только кодом, отдельного check ID нет. Это задача для ботов.
+    2. «Галочка: оставить на «Опциях», правило поправить». POLICY.md §2: чекбокс «Запустить службу и запускать автоматически» находится на странице «Опции» (`CHK-SETUP-10`).
+    3. «MSSQL: записать go-mssqldb исключением в POLICY». POLICY.md §4:
+       - исключение для `github.com/microsoft/go-mssqldb v1.8.2` и транзитивных зависимостей из `go.mod`: `github.com/golang-sql/civil`, `github.com/golang-sql/sqlexp`, `github.com/google/uuid`, `golang.org/x/crypto`, `golang.org/x/text`;
+       - драйвер импортирует только `internal/sqlcheck`, он есть только в службе;
+       - `golang.org/x/sys` по-прежнему не используется (`CHK-TRAY-10`, `CHK-SETUP-11`);
+       - других сторонних библиотек не добавлять.
+    4. «Снимки 120 dpi: оставить, правило поправить». POLICY.md §6: в `ui-screens` все сцены снимаются в 96 и 144 dpi. С фазы 17 (`CHK-TRAY-110`) добавлены снимки окна настроек «Базы данных» в экспертном режиме: 96 dpi, 120 dpi и 96 dpi на рабочей области 1024×768.
+    5. Фраза «сборка exe/zip только по явной просьбе» в POLICY.md §6 уточнена без смены смысла: CI собирает exe и zip только для проверки и ничего из этого не загружает; релиз и zip для поставки делаются только по слову заказчика.
+
+    Код не менялся. Комментарии в коде, которые описывают старую редакцию §9, перечислены в отчёте координатору.
 
 ### Ещё желательно (не блокер каркаса)
 

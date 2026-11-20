@@ -154,7 +154,7 @@ CI (`ci.yml`) собирает exe и zip и проверяет их **внут�
 
 По слову заказчика координатор вливает ветки в `main`, ставит лёгкий тег `vX.Y.Z` на коммит `main` (версия берётся из тега через `-ldflags`, отдельного коммита версии нет), дожидается `release.yml`, сверяет sha256 внутреннего zip с журналом сборки и публикует GitHub Release «Exchange Checker X.Y.Z» с одним файлом `ExchangeChecker-X.Y.Z.zip` (внутри — `Exchange Checker X.Y.Z.exe`): https://github.com/alexal46372-maker/ExchangeChecker/releases. Публикация релиза — действие координатора, а не workflow (`release.yml` имеет только `contents: read` и сам ничего не публикует). Текущий релиз — [v0.17.0](https://github.com/alexal46372-maker/ExchangeChecker/releases/tag/v0.17.0) (17.11.2026, `main@681ebdd`).
 
-Сборка zip — **только по явной просьбе** заказчика (см. POLICY.md / PLAN.md §11 фаза 8).
+Сборка exe и zip **для поставки** (релиз) — **только по слову заказчика**; сборки CI нужны только для проверки и никуда не загружаются (POLICY.md §6, уточнено решением Алекса 20.11.2026, PLAN.md §12 п. 223).
 
 ## Релизная сборка (`release.yml`) — исключение из CHK-CI-01
 

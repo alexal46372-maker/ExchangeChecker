@@ -4,6 +4,14 @@
 
 ## Не выпущено
 
+### Чистка кода и проверка gofmt (программа не менялась; PR #31–#41)
+
+- Комментарии в коде приведены к русскоязычному интерфейсу без тёмной темы: убраны упоминания RU/EN, тёмной темы, «(copy)» и старых веток, добавлены недостающие ссылки на check ID; в защищённом коде окна настроек менялся только текст комментариев (решение Алекса 20.11.2026).
+- Переименованы устаревшие названия: тесты `TestCHK_TRAY_03_CloseMutesUntilChange` → `TestCHK_TRAY_03_MuteUntilChange`, `TestCHK_TRAY_79_MenuLanguageUnderTheme_Smoke` → `TestCHK_TRAY_79_NoLanguageNoThemeMenu_Smoke`, `TestCHK_TRAY_66_LayoutFitWrap144EN` → `TestCHK_TRAY_66_LayoutFitWrap144`; метод `trayalert.Controller.Close` → `Controller.MuteUntilChange`; убран неиспользуемый параметр языка в тестовых помощниках трея; в сообщениях тестов «RU/EN» заменено на «Russian». Поведение и проверки те же.
+- Весь код отформатирован `gofmt` (Go 1.20.14, только пробелы и выравнивание).
+- В linux-job CI добавлен шаг `gofmt (CHK-CI-02)`: `gofmt -l .` из Go 1.20.14, при непустом списке печатает файлы и `gofmt -d .` и падает (решение Алекса 20.11.2026; PLAN.md §12 п. 224; тесты `TestCHK_CI_02_*`).
+- `checks/CHECKS.md` сверена с кодом: у `CHK-TRAY-08`, `CHK-TRAY-46`, `CHK-TRAY-63`, `CHK-TRAY-66`, `CHK-TRAY-79` и ещё нескольких проверок убраны устаревшие «RU/EN», меню «Язык»/«Тема» и старые имена тестов.
+
 ### Документация (программа не менялась; PR #30)
 
 - Все документы сверены с кодом v0.17.0: README, CHANGELOG (секции по релизам), DELIVERY, PLAN, POLICY, `checks/CHECKS.md`, `cmd/exchtray/RESOURCES.md`, `docs/ACCEPTANCE-WIN7.md`. В `docs/PHASE7.md`, `docs/PHASE14.md` и `third_party/inpout/README.md` добавлены пометки «изменено в фазе N».

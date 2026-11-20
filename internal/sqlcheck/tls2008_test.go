@@ -141,7 +141,7 @@ func TestCHK_SQL_05_TLSErrorKeys(t *testing.T) {
 	// a Russian text for every key
 	for _, k := range MessageKeys() {
 		ru := Message(k)
-		if ru == "" || Message(k) != ru {
+		if ru == "" {
 			t.Errorf("%s: ru %q", k, ru)
 		}
 	}

@@ -244,8 +244,7 @@ func TestCHK_IPC_03_TestProfile(t *testing.T) {
 	if e.ft.n() != calls+2 {
 		t.Errorf("unsaved windows profiles must not connect: %d calls", e.ft.n()-calls-2)
 	}
-	if model.MonitorMessage(model.MsgTestWindowsUnsaved) != "Сохраните профиль, чтобы проверить Windows-аутентификацию." ||
-		model.MonitorMessage(model.MsgTestWindowsUnsaved) == "" {
+	if model.MonitorMessage(model.MsgTestWindowsUnsaved) != "Сохраните профиль, чтобы проверить Windows-аутентификацию." {
 		t.Error("windows message is not the expected Russian text")
 	}
 }

@@ -9,8 +9,8 @@ import (
 
 // TestCHK_TRAY_48_Cards — the database cards (PLAN §12 p.143): one card
 // per database in order, the worst colour, the stalest freshness, the
-// point / problem counts, the error of a failed database, RU+EN, a
-// tooltip listing the points.
+// point / problem counts, the error of a failed database, Russian texts,
+// a tooltip listing the points.
 func TestCHK_TRAY_48_Cards(t *testing.T) {
 	rows := []StatusRow{
 		{Database: "Склад", ProfileID: "p1", Point: "ЦБ", PointKey: "a", State: "OK", Color: ColorGreen, Ago: "5 мин назад", AgoMinutes: 5},

@@ -66,7 +66,7 @@ func wndProc(hwnd, msg, wp, lp uintptr) uintptr {
 			return r
 		}
 	}
-	// phase 12 (CHK-TRAY-55): client chrome when the window did not handle it
+	// client chrome when the window did not handle it (light palette, CHK-TRAY-51)
 	if uint32(msg) == winapi.WM_ERASEBKGND {
 		return themeErase(wp, hwnd)
 	}
@@ -137,7 +137,7 @@ func createWindowPx(class, title string, exStyle, style uint32, x, y, w, hgt int
 	}
 	if style&winapi.WS_CHILD == 0 && style&winapi.WS_CAPTION != 0 {
 		setWindowIcons(hwnd) // phase 11 (CHK-TRAY-49): the app icon in the title bar
-		ApplyWindowTheme(hwnd) // phase 12 (CHK-TRAY-55): chrome
+		ApplyWindowTheme(hwnd) // chrome palette (light only, CHK-TRAY-88)
 	}
 	hmu.Lock()
 	handlers[hwnd] = h

@@ -6,7 +6,7 @@ import "github.com/alexal46372-maker/ExchangeChecker/internal/winapi"
 
 // tooltips is the TOOLTIPS_CLASS window of one tray window (phase 8,
 // CHK-TRAY-15): one tool per control (TTF_IDISHWND | TTF_SUBCLASS), the
-// texts come from the i18n catalog (RU / EN). texts keeps what was set
+// texts come from the i18n catalog (Russian). texts keeps what was set
 // for the tests.
 type tooltips struct {
 	hwnd, owner uintptr

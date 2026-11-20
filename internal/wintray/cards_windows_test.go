@@ -107,7 +107,7 @@ func TestCHK_TRAY_49_IconsInUse(t *testing.T) {
 
 // TestCHK_TRAY_48_CardPanel — the «Состояние» window shows one card per
 // database above the table (PLAN §12 p.143): visible, inside the panel,
-// not overlapping, with tooltips listing the points, RU+EN; with more
+// not overlapping, with tooltips listing the points; with more
 // databases than places the last place counts the rest.
 func TestCHK_TRAY_48_CardPanel(t *testing.T) {
 	runtime.LockOSThread()

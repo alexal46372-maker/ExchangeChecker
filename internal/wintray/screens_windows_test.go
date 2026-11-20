@@ -18,11 +18,11 @@ import (
 )
 
 // TestCHK_TRAY_46_Screens — CI screenshots (phase 11/12): every window of
-// uiScenes, RU and EN, at 96 and 144 dpi, light and dark (CHK-TRAY-55),
-// as PNG into $EC_UI_SCREENS (the ui-screens artifact of the windows job,
-// 7 days). The windows are shown off-screen (not hidden) and rendered
-// with PrintWindow. Includes summary* and alarm_test* (CHK-TRAY-54).
-// Dark scenes are named with a "_dark" suffix (CHK-TRAY-55/56).
+// uiScenes, Russian UI only (CHK-TRAY-86), at 96 and 144 dpi, one light
+// theme (CHK-TRAY-88), as PNG into $EC_UI_SCREENS (the ui-screens artifact
+// of the windows job, 7 days). The windows are shown off-screen (not
+// hidden) and rendered with PrintWindow. Includes summary* and
+// alarm_test* (CHK-TRAY-54).
 func TestCHK_TRAY_46_Screens(t *testing.T) {
 	dir := os.Getenv("EC_UI_SCREENS")
 	if dir == "" {

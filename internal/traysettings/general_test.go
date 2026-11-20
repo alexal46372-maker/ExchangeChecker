@@ -113,7 +113,7 @@ func TestCHK_TRAY_09_NoSettingsInvalidConfig(t *testing.T) {
 }
 
 // TestCHK_TRAY_09_AutostartErrorTexts — every trayAutostartError code
-// has RU and EN text; no error = "".
+// has a Russian text; no error = "".
 func TestCHK_TRAY_09_AutostartErrorTexts(t *testing.T) {
 	for _, c := range []string{model.AutostartErrAccessDenied, model.AutostartErrRegistry, model.AutostartErrTrayPath, model.AutostartErrSettings} {
 		ru := AutostartErrorText(c)

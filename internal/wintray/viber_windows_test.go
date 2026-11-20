@@ -120,7 +120,7 @@ func TestCHK_TRAY_43_ViberHidden(t *testing.T) {
 // TestCHK_TRAY_43_ViberPage — the page with capability viber: load,
 // save with the write-only token, «Тест» (viber_test {recipientId,
 // viberToken}), rate_limited, service field errors, simple mode hides it,
-// layout at 96/120/144 dpi in RU and EN.
+// layout at 96/120/144 dpi.
 func TestCHK_TRAY_43_ViberPage(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

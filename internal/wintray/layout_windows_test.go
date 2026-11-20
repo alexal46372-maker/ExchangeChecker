@@ -217,8 +217,8 @@ func TestCHK_TRAY_42_Font(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_42_LayoutOverlap — every tray window, RU and EN, at 96, 120
-// and 144 dpi: no control overlaps another, every text fits.
+// TestCHK_TRAY_42_LayoutOverlap — every tray window (Russian UI), at 96,
+// 120 and 144 dpi: no control overlaps another, every text fits.
 func TestCHK_TRAY_42_LayoutOverlap(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -294,11 +294,11 @@ func checkSettingsFit(t *testing.T, tag, lang string, work winapi.RECT) {
 
 // uiScenes opens every tray window (settings expert / general / simple /
 // read-only, import, discovery, sound, history, volume, panel, about, wizard,
-// alert, status, status muted, summary, alarm_test) in lang and visits it
-// (layout test, CI screenshots). Summary / alarm_test use demo data under
-// mock caps CapSummary / CapAlarmTest (CHK-TRAY-54). Settings expert shows
-// the clone button when CapCloneProfile is present (CHK-TRAY-58); status
-// muted shows the mute indicator (CHK-TRAY-59).
+// alert, status, status selected, summary, alarm_test; callers pass
+// i18n.RU, the only UI language) and visits it (layout test, CI
+// screenshots). Summary / alarm_test use demo data under mock caps
+// CapSummary / CapAlarmTest (CHK-TRAY-54). Settings expert shows the clone
+// button when CapCloneProfile is present (CHK-TRAY-58).
 func uiScenes(t *testing.T, lang string, visit func(name string, hwnd uintptr)) {
 	t.Helper()
 	done, ok := useComCtl6()

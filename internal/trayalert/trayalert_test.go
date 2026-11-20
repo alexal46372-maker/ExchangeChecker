@@ -71,9 +71,10 @@ func TestCHK_TRAY_03_ToneDefaults(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_03_CloseMutesUntilChange — PLAN §12 p.50: closing hides and
-// mutes; the same alerts do not reopen it; a new alert or a worse level
-// does; an improvement does not.
+// TestCHK_TRAY_03_CloseMutesUntilChange — PLAN §12 p.50: Controller.Close
+// hides and mutes; the same alerts do not reopen it; a new alert or a
+// worse level does; an improvement does not. (The alert window itself
+// cannot be closed since phase 16, CHK-TRAY-104.)
 func TestCHK_TRAY_03_CloseMutesUntilChange(t *testing.T) {
 	c := New()
 	w := pointAlert("a", "Склад", "k1", model.LevelWarning, 35)

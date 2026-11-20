@@ -60,7 +60,7 @@ func TestCHK_TRAY_08_AllKeyConstsInCatalog(t *testing.T) {
 }
 
 // TestCHK_TRAY_08_ServiceKeys — every monitor.* key of the service renders
-// in both languages; unknown keys never give an empty text.
+// a Russian text; unknown keys never give an empty text.
 func TestCHK_TRAY_08_ServiceKeys(t *testing.T) {
 	for _, k := range model.MonitorMessageKeys() {
 		ru := Message(k)

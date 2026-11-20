@@ -16,8 +16,9 @@ import (
 // the configuration in the administrator settings window. The file is
 // the export_config reply ("ec-config/1") with EC Tray's own "tray"
 // block added (HKCU of the user who exports: balloons, sound
-// with the master volume, window mode, theme). Viber recipients are
-// optional via includeViberRecipients (never the token; CHK-CFG-07).
+// with the master volume, window mode; no theme since CHK-TRAY-88).
+// Viber recipients are optional via includeViberRecipients (never the
+// token; CHK-CFG-07).
 
 // TrayFormat is the format of the tray block.
 const TrayFormat = "ec-tray/1"

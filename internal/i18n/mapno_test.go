@@ -6,7 +6,7 @@ import (
 )
 
 // TestCHK_TRAY_11_MapNoPointsToButton — «не настроены» names the existing
-// «Таблицы обмена…» button instead of a future update (RU and EN).
+// «Таблицы обмена…» button instead of a future update.
 func TestCHK_TRAY_11_MapNoPointsToButton(t *testing.T) {
 	{
 		s := T(KeySetMapNo)

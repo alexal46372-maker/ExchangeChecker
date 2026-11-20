@@ -166,8 +166,8 @@ func TestCHK_TRAY_01_ServiceLineOnTop(t *testing.T) {
 }
 
 // TestCHK_TRAY_01_RightClickItems — Settings enabled; full Alex order is
-// CHK-TRAY-63 (BuildTrayRightMenu). BuildRightMenu keeps Language/Service
-// for the older index-based tests below.
+// CHK-TRAY-63 (BuildTrayRightMenu). BuildRightMenu keeps «Служба» (no
+// language item since CHK-TRAY-86) for the older index-based tests below.
 func TestCHK_TRAY_01_RightClickItems(t *testing.T) {
 	{
 		it := BuildTrayRightMenu(RightMenuOpts{Svc: SvcStateRunning})
@@ -342,7 +342,7 @@ func TestCHK_TRAY_86_NoLanguageMenu(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_16_ServiceMenu — «Служба»: the state line (disabled, RU/EN)
+// TestCHK_TRAY_16_ServiceMenu — «Служба»: the state line (disabled)
 // and Start / Stop enabled by the state.
 func TestCHK_TRAY_16_ServiceMenu(t *testing.T) {
 	cases := []struct {

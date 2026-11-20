@@ -7,7 +7,7 @@ import (
 	"github.com/alexal46372-maker/ExchangeChecker/internal/model"
 )
 
-// TestCHK_TRAY_50_UIFieldCues — every UIField with Cue has RU+EN text; a
+// TestCHK_TRAY_50_UIFieldCues — every UIField with Cue has a text; a
 // field with HasDefault that is an edit-with-cue (Cue != "") never is
 // required; CueText formats CueDefault (PLAN §12 p.145, CHK-TRAY-50).
 func TestCHK_TRAY_50_UIFieldCues(t *testing.T) {

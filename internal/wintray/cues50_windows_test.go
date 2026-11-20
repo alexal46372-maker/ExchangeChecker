@@ -23,8 +23,8 @@ var settingsCueID = map[traysettings.Field]int32{
 	traysettings.FieldEmailFrom: idEmFrom, traysettings.FieldEmailPassword: idEmPassword,
 }
 
-// TestCHK_TRAY_50_Cues — every UIField with Cue is set on its edit box,
-// RU+EN (PLAN §12 p.145): settings + Viber via newViberCfg, Discovery via
+// TestCHK_TRAY_50_Cues — every UIField with Cue is set on its edit box
+// (PLAN §12 p.145): settings + Viber via newViberCfg, Discovery via
 // newDiscService; red highlight only for Missing required fields.
 func TestCHK_TRAY_50_Cues(t *testing.T) {
 	runtime.LockOSThread()

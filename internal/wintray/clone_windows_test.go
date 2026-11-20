@@ -67,7 +67,7 @@ func TestCHK_TRAY_58_CloneHiddenReadOnly(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_58_CloneStrings — RU+EN.
+// TestCHK_TRAY_58_CloneStrings — the clone texts exist (Russian UI).
 func TestCHK_TRAY_58_CloneStrings(t *testing.T) {
 	{
 		for _, k := range []string{i18n.KeySetClone, i18n.KeySetCloneConfirm, i18n.KeySetClonedNeedPw, i18n.KeyTipSetClone} {

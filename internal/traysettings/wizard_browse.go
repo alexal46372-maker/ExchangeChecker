@@ -110,7 +110,7 @@ func (z *Wizard) TestStepLine(st model.SQLCheckStep) string {
 	return line
 }
 
-// CheckStepTitle is the RU/EN label of a sql_test_steps stage id.
+// CheckStepTitle is the (Russian) label of a sql_test_steps stage id.
 func CheckStepTitle(id string) string {
 	key := map[string]string{
 		model.SQLStepParse: i18n.KeyWizCheckParse, model.SQLStepDNS: i18n.KeyWizCheckDNS,

@@ -72,7 +72,7 @@ func TestCHK_TRAY_47_Navigation(t *testing.T) {
 }
 
 // TestCHK_TRAY_47_Cues — every single-line edit box of the databases
-// page and the Viber token shows a cue (PLAN §12 p.50), RU and EN.
+// page and the Viber token shows a cue (PLAN §12 p.50).
 func TestCHK_TRAY_47_Cues(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

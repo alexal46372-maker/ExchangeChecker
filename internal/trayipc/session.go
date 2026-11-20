@@ -265,7 +265,7 @@ func (s *Session) setElevatedLocked(v *bool) {
 var commandCapability = map[string]string{
 	model.CmdTestProfile: model.CapTestProfile,
 	model.CmdAckAlert:    model.CapAckAlert,
-	model.CmdMuteUntilRecovered: model.CapMuteProfile, // phase 12 CHK-TRAY-59
+	model.CmdMuteUntilRecovered: model.CapMuteProfile, // phase 12; tray menu removed in phase 13 (CHK-TRAY-91)
 	model.CmdUnmuteProfile:      model.CapMuteProfile,
 	// phase 6 (G5 / G6)
 	model.CmdGetConfig:     model.CapConfigRead,

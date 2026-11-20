@@ -158,7 +158,7 @@ func checkTips(t *testing.T, what string, tips *tooltips, ctl map[int32]uintptr,
 // TestCHK_TRAY_15_Tooltips — TOOLTIPS_CLASS tooltips on every field,
 // button, check box, combo and list box of the settings window (both
 // modes, both pages), the Discovery dialog, the alert and About windows;
-// RU / EN texts differ.
+// every text is a non-empty catalog text.
 func TestCHK_TRAY_15_Tooltips(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

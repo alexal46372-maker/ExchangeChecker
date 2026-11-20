@@ -55,7 +55,7 @@ type statusWindow struct {
 
 var statusColWidths = []int32{130, 140, 110, 95, 110, 80, 95, 95, 160}
 
-// rowBk returns the pale state background of the active theme (CHK-TRAY-51/55).
+// rowBk returns the pale state background of the light theme (CHK-TRAY-51).
 func rowBk(c trayui.Color) uint32 { return trayui.PaleColorRef(c) }
 
 func newStatusWindow(show bool, onCheck func()) (*statusWindow, error) {

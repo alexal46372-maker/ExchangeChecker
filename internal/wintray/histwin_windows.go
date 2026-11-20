@@ -286,7 +286,7 @@ func (hw *histWindow) load() {
 	}()
 }
 
-// colours from the tray theme (CHK-TRAY-51 / 55). State/chart lines are
+// colours from the tray theme (CHK-TRAY-51, light only). State/chart lines are
 // fixed; page / text / axis / grid follow the active chrome.
 const (
 	clrAvg    = trayui.ChartAvg

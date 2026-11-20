@@ -346,7 +346,7 @@ func TestCHK_TRAY_44_ImportErrors(t *testing.T) {
 }
 
 // TestCHK_TRAY_44_ImportLayout — the import dialog in the layout test:
-// RU / EN, 96 / 120 / 144 dpi, also in a 1024×768 work area.
+// 96 / 120 / 144 dpi, also in a 1024×768 work area.
 func TestCHK_TRAY_44_ImportLayout(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -374,7 +374,7 @@ func TestCHK_TRAY_44_ImportLayout(t *testing.T) {
 
 // TestCHK_TRAY_44_OtherUser — elevated as another Windows user (over the
 // shoulder): no tray block in the export, «Также звук и вид трея» off and
-// disabled, a RU / EN warning; HKCU is never written.
+// disabled, a warning; HKCU is never written.
 func TestCHK_TRAY_44_OtherUser(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -506,7 +506,7 @@ func TestCHK_TRAY_42_FocusScroll(t *testing.T) {
 
 // TestCHK_TRAY_57_ExportImportViberFlag — checkbox sets includeViberRecipients
 // on the request JSON path (via ExportRequest / ImportRequest builders used
-// by the dialogs); warning strings RU+EN; Theme in the tray block.
+// by the dialogs); warning strings; no theme in the tray block (CHK-TRAY-88).
 func TestCHK_TRAY_57_ExportImportViberFlag(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

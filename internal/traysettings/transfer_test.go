@@ -73,7 +73,7 @@ func TestCHK_TRAY_44_ExportImportFile(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_44_Preview — the dry run text, RU / EN, missing sound file.
+// TestCHK_TRAY_44_Preview — the dry run text (Russian), missing sound file.
 func TestCHK_TRAY_44_Preview(t *testing.T) {
 	snd := trayalert.DefaultSoundPrefs(nil)
 	snd.Warning = trayalert.SoundProfile{Kind: trayalert.SoundFile, File: `D:\no.wav`}
@@ -98,8 +98,8 @@ func TestCHK_TRAY_44_Preview(t *testing.T) {
 	}
 }
 
-// TestCHK_TRAY_44_ErrorTexts — every import_config error has a RU and an
-// EN text (no «unknown message»).
+// TestCHK_TRAY_44_ErrorTexts — every import_config error has a Russian
+// text (no «unknown message»).
 func TestCHK_TRAY_44_ErrorTexts(t *testing.T) {
 	for _, k := range []string{model.MsgImportFormat, model.MsgImportMode, model.MsgImportDuplicateID, model.MsgImportNoConfig,
 		model.MsgImportTrayTooLarge, model.MsgImportRollbackFailed, model.MsgMonitorProfileInvalid, model.MsgMonitorSettingsInvalid,

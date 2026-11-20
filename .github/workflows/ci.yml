@@ -13,6 +13,8 @@
 # no internal/sqlcheck, no os/exec; the tray is built as a GUI exe (not uploaded).
 # CHK-IPC-01, CHK-TRAY-01..06 — linux job: -race for internal/trayipc, internal/trayui,
 # internal/trayalert, internal/traysettings.
+# CHK-CI-02 — linux job: `gofmt -l .` (the installed go1.20.14) must print nothing; otherwise the step
+# prints the files and `gofmt -d .` and fails. First step after the go version check.
 # CHK-SVC-11/12 (phase 14) — linux job: -race also for internal/pcspeaker, internal/winsvc.
 # CHK-RES-01, CHK-VER-01, CHK-SETUP-11 (phase 7a/7b) — both jobs: the committed .syso of
 # cmd/exchsetup, cmd/exchsvc and (7e, T3) cmd/exchtray match tools/mkres; a release-like build (service, tray,
@@ -248,6 +250,17 @@ jobs:
         run: |
           go version
           go version | grep -q "go1.20.14 linux/amd64"
+      - name: gofmt (CHK-CI-02)
+        run: |
+          # gofmt from the installed go1.20.14; no vendor/ in the repo, third_party/inpout is our own wrapper (checked too)
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "files not formatted by gofmt (go1.20.14):"
+            printf '%s\n' "$files"
+            gofmt -d .
+            exit 1
+          fi
+          echo "gofmt: $(find . -name '*.go' | wc -l) files, all formatted"
       - name: go vet (linux + GOOS=windows)
         run: |
           go vet ./...
